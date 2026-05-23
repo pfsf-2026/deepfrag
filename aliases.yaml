@@ -1,0 +1,92 @@
+# Canonical player identity map.
+#
+# Each top-level key is a canonical_id (slug, lowercase, no spaces — used in URLs and joins).
+# `display` is what's shown in the UI. `login` is the hub account login if known.
+# `variants` are exact in-game name strings (after color-code stripping + lowercasing)
+# that should resolve to this canonical_id.
+#
+# The canonicalizer auto-merges color-code variants (cr\efnus → cronus) and runs
+# fuzzy matching with a threshold. When fuzzy matches are uncertain they go into
+# .review_queue.yaml for manual decision.
+#
+# To override auto-grouping, list the normalized name under the correct canonical_id.
+# To explicitly REJECT a fuzzy auto-merge, add the variant under `excludes` of the
+# canonical it should NOT belong to.
+
+cronus:
+  display: Cronus
+  login: ""
+  variants:
+    - cronus
+  # Joke / spoof accounts that fuzzy-match cronus but ARE NOT him:
+  excludes:
+    - cronie
+    - cronos
+    - notcronus
+    - "cronus's fanclub"
+    - "lets go cronus"
+    - "hi cronus"
+    - "give up cronus"
+    - "cronus made me"
+    - "cronus small pp"
+    - "crone is him"
+    - cronorifistishim
+    - "cronus is himski"
+    - cronii
+
+sane:
+  display: sane
+  login: ""
+  # Confirmed by Cronus: same person plays under multiple names
+  variants:
+    - sane
+    - enas
+    - bposane     # added 2026-05-20 — pending DB rebuild
+
+grl:
+  display: grl
+  login: ""
+  # Confirmed by Cronus: grl and grldc are the same person
+  # Pending DB rebuild — added 2026-05-20
+  variants:
+    - grl
+    - grldc
+
+reload:
+  display: reload
+  login: ""
+  # Confirmed by Cronus: 'notreload' = reload (same person, alt account)
+  # Note: 'reload.au' is a separate straggler (7 matches) — not merged per Cronus's call.
+  # If a low-match canonical isn't profiled, it doesn't matter anyway.
+  variants:
+    - reload
+    - notreload
+
+yeti:
+  display: yeti
+  login: ""
+  # Confirmed by Cronus: yeti and notyeti are the same person
+  # Pending DB rebuild — added 2026-05-20
+  variants:
+    - yeti
+    - notyeti
+
+chris:
+  display: chris
+  login: ""
+  # Confirmed by Cronus: chris/chr1s/Eatmyass are the same person
+  # Added 2026-05-21 — apply via: python canonicalize.py
+  variants:
+    - chris
+    - chr1s
+    - eatmyass
+
+war:
+  display: war
+  login: ""
+  # Confirmed by Cronus 2026-05-21: whodat, george, notgeorge all = war
+  variants:
+    - war
+    - whodat
+    - george
+    - notgeorge

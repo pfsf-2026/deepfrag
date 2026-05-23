@@ -1,0 +1,13 @@
+# Keep the build context tiny — the API only needs api.py + tiers.py + export_rankings.py.
+.venv/
+data/
+nuxt/
+public/profiles/
+__pycache__/
+*.pyc
+.git/
+.wrangler/
+.output/
+node_modules/
+*.log
+*.db

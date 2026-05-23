@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node / Nuxt
+node_modules/
+.nuxt/
+.output/
+dist/
+*.log
+.DS_Store
+
+# Local data (real data is in Cloud SQL — local sqlite is dev-only)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db-journal
+data/*.log
+data/xantom-imports/
+
+# Legacy static export artifacts (pre-cloudify; safe to delete eventually)
+public/profile.json
+public/profiles/
+public/mock-*.html
+public/mocks.html
+public/index.html
+public/trends.html
+nuxt/public/profiles/
+nuxt/public/mocks/
+nuxt/public/profile.html
+nuxt/public/rankings.json
+
+# Working / scratch files
+.review_queue.yaml
+
+# Local secrets — never commit
+*.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+Thumbs.db

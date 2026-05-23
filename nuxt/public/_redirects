@@ -1,0 +1,7 @@
+# Cloudflare Pages SPA fallback for dynamic routes that aren't prerendered.
+# Any URL matching these patterns serves the corresponding index.html with a 200
+# status; Vue Router then reads the URL client-side and loads the right page.
+# Same trick works for any future SPA-mode subroute we add.
+
+/rankings/maps/*  /rankings/maps/  200
+/p/*/maps         /p/:splat/       200
