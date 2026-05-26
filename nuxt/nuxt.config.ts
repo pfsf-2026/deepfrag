@@ -20,12 +20,14 @@ export default defineNuxtConfig({
     '@nuxt/ui'
   ],
 
-  // Runtime config exposed to the client. NUXT_PUBLIC_API_BASE='' (default)
-  // falls back to legacy static JSON files; setting it (e.g. via Cloudflare
-  // Pages env vars) flips the frontend to hit the live API instead.
+  // Runtime config exposed to the client. Default = live Cloud Run API for
+  // prerender, local dev, and prod. The legacy static-JSON fallback (set
+  // apiBase: '') is dead — all data lives in Postgres now and the rate.py
+  // run is what updates it. NUXT_PUBLIC_API_BASE env override still works
+  // if we ever need to point a deploy at a staging API.
   runtimeConfig: {
     public: {
-      apiBase: ''
+      apiBase: 'https://deepfrag-api-751658372467.us-central1.run.app'
     }
   },
 
