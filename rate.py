@@ -257,24 +257,33 @@ def _update_with_weights(model, r_winner, r_loser, weight_winner, weight_loser, 
     """Rate a 1v1 match with per-player update weights.
 
     OpenSkill's `rate()` produces the full update assuming weight=1.0 for both.
-    For weight<1.0 (cross-region away player), we blend: new = old + weight * (full - old).
-    Implemented manually rather than using openskill's `weights=` because that param
-    is for team-internal contribution weighting, which doesn't apply to 1v1.
+    For weight≠1.0 (cross-region away, perf-weighted), we blend:
+      new = pre + weight * (full - pre)
+    Implemented manually rather than using openskill's `weights=` because that
+    param is for team-internal contribution weighting, which doesn't apply to 1v1.
+
+    CRITICAL: openskill.rate() mutates the input Rating objects in place
+    (verified 2026-05-26 — `r_winner is new_a` after the call). So we capture
+    pre-update μ/σ before calling rate(), otherwise the blend silently no-ops.
     """
+    pre_w_mu, pre_w_sigma = r_winner.mu, r_winner.sigma
+    pre_l_mu, pre_l_sigma = r_loser.mu, r_loser.sigma
+    pre_w_name, pre_l_name = r_winner.name, r_loser.name
+
     if drawn:
         [[new_a], [new_b]] = model.rate([[r_winner], [r_loser]], ranks=[0, 0])
     else:
         [[new_a], [new_b]] = model.rate([[r_winner], [r_loser]], ranks=[0, 1])
 
     blended_winner = model.rating(
-        mu=r_winner.mu + weight_winner * (new_a.mu - r_winner.mu),
-        sigma=r_winner.sigma + weight_winner * (new_a.sigma - r_winner.sigma),
-        name=r_winner.name,
+        mu=pre_w_mu + weight_winner * (new_a.mu - pre_w_mu),
+        sigma=pre_w_sigma + weight_winner * (new_a.sigma - pre_w_sigma),
+        name=pre_w_name,
     )
     blended_loser = model.rating(
-        mu=r_loser.mu + weight_loser * (new_b.mu - r_loser.mu),
-        sigma=r_loser.sigma + weight_loser * (new_b.sigma - r_loser.sigma),
-        name=r_loser.name,
+        mu=pre_l_mu + weight_loser * (new_b.mu - pre_l_mu),
+        sigma=pre_l_sigma + weight_loser * (new_b.sigma - pre_l_sigma),
+        name=pre_l_name,
     )
     return blended_winner, blended_loser
 
