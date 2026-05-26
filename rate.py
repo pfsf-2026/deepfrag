@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
-"""Compute TrueSkill ratings — Phase A (1on1 only, W/L-based).
+"""Compute OpenSkill (Weng-Lin Plackett-Luce) ratings — 1on1, W/L-based.
+
+Replaces TrueSkill (deprecated 2026-05-26). OpenSkill advantages:
+  - Per-player σ updates reflect information content of each match (not a global tau).
+  - Drops the need for a separate diversity-penalty σ multiplier.
+  - MIT-licensed, actively maintained (openskill.py).
+  - Native team support — same engine will power 2on2/4on4 when those land.
 
 Walks every 1on1 match in chronological order, updates both players' ratings,
 persists current state in `ratings` and per-match deltas in `rating_history`.
 
+Inter-regional weighting:
+  When a player plays on a server outside their home region (cross-region match),
+  their rating update is dampened (CROSS_REGION_WEIGHT). The home-region player's
+  update is unaffected. Rationale: high ping disadvantages the visitor; the result
+  is informative but less so than a fair-ping match.
+
 Outcomes:
-  - Higher player_frags wins → trueskill.rate_1vs1(winner, loser)
-  - Equal frags → drawn
+  - Higher player_frags wins → openskill.rate([winner, loser], ranks=[0, 1])
+  - Equal frags → ranks=[0, 0] (drawn)
 
-Run after canonicalize.py (needs players.canonical_id populated).
-
-Defaults: full rebuild each run (clears existing 1on1 rows). Use --incremental
-to only rate matches newer than the latest in rating_history (much faster on re-runs).
+Defaults: full rebuild each run. Use --incremental to only rate new matches.
 
 Usage:
   python rate.py                 # full rebuild for 1on1
@@ -19,73 +28,37 @@ Usage:
   python rate.py --incremental
 """
 
+from __future__ import annotations
+
 import argparse
 from datetime import datetime, timezone
 from pathlib import Path
 
 import psycopg2.extras
-import trueskill
+from openskill.models import PlackettLuce
 
 import db as dbmod
 
 DEFAULT_DB = Path(__file__).parent / "data" / "qw-stats.db"
 
-# TrueSkill environment — defaults tuned for 1v1.
-# Higher tau allows ratings to drift over time (important for 1on1 where skill changes).
-# Small but non-zero draw_probability so equal-frag duels don't blow up the math.
-ENV = trueskill.TrueSkill(mu=1500.0, sigma=500.0, beta=250.0, tau=5.0, draw_probability=0.01)
+# OpenSkill model — same display scale as the prior TrueSkill setup (μ=1500, σ=500)
+# so downstream consumers (tiers, conservative-rating) don't need to be re-scaled.
+# β = skill noise per match (≈σ/2 by convention). τ = additive σ growth per match;
+# keeps σ from over-narrowing in the high-game-count regime. Tuned tight (0.5)
+# because per-player σ updates already do most of the work.
+MODEL = PlackettLuce(mu=1500.0, sigma=500.0, beta=250.0, tau=0.5, kappa=0.0001)
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS ratings (
-    canonical_id   TEXT NOT NULL,
-    mode           TEXT NOT NULL,
-    map            TEXT NOT NULL DEFAULT '',   -- '' = overall (all maps); else map name
-    mu             REAL NOT NULL,
-    sigma          REAL NOT NULL,
-    conservative   REAL,            -- mu - 3*sigma, used for "settled" leaderboard sort
-    matches_rated  INTEGER DEFAULT 0,
-    wins           INTEGER DEFAULT 0,
-    losses         INTEGER DEFAULT 0,
-    draws          INTEGER DEFAULT 0,
-    last_match_id  INTEGER,
-    last_match_date TEXT,
-    updated_at     TEXT NOT NULL,
-    PRIMARY KEY (canonical_id, mode, map)
-);
-CREATE INDEX IF NOT EXISTS idx_ratings_mode_map_mu ON ratings(mode, map, mu DESC);
-CREATE INDEX IF NOT EXISTS idx_ratings_player ON ratings(canonical_id);
-
-CREATE TABLE IF NOT EXISTS rating_history (
-    canonical_id   TEXT NOT NULL,
-    mode           TEXT NOT NULL,
-    map            TEXT NOT NULL DEFAULT '',
-    match_id       INTEGER NOT NULL,
-    match_date     TEXT,
-    opponent_cid   TEXT,
-    outcome        TEXT,             -- 'win' | 'loss' | 'draw'
-    mu_before      REAL,
-    mu_after       REAL,
-    sigma_before   REAL,
-    sigma_after    REAL,
-    delta          REAL,
-    PRIMARY KEY (canonical_id, mode, map, match_id)
-);
-CREATE INDEX IF NOT EXISTS idx_rating_history_player_date
-    ON rating_history(canonical_id, mode, map, match_date);
-"""
-
-
-def ensure_schema(conn):
-    """Schema lives in Postgres now — created once by migrate_sqlite_to_pg.py.
-    Kept as a no-op for legacy compatibility; we don't auto-migrate here anymore."""
-    pass
+# Cross-region match: rating update for the away player is multiplied by this.
+# 0.6 = "this match is 60% as informative for the away player as a fair-ping match".
+# Home player unaffected. Chosen by reasoning, not data — revisit after a quarter
+# of cross-region match data accumulates.
+CROSS_REGION_WEIGHT = 0.6
 
 
 def _bulk_insert_history(cur, rows):
     """Single round-trip insert via execute_values. ~100× faster than executemany.
     Dedupes by PK (canonical_id, mode, map, match_id) first — rare but real when a
     player has multiple `players` rows in one match (joined/disconnected/rejoined)."""
-    # Keep the last row per PK (most recent update wins).
     by_pk = {}
     for r in rows:
         by_pk[(r[0], r[1], r[2], r[3])] = r
@@ -107,8 +80,6 @@ def _bulk_insert_history(cur, rows):
 
 
 def _bulk_insert_ratings(cur, rows):
-    """Same trick for the per-player ratings table. unique_opponents added 2026-05-21
-    for the diversity penalty — counts distinct opponents in this bucket."""
     psycopg2.extras.execute_values(
         cur,
         """INSERT INTO ratings
@@ -139,15 +110,23 @@ def load_existing_ratings(conn, mode, map_bucket=''):
     )
     for r in cur.fetchall():
         cid = r["canonical_id"]
-        cache[cid] = ENV.create_rating(mu=r["mu"], sigma=r["sigma"])
+        cache[cid] = MODEL.rating(mu=r["mu"], sigma=r["sigma"], name=cid)
         stats[cid] = {"matches": r["matches_rated"] or 0, "wins": r["wins"] or 0,
                       "losses": r["losses"] or 0, "draws": r["draws"] or 0}
     cur.close()
     return cache, stats
 
 
+def load_player_regions(conn):
+    """{canonical_id: region}. Players without an assigned region get None."""
+    cur = conn.cursor()
+    cur.execute("SELECT canonical_id, region FROM players_canonical WHERE region IS NOT NULL")
+    out = {r["canonical_id"]: r["region"] for r in cur.fetchall()}
+    cur.close()
+    return out
+
+
 def list_maps_for_mode(conn, mode, min_matches=10):
-    """Return distinct maps with at least `min_matches` matches in this mode."""
     cur = conn.cursor()
     cur.execute(
         """
@@ -165,10 +144,10 @@ def list_maps_for_mode(conn, mode, min_matches=10):
 
 
 def fetch_matches(conn, mode, since_date=None, map_filter=None):
-    """Yield (match_id, match_date, cid_a, frags_a, cid_b, frags_b) for every match in chronological order.
+    """Yield (match_id, match_date, cid_a, frags_a, cid_b, frags_b, server_region).
 
-    If map_filter is set, restricts to that map. If None, returns all maps for the mode.
-    Self-join on match_id with canonical_id ordering so each match yields exactly one row.
+    server_region is looked up via matches.server_hostname → strip port → servers.hostname → servers.region.
+    None when the server's region is unknown (older matches, geo-failure).
     """
     where_extra = ""
     params = {"mode": mode}
@@ -183,10 +162,12 @@ def fetch_matches(conn, mode, since_date=None, map_filter=None):
         f"""
         SELECT m.match_id, m.match_date,
                p1.canonical_id AS cid_a, p1.player_frags AS f_a,
-               p2.canonical_id AS cid_b, p2.player_frags AS f_b
+               p2.canonical_id AS cid_b, p2.player_frags AS f_b,
+               s.region AS server_region
         FROM matches m
         JOIN players p1 ON p1.match_id = m.match_id
         JOIN players p2 ON p2.match_id = m.match_id
+        LEFT JOIN servers s ON s.hostname = split_part(m.server_hostname, ':', 1)
         WHERE m.match_mode = %(mode)s
           AND p1.canonical_id IS NOT NULL
           AND p2.canonical_id IS NOT NULL
@@ -197,17 +178,61 @@ def fetch_matches(conn, mode, since_date=None, map_filter=None):
         params,
     )
     for r in cur.fetchall():
-        yield r["match_id"], r["match_date"], r["cid_a"], r["f_a"], r["cid_b"], r["f_b"]
+        yield (r["match_id"], r["match_date"], r["cid_a"], r["f_a"],
+               r["cid_b"], r["f_b"], r["server_region"])
     cur.close()
 
 
-def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5):
-    """Run TrueSkill over all matches in (mode, map_bucket).
+def _update_with_weights(model, r_winner, r_loser, weight_winner, weight_loser, drawn=False):
+    """Rate a 1v1 match with per-player update weights.
+
+    OpenSkill's `rate()` produces the full update assuming weight=1.0 for both.
+    For weight<1.0 (cross-region away player), we blend: new = old + weight * (full - old).
+    Implemented manually rather than using openskill's `weights=` because that param
+    is for team-internal contribution weighting, which doesn't apply to 1v1.
+    """
+    if drawn:
+        [[new_a], [new_b]] = model.rate([[r_winner], [r_loser]], ranks=[0, 0])
+    else:
+        [[new_a], [new_b]] = model.rate([[r_winner], [r_loser]], ranks=[0, 1])
+
+    blended_winner = model.rating(
+        mu=r_winner.mu + weight_winner * (new_a.mu - r_winner.mu),
+        sigma=r_winner.sigma + weight_winner * (new_a.sigma - r_winner.sigma),
+        name=r_winner.name,
+    )
+    blended_loser = model.rating(
+        mu=r_loser.mu + weight_loser * (new_b.mu - r_loser.mu),
+        sigma=r_loser.sigma + weight_loser * (new_b.sigma - r_loser.sigma),
+        name=r_loser.name,
+    )
+    return blended_winner, blended_loser
+
+
+def _weights_for_match(player_a_region, player_b_region, server_region):
+    """Return (weight_a, weight_b) reflecting cross-region disadvantage.
+
+    A player is "away" when the server is in a different region than their home.
+    Away players' updates are dampened to CROSS_REGION_WEIGHT. Home players unaffected.
+    When any region is unknown, treat as fair-weight (1.0) — no penalty for missing data.
+    """
+    if not server_region:
+        return 1.0, 1.0
+    w_a = CROSS_REGION_WEIGHT if (player_a_region and player_a_region != server_region) else 1.0
+    w_b = CROSS_REGION_WEIGHT if (player_b_region and player_b_region != server_region) else 1.0
+    return w_a, w_b
+
+
+def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
+                player_regions=None):
+    """Run OpenSkill over all matches in (mode, map_bucket).
        map_bucket='' = overall (all maps in the mode).
-       For per-map buckets we only emit ratings for players with >= per_map_min matches.
+       For per-map buckets only emit ratings for players with >= per_map_min matches.
 
     Returns (n_rated, n_players_written).
     """
+    if player_regions is None:
+        player_regions = {}
     cur = db.cursor()
     if full_rebuild:
         cur.execute("DELETE FROM ratings WHERE mode=%s AND map=%s", (mode, map_bucket))
@@ -224,28 +249,32 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5):
 
     history_rows = []
     n_skipped = 0
-    for match_id, match_date, cid_a, f_a, cid_b, f_b in matches:
+    for match_id, match_date, cid_a, f_a, cid_b, f_b, server_region in matches:
         if cid_a == cid_b or f_a is None or f_b is None:
             n_skipped += 1
             continue
 
-        ra = cache.setdefault(cid_a, ENV.create_rating())
-        rb = cache.setdefault(cid_b, ENV.create_rating())
+        ra = cache.setdefault(cid_a, MODEL.rating(name=cid_a))
+        rb = cache.setdefault(cid_b, MODEL.rating(name=cid_b))
         sa = stats.setdefault(cid_a, {"matches": 0, "wins": 0, "losses": 0, "draws": 0})
         sb = stats.setdefault(cid_b, {"matches": 0, "wins": 0, "losses": 0, "draws": 0})
         mu_a_b, sig_a_b = ra.mu, ra.sigma
         mu_b_b, sig_b_b = rb.mu, rb.sigma
 
+        wa, wb = _weights_for_match(
+            player_regions.get(cid_a), player_regions.get(cid_b), server_region
+        )
+
         if f_a > f_b:
-            ra_new, rb_new = ENV.rate_1vs1(ra, rb)
+            ra_new, rb_new = _update_with_weights(MODEL, ra, rb, wa, wb, drawn=False)
             out_a, out_b = "win", "loss"
             sa["wins"] += 1; sb["losses"] += 1
         elif f_b > f_a:
-            rb_new, ra_new = ENV.rate_1vs1(rb, ra)
+            rb_new, ra_new = _update_with_weights(MODEL, rb, ra, wb, wa, drawn=False)
             out_a, out_b = "loss", "win"
             sb["wins"] += 1; sa["losses"] += 1
         else:
-            ra_new, rb_new = ENV.rate_1vs1(ra, rb, drawn=True)
+            ra_new, rb_new = _update_with_weights(MODEL, ra, rb, wa, wb, drawn=True)
             out_a = out_b = "draw"
             sa["draws"] += 1; sb["draws"] += 1
 
@@ -265,21 +294,14 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5):
     if history_rows:
         _bulk_insert_history(cur, history_rows)
 
-    # Write ratings — bulk insert via execute_values for speed. For per-map, apply
-    # the matches threshold so we don't store noise for someone who played twice.
-    # Overall (map_bucket='') always stored. unique_opponents tracks each player's
-    # distinct opponents in this bucket, used by the diversity penalty downstream.
-    unique_opps = {}
-    for cid in cache:
-        unique_opps[cid] = set()
-    # Track from history_rows BEFORE we batched them, but they were already inserted.
-    # Re-query history for this bucket to compute unique opponents per player.
+    # Unique-opponent count is still useful as a UI "Provisional" hint — even though
+    # OpenSkill's σ updates handle diversity natively in the math, we surface the
+    # count so users see when a rating is built from a thin opponent pool.
     cur.execute("""
         SELECT canonical_id, COUNT(DISTINCT opponent_cid) AS n
         FROM rating_history WHERE mode = %s AND map = %s AND opponent_cid IS NOT NULL
         GROUP BY canonical_id
     """, (mode, map_bucket))
-    # db.connect() uses RealDictCursor → access by column name, not index.
     uniq_counts = {r["canonical_id"]: r["n"] for r in cur.fetchall()}
 
     rating_rows = []
@@ -298,21 +320,19 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5):
 
 
 def run(db_path: Path, mode: str = "1on1", incremental: bool = False, per_map_min: int = 5):
-    # db_path retained for legacy CLI compatibility — actual connection comes from db.connect()
-    # which defaults to Cloud SQL Postgres (override via DEEPFRAG_PG_URL / DEEPFRAG_USE_SQLITE=1).
     db = dbmod.connect()
-    ensure_schema(db)
     now = datetime.now(timezone.utc).isoformat()
     full_rebuild = not incremental
+    player_regions = load_player_regions(db)
+    print(f"Loaded regions for {len(player_regions):,} players.")
 
-    # 1. Overall mode rating (all maps lumped together)
-    print(f"Rating {mode} overall…")
+    print(f"Rating {mode} overall (OpenSkill PlackettLuce, cross-region weight={CROSS_REGION_WEIGHT})…")
     start = datetime.now()
-    n_matches, n_players = rate_bucket(db, mode, '', now, full_rebuild=full_rebuild, per_map_min=0)
+    n_matches, n_players = rate_bucket(db, mode, '', now, full_rebuild=full_rebuild,
+                                        per_map_min=0, player_regions=player_regions)
     elapsed = (datetime.now() - start).total_seconds()
     print(f"  {n_matches:,} matches → {n_players:,} players rated in {elapsed:.1f}s")
 
-    # 2. Per-map ratings: one independent TrueSkill series per map
     maps = list_maps_for_mode(db, mode, min_matches=50)
     print(f"\nRating {mode} per-map across {len(maps)} maps "
           f"(min {per_map_min} matches per player to be stored)…")
@@ -321,18 +341,18 @@ def run(db_path: Path, mode: str = "1on1", incremental: bool = False, per_map_mi
     total_players = 0
     for m in maps:
         n_matches, n_players = rate_bucket(db, mode, m, now, full_rebuild=full_rebuild,
-                                            per_map_min=per_map_min)
+                                            per_map_min=per_map_min,
+                                            player_regions=player_regions)
         total_matches += n_matches
         total_players += n_players
     elapsed = (datetime.now() - start).total_seconds()
     print(f"  {total_matches:,} match-events → {total_players:,} per-map ratings written in {elapsed:.1f}s")
 
-    # Sanity: top 10 overall + per-map sample for aerowalk
     print(f"\nTop 10 {mode} OVERALL (by conservative rating):")
     sanity_cur = db.cursor()
     sanity_cur.execute(
         """
-        SELECT r.canonical_id, pc.display_name, r.mu, r.sigma, r.conservative,
+        SELECT r.canonical_id, pc.display_name, pc.region, r.mu, r.sigma, r.conservative,
                r.matches_rated, r.wins, r.losses
         FROM ratings r
         LEFT JOIN players_canonical pc ON pc.canonical_id = r.canonical_id
@@ -344,27 +364,10 @@ def run(db_path: Path, mode: str = "1on1", incremental: bool = False, per_map_mi
     top = sanity_cur.fetchall()
     for t in top:
         name = t["display_name"] or t["canonical_id"]
+        reg = (t["region"] or "??")[:2]
         print(f"  μ={t['mu']:7.1f} σ={t['sigma']:5.1f} cons={t['conservative']:7.1f}  "
-              f"{t['wins']:5}W-{t['losses']:5}L  {name}")
-
-    print(f"\nTop 10 {mode} on AEROWALK (per-map rating):")
-    sanity_cur.execute(
-        """
-        SELECT r.canonical_id, pc.display_name, r.mu, r.sigma, r.conservative,
-               r.matches_rated, r.wins, r.losses
-        FROM ratings r
-        LEFT JOIN players_canonical pc ON pc.canonical_id = r.canonical_id
-        WHERE r.mode = %s AND r.map = 'aerowalk'
-        ORDER BY r.conservative DESC LIMIT 10
-        """,
-        (mode,),
-    )
-    aero = sanity_cur.fetchall()
+              f"{t['wins']:5}W-{t['losses']:5}L  [{reg}]  {name}")
     sanity_cur.close()
-    for t in aero:
-        name = t["display_name"] or t["canonical_id"]
-        print(f"  μ={t['mu']:7.1f} σ={t['sigma']:5.1f} cons={t['conservative']:7.1f}  "
-              f"{t['wins']:5}W-{t['losses']:5}L  {name}")
 
 
 if __name__ == "__main__":

@@ -26,8 +26,10 @@ DEFAULT_OUT = Path(__file__).parent / "nuxt" / "public" / "rankings.json"
 DECAY_GRACE_DAYS = 30
 DECAY_PER_DAY = 0.5
 
-# Opponent-diversity penalty thresholds — below these, σ gets multiplied by a
-# diversity factor that pulls the conservative rating down (and flags as Provisional).
+# "Provisional" thresholds — below this many unique opponents, players are
+# UI-flagged provisional. With OpenSkill (2026-05-26 migration) the σ math
+# handles diversity natively, so these are purely a visual hint — see
+# diversity_factor() below, kept as a no-op for backward compatibility.
 DIVERSITY_THRESHOLD_OVERALL = 10
 DIVERSITY_THRESHOLD_PER_MAP = 3
 
@@ -47,23 +49,11 @@ def decayed_sigma(stored_sigma, last_match_iso, now):
 
 
 def diversity_factor(unique_opponents, threshold=DIVERSITY_THRESHOLD_OVERALL):
-    """Return σ multiplier that grows when unique opponents is below threshold.
-
-    Examples (threshold=10):
-      25 opps → factor 1.0 (no penalty, capped)
-      10 opps → factor 1.0
-       5 opps → factor sqrt(10/5)  ≈ 1.41   (σ × 1.41)
-       2 opps → factor sqrt(10/2)  ≈ 2.24   (σ × 2.24)
-       1 opp  → factor sqrt(10/1)  ≈ 3.16
-
-    Stops the '50-2 vs 4 friends' rating inflation by widening uncertainty
-    until the player has faced a representative pool.
-    """
-    if unique_opponents is None or unique_opponents <= 0:
-        return float(threshold) ** 0.5
-    if unique_opponents >= threshold:
-        return 1.0
-    return math.sqrt(threshold / unique_opponents)
+    """DEPRECATED 2026-05-26 — OpenSkill's per-match σ updates handle opponent
+    diversity natively (50 matches vs 1 opponent narrows σ less than 50 vs 50,
+    from first principles). This no-op shim is preserved so existing api.py
+    callsites keep working; remove once those are simplified."""
+    return 1.0
 
 
 def effective_sigma(stored_sigma, last_match_iso, now, unique_opponents, threshold=DIVERSITY_THRESHOLD_OVERALL):

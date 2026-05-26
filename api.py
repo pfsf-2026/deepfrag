@@ -26,11 +26,23 @@ from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from tiers import tier_for
+from tiers import tier_for, compute_cutoffs
 from export_rankings import (
     decayed_sigma, effective_sigma, diversity_factor,
     DIVERSITY_THRESHOLD_OVERALL, DIVERSITY_THRESHOLD_PER_MAP,
 )
+
+
+def _get_tier_cutoffs(cur, mode: str, map_name: str = "") -> dict:
+    """Fetch all conservative ratings for this (mode, map) bucket and compute
+    percentile-based tier cutoffs. Cheap (one indexed SELECT + sort) — called
+    once per ranking response, once per profile mode/map. See tiers.py for
+    the Div 0/1/2/3 percentile breaks."""
+    cur.execute(
+        "SELECT conservative FROM ratings WHERE mode=%s AND map=%s AND matches_rated >= 10",
+        (mode, map_name),
+    )
+    return compute_cutoffs(r["conservative"] for r in cur.fetchall())
 import profile_pg
 import stats_pg
 
@@ -129,6 +141,7 @@ def rankings(
             WHERE r.mode = %(mode)s AND r.map = '' AND r.matches_rated >= %(min)s
         """, {"mode": mode, "min": min_matches, "recent": recent_cutoff})
         rows = cur.fetchall()
+        cutoffs = _get_tier_cutoffs(cur, mode)
 
     out = []
     for r in rows:
@@ -159,7 +172,7 @@ def rankings(
             "last_match": r["last_match"],
             "recent_matches_90d": recent,
             "active_90d": recent > 0,
-            "tier": tier_for(conservative_eff),
+            "tier": tier_for(conservative_eff, cutoffs),
         })
 
     out.sort(key=lambda x: -x["conservative"])
@@ -200,7 +213,10 @@ def player_profile(canonical_id: str):
             FROM ratings WHERE canonical_id = %s AND map = ''
         """, (canonical_id,))
         ratings = {"1on1": None, "2on2": None, "4on4": None}
-        for r in cur.fetchall():
+        mode_rows = cur.fetchall()
+        # Compute cutoffs lazily — one trip per mode the player is rated in.
+        cutoffs_by_mode = {r["mode"]: _get_tier_cutoffs(cur, r["mode"]) for r in mode_rows}
+        for r in mode_rows:
             ratings[r["mode"]] = {
                 "mu": round(r["mu"], 1),
                 "sigma": round(r["sigma"], 1),
@@ -209,7 +225,7 @@ def player_profile(canonical_id: str):
                 "wins": r["wins"],
                 "losses": r["losses"],
                 "draws": r["draws"],
-                "tier": tier_for(r["conservative"]),
+                "tier": tier_for(r["conservative"], cutoffs_by_mode.get(r["mode"])),
                 "updated_at": r["updated_at"],
             }
 
@@ -428,7 +444,9 @@ def server_detail(response: Response, host_root: str):
             ORDER BY r.conservative DESC LIMIT 8
         """, (host_root,))
         top_by_rating = []
-        for r in cur.fetchall():
+        top_rows = cur.fetchall()
+        cutoffs_1on1 = _get_tier_cutoffs(cur, "1on1") if top_rows else {}
+        for r in top_rows:
             factor = diversity_factor(r["unique_opponents"], threshold=DIVERSITY_THRESHOLD_OVERALL)
             cons_eff = r["mu"] - 3 * r["sigma"] * factor
             top_by_rating.append({
@@ -436,7 +454,7 @@ def server_detail(response: Response, host_root: str):
                 "display": r["display"],
                 "conservative": round(cons_eff, 1),
                 "games_here": r["games_here"],
-                "tier": tier_for(cons_eff),
+                "tier": tier_for(cons_eff, cutoffs_1on1),
             })
 
         # Weekly activity for the FULL history of this server (no 53-week cap).
@@ -522,9 +540,10 @@ def map_rankings(
             WHERE r.mode = %s AND r.map = %s AND r.matches_rated >= %s
         """, (mode, map_name, min_matches))
         rows = cur.fetchall()
+        cutoffs = _get_tier_cutoffs(cur, mode, map_name)
 
-    # Apply diversity penalty in Python (per-map uses a stricter threshold of 3
-    # unique opps — small sample sizes per map make the penalty more impactful).
+    # Diversity factor is a no-op now (OpenSkill handles it natively) — sigma_eff
+    # equals stored sigma. Kept for API-shape stability with the prior version.
     out = []
     for r in rows:
         factor = diversity_factor(r["unique_opponents"], threshold=DIVERSITY_THRESHOLD_PER_MAP)
@@ -545,7 +564,7 @@ def map_rankings(
             "losses": r["losses"],
             "draws": r["draws"],
             "win_rate": round(r["wins"] / r["matches_rated"], 3) if r["matches_rated"] else None,
-            "tier": tier_for(conservative_eff),
+            "tier": tier_for(conservative_eff, cutoffs),
         })
     out.sort(key=lambda x: -x["conservative"])
     for i, p in enumerate(out[:limit]):
@@ -663,7 +682,9 @@ def player_profile_full(
             FROM ratings r WHERE canonical_id = %s AND map = ''
         """, (canonical_id,))
         ratings = {"1on1": None, "2on2": None, "4on4": None}
-        for r in cur.fetchall():
+        mode_rows = cur.fetchall()
+        cutoffs_by_mode = {r["mode"]: _get_tier_cutoffs(cur, r["mode"]) for r in mode_rows}
+        for r in mode_rows:
             factor = diversity_factor(r["unique_opponents"], threshold=DIVERSITY_THRESHOLD_OVERALL)
             sigma_eff = r["sigma"] * factor
             conservative_eff = r["mu"] - 3 * sigma_eff
@@ -681,11 +702,11 @@ def player_profile_full(
                 "draws": r["draws"],
                 "rank": r["rank"],
                 "total_rated": r["total_rated"],
-                "tier": tier_for(conservative_eff),
+                "tier": tier_for(conservative_eff, cutoffs_by_mode.get(r["mode"])),
                 "updated_at": r["updated_at"],
             }
 
-        # Per-map TrueSkill (1on1 only for now) — diversity-adjusted (threshold=3)
+        # Per-map OpenSkill (1on1 only for now) — tier cutoffs computed per-map.
         cur.execute("""
             SELECT map, mu, sigma, conservative, matches_rated, wins, losses, draws,
                    COALESCE(unique_opponents, 0) AS unique_opponents,
