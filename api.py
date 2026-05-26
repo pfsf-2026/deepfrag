@@ -589,6 +589,203 @@ def map_rankings(
     return {"mode": mode, "map": map_name, "count": len(out), "players": out[:limit]}
 
 
+# ── Head-to-head: two players, overall + per-map breakdown + predictions ──
+
+@app.get("/api/h2h")
+def head_to_head(
+    response: Response,
+    p1: str = Query(..., min_length=1, description="canonical_id of player A"),
+    p2: str = Query(..., min_length=1, description="canonical_id of player B"),
+    mode: str = Query("1on1", pattern="^(1on1|2on2|4on4)$"),
+    recent_limit: int = Query(20, ge=1, le=100),
+):
+    """Compare two players: head-to-head record + per-map breakdown + per-map
+    prediction (OpenSkill predict_win on per-map ratings). Powers the /h2h page.
+
+    p1 and p2 must be canonical_ids — use /api/search to resolve names first.
+    """
+    if p1 == p2:
+        raise HTTPException(400, "p1 and p2 must be different players")
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=3600"
+
+    # Local import to avoid circular pollution at module load; openskill is only
+    # needed in this one endpoint for predict_win.
+    from openskill.models import PlackettLuce
+    model = PlackettLuce(mu=1500.0, sigma=500.0, beta=250.0)
+
+    with pg() as conn:
+        cur = conn.cursor()
+
+        # 1. Both players' canonical metadata + overall rating
+        cur.execute("""
+            SELECT pc.canonical_id, pc.display_name, pc.region, pc.region_confidence,
+                   r.mu, r.sigma, r.conservative, r.matches_rated, r.wins, r.losses
+            FROM players_canonical pc
+            LEFT JOIN ratings r ON r.canonical_id = pc.canonical_id
+                                AND r.mode = %s AND r.map = ''
+            WHERE pc.canonical_id = ANY(%s)
+        """, (mode, [p1, p2]))
+        found = {r["canonical_id"]: dict(r) for r in cur.fetchall()}
+        if p1 not in found or p2 not in found:
+            raise HTTPException(404, f"player not found: {set([p1, p2]) - set(found)}")
+
+        overall_cutoffs = _get_tier_cutoffs(cur, mode)
+
+        def shape_player(cid):
+            r = found[cid]
+            cons = r.get("conservative")
+            return {
+                "canonical_id": cid,
+                "display": r["display_name"],
+                "region": r["region"],
+                "mu": round(r["mu"], 1) if r.get("mu") is not None else None,
+                "sigma": round(r["sigma"], 1) if r.get("sigma") is not None else None,
+                "conservative": round(cons, 1) if cons is not None else None,
+                "matches": r.get("matches_rated"),
+                "wins": r.get("wins"),
+                "losses": r.get("losses"),
+                "tier": tier_for(cons, overall_cutoffs) if cons else None,
+            }
+
+        player_a = shape_player(p1)
+        player_b = shape_player(p2)
+
+        # 2. H2H summary across ALL their matches in this mode
+        cur.execute("""
+            SELECT m.match_id, m.match_date, m.match_map,
+                   p1.player_frags AS f1, p1.player_damage_given AS dg1, p1.player_damage_taken AS dt1,
+                   p2.player_frags AS f2, p2.player_damage_given AS dg2, p2.player_damage_taken AS dt2
+            FROM matches m
+            JOIN players p1 ON p1.match_id = m.match_id AND p1.canonical_id = %s
+            JOIN players p2 ON p2.match_id = m.match_id AND p2.canonical_id = %s
+            WHERE m.match_mode = %s
+            ORDER BY m.match_date DESC
+        """, (p1, p2, mode))
+        h2h_rows = cur.fetchall()
+
+        total = len(h2h_rows)
+        a_wins = sum(1 for r in h2h_rows if (r["f1"] or 0) > (r["f2"] or 0))
+        b_wins = sum(1 for r in h2h_rows if (r["f2"] or 0) > (r["f1"] or 0))
+        draws = total - a_wins - b_wins
+        # Aggregate damage given/taken across H2H
+        a_dg = sum(r["dg1"] or 0 for r in h2h_rows)
+        a_dt = sum(r["dt1"] or 0 for r in h2h_rows)
+        b_dg = sum(r["dg2"] or 0 for r in h2h_rows)
+        b_dt = sum(r["dt2"] or 0 for r in h2h_rows)
+        h2h_summary = {
+            "matches": total,
+            "wins_a": a_wins,
+            "wins_b": b_wins,
+            "draws": draws,
+            "last_match": h2h_rows[0]["match_date"] if h2h_rows else None,
+            "ddr_a": round(a_dg / a_dt, 2) if a_dt > 0 else None,
+            "ddr_b": round(b_dg / b_dt, 2) if b_dt > 0 else None,
+        }
+
+        # 3. Per-map breakdown: where they've played each other + per-map ratings
+        # for prediction. Aggregate H2H by map.
+        per_map_h2h = {}
+        for r in h2h_rows:
+            m_name = r["match_map"]
+            if m_name not in per_map_h2h:
+                per_map_h2h[m_name] = {"matches": 0, "wins_a": 0, "wins_b": 0,
+                                       "a_dg": 0, "a_dt": 0, "b_dg": 0, "b_dt": 0}
+            agg = per_map_h2h[m_name]
+            agg["matches"] += 1
+            if (r["f1"] or 0) > (r["f2"] or 0):
+                agg["wins_a"] += 1
+            elif (r["f2"] or 0) > (r["f1"] or 0):
+                agg["wins_b"] += 1
+            agg["a_dg"] += r["dg1"] or 0
+            agg["a_dt"] += r["dt1"] or 0
+            agg["b_dg"] += r["dg2"] or 0
+            agg["b_dt"] += r["dt2"] or 0
+
+        # Both players' per-map ratings (one query)
+        cur.execute("""
+            SELECT canonical_id, map, mu, sigma, conservative, matches_rated, wins, losses
+            FROM ratings
+            WHERE canonical_id = ANY(%s) AND mode = %s AND map != ''
+        """, ([p1, p2], mode))
+        per_map_rating = {}  # {(cid, map): rating dict}
+        for r in cur.fetchall():
+            per_map_rating[(r["canonical_id"], r["map"])] = dict(r)
+
+        # Union of maps either player has been rated on (or has H2H history on)
+        all_maps = set(per_map_h2h.keys()) | {m for (_, m) in per_map_rating.keys()}
+
+        maps_out = []
+        for m_name in all_maps:
+            ra = per_map_rating.get((p1, m_name))
+            rb = per_map_rating.get((p2, m_name))
+            h2h = per_map_h2h.get(m_name, {"matches": 0, "wins_a": 0, "wins_b": 0,
+                                           "a_dg": 0, "a_dt": 0, "b_dg": 0, "b_dt": 0})
+
+            # Prediction: only if both players have a per-map rating
+            pred_a = pred_b = None
+            if ra and rb:
+                ra_obj = model.rating(mu=ra["mu"], sigma=ra["sigma"], name=p1)
+                rb_obj = model.rating(mu=rb["mu"], sigma=rb["sigma"], name=p2)
+                probs = model.predict_win([[ra_obj], [rb_obj]])
+                pred_a = round(probs[0], 3)
+                pred_b = round(probs[1], 3)
+
+            maps_out.append({
+                "map": m_name,
+                "h2h_matches": h2h["matches"],
+                "h2h_wins_a": h2h["wins_a"],
+                "h2h_wins_b": h2h["wins_b"],
+                "h2h_ddr_a": round(h2h["a_dg"] / h2h["a_dt"], 2) if h2h["a_dt"] > 0 else None,
+                "h2h_ddr_b": round(h2h["b_dg"] / h2h["b_dt"], 2) if h2h["b_dt"] > 0 else None,
+                "rating_a": {"cons": round(ra["conservative"], 1), "matches": ra["matches_rated"],
+                             "wins": ra["wins"], "losses": ra["losses"]} if ra else None,
+                "rating_b": {"cons": round(rb["conservative"], 1), "matches": rb["matches_rated"],
+                             "wins": rb["wins"], "losses": rb["losses"]} if rb else None,
+                "predict_win_a": pred_a,
+                "predict_win_b": pred_b,
+            })
+        # Sort by total H2H matches (heaviest map first), then by combined per-map exposure.
+        maps_out.sort(
+            key=lambda x: (
+                -x["h2h_matches"],
+                -((x["rating_a"]["matches"] if x["rating_a"] else 0) +
+                  (x["rating_b"]["matches"] if x["rating_b"] else 0)),
+            )
+        )
+
+        # 4. Recent H2H matches (capped, for the timeline)
+        recent = []
+        for r in h2h_rows[:recent_limit]:
+            recent.append({
+                "match_id": r["match_id"],
+                "date": r["match_date"],
+                "map": r["match_map"],
+                "frags_a": r["f1"], "frags_b": r["f2"],
+                "ddr_a": round((r["dg1"] or 0) / (r["dt1"] or 1), 2) if r["dt1"] else None,
+                "ddr_b": round((r["dg2"] or 0) / (r["dt2"] or 1), 2) if r["dt2"] else None,
+            })
+
+        # 5. Overall prediction (using overall ratings) — single number for the headline
+        overall_pred_a = overall_pred_b = None
+        if player_a["mu"] is not None and player_b["mu"] is not None:
+            oa = model.rating(mu=player_a["mu"], sigma=player_a["sigma"], name=p1)
+            ob = model.rating(mu=player_b["mu"], sigma=player_b["sigma"], name=p2)
+            probs = model.predict_win([[oa], [ob]])
+            overall_pred_a = round(probs[0], 3)
+            overall_pred_b = round(probs[1], 3)
+
+    return {
+        "mode": mode,
+        "player_a": player_a,
+        "player_b": player_b,
+        "h2h": h2h_summary,
+        "overall_predict_win_a": overall_pred_a,
+        "overall_predict_win_b": overall_pred_b,
+        "maps": maps_out,
+        "recent_matches": recent,
+    }
+
+
 @app.get("/api/maps")
 def list_maps(mode: str = Query("1on1", pattern="^(1on1|2on2|4on4)$"), min_players: int = Query(5, ge=1, le=1000)):
     """List every map that has TrueSkill ratings in this mode, sorted by how many
