@@ -28,6 +28,49 @@ watch([mode, region], load)
 const current = computed(() => df.useApi
   ? (rankings.value?.players || [])
   : (rankings.value?.modes?.[mode.value] || []))
+
+// Rich-tooltip content helpers — kept inline since each is tied to one
+// stat's explanation. Returns { title, body }.
+function tierRtip(t) {
+  const labels = {
+    div0: 'Top 15% of rated players. Genuinely elite across the game.',
+    div1: 'Next 30% (55th–85th percentile). Strong, multi-region competitive.',
+    div2: 'Next 35% (20th–55th percentile). Solid, regular competitors.',
+    div3: 'Bottom 20%. Climbing or casual.'
+  }
+  return { title: t.name, body: labels[t.slug] || 'Percentile-based tier from the rated 1on1 population.' }
+}
+function provisionalRtip(p) {
+  return {
+    title: 'Provisional rating',
+    body: `Only ${p.unique_opponents || 0} unique opponents so far. The rating is built from a thin opponent pool — flagged as a UX hint, not a math penalty.`
+  }
+}
+function consRtip(p) {
+  return {
+    title: `Conservative rating: ${Math.round(p.conservative)}`,
+    body: 'μ − 3σ — the 99.7% lower bound of our skill belief. Used for ranking so uncertain ratings don\'t inflate. Movement-resistant: a single match nudges this slightly.'
+  }
+}
+function musigmaRtip(p) {
+  return {
+    title: `μ ${Math.round(p.mu)} · σ ${Math.round(p.sigma)}`,
+    body: 'μ is the mean skill estimate from OpenSkill (Plackett-Luce). σ is the uncertainty — narrower σ = more settled rating. Inactivity widens σ over time.'
+  }
+}
+function ddrRtip(p) {
+  return {
+    title: `DDR ${p.avg_ddr.toFixed(2)}`,
+    body: 'Damage Differential Ratio — lifetime sum of damage you dealt ÷ damage you took. Above 1.00 = you generate more pressure than you absorb. The QW equivalent of hockey\'s Corsi.'
+  }
+}
+function fragDiffRtip(p) {
+  const sign = p.avg_frag_diff >= 0 ? '+' : ''
+  return {
+    title: `Avg ±frag: ${sign}${p.avg_frag_diff.toFixed(1)}`,
+    body: 'Average per-match frag differential (your frags − your deaths). Captures finishing — how cleanly your DDR pressure converts to scoreboard wins.'
+  }
+}
 const filtered = computed(() => {
   let list = current.value.filter(p => p.matches >= minMatches.value)
   if (activeOnly.value) list = list.filter(p => p.active_90d)
@@ -113,27 +156,28 @@ useHead({ title: 'Rankings · DeepFrag' })
         <div class="id">
           <div class="name">
             {{ p.display }}
-            <span v-if="p.region" class="region-pill" :title="`Primary region (${Math.round((p.region_confidence||0)*100)}% of matches)`">{{ p.region }}</span>
+            <span v-if="p.region" class="region-pill" v-tip="`Primary region · ${Math.round((p.region_confidence||0)*100)}% of matches played on ${p.region} servers`">{{ p.region }}</span>
           </div>
           <div class="meta">last seen {{ fmtDate(p.last_match) }}</div>
         </div>
         <div class="tier-cell">
           <span v-if="p.tier" class="tier-badge"
+                v-rtip="tierRtip(p.tier)"
                 :style="{ color: p.tier.color, borderColor: p.tier.color, background: p.tier.color + '14' }">
             {{ p.tier.name }}
           </span>
           <span v-if="p.provisional" class="prov-badge"
-                :title="`Only ${p.unique_opponents || 0} unique opponents — rating uncertainty inflated until they face more players`">
+                v-rtip="provisionalRtip(p)">
             ?
           </span>
         </div>
         <div class="rating">
-          {{ Math.round(p.conservative) }}
-          <div class="sigma">μ {{ Math.round(p.mu) }} · ±σ {{ Math.round(p.sigma) }}</div>
+          <span v-rtip="consRtip(p)">{{ Math.round(p.conservative) }}</span>
+          <div class="sigma" v-rtip="musigmaRtip(p)">μ {{ Math.round(p.mu) }} · ±σ {{ Math.round(p.sigma) }}</div>
           <div v-if="p.avg_ddr || p.avg_frag_diff != null" class="perf">
-            <span v-if="p.avg_ddr" :title="'Damage given ÷ damage taken (lifetime avg)'"
+            <span v-if="p.avg_ddr" v-rtip="ddrRtip(p)"
                   :class="{ pos: p.avg_ddr >= 1, neg: p.avg_ddr < 1 }">DDR {{ p.avg_ddr.toFixed(2) }}</span>
-            <span v-if="p.avg_frag_diff != null" :title="'Avg ±frags per match'"
+            <span v-if="p.avg_frag_diff != null" v-rtip="fragDiffRtip(p)"
                   :class="{ pos: p.avg_frag_diff >= 0, neg: p.avg_frag_diff < 0 }">
               {{ p.avg_frag_diff >= 0 ? '+' : '' }}{{ p.avg_frag_diff.toFixed(1) }}
             </span>
