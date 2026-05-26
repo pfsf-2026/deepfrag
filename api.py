@@ -129,13 +129,20 @@ def rankings(
             -- DDR + avg frag-diff per player, mode-scoped. Drops matches missing
             -- damage stats (older pre-KTX). Lifetime, not recent — surfaces the
             -- same signal the rating engine consumes via perf weighting.
+            -- IN filter is the perf hit: without it, this CTE aggregates over
+            -- every player who ever played the mode (~4k × ~20 matches each).
+            -- Restricting to players that'll appear in the result keeps it ~150ms
+            -- instead of ~2.5s.
             perf_by_cid AS (
                 SELECT p.canonical_id,
                        SUM(p.player_damage_given)::float / NULLIF(SUM(p.player_damage_taken), 0) AS avg_ddr,
                        AVG(p.player_frags - p.player_deaths)::float AS avg_frag_diff
                 FROM players p JOIN matches m ON m.match_id = p.match_id
                 WHERE m.match_mode = %(mode)s
-                  AND p.canonical_id IS NOT NULL
+                  AND p.canonical_id IN (
+                      SELECT canonical_id FROM ratings
+                      WHERE mode = %(mode)s AND map = '' AND matches_rated >= %(min)s
+                  )
                   AND p.player_damage_given IS NOT NULL
                 GROUP BY p.canonical_id
             )
