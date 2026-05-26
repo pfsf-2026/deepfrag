@@ -3,3 +3,9 @@ uvicorn==0.39.0
 psycopg2-binary==2.9.12
 pydantic==2.13.4
 openskill==6.0.0
+# Below required by the admin sync endpoint which runs sync.py + canonicalize
+# + rate.py + region/server assignments in-process every 2h.
+requests~=2.32.5
+beautifulsoup4~=4.12.0
+PyYAML~=6.0
+rapidfuzz~=3.13

@@ -271,6 +271,89 @@ def fetch_ktx(sha):
     return r.json()
 
 
+def fetch_all_hub_matches(since, modes=("1on1", "2on2", "4on4")):
+    """Yield every hub match in supported modes since `since`. No player filter.
+    Powers the periodic full-pull sync (every 2h) used by /api/admin/sync."""
+    offset = 0
+    mode_filter = "in.(" + ",".join(modes) + ")"
+    while True:
+        params = {
+            "select": "id,timestamp,mode,map,matchtag,server_hostname,demo_sha256,demo_source_url,players",
+            "mode": mode_filter,
+            "timestamp": f"gt.{since}",
+            "order": "timestamp.asc",
+            "offset": offset,
+            "limit": PAGE_SIZE,
+        }
+        r = SESSION.get(HUB_URL, params=params, headers=HUB_HEADERS, timeout=30)
+        r.raise_for_status()
+        batch = r.json()
+        if not batch:
+            break
+        for match in batch:
+            yield match
+        if len(batch) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+
+
+def sync_all_recent(db, since=None, limit=None, workers=8):
+    """Pull every new hub match (any player, 1on1/2on2/4on4) into the DB.
+
+    `since` defaults to max(match_date) in matches table — i.e. only fetch
+    matches we haven't seen yet. Designed to run every 2h via Cloud Scheduler.
+
+    Returns dict with run summary: { matches_fetched, matches_failed,
+    elapsed_secs, since }.
+    """
+    cur = db.cursor()
+    if since is None:
+        cur.execute("SELECT max(match_date) AS last FROM matches")
+        row = cur.fetchone()
+        since = (row["last"] if row else None) or "1970-01-01T00:00:00+00:00"
+    print(f"sync_all_recent: pulling new matches since {since} (workers={workers})")
+
+    candidates = []
+    for match in fetch_all_hub_matches(since):
+        if limit is not None and len(candidates) >= limit:
+            break
+        cur.execute("SELECT ktx_fetched FROM matches WHERE match_id=%s", (match["id"],))
+        existing = cur.fetchone()
+        if existing and existing["ktx_fetched"]:
+            continue
+        candidates.append(match)
+    cur.close()
+    print(f"  {len(candidates)} new matches to fetch KTX for")
+
+    processed = 0
+    failed = 0
+    start = datetime.now()
+    if candidates:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_to_match = {pool.submit(fetch_ktx, m["demo_sha256"]): m for m in candidates}
+            for future in as_completed(future_to_match):
+                match = future_to_match[future]
+                try:
+                    ktx = future.result()
+                except requests.RequestException as e:
+                    failed += 1
+                    print(f"  [{match['id']}] KTX fetch failed: {e}")
+                    continue
+                insert_match(db, match, ktx)
+                processed += 1
+                if processed % 100 == 0:
+                    db.commit()
+        db.commit()
+    elapsed = (datetime.now() - start).total_seconds()
+    print(f"sync_all_recent done: {processed} fetched, {failed} failed in {elapsed:.0f}s")
+    return {
+        "since": since,
+        "matches_fetched": processed,
+        "matches_failed": failed,
+        "elapsed_secs": round(elapsed, 1),
+    }
+
+
 def sync_matches(db, player_name, since=None, limit=None, workers=8):
     cur = db.cursor()
     if since is None:

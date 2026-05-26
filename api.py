@@ -1102,3 +1102,84 @@ def search(q: str = Query(..., min_length=1, max_length=64), limit: int = Query(
             LIMIT %s
         """, (pattern, pattern, limit))
         return {"q": q, "results": cur.fetchall()}
+
+
+# ── Periodic sync (triggered by Cloud Scheduler every 2h) ─────────────────
+# The endpoint is invoked over HTTP with a bearer token matching SYNC_SECRET
+# env var. Runs the full sync pipeline inline; Cloud Run hard cap is 60min
+# which is plenty (typical run = 30s sync + 30s rate.py + ~60s misc).
+
+from fastapi import Header
+import subprocess
+
+
+def _run_script(script: str, *args: str, timeout: int = 600) -> dict:
+    """Run a python script inside the container, capturing return code + tail
+    of stdout. Subprocess (not in-process import) because each existing script
+    has its own DB connection + commit pattern; isolating them keeps the
+    endpoint's request connection clean."""
+    cmd = ["python", script, *args]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return {
+            "script": script,
+            "args": list(args),
+            "returncode": proc.returncode,
+            "stdout_tail": proc.stdout[-2000:],
+            "stderr_tail": proc.stderr[-1000:],
+        }
+    except subprocess.TimeoutExpired:
+        return {"script": script, "args": list(args), "returncode": -1, "error": "timeout"}
+
+
+@app.post("/api/admin/sync")
+def admin_sync(authorization: str | None = Header(default=None),
+               skip_servers: bool = False,
+               skip_rate: bool = False):
+    """Periodic full-pull sync. Pipeline:
+      1. sync_all_recent — pull every new hub match since the latest match_date
+      2. canonicalize.py — assign canonical_ids for any new player names
+      3. assign_player_regions.py — update player → primary region mapping
+      4. sync_live_servers.py — refresh current live server snapshot (skip via ?skip_servers=true)
+      5. rate.py --incremental --mode 1on1 — rate the new matches (skip via ?skip_rate=true)
+
+    Auth: Bearer token must match SYNC_SECRET env var.
+    """
+    expected = os.environ.get("SYNC_SECRET")
+    if not expected:
+        raise HTTPException(503, "SYNC_SECRET not configured on the server")
+    if authorization != f"Bearer {expected}":
+        raise HTTPException(401, "missing or invalid bearer token")
+
+    # Import here so cold-start of the public-facing endpoints doesn't pay for
+    # the requests/bs4/yaml imports that only the sync path uses.
+    import sync as sync_mod
+
+    summary = {"started_at": datetime.now(timezone.utc).isoformat(), "steps": []}
+
+    # Step 1 — fetch new matches from hub
+    with pg() as conn:
+        try:
+            step = sync_mod.sync_all_recent(conn, workers=8)
+            summary["steps"].append({"step": "sync_all_recent", **step})
+        except Exception as e:
+            summary["steps"].append({"step": "sync_all_recent", "error": str(e)})
+            summary["ended_at"] = datetime.now(timezone.utc).isoformat()
+            return summary
+
+    # Step 2 — canonicalize new player names (idempotent)
+    summary["steps"].append({"step": "canonicalize", **_run_script("canonicalize.py", timeout=180)})
+
+    # Step 3 — re-assign player regions (idempotent, fast)
+    summary["steps"].append({"step": "assign_regions", **_run_script("assign_player_regions.py", timeout=180)})
+
+    # Step 4 — refresh live servers snapshot (network-bound, ~10s)
+    if not skip_servers:
+        summary["steps"].append({"step": "sync_live_servers", **_run_script("sync_live_servers.py", timeout=120)})
+
+    # Step 5 — incremental rate (only new matches)
+    if not skip_rate:
+        summary["steps"].append({"step": "rate", **_run_script("rate.py", "--mode", "1on1", "--incremental", timeout=600)})
+
+    summary["ended_at"] = datetime.now(timezone.utc).isoformat()
+    return summary
