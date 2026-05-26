@@ -20,10 +20,16 @@ const error = ref('')
 async function loadPlayers() {
   if (!apiBase) { playersLoading.value = false; return }
   try {
-    const r = await $fetch(`${apiBase}/api/search?q=&limit=2000`)
-    players.value = (r.results || []).filter(p => p.matches >= 10)
+    // /api/search requires q>=1 char, so use /api/rankings to get the full
+    // rated-player list for the mode in one call. Shape: { players: [{ canonical_id, display, matches }] }
+    const r = await $fetch(`${apiBase}/api/rankings?mode=${mode.value}&min_matches=10&limit=2000`)
+    players.value = (r.players || []).map(p => ({
+      canonical_id: p.canonical_id,
+      display: p.display,
+      matches: p.matches
+    }))
   } catch (e) {
-    console.error('[h2h] index load failed', e)
+    console.error('[h2h] player list load failed', e)
   } finally {
     playersLoading.value = false
   }
@@ -60,12 +66,18 @@ function swap() {
   syncUrl(); loadH2H()
 }
 
-const p1Match = computed(() => players.value.filter(x =>
-  p1Search.value && (x.display || x.canonical_id).toLowerCase().includes(p1Search.value.toLowerCase())
-).slice(0, 8))
-const p2Match = computed(() => players.value.filter(x =>
-  p2Search.value && (x.display || x.canonical_id).toLowerCase().includes(p2Search.value.toLowerCase())
-).slice(0, 8))
+// Only show dropdown after 2+ chars — single-letter matches are too noisy
+// (200+ players starting with 'a' isn't useful).
+const p1Match = computed(() => {
+  const q = p1Search.value.trim().toLowerCase()
+  if (q.length < 2) return []
+  return players.value.filter(x => (x.display || x.canonical_id).toLowerCase().includes(q)).slice(0, 10)
+})
+const p2Match = computed(() => {
+  const q = p2Search.value.trim().toLowerCase()
+  if (q.length < 2) return []
+  return players.value.filter(x => (x.display || x.canonical_id).toLowerCase().includes(q)).slice(0, 10)
+})
 
 // Sort state for the maps table
 const sortKey = ref('h2h_matches')
