@@ -151,17 +151,33 @@ def _bulk_insert_ratings(cur, rows):
         """INSERT INTO ratings
            (canonical_id, mode, map, mu, sigma, conservative,
             matches_rated, wins, losses, draws,
-            last_match_id, last_match_date, updated_at, unique_opponents)
+            last_match_id, last_match_date, updated_at, unique_opponents,
+            avg_ddr, avg_frag_diff)
            VALUES %s
            ON CONFLICT (canonical_id, mode, map) DO UPDATE SET
              mu=EXCLUDED.mu, sigma=EXCLUDED.sigma, conservative=EXCLUDED.conservative,
              matches_rated=EXCLUDED.matches_rated, wins=EXCLUDED.wins,
              losses=EXCLUDED.losses, draws=EXCLUDED.draws,
              last_match_id=EXCLUDED.last_match_id, last_match_date=EXCLUDED.last_match_date,
-             updated_at=EXCLUDED.updated_at, unique_opponents=EXCLUDED.unique_opponents""",
+             updated_at=EXCLUDED.updated_at, unique_opponents=EXCLUDED.unique_opponents,
+             avg_ddr=EXCLUDED.avg_ddr, avg_frag_diff=EXCLUDED.avg_frag_diff""",
         rows,
         page_size=2000,
     )
+
+
+def ensure_perf_columns(conn):
+    """Idempotently add avg_ddr / avg_frag_diff columns to ratings table.
+    These are precomputed during the rating run so the rankings API doesn't
+    have to aggregate millions of player-match rows on every request."""
+    cur = conn.cursor()
+    cur.execute("""
+        ALTER TABLE ratings
+        ADD COLUMN IF NOT EXISTS avg_ddr REAL,
+        ADD COLUMN IF NOT EXISTS avg_frag_diff REAL
+    """)
+    conn.commit()
+    cur.close()
 
 
 def load_existing_ratings(conn, mode, map_bucket=''):
@@ -330,6 +346,11 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
     if not matches:
         return 0, 0
 
+    # Per-player perf accumulators (precomputed here so /api/rankings doesn't
+    # have to re-aggregate millions of player rows per request).
+    # perf[cid] = {dg_sum, dt_sum, frag_diff_sum, perf_match_count}
+    perf = {}
+
     history_rows = []
     n_skipped = 0
     for (match_id, match_date,
@@ -346,6 +367,21 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
         sb = stats.setdefault(cid_b, {"matches": 0, "wins": 0, "losses": 0, "draws": 0})
         mu_a_b, sig_a_b = ra.mu, ra.sigma
         mu_b_b, sig_b_b = rb.mu, rb.sigma
+
+        # Accumulate perf — only matches with damage stats (pre-KTX matches
+        # have NULL damage and are dropped from the DDR average).
+        if dg_a is not None and dt_a is not None:
+            pa = perf.setdefault(cid_a, {"dg": 0, "dt": 0, "fd_sum": 0.0, "n": 0})
+            pa["dg"] += dg_a
+            pa["dt"] += dt_a
+            pa["fd_sum"] += (f_a or 0) - (f_b or 0)
+            pa["n"] += 1
+        if dg_b is not None and dt_b is not None:
+            pb = perf.setdefault(cid_b, {"dg": 0, "dt": 0, "fd_sum": 0.0, "n": 0})
+            pb["dg"] += dg_b
+            pb["dt"] += dt_b
+            pb["fd_sum"] += (f_b or 0) - (f_a or 0)
+            pb["n"] += 1
 
         # Cross-region dampening (orthogonal to performance)
         wa_cr, wb_cr = _weights_for_match(
@@ -417,9 +453,13 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
         s = stats.get(cid, {})
         if map_bucket and s["matches"] < per_map_min:
             continue
+        pf = perf.get(cid)
+        avg_ddr = (pf["dg"] / pf["dt"]) if (pf and pf["dt"] > 0) else None
+        avg_frag_diff = (pf["fd_sum"] / pf["n"]) if (pf and pf["n"] > 0) else None
         rating_rows.append((cid, mode, map_bucket, r.mu, r.sigma, r.mu - 3 * r.sigma,
                             s["matches"], s["wins"], s["losses"], s["draws"],
-                            None, None, now, uniq_counts.get(cid, 0)))
+                            None, None, now, uniq_counts.get(cid, 0),
+                            avg_ddr, avg_frag_diff))
     if rating_rows:
         _bulk_insert_ratings(cur, rating_rows)
     db.commit()
@@ -431,6 +471,7 @@ def run(db_path: Path, mode: str = "1on1", incremental: bool = False, per_map_mi
     db = dbmod.connect()
     now = datetime.now(timezone.utc).isoformat()
     full_rebuild = not incremental
+    ensure_perf_columns(db)
     player_regions = load_player_regions(db)
     print(f"Loaded regions for {len(player_regions):,} players.")
 
