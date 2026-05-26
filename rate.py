@@ -68,12 +68,13 @@ CROSS_REGION_WEIGHT = 0.6
 # Tunables in [0, 1]; larger = more aggressive perf-weighting. Calibrated low
 # initially so the W/L signal stays dominant — perf is a refinement, not a
 # replacement.
-PERF_FRAG_WEIGHT = 0.3     # weight of the frag-diff-vs-expected signal
-PERF_DDR_WEIGHT  = 0.7     # weight of the DDR signal (dominant signal — DDR
-                           # captures sustained pressure better than score gap,
-                           # which can swing on a single armor pickup).
-PERF_MAX_DELTA   = 0.5     # cap |perf_delta| — wider band lets DDR-heavy
-                           # blowouts/upsets actually move ratings.
+PERF_FRAG_WEIGHT = 0.5     # weight of the frag-diff-vs-expected signal
+PERF_DDR_WEIGHT  = 0.5     # weight of the DDR signal
+                           # 50/50 split — both signals carry equal weight.
+                           # DDR captures sustained pressure; frag-diff captures
+                           # finishing/timing. Both matter, neither dominates.
+PERF_MAX_DELTA   = 0.5     # cap |perf_delta| — wider band lets perf signals
+                           # actually move ratings on blowouts/upsets.
 EXPECTED_FRAG_PER_RATING = 0.020  # 200pt rating gap → 4 frag expected diff (calibrate later)
 EXPECTED_FRAG_CAP = 20.0   # rating gaps > 1000pt saturate the expected diff
 FRAG_DIFF_NORMALIZER = 25.0  # 25-frag overperformance ≈ full signal saturation
