@@ -57,6 +57,12 @@ export function useDeepFrag() {
       return useApi
         ? `${base}/api/players/${encodeURIComponent(id)}/maps/${encodeURIComponent(map)}/opponents?limit=8`
         : null
+    },
+
+    h2hUrl(p1: string, p2: string, mode: string = '1on1'): string | null {
+      return useApi
+        ? `${base}/api/h2h?p1=${encodeURIComponent(p1)}&p2=${encodeURIComponent(p2)}&mode=${mode}`
+        : null
     }
   }
 }

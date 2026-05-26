@@ -29,6 +29,7 @@ useSeoMeta({
         <NuxtLink to="/players">Players</NuxtLink>
         <NuxtLink to="/servers">Servers</NuxtLink>
         <NuxtLink to="/stats">Stats</NuxtLink>
+        <NuxtLink to="/h2h">H2H</NuxtLink>
       </nav>
       <span class="spacer" />
       <span class="meta">Beta</span>

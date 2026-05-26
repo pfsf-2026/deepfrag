@@ -711,8 +711,22 @@ def head_to_head(
         for r in cur.fetchall():
             per_map_rating[(r["canonical_id"], r["map"])] = dict(r)
 
-        # Union of maps either player has been rated on (or has H2H history on)
-        all_maps = set(per_map_h2h.keys()) | {m for (_, m) in per_map_rating.keys()}
+        # Top-N most-played maps in this mode — the "real" map pool.
+        # Excludes one-off custom/weird maps so the H2H table stays focused
+        # on the maps people actually compete on.
+        cur.execute("""
+            SELECT match_map FROM matches
+            WHERE match_mode = %s AND match_map IS NOT NULL
+            GROUP BY match_map ORDER BY count(*) DESC LIMIT 20
+        """, (mode,))
+        top_maps = {r["match_map"] for r in cur.fetchall()}
+
+        # Filter rule (per user 2026-05-26):
+        #   - at least 1 H2H match between these two players on this map
+        #   - AND the map is in the top-20 most-played maps overall
+        # No "rated only" filter — H2H presence is the signal we want.
+        all_maps = {m for m in per_map_h2h.keys()
+                    if per_map_h2h[m]["matches"] >= 1 and m in top_maps}
 
         maps_out = []
         for m_name in all_maps:
