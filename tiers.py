@@ -56,8 +56,11 @@ def tier_for(conservative, cutoffs=None):
         return None
     for slug, name, _floor_pct, color in TIER_SPECS:
         if conservative >= cutoffs.get(slug, float("-inf")):
+            # The bottom-tier cutoff is -inf which isn't JSON-serializable;
+            # expose it as None to mean "no floor".
+            min_val = cutoffs.get(slug)
             return {"slug": slug, "name": name, "color": color,
-                    "min": cutoffs.get(slug)}
+                    "min": None if min_val == float("-inf") else min_val}
     return None
 
 
