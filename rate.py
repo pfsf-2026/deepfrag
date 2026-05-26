@@ -54,6 +54,68 @@ MODEL = PlackettLuce(mu=1500.0, sigma=500.0, beta=250.0, tau=0.5, kappa=0.0001)
 # of cross-region match data accumulates.
 CROSS_REGION_WEIGHT = 0.6
 
+# Performance-weighting tunables (introduced 2026-05-26 alongside OpenSkill).
+# A composite perf score blends two signals: frag-diff vs rating-expected gap, and
+# DDR (damage given / taken ratio). The result amplifies (>1) or dampens (<1)
+# the rating update beyond what W/L alone would say.
+#
+# Example: Cronus (1500) loses 21-15 to chr1s (2500) with DDR 1.1.
+#   - Expected frag-diff for Cronus: -20 (capped). Actual: -6 → overperformed by +14.
+#   - DDR 1.1 → mild positive (he was trading well).
+#   - perf_delta_cronus ≈ +0.34 → loser-weight = 1.0 - 0.34 = 0.66 → 34% smaller loss.
+#   - perf_delta_chr1s ≈ -0.34 → winner-weight = 1.0 - 0.34 = 0.66 → 34% smaller gain.
+#
+# Tunables in [0, 1]; larger = more aggressive perf-weighting. Calibrated low
+# initially so the W/L signal stays dominant — perf is a refinement, not a
+# replacement.
+PERF_FRAG_WEIGHT = 0.6     # weight of the frag-diff-vs-expected signal
+PERF_DDR_WEIGHT  = 0.4     # weight of the DDR signal
+PERF_MAX_DELTA   = 0.4     # cap |perf_delta| — keeps the per-match update bounded
+EXPECTED_FRAG_PER_RATING = 0.020  # 200pt rating gap → 4 frag expected diff (calibrate later)
+EXPECTED_FRAG_CAP = 20.0   # rating gaps > 1000pt saturate the expected diff
+FRAG_DIFF_NORMALIZER = 25.0  # 25-frag overperformance ≈ full signal saturation
+
+
+def _expected_frag_diff(mu_a: float, mu_b: float) -> float:
+    """Predicted (player_a frags - player_b frags). Positive = a should win.
+    Naive linear from rating gap, saturated at ±EXPECTED_FRAG_CAP."""
+    raw = EXPECTED_FRAG_PER_RATING * (mu_a - mu_b)
+    return max(-EXPECTED_FRAG_CAP, min(EXPECTED_FRAG_CAP, raw))
+
+
+def _perf_delta(mu_a: float, mu_b: float, frags_a: int, frags_b: int,
+                dmg_given_a, dmg_taken_a) -> float:
+    """Return the performance delta P_a ∈ [-PERF_MAX_DELTA, +PERF_MAX_DELTA] for
+    player A. Positive = A overperformed their rating-expected outcome.
+
+    Combine frag-diff signal (how much did the actual gap beat the predicted gap?)
+    with DDR signal (damage given / taken — was A generating pressure?).
+    Returns 0.0 when damage stats are missing (older matches without KTX data)."""
+    expected = _expected_frag_diff(mu_a, mu_b)
+    actual = (frags_a or 0) - (frags_b or 0)
+    frag_signal = max(-1.0, min(1.0, (actual - expected) / FRAG_DIFF_NORMALIZER))
+
+    if dmg_given_a is None or dmg_taken_a is None or dmg_taken_a <= 0:
+        ddr_signal = 0.0
+    else:
+        ddr = dmg_given_a / max(1.0, dmg_taken_a)
+        ddr_signal = max(-1.0, min(1.0, ddr - 1.0))
+
+    delta = PERF_FRAG_WEIGHT * frag_signal + PERF_DDR_WEIGHT * ddr_signal
+    return max(-PERF_MAX_DELTA, min(PERF_MAX_DELTA, delta))
+
+
+def _perf_weight(perf_delta: float, won: bool) -> float:
+    """Convert a player's perf delta to a rating-update multiplier.
+
+    Winner: overperformed (delta > 0) → bigger gain. Underperformed → smaller gain.
+    Loser:  overperformed (delta > 0) → smaller loss. Underperformed → bigger loss.
+    """
+    if won:
+        return 1.0 + perf_delta
+    else:
+        return 1.0 - perf_delta
+
 
 def _bulk_insert_history(cur, rows):
     """Single round-trip insert via execute_values. ~100× faster than executemany.
@@ -144,10 +206,14 @@ def list_maps_for_mode(conn, mode, min_matches=10):
 
 
 def fetch_matches(conn, mode, since_date=None, map_filter=None):
-    """Yield (match_id, match_date, cid_a, frags_a, cid_b, frags_b, server_region).
+    """Yield per-match tuples with all data needed for OpenSkill + perf-weighting.
 
-    server_region is looked up via matches.server_hostname → strip port → servers.hostname → servers.region.
-    None when the server's region is unknown (older matches, geo-failure).
+    Columns: match_id, match_date, cid_a, frags_a, dmg_given_a, dmg_taken_a,
+             cid_b, frags_b, dmg_given_b, dmg_taken_b, server_region.
+
+    server_region lookup: matches.server_hostname → strip port → servers.hostname.
+    None when geo unknown. Damage columns may be NULL on older pre-KTX matches —
+    perf weighting falls back to W/L-only in that case.
     """
     where_extra = ""
     params = {"mode": mode}
@@ -162,7 +228,9 @@ def fetch_matches(conn, mode, since_date=None, map_filter=None):
         f"""
         SELECT m.match_id, m.match_date,
                p1.canonical_id AS cid_a, p1.player_frags AS f_a,
+               p1.player_damage_given AS dg_a, p1.player_damage_taken AS dt_a,
                p2.canonical_id AS cid_b, p2.player_frags AS f_b,
+               p2.player_damage_given AS dg_b, p2.player_damage_taken AS dt_b,
                s.region AS server_region
         FROM matches m
         JOIN players p1 ON p1.match_id = m.match_id
@@ -178,8 +246,10 @@ def fetch_matches(conn, mode, since_date=None, map_filter=None):
         params,
     )
     for r in cur.fetchall():
-        yield (r["match_id"], r["match_date"], r["cid_a"], r["f_a"],
-               r["cid_b"], r["f_b"], r["server_region"])
+        yield (r["match_id"], r["match_date"],
+               r["cid_a"], r["f_a"], r["dg_a"], r["dt_a"],
+               r["cid_b"], r["f_b"], r["dg_b"], r["dt_b"],
+               r["server_region"])
     cur.close()
 
 
@@ -249,7 +319,10 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
 
     history_rows = []
     n_skipped = 0
-    for match_id, match_date, cid_a, f_a, cid_b, f_b, server_region in matches:
+    for (match_id, match_date,
+         cid_a, f_a, dg_a, dt_a,
+         cid_b, f_b, dg_b, dt_b,
+         server_region) in matches:
         if cid_a == cid_b or f_a is None or f_b is None:
             n_skipped += 1
             continue
@@ -261,9 +334,31 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
         mu_a_b, sig_a_b = ra.mu, ra.sigma
         mu_b_b, sig_b_b = rb.mu, rb.sigma
 
-        wa, wb = _weights_for_match(
+        # Cross-region dampening (orthogonal to performance)
+        wa_cr, wb_cr = _weights_for_match(
             player_regions.get(cid_a), player_regions.get(cid_b), server_region
         )
+
+        # Perf delta per player — measured against the rating-implied expectation.
+        # Drawn matches skip perf (won=neither), keeping the W/L-only update.
+        if f_a > f_b:
+            won_a, won_b = True, False
+        elif f_b > f_a:
+            won_a, won_b = False, True
+        else:
+            won_a, won_b = None, None  # draw
+
+        if won_a is None:
+            wa_perf = wb_perf = 1.0
+        else:
+            pa = _perf_delta(ra.mu, rb.mu, f_a, f_b, dg_a, dt_a)
+            pb = _perf_delta(rb.mu, ra.mu, f_b, f_a, dg_b, dt_b)
+            wa_perf = _perf_weight(pa, won_a)
+            wb_perf = _perf_weight(pb, won_b)
+
+        # Combine cross-region × perf, clamped to a sane range.
+        wa = max(0.2, min(1.6, wa_cr * wa_perf))
+        wb = max(0.2, min(1.6, wb_cr * wb_perf))
 
         if f_a > f_b:
             ra_new, rb_new = _update_with_weights(MODEL, ra, rb, wa, wb, drawn=False)
