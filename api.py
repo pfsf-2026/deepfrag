@@ -125,6 +125,19 @@ def rankings(
                   AND m.match_date >= %(recent)s
                   AND p.canonical_id IS NOT NULL
                 GROUP BY p.canonical_id
+            ),
+            -- DDR + avg frag-diff per player, mode-scoped. Drops matches missing
+            -- damage stats (older pre-KTX). Lifetime, not recent — surfaces the
+            -- same signal the rating engine consumes via perf weighting.
+            perf_by_cid AS (
+                SELECT p.canonical_id,
+                       SUM(p.player_damage_given)::float / NULLIF(SUM(p.player_damage_taken), 0) AS avg_ddr,
+                       AVG(p.player_frags - p.player_deaths)::float AS avg_frag_diff
+                FROM players p JOIN matches m ON m.match_id = p.match_id
+                WHERE m.match_mode = %(mode)s
+                  AND p.canonical_id IS NOT NULL
+                  AND p.player_damage_given IS NOT NULL
+                GROUP BY p.canonical_id
             )
             SELECT r.canonical_id,
                    COALESCE(pc.display_name, r.canonical_id) AS display,
@@ -133,11 +146,13 @@ def rankings(
                    COALESCE(r.unique_opponents, 0) AS unique_opponents,
                    r.matches_rated, r.wins, r.losses, r.draws,
                    lm.last_match,
-                   COALESCE(re.recent_matches, 0) AS recent_matches
+                   COALESCE(re.recent_matches, 0) AS recent_matches,
+                   pf.avg_ddr, pf.avg_frag_diff
             FROM ratings r
             LEFT JOIN players_canonical pc ON pc.canonical_id = r.canonical_id
             LEFT JOIN last_match_by_cid lm ON lm.canonical_id = r.canonical_id
             LEFT JOIN recent_by_cid re ON re.canonical_id = r.canonical_id
+            LEFT JOIN perf_by_cid pf ON pf.canonical_id = r.canonical_id
             WHERE r.mode = %(mode)s AND r.map = '' AND r.matches_rated >= %(min)s
         """, {"mode": mode, "min": min_matches, "recent": recent_cutoff})
         rows = cur.fetchall()
@@ -172,6 +187,8 @@ def rankings(
             "last_match": r["last_match"],
             "recent_matches_90d": recent,
             "active_90d": recent > 0,
+            "avg_ddr": round(r["avg_ddr"], 2) if r["avg_ddr"] is not None else None,
+            "avg_frag_diff": round(r["avg_frag_diff"], 1) if r["avg_frag_diff"] is not None else None,
             "tier": tier_for(conservative_eff, cutoffs),
         })
 

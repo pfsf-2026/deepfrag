@@ -247,6 +247,9 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
           </div>
           <div class="nc-preview" v-if="m1on1.matches">
             <strong>{{ fmtNum(m1on1.matches) }}</strong> matches · <strong>{{ fmtPct(m1on1.win_rate) }}</strong> win rate · avg ± <strong>{{ fmtDelta(m1on1.avg_frag_diff) }}</strong>
+            <span v-if="m1on1.avg_dmg_given && m1on1.avg_dmg_taken">
+              · DDR <strong>{{ (m1on1.avg_dmg_given / m1on1.avg_dmg_taken).toFixed(2) }}</strong>
+            </span>
           </div>
           <div class="nc-preview muted" v-else>No 1on1 in last 90 days</div>
           <div class="nc-stats" v-if="m1on1.matches">

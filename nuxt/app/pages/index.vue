@@ -130,6 +130,14 @@ useHead({ title: 'Rankings · DeepFrag' })
         <div class="rating">
           {{ Math.round(p.conservative) }}
           <div class="sigma">μ {{ Math.round(p.mu) }} · ±σ {{ Math.round(p.sigma) }}</div>
+          <div v-if="p.avg_ddr || p.avg_frag_diff != null" class="perf">
+            <span v-if="p.avg_ddr" :title="'Damage given ÷ damage taken (lifetime avg)'"
+                  :class="{ pos: p.avg_ddr >= 1, neg: p.avg_ddr < 1 }">DDR {{ p.avg_ddr.toFixed(2) }}</span>
+            <span v-if="p.avg_frag_diff != null" :title="'Avg ±frags per match'"
+                  :class="{ pos: p.avg_frag_diff >= 0, neg: p.avg_frag_diff < 0 }">
+              {{ p.avg_frag_diff >= 0 ? '+' : '' }}{{ p.avg_frag_diff.toFixed(1) }}
+            </span>
+          </div>
         </div>
         <div class="winbar">
           <div class="bar">
@@ -254,6 +262,13 @@ useHead({ title: 'Rankings · DeepFrag' })
   font-variant-numeric: tabular-nums; line-height: 1; text-align: right;
 }
 .row .rating .sigma { color: var(--fg-3); font-size: 11px; font-weight: 500; margin-top: 3px; }
+.row .rating .perf {
+  display: flex; gap: 8px; justify-content: flex-end; align-items: center;
+  margin-top: 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+  font-family: 'JetBrains Mono', monospace;
+}
+.row .rating .perf .pos { color: var(--win); }
+.row .rating .perf .neg { color: var(--loss); }
 
 .row .winbar { display: flex; align-items: center; gap: 8px; }
 .row .winbar .bar {
