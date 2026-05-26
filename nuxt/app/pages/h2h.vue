@@ -320,7 +320,7 @@ watch(mode, loadH2H)
   font-size: 26px; font-weight: 900; color: var(--bg);
 }
 .head-bar .avatar.a { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
-.head-bar .avatar.b { background: linear-gradient(135deg, #ef4444, #ec4899); }
+.head-bar .avatar.b { background: linear-gradient(135deg, #a855f7, #ec4899); }
 .head-bar .name { font-size: 20px; font-weight: 800; }
 .head-bar .micro { font-size: 11px; color: var(--fg-3); display: flex; gap: 8px; margin-top: 4px; align-items: center; }
 .head-bar .region-pill { background: var(--panel-3); padding: 1px 6px; border-radius: 4px; font-weight: 700; font-size: 10px; }
@@ -335,7 +335,7 @@ watch(mode, loadH2H)
 .head-bar .p .cons { margin-left: 16px; }
 .head-bar .p.right .cons { margin-right: 16px; }
 .head-bar .cons.a { color: var(--accent); }
-.head-bar .cons.b { color: var(--loss); }
+.head-bar .cons.b { color: #a855f7; }
 .head-bar .center { text-align: center; position: relative; }
 .head-bar .center .label {
   font-size: 9px; color: var(--fg-3); letter-spacing: 0.16em;
@@ -345,7 +345,7 @@ watch(mode, loadH2H)
   font-size: 32px; font-weight: 900; font-variant-numeric: tabular-nums; margin-top: 2px;
 }
 .head-bar .center .h2h-score .a { color: var(--accent); }
-.head-bar .center .h2h-score .b { color: var(--loss); }
+.head-bar .center .h2h-score .b { color: #a855f7; }
 .head-bar .center .meta { font-size: 11px; color: var(--fg-3); margin-top: 2px; }
 .head-bar .center .swap {
   margin-top: 6px; background: transparent; border: 1px solid var(--border);
@@ -363,7 +363,7 @@ watch(mode, loadH2H)
 .strip .cell { background: var(--panel); padding: 14px; text-align: center; }
 .strip .cell .v { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .strip .cell .v.a { color: var(--accent); }
-.strip .cell .v.b { color: var(--loss); }
+.strip .cell .v.b { color: #a855f7; }
 .strip .cell .l {
   font-size: 10px; color: var(--fg-3); text-transform: uppercase;
   letter-spacing: 0.06em; margin-top: 3px; font-weight: 700;
@@ -391,11 +391,11 @@ table.matchup tr:hover td { background: rgba(20,230,192,0.02); }
 table.matchup .map { font-weight: 700; color: var(--fg); }
 table.matchup .totalmatches { color: var(--fg-3); font-size: 11px; margin-top: 2px; }
 table.matchup .a-cell { color: var(--accent); font-weight: 700; font-family: 'JetBrains Mono', monospace; text-align: right; }
-table.matchup .b-cell { color: var(--loss); font-weight: 700; font-family: 'JetBrains Mono', monospace; text-align: right; }
+table.matchup .b-cell { color: #a855f7; font-weight: 700; font-family: 'JetBrains Mono', monospace; text-align: right; }
 table.matchup .rating { font-family: 'JetBrains Mono', monospace; color: var(--fg-2); text-align: right; }
 table.matchup .rating .muted { color: var(--fg-3); }
 table.matchup .rating.up { color: var(--accent); }
-table.matchup .rating.down { color: var(--loss); }
+table.matchup .rating.down { color: #a855f7; }
 table.matchup .nodata { color: var(--fg-3); font-size: 11px; }
 table.matchup .pred {
   display: inline-flex; align-items: center; gap: 8px;
@@ -405,9 +405,9 @@ table.matchup .pred .swatch {
   width: 50px; height: 8px; border-radius: 2px; display: flex; overflow: hidden; background: var(--panel-3);
 }
 table.matchup .pred .swatch .a { background: var(--accent); height: 100%; }
-table.matchup .pred .swatch .b { background: var(--loss); height: 100%; }
+table.matchup .pred .swatch .b { background: #a855f7; height: 100%; }
 table.matchup .pred .win-a { color: var(--accent); }
-table.matchup .pred .win-b { color: var(--loss); }
+table.matchup .pred .win-b { color: #a855f7; }
 
 .placeholder { padding: 60px; text-align: center; color: var(--fg-3); }
 .placeholder.err { color: var(--loss); }
