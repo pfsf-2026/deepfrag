@@ -1,24 +1,40 @@
 # 1on1 Rating Methodology — DeepFrag
 
-> Status: **shipped, in production.** This document captures the current state of the 1on1 rating system as of 2026-05-22. Treat it as a living bible — any change to constants, formulas, or thresholds in code should be reflected here in the same commit.
+> Status: **shipped, in production.** Last major change: 2026-05-26 (TrueSkill → OpenSkill migration + Div 0-3 tiers). Treat as a living bible — any change to constants, formulas, or thresholds in code should be reflected here in the same commit.
 
 ---
 
-## 1. Core engine: TrueSkill
+## 1. Core engine: OpenSkill (Weng-Lin, Plackett-Luce)
 
-We use Microsoft's TrueSkill (via the `trueskill` Python package), a Bayesian skill-rating model designed for head-to-head and team games. Each player has a Gaussian belief over their true skill — a mean `μ` and standard deviation `σ`. The "conservative" rating shown publicly is `μ − 3σ`, i.e. the lower bound of a 99.7% confidence interval.
+We use **OpenSkill** (Weng-Lin model via the `openskill.py` package), a Bayesian skill-rating system in the TrueSkill family but with simpler closed-form math and active maintenance. Each player has a Gaussian belief over their true skill — a mean `μ` and standard deviation `σ`. The "conservative" rating shown publicly is `μ − 3σ`, i.e. the lower bound of a 99.7% confidence interval.
+
+**Why OpenSkill over TrueSkill** (migration completed 2026-05-26):
+- Per-player σ updates reflect the **information content** of each match, not a global τ knob. 50 matches vs the same opponent narrow σ less than 50 matches vs 50 different opponents — handled in the math, no diversity-penalty band-aid needed.
+- MIT-licensed, no patent overhang, actively maintained.
+- Native N-vs-N team support so 2on2 / 4on4 use the same engine when those land.
+- ParadokS's independent QW research arrived at OpenSkill too — external validation.
 
 ### Constants
 
 | Param | Value | Why |
 |---|---|---|
-| `mu` (starting) | 1500.0 | Arbitrary midpoint; lets new players climb in either direction. |
+| `mu` (starting) | 1500.0 | Arbitrary midpoint; lets new players climb in either direction. Same scale as the prior TrueSkill setup to avoid downstream re-scaling. |
 | `sigma` (starting) | 500.0 | Very wide — new players take 5-10 matches to stabilize. |
-| `beta` | 250.0 | The "skill noise" per match. ~σ/2 is conventional. |
-| `tau` | 5.0 | Dynamics — how much μ can drift between matches. Originally 25 (too volatile), dialed to 5 to settle. |
-| `draw_probability` | 0.01 | Tiny but nonzero so rare equal-frag duels don't break the math. |
+| `beta` | 250.0 | Skill noise per match. ~σ/2 conventional. |
+| `tau` | 0.5 | Additive σ growth per match. Kept tight; OpenSkill's per-match σ updates already do most of the work — τ guards against over-narrowing in high-game-count regimes. |
+| `kappa` | 0.0001 | Minimum σ floor (numerical safety). |
 
-These live in [rate.py:36](../rate.py#L36).
+These live in [rate.py:42](../rate.py#L42).
+
+**Empirical verification of diversity behavior** (spot test, 2026-05-26):
+
+| Scenario | Resulting cons (μ − 3σ) | Δ from start |
+|---|---|---|
+| 50 wins vs SAME opponent | 1598 | +98 |
+| 50 wins vs 5 cycling opponents | 2081 | +581 |
+| 50 wins vs 50 DIFFERENT opponents | 2324 | +824 |
+
+OpenSkill produces a ~700pt gap between low- and high-diversity rating arcs *without any post-hoc penalty* — significantly more aggressive than the prior TrueSkill + sqrt-multiplier band-aid achieved.
 
 ### What gets rated
 
@@ -37,37 +53,15 @@ Per-map ratings let the profile page show "you're rated 1800 overall but 2100 on
 
 ---
 
-## 2. Opponent-diversity penalty (Phase 5)
+## 2. Opponent diversity — handled natively (no penalty)
 
-Pure TrueSkill is gameable: rack up 50 wins against the same low-rated friend and your μ climbs without σ shrinking enough to penalize the lack of breadth. We patched this with a Bayesian-style diversity multiplier on σ at *display time* (not stored — applied in [api.py](../api.py) and [export_rankings.py:49](../export_rankings.py#L49)).
+**Deprecated 2026-05-26 with the OpenSkill migration.** Previously we ran TrueSkill plus a `sqrt(threshold/unique_opps)` σ multiplier ("diversity penalty") to stop "50-2 vs the same friend" rating inflation. OpenSkill's per-match σ updates handle this from first principles — see the empirical table in §1.
 
-### Formula
+The `diversity_factor()` helper in [export_rankings.py](../export_rankings.py) now returns `1.0` always; it's preserved as a no-op shim so legacy callsites keep working without a sweep.
 
-```
-factor = sqrt(threshold / unique_opponents)   when unique_opponents < threshold
-factor = 1.0                                  otherwise
-effective_σ = stored_σ × factor
-```
-
-| Threshold | Value | Used for |
-|---|---|---|
-| `DIVERSITY_THRESHOLD_OVERALL` | 10 | Main rankings, profile overall rating. |
-| `DIVERSITY_THRESHOLD_PER_MAP` | 3 | Per-map rankings (lower bar — many maps are obscure). |
-
-### Effect on ranking
-
-| Unique opps | Factor | Effect on conservative |
-|---|---|---|
-| ≥ 10 | 1.0× | none — settled |
-| 5 | 1.41× | σ wider → cons lower by ~3σ × 0.41 = ~620pts |
-| 2 | 2.24× | σ wider → ~1860pts off cons |
-| 1 | 3.16× | hard cap — barely ranked |
-
-Players with `unique_opponents < threshold` are flagged `provisional: true` in API responses; the UI shows them with a "Provisional" badge and de-emphasizes their cons rating.
-
-### Real-world example
-
-`grawer` (2026-05): 33 matches, 1291 raw cons → diversity adjusted to 703. Only one unique opponent. The system correctly treats this as "we don't actually know how good grawer is."
+**What we still expose:**
+- `unique_opponents` count per player remains stored and surfaced in API responses.
+- The `provisional: true` flag stays for players with `unique_opponents < 10` (overall) or `< 3` (per-map) — purely a UX hint that the rating is built from a thin opponent pool. No math adjustment.
 
 ---
 
@@ -91,28 +85,24 @@ Calibrated so:
 
 The μ doesn't change — a player who comes back can climb back up quickly with a few wins. Decay only widens the uncertainty band.
 
-Diversity penalty and decay **multiply** when both apply (rare but possible — inactive AND played few opponents).
+Decay still applies — diversity penalty is dead so there's no compounding factor anymore.
 
 ---
 
-## 4. Tier ladder
+## 4. Tier ladder — Div 0 / 1 / 2 / 3 (percentile-based)
 
-The conservative rating maps to one of 10 tiers ([tiers.py](../tiers.py)). Breakpoints calibrated against the actual 1on1 distribution (~942 rated players, 2026-05).
+The conservative rating maps to one of four divisions ([tiers.py](../tiers.py)). **Percentile-based** boundaries: cutoffs are recomputed at request-time from the current rated population (matches_rated ≥ 10), so divisions auto-rebalance as the population evolves.
 
-| Tier | Cons floor | Color | Approx % of pop |
+| Tier | Percentile | Color | Notes |
 |---|---|---|---|
-| GOAT | 2300 | gold | top 0.1% |
-| Mythical | 2100 | pink | top 1% |
-| Legend | 1900 | violet | top 5% |
-| Champion | 1700 | red | top 15% |
-| Master | 1500 | orange | ~25% |
-| Highlander | 1300 | teal | ~40% |
-| Marauder | 1100 | green | ~55% |
-| Gladiator | 900 | cyan | ~70% |
-| Fragger | 700 | blue | ~85% |
-| Pubstar | < 700 | gray | bottom 15% |
+| **Div 0** | top 15% | gold (#fbbf24) | Elite. The genuine top tier across all regions. |
+| **Div 1** | next 30% (55-85th) | violet (#a855f7) | Strong, multi-region competitive. |
+| **Div 2** | next 35% (20-55th) | teal (#14e6c0) | Solid, regular competitors. |
+| **Div 3** | bottom 20% (<20th) | gray (#64748b) | Climbing / casual / new. |
 
-**Open question:** the tier names mix fantasy/RPG (Mythical, GOAT) with combat lore (Marauder, Highlander). User considered a Quake-native "Div 0 / Div 1 / ... / Div 4" scheme but landed on keeping the colorful ladder. Revisit if community feedback prefers convention.
+Cutoffs are computed by `_get_tier_cutoffs()` in [api.py](../api.py) using `tiers.compute_cutoffs()`. EU naturally dominates Div 0 due to depth — that's intended. The system measures rating, not regional fairness; cross-region fairness lives in the per-match weighting (§6).
+
+**Replaced:** 10-tier GOAT/Mythical/Legend/Champion/Master/Highlander/Marauder/Gladiator/Fragger/Pubstar ladder (deprecated 2026-05-26). The new scheme uses Quake-native division convention and gives clearer signal at the top (15% Div 0 ≫ the prior 0.1% GOAT cliff).
 
 ---
 
@@ -128,13 +118,25 @@ Without canonicalization, every clan tag change creates a new "player" and ratin
 
 ---
 
-## 6. Regional weighting (Phase 2–3, current)
+## 6. Regional weighting — inter-regional match dampening (live)
 
-Each player is assigned a primary region (NA / EU / SA / OC / AS-AF) based on the servers they play on most ([assign_player_regions.py](../assign_player_regions.py)). LAN events (QHLAN 2018/2020/2022/2024/2026/2028) are excluded from this calculation — playing AT a LAN doesn't reveal where you LIVE.
+Each player has a primary region (NA / EU / SA / OC / AS-AF) assigned by [assign_player_regions.py](../assign_player_regions.py). LAN events are excluded from the assignment calculation.
 
-Region is currently a **filter only**, not a rating input. The rankings page lets users filter by region; ratings themselves are global.
+**Cross-region rating update logic** (introduced 2026-05-26, in [rate.py](../rate.py)):
 
-**Phase 4 (pending)** will introduce mode-specific cross-region weighting. The insight: a NA player who has played 80% NA games and 20% EU games against weaker EU competition will have an inflated rating relative to a NA-only player. We'd discount cross-region wins below a threshold of regional cross-pollination. Per-mode because 1on1 has more cross-region play than 2on2/4on4 (which are clan-bound).
+When a match is played on a server whose region differs from a player's home region, that player is "away" and their rating update is **dampened to `CROSS_REGION_WEIGHT = 0.6`**. The home-region player's update is unaffected (full weight = 1.0).
+
+| Match scenario | Away player's update | Home player's update |
+|---|---|---|
+| EU server, both EU players | 1.0× (n/a) | 1.0× |
+| EU server, EU vs NA | NA player: 0.6× | EU player: 1.0× |
+| LAN / unknown-region server | 1.0× (no data, no penalty) | 1.0× |
+
+**Rationale:** the visiting player's ping handicap makes the result less reliable as a measure of their skill, but the result is still informative for the home player who's on fair-ping conditions. Dampening (vs. excluding) the away update keeps cross-region matches contributing — just with discounted confidence.
+
+Implemented via a manual μ/σ blend: `new = old + weight * (openskill_full - old)`. Done in Python rather than openskill's `weights=` param because that parameter is for team-internal contribution weighting (4on4 carry signal), not 1v1 match-confidence dampening.
+
+The `0.6` factor was chosen by reasoning, not data. Revisit after a quarter of cross-region match data accumulates — particularly to see if Cronus/sane/blaze-on-EU matches and BPS/Carapace-on-NA matches calibrate to a reasonable cross-region "exchange rate."
 
 ---
 
