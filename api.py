@@ -1423,12 +1423,49 @@ def admin_player_detail(canonical_id: str,
     }
 
 
+def _fetch_cloudflare_pages_deploys(limit: int = 30):
+    """Pull recent Cloudflare Pages deploys for the deepfrag project. Returns
+    [] silently if the CF env vars aren't set so the Cloud Run feed still
+    works even without Cloudflare credentials configured."""
+    import requests
+    token = os.environ.get("CLOUDFLARE_API_TOKEN")
+    account = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+    project = os.environ.get("CLOUDFLARE_PAGES_PROJECT", "deepfrag")
+    if not (token and account):
+        return []
+    url = f"https://api.cloudflare.com/client/v4/accounts/{account}/pages/projects/{project}/deployments"
+    r = requests.get(url, headers={"Authorization": f"Bearer {token}"},
+                     params={"per_page": min(limit, 25)}, timeout=15)
+    r.raise_for_status()
+    body = r.json()
+    if not body.get("success"):
+        return []
+    out = []
+    for d in body.get("result", []):
+        stage = (d.get("latest_stage") or {})
+        out.append({
+            "source": "pages",
+            "name": d.get("short_id") or d.get("id", "")[:8],
+            "create_time": d.get("created_on"),
+            "image": None,
+            "image_sha": (d.get("deployment_trigger") or {}).get("metadata", {}).get("commit_hash", "")[:7] or None,
+            "status": stage.get("status") or "unknown",  # success / failure / active / etc
+            "traffic_percent": 100 if (d.get("aliases") or [None])[0] == f"https://{project}.pages.dev" else 0,
+            "active": d.get("environment") == "production" and stage.get("status") == "success" and (d.get("aliases") or [None])[0] == f"https://{project}.pages.dev",
+            "url": d.get("url"),
+            "environment": d.get("environment"),
+        })
+    return out
+
+
 @app.get("/api/admin/deploys")
 def admin_deploys(authorization: str | None = Header(default=None),
                   limit: int = Query(30, ge=1, le=100)):
-    """Recent Cloud Run revisions for the deepfrag-api service. Used by the
-    Deploy log tab + the dashboard's latest-deploys card. Requires Cloud Run's
-    default service account to have roles/run.viewer."""
+    """Recent deploys for the Deploy log tab + dashboard latest-deploys card.
+    Merges Cloud Run revisions (backend API) and Cloudflare Pages deployments
+    (frontend) into one chronological list with a 'source' badge per row.
+    Requires roles/run.viewer on the Cloud Run SA; CF Pages requires
+    CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID env vars."""
     _check_admin_auth(authorization)
     try:
         import google.auth, google.auth.transport.requests
@@ -1465,6 +1502,7 @@ def admin_deploys(authorization: str | None = Header(default=None),
             if containers:
                 image = containers[0].get("image", "")
             out.append({
+                "source": "api",
                 "name": name,
                 "create_time": rev.get("createTime"),
                 "image": image,
@@ -1473,9 +1511,19 @@ def admin_deploys(authorization: str | None = Header(default=None),
                 "traffic_percent": traffic_map.get(name, 0),
                 "active": traffic_map.get(name, 0) > 0,
             })
-        # Newest first
+        # Merge in Cloudflare Pages deploys (frontend). Fails silently if env
+        # vars missing — backend feed still works.
+        try:
+            out.extend(_fetch_cloudflare_pages_deploys(limit=limit))
+        except Exception:
+            pass
+        # Newest first across both sources
         out.sort(key=lambda r: r["create_time"] or "", reverse=True)
-        return {"deploys": out[:limit], "active_revision": next((r["name"] for r in out if r["active"]), None)}
+        return {
+            "deploys": out[:limit],
+            "active_revision": next((r["name"] for r in out if r["source"] == "api" and r["active"]), None),
+            "active_pages": next((r["name"] for r in out if r["source"] == "pages" and r["active"]), None),
+        }
     except HTTPException:
         raise
     except Exception as e:

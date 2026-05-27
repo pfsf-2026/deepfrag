@@ -281,6 +281,15 @@ function fmtTimeET(s) {
     timeZone: ET_TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
   })
 }
+// Status mapping covers both Cloud Run (CONDITION_SUCCEEDED/FAILED/UNKNOWN)
+// and Cloudflare Pages (success/failure/active) so the same badge component
+// works for both deploy sources.
+function isOkStatus(s) { return s === 'CONDITION_SUCCEEDED' || s === 'success' }
+function isErrStatus(s) { return s === 'CONDITION_FAILED' || s === 'failure' }
+function shortStatus(s) {
+  if (!s) return '—'
+  return s.replace('CONDITION_', '').toLowerCase()
+}
 </script>
 
 <template>
@@ -385,13 +394,13 @@ function fmtTimeET(s) {
                   <div v-for="d in deploys.slice(0, 8)" :key="d.name" class="line deploy-line"
                        :class="{ active: d.active }">
                     <span class="ts">{{ fmtTimeET(d.create_time) }}</span>
-                    <span :class="['level', d.status === 'CONDITION_SUCCEEDED' ? 'ok' : d.status === 'CONDITION_FAILED' ? 'err' : 'info']">
-                      {{ d.active ? 'LIVE' : (d.status || 'rev').replace('CONDITION_', '').slice(0, 4) }}
+                    <span :class="['level', d.source === 'api' ? 'info' : 'ok']" style="min-width: 32px; text-align: center;">
+                      {{ d.source === 'api' ? 'API' : 'Web' }}
                     </span>
                     <span class="msg">
                       <span class="rev-name">{{ d.name.replace('deepfrag-api-', '') }}</span>
-                      <span v-if="d.traffic_percent" class="muted">· {{ d.traffic_percent }}% traffic</span>
-                      <span v-if="d.image_sha" class="muted"> · {{ d.image_sha }}</span>
+                      <span v-if="d.active" class="muted">· LIVE</span>
+                      <span v-else-if="d.traffic_percent" class="muted">· {{ d.traffic_percent }}%</span>
                     </span>
                   </div>
                 </div>
@@ -556,7 +565,7 @@ function fmtTimeET(s) {
           <div class="pane-head">
             <div>
               <h2>Deploy log</h2>
-              <div class="scope">Cloud Run revisions for deepfrag-api · {{ deploys.length }} revisions</div>
+              <div class="scope">Cloud Run + Cloudflare Pages · {{ deploys.length }} deploys</div>
             </div>
             <div class="actions">
               <button class="btn ghost" @click="loadDeploys" :disabled="deploysLoading">⟳ Refresh</button>
@@ -569,27 +578,35 @@ function fmtTimeET(s) {
             <table class="deploy-table">
               <thead>
                 <tr>
+                  <th>Source</th>
                   <th>Revision</th>
                   <th>Created</th>
                   <th>Status</th>
                   <th class="num">Traffic</th>
-                  <th>Image SHA</th>
+                  <th>SHA</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="d in deploys" :key="d.name" :class="{ active: d.active }">
+                <tr v-for="d in deploys" :key="`${d.source}-${d.name}`" :class="{ active: d.active }">
+                  <td>
+                    <span :class="['badge', d.source === 'api' ? 'info' : 'ok']" style="min-width: 56px; text-align: center;">
+                      {{ d.source === 'api' ? 'API' : 'Web' }}
+                    </span>
+                  </td>
                   <td>
                     <div class="rev-name">{{ d.name }}</div>
-                    <div class="muted small">{{ d.image }}</div>
+                    <div v-if="d.image" class="muted small">{{ d.image }}</div>
+                    <div v-else-if="d.url" class="muted small"><a :href="d.url" target="_blank">{{ d.url.replace('https://','') }}</a></div>
                   </td>
                   <td class="muted small">{{ fmtDate(d.create_time) }}</td>
                   <td>
-                    <span :class="['badge', d.status === 'CONDITION_SUCCEEDED' ? 'ok' : d.status === 'CONDITION_FAILED' ? 'err' : 'info']">
-                      {{ (d.status || '—').replace('CONDITION_', '') }}
+                    <span :class="['badge', isOkStatus(d.status) ? 'ok' : isErrStatus(d.status) ? 'err' : 'info']">
+                      {{ shortStatus(d.status) }}
                     </span>
                   </td>
                   <td class="num">
-                    <span v-if="d.traffic_percent" class="badge ok">{{ d.traffic_percent }}%</span>
+                    <span v-if="d.active" class="badge ok">LIVE</span>
+                    <span v-else-if="d.traffic_percent" class="badge ok">{{ d.traffic_percent }}%</span>
                     <span v-else class="muted">—</span>
                   </td>
                   <td class="muted small mono">{{ d.image_sha || '—' }}</td>
