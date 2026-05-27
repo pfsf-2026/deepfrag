@@ -1,6 +1,8 @@
 <script setup>
 const config = useRuntimeConfig()
-const apiBase = config.public.apiBase || ''
+// Client = '' → same-origin → CF Pages Function → edge cached. SSR = Cloud Run.
+const isBrowser = typeof window !== 'undefined'
+const apiBase = isBrowser ? '' : (config.public.apiBase || '')
 
 const mode = ref('1on1')
 const mapFilter = ref('all')
@@ -11,7 +13,7 @@ const data = ref(null)
 const pending = ref(true)
 
 async function loadMaps() {
-  if (!apiBase) return
+  if (!apiBase && !isBrowser) return
   try {
     const r = await $fetch(`${apiBase}/api/stats/maps?mode=${mode.value}`)
     maps.value = r.maps || []
@@ -20,7 +22,7 @@ async function loadMaps() {
 
 async function loadStats() {
   pending.value = true
-  if (!apiBase) { pending.value = false; return }
+  if (!apiBase && !isBrowser) { pending.value = false; return }
   try {
     const params = new URLSearchParams({
       mode: mode.value,

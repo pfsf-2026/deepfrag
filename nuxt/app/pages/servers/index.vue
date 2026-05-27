@@ -13,7 +13,8 @@ const detailLoading = ref({})       // hostname → bool
 async function loadServers() {
   pending.value = true
   try {
-    const base = (useRuntimeConfig().public.apiBase) || ''
+    // Same-origin → CF Pages Function edge cache. Cloud Run URL fallback on SSR.
+    const base = (typeof window !== 'undefined') ? '' : ((useRuntimeConfig().public.apiBase) || '')
     const params = new URLSearchParams()
     if (regionFilter.value) params.set('region', regionFilter.value)
     params.set('active', showInactive.value ? 'false' : 'true')
@@ -61,7 +62,8 @@ async function ensureDetail(hostname) {
   if (detailCache.value[hostname] || detailLoading.value[hostname]) return
   detailLoading.value[hostname] = true
   try {
-    const base = (useRuntimeConfig().public.apiBase) || ''
+    // Same-origin → CF Pages Function edge cache. Cloud Run URL fallback on SSR.
+    const base = (typeof window !== 'undefined') ? '' : ((useRuntimeConfig().public.apiBase) || '')
     const r = await fetch(`${base}/api/servers/${encodeURIComponent(hostname)}/detail`)
     if (r.ok) detailCache.value[hostname] = await r.json()
   } catch { /* swallow */ } finally {

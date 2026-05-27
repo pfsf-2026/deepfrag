@@ -1140,6 +1140,23 @@ def player_profile_full(
         win_payload["prior"] = profile_pg.build_prior(cur, canonical_id, days=days) if days else None
         win_payload["year_ago"] = None  # skip year_ago for now — rarely used, expensive
 
+        # Recent matches list for the Recent tab + Overview's last-10 strip.
+        # Pulls last 50 across all modes (Recent tab paginates, Overview slices).
+        cur.execute("""
+            SELECT m.match_id, m.match_date, m.match_mode AS mode, m.match_map AS map,
+                   m.server_hostname, p.player_frags AS frags,
+                   (SELECT json_agg(json_build_object(
+                        'canonical_id', p2.canonical_id,
+                        'display_name', p2.player_name,
+                        'frags', p2.player_frags))
+                    FROM players p2 WHERE p2.match_id = m.match_id) AS players
+            FROM matches m JOIN players p ON p.match_id = m.match_id
+            WHERE p.canonical_id = %s
+            ORDER BY m.match_date DESC
+            LIMIT 50
+        """, (canonical_id,))
+        recent_matches = [dict(r) for r in cur.fetchall()]
+
     return {
         "player": canon["display_name"],
         "canonical_id": canon["canonical_id"],
@@ -1150,6 +1167,7 @@ def player_profile_full(
         "windows_available": ["7", "30", "90", "365", "all"],
         "default_window": window_key,
         "windows": {window_key: win_payload},
+        "recent_matches": recent_matches,
     }
 
 

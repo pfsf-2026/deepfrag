@@ -2,7 +2,9 @@
 const route = useRoute()
 const router = useRouter()
 const config = useRuntimeConfig()
-const apiBase = config.public.apiBase || ''
+// Client = '' → same-origin → CF Pages Function → edge cached. SSR = Cloud Run URL.
+const isBrowser = typeof window !== 'undefined'
+const apiBase = isBrowser ? '' : (config.public.apiBase || '')
 
 useHead({ title: 'Head to head · DeepFrag' })
 
@@ -19,7 +21,7 @@ const dataLoading = ref(false)
 const error = ref('')
 
 async function loadPlayers() {
-  if (!apiBase) { playersLoading.value = false; return }
+  if (!apiBase && !isBrowser) { playersLoading.value = false; return }
   try {
     // /api/search requires q>=1 char, so use /api/rankings to get the full
     // rated-player list for the mode in one call. Shape: { players: [{ canonical_id, display, matches }] }
@@ -41,7 +43,7 @@ async function loadH2H() {
     data.value = null
     return
   }
-  if (!apiBase) return
+  if (!apiBase && !isBrowser) return
   dataLoading.value = true
   error.value = ''
   try {

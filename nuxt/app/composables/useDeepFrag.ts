@@ -9,8 +9,13 @@
  */
 export function useDeepFrag() {
   const config = useRuntimeConfig()
-  const base = (config.public.apiBase as string) || ''
-  const useApi = !!base
+  // On the client we use relative /api paths so the Cloudflare Pages Function
+  // (functions/api/[[path]].js) intercepts and serves from CF's edge cache.
+  // On SSR/prerender there is no Function yet — fall back to the configured
+  // origin URL so prerender can still bake data into the HTML shell.
+  const isBrowser = typeof window !== 'undefined'
+  const base = isBrowser ? '' : ((config.public.apiBase as string) || '')
+  const useApi = isBrowser || !!base
 
   return {
     useApi,
