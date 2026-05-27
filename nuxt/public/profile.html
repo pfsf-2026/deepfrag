@@ -505,6 +505,9 @@ const data = () => profile.windows[activeWindow] || {};
 // weaponDonut to render a reference ring showing where the player sits vs
 // their division's average. Lazy-loaded once per mode (cached).
 const divisionAvgStats = { '1on1': null, '2on2': null, '4on4': null };
+// Per-axis population min/max for radar normalization (so Div 4 polygons
+// don't collapse to the center with their negative ±frag / Net dmg values).
+const divisionAvgStatsRanges = { '1on1': null, '2on2': null, '4on4': null };
 async function loadDivisionAverages(mode = '1on1') {
   if (divisionAvgStats[mode]) return divisionAvgStats[mode];
   try {
@@ -513,6 +516,7 @@ async function loadDivisionAverages(mode = '1on1') {
     if (!r.ok) return {};
     const d = await r.json();
     divisionAvgStats[mode] = d.divisions || {};
+    divisionAvgStatsRanges[mode] = d.ranges || {};
     return divisionAvgStats[mode];
   } catch {
     return {};
@@ -1733,16 +1737,25 @@ function makeTable(rows, cols, defaultSort) {
 // (Same approach as the per-mode donuts above.)
 function weaponRadarCard(stats, divAvg, mode = '1on1') {
   // 1on1-focused axes (replaced LG/RL/SSG/SG/GL — SSG/SG/GL barely matter in duel).
-  // Each axis has a cap that represents "elite ceiling"; player & div-avg get
-  // normalized to that cap so the polygon shape encodes ratio-to-elite.
-  // Negative values (±frag, net_dmg) clamp at 0 (collapsed center) so the
-  // pentagon math stays well-formed.
+  // Scale: inner pentagon = population min (worst rated player), outer pentagon
+  // = population max (best). Player + div-avg get placed proportionally between
+  // those endpoints. This means a Div 4 player with -10 ±frag isn't collapsed
+  // to the center — they sit appropriately above the worst player on the floor.
+  // Population ranges fetched from /api/divisions/avg-stats.ranges (mode-scoped).
+  const ranges = (divisionAvgStatsRanges && divisionAvgStatsRanges[mode]) || {};
+  const axisRange = (key, fallbackMin, fallbackMax) => {
+    const r = ranges[key];
+    return {
+      min: r && r.min != null ? r.min : fallbackMin,
+      max: r && r.max != null ? r.max : fallbackMax,
+    };
+  };
   const axes = [
-    { key: 'lg_accuracy',   label: 'LG',      max: 0.50,  type: 'pct' },
-    { key: 'rl_accuracy',   label: 'RL',      max: 0.50,  type: 'pct' },
-    { key: 'avg_ddr',       label: 'DDR',     max: 2.50,  type: 'ratio' },
-    { key: 'avg_frag_diff', label: '±frag',   max: 40,    type: 'frag' },
-    { key: 'avg_net_dmg',   label: 'Net dmg', max: 8000,  type: 'dmg' },
+    { key: 'lg_accuracy',   label: 'LG',      type: 'pct',   ...axisRange('lg_accuracy',   0, 0.50) },
+    { key: 'rl_accuracy',   label: 'RL',      type: 'pct',   ...axisRange('rl_accuracy',   0, 0.50) },
+    { key: 'avg_ddr',       label: 'DDR',     type: 'ratio', ...axisRange('avg_ddr',       0, 2.50) },
+    { key: 'avg_frag_diff', label: '±frag',   type: 'frag',  ...axisRange('avg_frag_diff', -20, 40) },
+    { key: 'avg_net_dmg',   label: 'Net dmg', type: 'dmg',   ...axisRange('avg_net_dmg',   -3000, 8000) },
   ];
   // Compute DDR / net_dmg on the fly from the stats payload — they aren't
   // pre-stored on each by_mode entry but the components are.
@@ -1764,9 +1777,14 @@ function weaponRadarCard(stats, divAvg, mode = '1on1') {
 
   // Polygon vertex sets: player's shape (always rendered) + div-avg shape (overlay
   // when divAvg passed in, drawn faintly behind so player's line sits on top).
+  // Normalize by population (min, max) so negative values render proportionally
+  // — e.g. -10 ±frag in a population spanning -25→+30 sits at 27% of the way out.
   const polyFor = (vals) => axes.map((ax, i) => {
-    const v = (vals?.[ax.key] || 0) / ax.max;
-    return pt(angles[i], Math.min(1, Math.max(0, v))).join(',');
+    const raw = vals?.[ax.key];
+    if (raw == null) return pt(angles[i], 0).join(',');
+    const span = ax.max - ax.min;
+    const frac = span > 0 ? (raw - ax.min) / span : 0;
+    return pt(angles[i], Math.min(1, Math.max(0, frac))).join(',');
   }).join(' ');
 
   const playerPoly = polyFor(playerVals);

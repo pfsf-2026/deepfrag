@@ -1014,7 +1014,43 @@ def divisions_avg_stats(
                 "player_count": r["player_count"],
                 "match_player_rows": r["match_player_rows"],
             }
-    return {"mode": mode, "since_days": since_days, "divisions": out}
+        # Population min/max per axis — drives the radar's scale so the inner
+        # pentagon = worst rated player, outer pentagon = best rated player.
+        # Hardcoded caps used to collapse Div 3/4 polygons toward center because
+        # negative ±frag / Net dmg / sub-1.0 DDR clamped at 0. With real ranges
+        # everyone's polygon sits proportionally on the same scale.
+        cur.execute("""
+            WITH per_player AS (
+                SELECT p.canonical_id,
+                       AVG(p.player_lg_hits::float / NULLIF(p.player_lg_attacks, 0)) AS lg,
+                       AVG(p.player_rl_virtual::float / NULLIF(p.player_rl_attacks, 0)) AS rl,
+                       SUM(p.player_damage_given)::float / NULLIF(SUM(p.player_damage_taken), 0) AS ddr,
+                       AVG(p.player_frags - p.player_deaths)::float AS frag_diff,
+                       AVG(p.player_damage_given - p.player_damage_taken)::float AS net_dmg
+                FROM players p
+                JOIN matches m ON m.match_id = p.match_id
+                JOIN ratings r ON r.canonical_id = p.canonical_id
+                    AND r.mode = %(mode)s AND r.map = '' AND r.matches_rated >= 10
+                WHERE m.match_mode = %(mode)s AND m.match_date >= %(since)s
+                GROUP BY p.canonical_id
+                HAVING COUNT(*) >= 5
+            )
+            SELECT MIN(lg) AS lg_min, MAX(lg) AS lg_max,
+                   MIN(rl) AS rl_min, MAX(rl) AS rl_max,
+                   MIN(ddr) AS ddr_min, MAX(ddr) AS ddr_max,
+                   MIN(frag_diff) AS fd_min, MAX(frag_diff) AS fd_max,
+                   MIN(net_dmg) AS nd_min, MAX(net_dmg) AS nd_max
+            FROM per_player
+        """, {"mode": mode, "since": since_iso})
+        rng = cur.fetchone() or {}
+        ranges = {
+            "lg_accuracy":   {"min": rng.get("lg_min"), "max": rng.get("lg_max")},
+            "rl_accuracy":   {"min": rng.get("rl_min"), "max": rng.get("rl_max")},
+            "avg_ddr":       {"min": rng.get("ddr_min"), "max": rng.get("ddr_max")},
+            "avg_frag_diff": {"min": rng.get("fd_min"), "max": rng.get("fd_max")},
+            "avg_net_dmg":   {"min": rng.get("nd_min"), "max": rng.get("nd_max")},
+        }
+    return {"mode": mode, "since_days": since_days, "divisions": out, "ranges": ranges}
 
 
 # ── Full profile (drop-in replacement for the static profile JSON shape) ───────
