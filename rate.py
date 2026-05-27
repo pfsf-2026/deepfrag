@@ -422,8 +422,19 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
             n_skipped += 1
             continue
 
-        ra = cache.setdefault(cid_a, MODEL.rating(name=cid_a))
-        rb = cache.setdefault(cid_b, MODEL.rating(name=cid_b))
+        # Per-map cache init: seed μ from the player's GLOBAL μ so high-rated
+        # players don't get stuck near 1500 (their expected outcome is ~1.0
+        # against everyone, so each win adds ~0.5 pts and each loss subtracts
+        # ~30 → net drift downward even when winning 90%). Starting at global
+        # μ means map deltas reflect map-specific deviation from global skill.
+        if cid_a not in cache:
+            init_mu_a = global_mu.get(cid_a, 1500.0) if use_elo_path else 1500.0
+            cache[cid_a] = MODEL.rating(mu=init_mu_a, sigma=500.0, name=cid_a)
+        if cid_b not in cache:
+            init_mu_b = global_mu.get(cid_b, 1500.0) if use_elo_path else 1500.0
+            cache[cid_b] = MODEL.rating(mu=init_mu_b, sigma=500.0, name=cid_b)
+        ra = cache[cid_a]
+        rb = cache[cid_b]
         sa = stats.setdefault(cid_a, {"matches": 0, "wins": 0, "losses": 0, "draws": 0})
         sb = stats.setdefault(cid_b, {"matches": 0, "wins": 0, "losses": 0, "draws": 0})
         mu_a_b, sig_a_b = ra.mu, ra.sigma
