@@ -337,16 +337,50 @@ def _weights_for_match(player_a_region, player_b_region, server_region):
     return w_a, w_b
 
 
+# ELO update for per-map ratings. Expected outcome comes from GLOBAL ratings
+# (so beating someone 700 pts above you globally on metron gives a big metron
+# jump even if your metron-specific rating is high). The corsi perf factor +
+# cross-region weight scale the delta. σ contracts linearly per match toward a
+# floor — simpler than full Glicko but the same qualitative behavior.
+ELO_K = 32  # classical chess K. Tunable; lower = slower convergence.
+ELO_SIGMA_DECAY = 0.985  # ~1.5% σ shrink per match
+ELO_SIGMA_FLOOR = 50.0   # σ never drops below this so cons doesn't pin to μ
+
+
+def _elo_update_map(map_rating, global_mu_self, global_mu_opp, won, perf_w, cr_w):
+    """ELO-style delta on a per-map rating, with the expected-outcome
+    calculation driven by both players' GLOBAL μ (not the map μ). Returns a
+    new Rating object with updated μ + decayed σ."""
+    expected = 1.0 / (1.0 + 10.0 ** ((global_mu_opp - global_mu_self) / 400.0))
+    if won is True:
+        actual = 1.0
+    elif won is False:
+        actual = 0.0
+    else:
+        actual = 0.5  # draw
+    delta = ELO_K * (actual - expected) * perf_w * cr_w
+    new_mu = map_rating.mu + delta
+    new_sigma = max(ELO_SIGMA_FLOOR, map_rating.sigma * ELO_SIGMA_DECAY)
+    return MODEL.rating(mu=new_mu, sigma=new_sigma, name=map_rating.name)
+
+
 def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
-                player_regions=None):
+                player_regions=None, global_mu=None):
     """Run OpenSkill over all matches in (mode, map_bucket).
        map_bucket='' = overall (all maps in the mode).
+
+       For per-map buckets, expected outcome uses each player's GLOBAL μ (from
+       the just-completed overall pass, passed in via `global_mu`). The update
+       lands on the map rating via the ELO helper above. Falls back to MODEL
+       PlackettLuce updates when global_mu is None (e.g. cold start).
+
        For per-map buckets only emit ratings for players with >= per_map_min matches.
 
     Returns (n_rated, n_players_written).
     """
     if player_regions is None:
         player_regions = {}
+    use_elo_path = bool(map_bucket) and (global_mu is not None)
     cur = db.cursor()
     if full_rebuild:
         cur.execute("DELETE FROM ratings WHERE mode=%s AND map=%s", (mode, map_bucket))
@@ -436,7 +470,25 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
         wa = max(0.2, min(1.6, wa_cr * wa_perf))
         wb = max(0.2, min(1.6, wb_cr * wb_perf))
 
-        if f_a > f_b:
+        if use_elo_path:
+            # Per-map: ELO update using GLOBAL μ for expected; map rating gets
+            # updated. Beating a much higher-rated player on this map → big map
+            # jump even if your map μ is already high. Fallback to default
+            # rating (1500) if a player has no global rating yet.
+            gmu_a = global_mu.get(cid_a, 1500.0)
+            gmu_b = global_mu.get(cid_b, 1500.0)
+            ra_new = _elo_update_map(ra, gmu_a, gmu_b, won_a, wa_perf, wa_cr)
+            rb_new = _elo_update_map(rb, gmu_b, gmu_a, won_b, wb_perf, wb_cr)
+            if won_a is True:
+                out_a, out_b = "win", "loss"
+                sa["wins"] += 1; sb["losses"] += 1
+            elif won_a is False:
+                out_a, out_b = "loss", "win"
+                sb["wins"] += 1; sa["losses"] += 1
+            else:
+                out_a = out_b = "draw"
+                sa["draws"] += 1; sb["draws"] += 1
+        elif f_a > f_b:
             ra_new, rb_new = _update_with_weights(MODEL, ra, rb, wa, wb, drawn=False)
             out_a, out_b = "win", "loss"
             sa["wins"] += 1; sb["losses"] += 1
@@ -509,16 +561,38 @@ def run(db_path: Path, mode: str = "1on1", incremental: bool = False, per_map_mi
     elapsed = (datetime.now() - start).total_seconds()
     print(f"  {n_matches:,} matches → {n_players:,} players rated in {elapsed:.1f}s")
 
+    # Load the just-updated GLOBAL μ for every player. Per-map ratings use this
+    # to compute expected outcomes (so beating a higher-globally-rated player
+    # on a specific map gives a bigger map-rating jump than beating someone
+    # of equal global skill).
+    gcur = db.cursor()
+    gcur.execute("SELECT canonical_id, mu FROM ratings WHERE mode=%s AND map=''", (mode,))
+    global_mu = {r["canonical_id"]: r["mu"] for r in gcur.fetchall()}
+    gcur.close()
+    print(f"  loaded global μ for {len(global_mu):,} players (for per-map expected calc)")
+
+    # Per-map rebuild — always wipe + rebuild so the ELO algo change propagates
+    # cleanly (mixing old OpenSkill per-map cache with new ELO updates produces
+    # nonsense). Honors full_rebuild=False on the overall pass only.
+    if full_rebuild:
+        wcur = db.cursor()
+        wcur.execute("DELETE FROM ratings WHERE mode=%s AND map<>''", (mode,))
+        wcur.execute("DELETE FROM rating_history WHERE mode=%s AND map<>''", (mode,))
+        db.commit()
+        wcur.close()
+
     maps = list_maps_for_mode(db, mode, min_matches=50)
     print(f"\nRating {mode} per-map across {len(maps)} maps "
-          f"(min {per_map_min} matches per player to be stored)…")
+          f"(min {per_map_min} matches per player to be stored, "
+          f"ELO K={ELO_K} σ-decay={ELO_SIGMA_DECAY})…")
     start = datetime.now()
     total_matches = 0
     total_players = 0
     for m in maps:
         n_matches, n_players = rate_bucket(db, mode, m, now, full_rebuild=full_rebuild,
                                             per_map_min=per_map_min,
-                                            player_regions=player_regions)
+                                            player_regions=player_regions,
+                                            global_mu=global_mu)
         total_matches += n_matches
         total_players += n_players
     elapsed = (datetime.now() - start).total_seconds()
