@@ -210,15 +210,35 @@ useHead({ title: 'Servers · DeepFrag' })
                         <span class="mono">{{ detailCache[s.hostname].stats.ports }}</span>
                       </div>
 
-                      <!-- Live now strip — only if hub saw this server in the last sync -->
-                      <div v-if="detailCache[s.hostname].meta?.is_live" class="live-now">
-                        <span class="live-dot">●</span>
-                        <strong>LIVE NOW</strong>
-                        <span v-if="detailCache[s.hostname].meta.current_map" class="mono">map: {{ detailCache[s.hostname].meta.current_map }}</span>
-                        <span v-if="detailCache[s.hostname].meta.current_mode" class="mono">mode: {{ detailCache[s.hostname].meta.current_mode }}</span>
-                        <span class="mono">{{ detailCache[s.hostname].meta.current_players || 0 }}/{{ detailCache[s.hostname].meta.max_clients || '?' }} players</span>
-                        <span v-if="detailCache[s.hostname].meta.mvdsv_version" class="mono">{{ detailCache[s.hostname].meta.mvdsv_version }}</span>
-                        <a v-if="detailCache[s.hostname].meta.qtv_stream_url" :href="detailCache[s.hostname].meta.qtv_stream_url" target="_blank" class="qtv-link">QTV stream →</a>
+                      <!-- Per-port live state. One card per game-server port.
+                           Each port shows its own map / mode / player list — no
+                           more aggregating across The-Den:28501/28502/etc. -->
+                      <div v-if="detailCache[s.hostname].ports?.length" class="ports-grid">
+                        <div v-for="p in detailCache[s.hostname].ports" :key="p.hostname" class="port-card" :class="{live: p.is_live}">
+                          <div class="port-head">
+                            <div class="port-id">
+                              <span v-if="p.is_live" class="port-live-dot">●</span>
+                              <span class="port-num mono">:{{ p.port }}</span>
+                              <span v-if="p.current_mode" class="port-mode mono">{{ p.current_mode }}</span>
+                              <span v-if="p.current_map" class="port-map">{{ p.current_map }}</span>
+                            </div>
+                            <div class="port-meta">
+                              <span class="mono">{{ (p.players?.filter(c => !c.is_bot)?.length) || p.current_players || 0 }}/{{ p.max_clients || '?' }}</span>
+                              <a v-if="p.qtv_stream_url" :href="p.qtv_stream_url" target="_blank" class="qtv-mini" @click.stop>QTV</a>
+                            </div>
+                          </div>
+                          <div v-if="p.players?.length" class="port-players">
+                            <div v-for="(c, i) in p.players" :key="c.name + i" class="port-player" :class="{ bot: c.is_bot, spec: !c.frags && c.frags !== 0 }">
+                              <span class="pp-name">{{ c.name || '?' }}</span>
+                              <span v-if="c.team" class="pp-team mono">[{{ c.team }}]</span>
+                              <span v-if="c.frags != null" class="pp-frags mono">{{ c.frags }}</span>
+                              <span v-if="c.ping != null" class="pp-ping mono">{{ c.ping }}ms</span>
+                              <span v-if="c.is_bot" class="pp-flag">BOT</span>
+                            </div>
+                          </div>
+                          <div v-else-if="!p.is_live" class="port-empty muted">offline (last seen {{ fmtAgo(p.last_seen_live) }})</div>
+                          <div v-else class="port-empty muted">empty</div>
+                        </div>
                       </div>
 
                       <!-- Activity heatmap — span auto-adjusts to server age (up to 3 years) -->
@@ -406,6 +426,45 @@ tr.detail-row td { padding: 0; background: var(--panel-2); }
 .detail-card h4 { margin: 0 0 10px; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--fg-3); font-weight: 600; }
 
 .top-split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Per-port live cards — one tile per (host:port). Live ports have a green
+   left rail; offline ports show muted. Each lists current players (with
+   frags / ping) for the active match on that specific port. */
+.ports-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.port-card {
+  background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; transition: border-color 0.12s;
+}
+.port-card.live { border-left-color: var(--win); background: linear-gradient(90deg, rgba(34,197,94,0.04), var(--bg) 30%); }
+.port-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.port-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.port-live-dot { color: var(--win); font-size: 10px; animation: pulse 2s infinite ease-in-out; }
+.port-num { font-size: 12px; font-weight: 700; color: var(--fg); }
+.port-mode {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  background: var(--panel-3); color: var(--fg-2); font-weight: 700; letter-spacing: 0.04em;
+}
+.port-map { font-size: 11px; color: var(--fg-2); font-weight: 600; }
+.port-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-3); }
+.port-meta .qtv-mini { color: var(--accent); text-decoration: none; font-weight: 700; font-size: 10px; padding: 1px 6px; border: 1px solid var(--accent); border-radius: 3px; }
+.port-meta .qtv-mini:hover { background: var(--accent); color: var(--bg); }
+
+.port-players { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+.port-player {
+  display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 6px; align-items: center;
+  font-size: 12px; padding: 3px 0;
+}
+.port-player.bot { opacity: 0.6; }
+.port-player.spec { opacity: 0.5; font-style: italic; }
+.port-player .pp-name { color: var(--fg); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.port-player .pp-team { color: var(--fg-3); font-size: 10px; font-family: 'JetBrains Mono', monospace; }
+.port-player .pp-frags { color: var(--accent); font-weight: 700; font-family: 'JetBrains Mono', monospace; min-width: 28px; text-align: right; }
+.port-player .pp-ping { color: var(--fg-3); font-size: 10px; font-family: 'JetBrains Mono', monospace; min-width: 38px; text-align: right; }
+.port-player .pp-flag { color: var(--fg-3); font-size: 9px; background: var(--panel-3); padding: 1px 4px; border-radius: 3px; font-weight: 700; letter-spacing: 0.06em; }
+.port-empty { padding: 6px 0; font-size: 11px; text-align: center; }
 
 .top-row { display: grid; grid-template-columns: 28px 1fr auto auto; gap: 8px; padding: 5px 0; font-size: 12px; align-items: center; }
 .top-row .rank { color: var(--fg-3); font-family: 'JetBrains Mono', monospace; font-size: 10px; }

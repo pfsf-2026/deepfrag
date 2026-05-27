@@ -506,6 +506,57 @@ def server_detail(response: Response, host_root: str):
             else:
                 weekly.append({"week": wk_key, "week_start": dt.isoformat(), "games": 0})
 
+    # Per-port live state — one row per (host:port) variant. Hub data updated
+    # every 2h by the periodic sync. Used by the expanded /servers view so
+    # each port shows its own map/mode/players list separately, not aggregated.
+    with pg() as conn2:
+        pcur = conn2.cursor()
+        pcur.execute("""
+            SELECT hostname, live_address,
+                   COALESCE(NULLIF(split_part(live_address, ':', 2), ''),
+                            NULLIF(split_part(hostname, ':', 2), ''),
+                            '?') AS port,
+                   is_live, current_map, current_mode, current_players,
+                   current_specs, max_clients, fraglimit, timelimit, teamplay, deathmatch,
+                   qtv_stream_url, qtv_viewer_count, mvdsv_version,
+                   current_players_json, last_seen_live
+            FROM servers
+            WHERE split_part(hostname, ':', 1) = %s
+              AND (is_live = TRUE OR current_players_json IS NOT NULL)
+            ORDER BY port, hostname
+        """, (host_root,))
+        ports = []
+        seen_ports = set()  # dedup the trailing-junk hostname variants ("28502" vs "28502�")
+        for r in pcur.fetchall():
+            port = r["port"]
+            if port in seen_ports:
+                continue
+            seen_ports.add(port)
+            players = None
+            if r["current_players_json"]:
+                try:
+                    import json as _json
+                    players = _json.loads(r["current_players_json"])
+                except Exception:
+                    players = None
+            ports.append({
+                "port": port,
+                "hostname": r["hostname"],
+                "live_address": r["live_address"],
+                "is_live": r["is_live"],
+                "current_map": r["current_map"],
+                "current_mode": r["current_mode"],
+                "current_players": r["current_players"],
+                "current_specs": r["current_specs"],
+                "max_clients": r["max_clients"],
+                "fraglimit": r["fraglimit"],
+                "timelimit": r["timelimit"],
+                "qtv_stream_url": r["qtv_stream_url"],
+                "qtv_viewer_count": r["qtv_viewer_count"],
+                "players": players or [],
+            })
+        pcur.close()
+
     return {
         "hostname": host_root,
         "meta": dict(meta),
@@ -514,6 +565,7 @@ def server_detail(response: Response, host_root: str):
         "top_by_matches": top_by_matches,
         "top_by_rating": top_by_rating,
         "weekly_activity": weekly,
+        "ports": ports,
     }
 
 

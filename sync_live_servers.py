@@ -64,6 +64,9 @@ ALTER TABLE servers ADD COLUMN IF NOT EXISTS deathmatch         INTEGER;
 ALTER TABLE servers ADD COLUMN IF NOT EXISTS qtv_viewer_count   INTEGER;
 ALTER TABLE servers ADD COLUMN IF NOT EXISTS is_live            BOOLEAN DEFAULT FALSE;
 ALTER TABLE servers ADD COLUMN IF NOT EXISTS last_seen_live     TEXT;
+-- JSON array of clients on this port right now: [{name, frags, team, ping, is_bot}, ...]
+-- Powers the per-port expansion on /servers when a multi-port host is opened.
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS current_players_json TEXT;
 CREATE INDEX IF NOT EXISTS idx_servers_is_live ON servers(is_live);
 CREATE INDEX IF NOT EXISTS idx_servers_last_seen_live ON servers(last_seen_live);
 """
@@ -93,6 +96,23 @@ def extract_row(s: dict, now: str) -> dict:
     # Count actual players (non-bot, non-spec).
     clients = s.get("clients", []) or []
     players_active = sum(1 for c in clients if not c.get("is_bot"))
+
+    # Serialize the player list for per-port expansion on the /servers page.
+    # Keep the fields tight — name/frags/team/ping/is_bot/login is what we
+    # render. Falsy or missing fields drop out client-side.
+    import json
+    players_json = json.dumps([
+        {
+            "name":   (c.get("name") or "").strip() or None,
+            "login":  c.get("login") or None,
+            "frags":  c.get("frags"),
+            "team":   c.get("team") or None,
+            "ping":   c.get("ping"),
+            "is_bot": bool(c.get("is_bot")),
+            "color":  c.get("colors"),
+        }
+        for c in clients
+    ]) if clients else None
 
     return {
         "hostname":         (settings.get("hostname") or "").strip(),
@@ -152,13 +172,13 @@ def main():
                 live_address, mvdsv_version, admin, qtv_stream_url, gamedir,
                 current_map, current_mode, current_players, current_specs,
                 max_clients, fraglimit, timelimit, teamplay, deathmatch,
-                qtv_viewer_count, last_seen_live, is_live
+                qtv_viewer_count, last_seen_live, is_live, current_players_json
             ) VALUES (
                 %(hostname)s, %(ip)s, %(country)s, %(region)s, %(city)s, %(lat)s, %(lon)s, %(resolved_at)s,
                 %(live_address)s, %(mvdsv_version)s, %(admin)s, %(qtv_stream_url)s, %(gamedir)s,
                 %(current_map)s, %(current_mode)s, %(current_players)s, %(current_specs)s,
                 %(max_clients)s, %(fraglimit)s, %(timelimit)s, %(teamplay)s, %(deathmatch)s,
-                %(qtv_viewer_count)s, %(last_seen_live)s, TRUE
+                %(qtv_viewer_count)s, %(last_seen_live)s, TRUE, %(players_json)s
             )
             ON CONFLICT (hostname) DO UPDATE SET
               ip = COALESCE(EXCLUDED.ip, servers.ip),
@@ -184,7 +204,8 @@ def main():
               qtv_viewer_count = EXCLUDED.qtv_viewer_count,
               last_seen_live = EXCLUDED.last_seen_live,
               is_live = TRUE,
-              resolve_error = NULL
+              resolve_error = NULL,
+              current_players_json = EXCLUDED.current_players_json
         """, row)
         if cur.statusmessage and cur.statusmessage.startswith("INSERT 0 1"):
             inserts += 1
