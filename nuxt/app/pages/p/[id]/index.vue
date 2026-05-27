@@ -224,14 +224,30 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
       </div>
       <div v-else-if="ratingHistoryLoading" class="rh-section rh-empty">Loading ELO history…</div>
 
-      <!-- ── Window pills ── -->
-      <div class="controls">
-        <span class="ctl-label">Window</span>
-        <div class="pill-group">
-          <button v-for="wk in ['7', '30', '90', '365', 'all']" :key="wk" :class="{active: windowKey === wk}" @click="windowKey = wk">
-            {{ wk === 'all' ? 'All time' : wk + 'd' }}
-          </button>
+      <!-- ── Tab bar (shared chrome with /profile.html) ── -->
+      <!-- Overview is this page; other tabs deep-link to the legacy profile.html
+           SPA at the matching #tab. Window dropdown sits inline on the right. -->
+      <div class="profile-tabbar">
+        <div class="profile-tabs">
+          <a class="ptab active">Overview</a>
+          <a class="ptab" :href="deepHref('trends')">Trends</a>
+          <a class="ptab" :href="deepHref('compare')">Compare</a>
+          <a class="ptab" :href="deepHref('1on1')">1on1</a>
+          <a class="ptab" :href="deepHref('4on4')">4on4</a>
+          <a class="ptab" :href="deepHref('2on2')">2on2</a>
+          <a class="ptab" :href="deepHref('dmm')">By DMM</a>
+          <a class="ptab" :href="deepHref('maps')">Maps</a>
+          <a class="ptab" :href="deepHref('servers')">Servers</a>
+          <a class="ptab" :href="deepHref('opponents')">Rivals</a>
+          <a class="ptab" :href="deepHref('recent')">Recent</a>
         </div>
+        <select v-model="windowKey" class="window-select">
+          <option value="7">Last 7d</option>
+          <option value="30">Last 30d</option>
+          <option value="90">Last 90d</option>
+          <option value="365">Last year</option>
+          <option value="all">All time</option>
+        </select>
       </div>
 
       <!-- ── NAV view (default, Mock 5 — large launchpad cards) ── -->
@@ -534,6 +550,28 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
 
 /* Controls */
 .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
+
+/* Profile tabbar — shared chrome with /profile.html so Overview lives under the
+   same nav strip as the deep-dive tabs. Window dropdown inline on the right. */
+.profile-tabbar {
+  display: flex; align-items: center; gap: 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px; padding-bottom: 0;
+}
+.profile-tabs { display: flex; gap: 0; flex: 1; flex-wrap: wrap; }
+.ptab {
+  padding: 10px 14px; color: var(--fg-2); font-size: 13px; font-weight: 500;
+  text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  cursor: pointer;
+}
+.ptab:hover { color: var(--fg); }
+.ptab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.window-select {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--fg);
+  padding: 6px 10px; border-radius: 6px; font-family: inherit; font-size: 13px;
+  font-weight: 600; cursor: pointer;
+}
+.window-select:focus { outline: none; border-color: var(--accent); }
 .ctl-label {
   color: var(--fg-3); font-size: 11px; text-transform: uppercase;
   letter-spacing: 0.08em; font-weight: 700;
