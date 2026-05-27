@@ -1234,11 +1234,17 @@ def player_profile_full(
             opp AS (
                 -- For 1on1 only: the other player in the match is the opponent.
                 -- For 2on2/4on4 leave opponent_name = null (the recentTable shows '—').
+                -- Prefer the canonical display_name (clean) over raw player_name
+                -- (which has color/escape codes like cr\5onus). Fall back to
+                -- canonical_id if display_name is null, then raw name as last resort.
                 SELECT me.match_id,
-                       MAX(p2.player_name) FILTER (WHERE p2.canonical_id IS DISTINCT FROM %(cid)s) AS opponent_name,
-                       MAX(p2.player_frags) FILTER (WHERE p2.canonical_id IS DISTINCT FROM %(cid)s) AS opponent_frags
+                       MAX(COALESCE(pc.display_name, p2.canonical_id, p2.player_name))
+                           FILTER (WHERE p2.canonical_id IS DISTINCT FROM %(cid)s) AS opponent_name,
+                       MAX(p2.player_frags)
+                           FILTER (WHERE p2.canonical_id IS DISTINCT FROM %(cid)s) AS opponent_frags
                 FROM me
                 JOIN players p2 ON p2.match_id = me.match_id
+                LEFT JOIN players_canonical pc ON pc.canonical_id = p2.canonical_id
                 WHERE me.match_mode = '1on1'
                 GROUP BY me.match_id
             )
