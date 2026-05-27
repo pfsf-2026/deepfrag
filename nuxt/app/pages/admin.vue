@@ -131,7 +131,7 @@ async function loadActivity() {
     // Replace prior backend-sourced events; keep any session events at the front
     const sessionEvents = eventLog.value.filter(e => !e.fromBackend)
     const backendEvents = (r.events || []).map(e => ({
-      ts: e.ts ? new Date(e.ts).toISOString().slice(11, 19) : '',
+      ts: fmtTimeET(e.ts),
       level: e.level,
       tag: e.tag,
       msg: e.msg,
@@ -144,7 +144,7 @@ async function loadActivity() {
 }
 
 function pushEvent(level, tag, msg) {
-  eventLog.value.unshift({ ts: new Date().toISOString().slice(11, 19), level, tag, msg })
+  eventLog.value.unshift({ ts: fmtTimeET(new Date()), level, tag, msg })
   if (eventLog.value.length > eventLogMax) eventLog.value = eventLog.value.slice(0, eventLogMax)
 }
 
@@ -263,7 +263,24 @@ function closeInspector() { selectedPlayer.value = null; playerDetail.value = nu
 useHead({ title: 'Admin · DeepFrag' })
 
 function fmtPct(v) { return v == null ? '—' : (v * 100).toFixed(0) + '%' }
-function fmtDate(s) { return s ? new Date(s).toLocaleString() : '—' }
+// All admin times render in US Eastern regardless of viewer locale — Peter is
+// the sole admin and lives in ET, and consistent timestamps across the UI
+// make the activity + deploy feeds easier to scan.
+const ET_TZ = 'America/New_York'
+function fmtDate(s) {
+  if (!s) return '—'
+  return new Date(s).toLocaleString('en-US', {
+    timeZone: ET_TZ,
+    year: 'numeric', month: 'short', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  }) + ' ET'
+}
+function fmtTimeET(s) {
+  if (!s) return ''
+  return new Date(s).toLocaleTimeString('en-US', {
+    timeZone: ET_TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+  })
+}
 </script>
 
 <template>
@@ -367,7 +384,7 @@ function fmtDate(s) { return s ? new Date(s).toLocaleString() : '—' }
                 <div v-else class="feed">
                   <div v-for="d in deploys.slice(0, 8)" :key="d.name" class="line deploy-line"
                        :class="{ active: d.active }">
-                    <span class="ts">{{ String(d.create_time || '').slice(11, 19) }}</span>
+                    <span class="ts">{{ fmtTimeET(d.create_time) }}</span>
                     <span :class="['level', d.status === 'CONDITION_SUCCEEDED' ? 'ok' : d.status === 'CONDITION_FAILED' ? 'err' : 'info']">
                       {{ d.active ? 'LIVE' : (d.status || 'rev').replace('CONDITION_', '').slice(0, 4) }}
                     </span>
