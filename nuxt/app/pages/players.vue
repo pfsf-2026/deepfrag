@@ -38,7 +38,7 @@ useHead({ title: 'All Players · DeepFrag' })
     <div class="hero">
       <h1>QuakeWorld player profiles</h1>
       <p class="sub">
-        <strong>{{ idx?.count || 0 }}</strong> players tracked · data from hub.quakeworld.nu + xantom's archive
+        <strong>{{ idx?.count || 0 }}</strong> players tracked · data from hub.quakeworld.nu
       </p>
     </div>
 

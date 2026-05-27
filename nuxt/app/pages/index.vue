@@ -4,7 +4,7 @@ const pending = ref(true)
 const mode = ref('1on1')
 const search = ref('')
 const minMatches = ref(20)
-const activeOnly = ref(true)   // hide players inactive in the last 90 days by default
+const activeOnly = ref(false)  // default to All time — show every rated player; user can toggle to Last 90d
 const region = ref('')         // '' = Global; 'EU' / 'NA' / 'SA' / 'OC' / 'AS' / 'AF'
 
 const df = useDeepFrag()

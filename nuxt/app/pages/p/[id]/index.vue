@@ -127,6 +127,65 @@ function sparkData(key) {
   return trend.map(t => t[key] ?? null)
 }
 
+// Snapshot data for the Trends nav-card. Pulls weekly 1on1 buckets and turns
+// them into a quick "X weeks · peak WR · 3 deltas + sparkline" summary so the
+// card has something useful before the user clicks through.
+const trendsSnapshot = computed(() => {
+  const trend = (w.value.trend_weekly_by_mode || {})['1on1'] || []
+  const live = trend.filter(t => (t.matches || 0) > 0)
+  if (live.length === 0) {
+    return { weeks: 0, peakWin: null, spark: [],
+             winRateDelta: { str: '—', cls: 'flat' },
+             lgDelta: { str: '—', cls: 'flat' },
+             fragDiffDelta: { str: '—', cls: 'flat' } }
+  }
+  const peakWin = live.reduce((m, t) => Math.max(m, t.win_rate ?? 0), 0)
+  // Delta = average of last third vs average of first third (smoother than first/last week)
+  const slice = (arr, a, b) => arr.slice(Math.floor(arr.length * a), Math.floor(arr.length * b))
+  const avgKey = (rows, key) => {
+    const vals = rows.map(r => r[key]).filter(v => v != null)
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null
+  }
+  const earlyWR = avgKey(slice(live, 0, 0.33), 'win_rate')
+  const recentWR = avgKey(slice(live, 0.66, 1), 'win_rate')
+  const earlyLG = avgKey(slice(live, 0, 0.33), 'lg_accuracy')
+  const recentLG = avgKey(slice(live, 0.66, 1), 'lg_accuracy')
+  const earlyFD = avgKey(slice(live, 0, 0.33), 'avg_frag_diff')
+  const recentFD = avgKey(slice(live, 0.66, 1), 'avg_frag_diff')
+  return {
+    weeks: live.length,
+    peakWin,
+    spark: trend.map(t => t.avg_frag_diff ?? 0),
+    winRateDelta: trendDelta(earlyWR, recentWR, { pp: true }),
+    lgDelta: trendDelta(earlyLG, recentLG, { pp: true }),
+    fragDiffDelta: trendDelta(earlyFD, recentFD)
+  }
+})
+
+function trendDelta(early, recent, { pp = false } = {}) {
+  if (early == null || recent == null) return { str: '—', cls: 'flat' }
+  const d = recent - early
+  if (Math.abs(d) < 0.0001) return { str: '·', cls: 'flat' }
+  const arrow = d > 0 ? '▲' : '▼'
+  const str = pp ? (d > 0 ? '+' : '') + (d * 100).toFixed(1) + 'pp'
+                 : (d > 0 ? '+' : '') + d.toFixed(1)
+  return { str: arrow + ' ' + str, cls: d > 0 ? 'up' : 'down' }
+}
+
+// Compare card — current 1on1 stat vs prior period (same key)
+const hasPrior = computed(() => !!w.value.prior?.by_mode?.['1on1'])
+function compareCardDelta(key, { pp = false } = {}) {
+  const cur = m1on1.value[key]
+  const prior = w.value.prior?.by_mode?.['1on1']?.[key]
+  if (cur == null || prior == null) return { str: '—', cls: 'flat' }
+  const d = cur - prior
+  if (Math.abs(d) < 0.0001) return { str: '·', cls: 'flat' }
+  const arrow = d > 0 ? '▲' : '▼'
+  const str = pp ? (d > 0 ? '+' : '') + (d * 100).toFixed(1) + 'pp'
+                 : (d > 0 ? '+' : '') + (Math.abs(prior) > 50 ? Math.round(d).toLocaleString() : d.toFixed(1))
+  return { str: arrow + ' ' + str, cls: d > 0 ? 'up' : 'down' }
+}
+
 // Compact delta widget for nav-card stat bubbles. Returns { str, cls } or null
 // when no prior data exists (e.g. window === 'all'). Used below each label.
 function modeDelta(mode, key, opts = {}) {
@@ -395,7 +454,29 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
             </div>
             <div class="nc-arrow">→</div>
           </div>
-          <div class="nc-preview">Track skill curve across every metric over time. Per-mode line charts with previous-period overlay.</div>
+          <div class="nc-preview" v-if="trendsSnapshot.weeks > 0">
+            <strong>{{ trendsSnapshot.weeks }}</strong> weeks with matches
+            <span v-if="trendsSnapshot.peakWin" class="muted">· peak {{ fmtPct(trendsSnapshot.peakWin) }} WR</span>
+          </div>
+          <div class="nc-preview muted" v-else>No weekly trend data in this window</div>
+          <div class="nc-stats" v-if="trendsSnapshot.weeks > 0">
+            <div class="ks">
+              <div class="v" :class="trendsSnapshot.winRateDelta.cls">{{ trendsSnapshot.winRateDelta.str }}</div>
+              <div class="l">Δ Win rate</div>
+            </div>
+            <div class="ks">
+              <div class="v" :class="trendsSnapshot.lgDelta.cls">{{ trendsSnapshot.lgDelta.str }}</div>
+              <div class="l">Δ LG accuracy</div>
+            </div>
+            <div class="ks">
+              <div class="v" :class="trendsSnapshot.fragDiffDelta.cls">{{ trendsSnapshot.fragDiffDelta.str }}</div>
+              <div class="l">Δ avg ±frag</div>
+            </div>
+          </div>
+          <!-- Tiny sparkline of frag-diff over the window. Reuses the trend buckets. -->
+          <Sparkline v-if="trendsSnapshot.spark.length > 1"
+                     :values="trendsSnapshot.spark"
+                     :height="36" :width="280" stroke="var(--accent)" />
         </a>
 
         <NuxtLink class="nav-card" :to="`/p/${encodeURIComponent(id)}/maps`">
@@ -455,7 +536,28 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
             </div>
             <div class="nc-arrow">→</div>
           </div>
-          <div class="nc-preview">Now vs prior 90 days (or same period last year) — diff every stat with up/down arrows.</div>
+          <div class="nc-preview" v-if="hasPrior">
+            Current {{ windowLabel }} vs <strong>previous {{ windowLabel }}</strong>
+          </div>
+          <div class="nc-preview muted" v-else>No prior period to compare against</div>
+          <div class="nc-stats" v-if="hasPrior">
+            <div class="ks">
+              <div class="v" :class="compareCardDelta('win_rate', {pp: true}).cls">{{ compareCardDelta('win_rate', {pp: true}).str }}</div>
+              <div class="l">Win rate</div>
+            </div>
+            <div class="ks">
+              <div class="v" :class="compareCardDelta('avg_frag_diff').cls">{{ compareCardDelta('avg_frag_diff').str }}</div>
+              <div class="l">Avg ±frag</div>
+            </div>
+            <div class="ks">
+              <div class="v" :class="compareCardDelta('lg_accuracy', {pp: true}).cls">{{ compareCardDelta('lg_accuracy', {pp: true}).str }}</div>
+              <div class="l">LG</div>
+            </div>
+            <div class="ks">
+              <div class="v" :class="compareCardDelta('avg_dmg_given').cls">{{ compareCardDelta('avg_dmg_given').str }}</div>
+              <div class="l">Dmg given</div>
+            </div>
+          </div>
         </a>
       </div>
 
