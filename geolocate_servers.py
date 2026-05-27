@@ -70,20 +70,25 @@ def clean_hostname(raw: str) -> str:
 # "Thickshaker Vic Antilag", "QUAKE.SE KTX", "Brasil"). Patterns are matched
 # case-insensitively against the FULL raw hostname.
 NAME_HINTS = [
-    # Country/city tokens (most specific first)
+    # Country/city tokens (most specific first). Order matters — earlier rules
+    # win; specific server names should be near the top so they don't get
+    # captured by broader regexes below.
     (r"\bmsk\b|moscow|moscw", "RU", "EU"),
     (r"\bvic\b|melbourne|sydney|brisbane", "AU", "OC"),
     (r"\bauckland\b|\bwellington\b|\.nz\b", "NZ", "OC"),
     (r"brasil|brazil|\.br\b|sao\.paulo|saopaulo|rio|\bilha\b|\bring\b @ ilha", "BR", "SA"),
     (r"\bargentin", "AR", "SA"),
-    (r"pentagon|\bbavaria\b|\bbayern\b|hamburg|munich|berlin|cologne|the.?den", "DE", "EU"),
+    # The-Den is Cronus's box in Denver, CO. Pin BEFORE the generic
+    # German "den/the-den" hint below (which originally matched it to DE).
+    (r"the.?den|cronus", "US", "NA"),
+    (r"pentagon|\bbavaria\b|\bbayern\b|hamburg|munich|berlin|cologne", "DE", "EU"),
     (r"thickshaker|antilag", "AU", "OC"),  # known Aussie comp servers
     (r"zasadzka|warsaw|\.pl\b", "PL", "EU"),
     (r"quake\.se|\.se\b|stockholm|sweden|qhlan", "SE", "EU"),
     (r"\.no\b|oslo|norway", "NO", "EU"),
     (r"\.fi\b|helsinki|finland", "FI", "EU"),
     (r"\.dk\b|copenhagen|denmark", "DK", "EU"),
-    (r"\.de\b|berlin|frankfurt|munich|germany|the.?den", "DE", "EU"),
+    (r"\.de\b|berlin|frankfurt|munich|germany", "DE", "EU"),
     (r"\.nl\b|amsterdam|rotterdam|netherlands|hollnd|qlash", "NL", "EU"),
     (r"\.uk\b|\.co\.uk|london|britain|england", "GB", "EU"),
     (r"\.ie\b|dublin|ireland", "IE", "EU"),
@@ -96,12 +101,21 @@ NAME_HINTS = [
     (r"chicago|chi\.|illinois", "US", "NA"),
     (r"dallas|texas|tx\.", "US", "NA"),
     (r"miami|florida|fl\.", "US", "NA"),
+    (r"denver|colorado|\bco\.", "US", "NA"),  # Denver and CO state servers
     (r"\.ca\b|toronto|ontario|montreal|canada|vancouver", "CA", "NA"),
     (r"naqw|us\.|usa", "US", "NA"),
     # Generic EU/NA fallback tokens
     (r"\beu\b|europe", "DE", "EU"),
     (r"\bna\b|america", "US", "NA"),
 ]
+
+# Manual location overrides for servers whose IP geolocation is wrong (cloud
+# hosts often report data-center city, not where the operator actually is).
+# Maps canonical hostname → {city, lat, lon}. Applied after IP geo so it wins.
+MANUAL_LOCATIONS = {
+    "The-Den":         {"city": "Denver", "lat": 39.7392, "lon": -104.9903, "country": "US", "region": "NA"},
+    "Cronus-The-Den":  {"city": "Denver", "lat": 39.7392, "lon": -104.9903, "country": "US", "region": "NA"},
+}
 
 
 def hint_region_from_name(raw_name: str):
