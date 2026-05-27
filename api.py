@@ -586,6 +586,8 @@ def head_to_head(
     p2: str = Query(..., min_length=1, description="canonical_id of player B"),
     mode: str = Query("1on1", pattern="^(1on1|2on2|4on4)$"),
     recent_limit: int = Query(20, ge=1, le=100),
+    since_days: int | None = Query(None, ge=1, le=10_000,
+                                   description="restrict H2H rows to last N days; null = all time"),
 ):
     """Compare two players: head-to-head record + per-map breakdown + per-map
     prediction (OpenSkill predict_win on per-map ratings). Powers the /h2h page.
@@ -638,17 +640,23 @@ def head_to_head(
         player_a = shape_player(p1)
         player_b = shape_player(p2)
 
-        # 2. H2H summary across ALL their matches in this mode
-        cur.execute("""
+        # 2. H2H summary across matches in this mode (optionally within a recent time window)
+        date_clause = ""
+        date_param = []
+        if since_days:
+            since_iso = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
+            date_clause = " AND m.match_date >= %s"
+            date_param = [since_iso]
+        cur.execute(f"""
             SELECT m.match_id, m.match_date, m.match_map,
                    p1.player_frags AS f1, p1.player_damage_given AS dg1, p1.player_damage_taken AS dt1,
                    p2.player_frags AS f2, p2.player_damage_given AS dg2, p2.player_damage_taken AS dt2
             FROM matches m
             JOIN players p1 ON p1.match_id = m.match_id AND p1.canonical_id = %s
             JOIN players p2 ON p2.match_id = m.match_id AND p2.canonical_id = %s
-            WHERE m.match_mode = %s
+            WHERE m.match_mode = %s{date_clause}
             ORDER BY m.match_date DESC
-        """, (p1, p2, mode))
+        """, [p1, p2, mode, *date_param])
         h2h_rows = cur.fetchall()
 
         total = len(h2h_rows)
@@ -1167,11 +1175,12 @@ def admin_sync(authorization: str | None = Header(default=None),
             summary["ended_at"] = datetime.now(timezone.utc).isoformat()
             return summary
 
-    # Step 2 — canonicalize new player names (idempotent)
-    summary["steps"].append({"step": "canonicalize", **_run_script("canonicalize.py", timeout=180)})
+    # Step 2 — canonicalize new player names (idempotent; can be slow on big
+    # backlogs because it iterates every distinct player_name in the DB).
+    summary["steps"].append({"step": "canonicalize", **_run_script("canonicalize.py", timeout=600)})
 
     # Step 3 — re-assign player regions (idempotent, fast)
-    summary["steps"].append({"step": "assign_regions", **_run_script("assign_player_regions.py", timeout=180)})
+    summary["steps"].append({"step": "assign_regions", **_run_script("assign_player_regions.py", timeout=300)})
 
     # Step 4 — refresh live servers snapshot (network-bound, ~10s)
     if not skip_servers:

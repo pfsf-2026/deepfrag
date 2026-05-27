@@ -9,6 +9,7 @@ useHead({ title: 'Head to head · DeepFrag' })
 const mode = ref('1on1')
 const p1 = ref(route.query.p1 ? String(route.query.p1) : '')
 const p2 = ref(route.query.p2 ? String(route.query.p2) : '')
+const sinceDays = ref(route.query.since ? Number(route.query.since) : 0)  // 0 = all time
 const p1Search = ref('')
 const p2Search = ref('')
 const players = ref([])
@@ -44,7 +45,9 @@ async function loadH2H() {
   dataLoading.value = true
   error.value = ''
   try {
-    const r = await $fetch(`${apiBase}/api/h2h?p1=${encodeURIComponent(p1.value)}&p2=${encodeURIComponent(p2.value)}&mode=${mode.value}`)
+    const params = new URLSearchParams({ p1: p1.value, p2: p2.value, mode: mode.value })
+    if (sinceDays.value > 0) params.set('since_days', String(sinceDays.value))
+    const r = await $fetch(`${apiBase}/api/h2h?${params}`)
     data.value = r
   } catch (e) {
     console.error('[h2h] fetch failed', e)
@@ -56,7 +59,11 @@ async function loadH2H() {
 }
 
 function syncUrl() {
-  router.replace({ query: { ...(p1.value && { p1: p1.value }), ...(p2.value && { p2: p2.value }) } })
+  router.replace({ query: {
+    ...(p1.value && { p1: p1.value }),
+    ...(p2.value && { p2: p2.value }),
+    ...(sinceDays.value > 0 && { since: String(sinceDays.value) })
+  } })
 }
 
 function selectP1(cid) { p1.value = cid; p1Search.value = ''; syncUrl(); loadH2H() }
@@ -65,6 +72,16 @@ function swap() {
   const t = p1.value; p1.value = p2.value; p2.value = t
   syncUrl(); loadH2H()
 }
+function changeP1() { p1.value = ''; data.value = null; syncUrl() }
+function changeP2() { p2.value = ''; data.value = null; syncUrl() }
+function setWindow(days) { sinceDays.value = days; syncUrl(); loadH2H() }
+
+const WINDOWS = [
+  { days: 30,  label: '30d' },
+  { days: 90,  label: '90d' },
+  { days: 365, label: '1y' },
+  { days: 0,   label: 'All time' }
+]
 
 // Only show dropdown after 2+ chars — single-letter matches are too noisy
 // (200+ players starting with 'a' isn't useful).
@@ -175,6 +192,7 @@ watch(mode, loadH2H)
               </span>
               <span class="wl">{{ data.player_a.wins }}W-{{ data.player_a.losses }}L</span>
             </div>
+            <button class="change-link" @click="changeP1">Change player ↺</button>
           </div>
           <div class="cons a">{{ Math.round(data.player_a.conservative) }}</div>
         </div>
@@ -200,8 +218,21 @@ watch(mode, loadH2H)
               </span>
               <span v-if="data.player_b.region" class="region-pill">{{ data.player_b.region }}</span>
             </div>
+            <button class="change-link" @click="changeP2">Change player ↺</button>
           </div>
           <div class="avatar b">{{ (data.player_b.display || '?')[0].toUpperCase() }}</div>
+        </div>
+      </div>
+
+      <!-- TIME WINDOW PILLS -->
+      <div class="window-bar">
+        <span class="window-label">H2H window</span>
+        <div class="window-pills">
+          <button v-for="w in WINDOWS" :key="w.days"
+                  :class="['window-pill', { active: sinceDays === w.days }]"
+                  @click="setWindow(w.days)">
+            {{ w.label }}
+          </button>
         </div>
       </div>
 
@@ -365,6 +396,35 @@ watch(mode, loadH2H)
   border-radius: 4px; cursor: pointer; font-family: inherit;
 }
 .head-bar .center .swap:hover { color: var(--fg); border-color: var(--accent); }
+
+/* Change Player link — same compact pill as .swap, sits under the name */
+.head-bar .change-link {
+  margin-top: 6px; background: transparent; border: 1px solid var(--border);
+  color: var(--fg-3); font-size: 11px; padding: 3px 10px;
+  border-radius: 4px; cursor: pointer; font-family: inherit;
+}
+.head-bar .change-link:hover { color: var(--fg); border-color: var(--accent); }
+
+/* Time window pill group */
+.window-bar {
+  display: flex; align-items: center; gap: 12px;
+  margin: 16px 0 8px;
+}
+.window-label {
+  font-size: 10px; color: var(--fg-3); text-transform: uppercase;
+  letter-spacing: 0.08em; font-weight: 700;
+}
+.window-pills { display: flex; gap: 6px; }
+.window-pill {
+  background: var(--panel); border: 1px solid var(--border); color: var(--fg-2);
+  padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+.window-pill:hover { color: var(--fg); border-color: var(--accent); }
+.window-pill.active {
+  color: var(--accent); border-color: var(--accent);
+  background: rgba(20,230,192,0.06);
+}
 
 /* STRIP */
 .strip {
