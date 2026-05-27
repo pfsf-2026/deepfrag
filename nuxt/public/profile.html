@@ -825,7 +825,7 @@ function renderOverview(c) {
     el('h2', {}, 'Last 10 matches'),
     el('div', {class: 'meta'}, 'across all modes · ' + WINDOW_LABELS[activeWindow].short),
   ));
-  c.appendChild(panel(null, () => recentTable((d.recent_matches || []).slice(0, 10))));
+  c.appendChild(panel(null, () => recentTable((profile.recent_matches || d.recent_matches || []).slice(0, 10))));
 
   // 1on1 top maps preview
   c.appendChild(el('div', {class: 'section-h', style: 'margin-top: 24px;'},
@@ -1007,12 +1007,16 @@ function renderOpponents(c) {
 }
 
 function renderRecent(c) {
-  const d = data();
+  // recent_matches lives at the top level of the API response, not inside
+  // the per-window payload. Static /profiles/*.json had it nested under
+  // each window; the live /api/players/{id}/full endpoint puts it once at
+  // the top level (cheaper — one query instead of N).
+  const matches = profile.recent_matches || data().recent_matches || [];
   c.appendChild(el('div', {class: 'section-h'},
     el('h2', {}, 'Last 50 matches'),
     el('div', {class: 'meta'}, WINDOW_LABELS[activeWindow].short),
   ));
-  c.appendChild(panel(null, () => recentTable(d.recent_matches || [])));
+  c.appendChild(panel(null, () => recentTable(matches)));
 }
 
 // ── helpers ───────────────────────────────────────────────────────────
