@@ -581,7 +581,12 @@ function comparisonData(windowData) {
     // caches at CF edge (s-maxage=7200, sync runs every 2h). First viewer
     // pays origin latency; everyone else worldwide gets sub-50ms cached.
     // Falls back to the deploy-time static JSON snapshot if the API is down.
-    let r = await fetch(`/api/players/${playerId}/full`);
+    // _v query param busts CF edge cache when the API response shape changes.
+    // Bump this version when /api/players/{id}/full output changes — the
+    // cache key includes the full URL so a new ?_v= forces a MISS+revalidate.
+    // (Pages Function caches with s-maxage=7200; we don't have purge perms
+    // on the API token to invalidate cache directly.)
+    let r = await fetch(`/api/players/${playerId}/full?_v=3`);
     if (!r.ok) {
       r = await fetch(`/profiles/${playerId}.json`);
       if (!r.ok) throw new Error('HTTP ' + r.status);
