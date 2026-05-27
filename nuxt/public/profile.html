@@ -508,8 +508,8 @@ const divisionAvgStats = { '1on1': null, '2on2': null, '4on4': null };
 async function loadDivisionAverages(mode = '1on1') {
   if (divisionAvgStats[mode]) return divisionAvgStats[mode];
   try {
-    const base = (window.NUXT_PUBLIC_API_BASE || 'https://deepfrag-api-751658372467.us-central1.run.app');
-    const r = await fetch(base + '/api/divisions/avg-stats?mode=' + mode + '&since_days=365');
+    // Same-origin → CF edge-cached via functions/api/[[path]].js
+    const r = await fetch('/api/divisions/avg-stats?mode=' + mode + '&since_days=365');
     if (!r.ok) return {};
     const d = await r.json();
     divisionAvgStats[mode] = d.divisions || {};
@@ -572,11 +572,12 @@ function comparisonData(windowData) {
   // Player canonical_id from ?id= param; default to cronus
   const playerId = new URLSearchParams(location.search).get('id') || 'cronus';
   try {
-    // Live API first — static /profiles/*.json snapshots are deploy-time stale
-    // and miss matches the every-2h scheduler has pulled since the last build.
-    // Falls back to the static JSON if the API is unreachable.
-    const apiBase = (window.NUXT_PUBLIC_API_BASE || 'https://deepfrag-api-751658372467.us-central1.run.app');
-    let r = await fetch(`${apiBase}/api/players/${playerId}/full`);
+    // Live data via same-origin /api/ — handled by the Cloudflare Pages
+    // Function at functions/api/[[path]].js which proxies to Cloud Run and
+    // caches at CF edge (s-maxage=7200, sync runs every 2h). First viewer
+    // pays origin latency; everyone else worldwide gets sub-50ms cached.
+    // Falls back to the deploy-time static JSON snapshot if the API is down.
+    let r = await fetch(`/api/players/${playerId}/full`);
     if (!r.ok) {
       r = await fetch(`/profiles/${playerId}.json`);
       if (!r.ok) throw new Error('HTTP ' + r.status);
