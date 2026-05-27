@@ -244,24 +244,36 @@ def fetch_matches(conn, mode, since_date=None, map_filter=None):
         where_extra += " AND m.match_map = %(map)s"
         params["map"] = map_filter
     cur = conn.cursor()
+    # CRITICAL: aggregate per (match_id, canonical_id) BEFORE the self-join.
+    # Without this, a player who appears with multiple name variants in the same
+    # match (e.g. reconnects with different color codes) creates a cartesian-
+    # product blowup on the pairwise join — verified 2026-05-27, cronus
+    # matches_rated was 3× inflated. Frags/damage are SUMmed across variants
+    # since rejoining within a match should count as continuing play.
     cur.execute(
         f"""
-        SELECT m.match_id, m.match_date,
-               p1.canonical_id AS cid_a, p1.player_frags AS f_a,
-               p1.player_damage_given AS dg_a, p1.player_damage_taken AS dt_a,
-               p2.canonical_id AS cid_b, p2.player_frags AS f_b,
-               p2.player_damage_given AS dg_b, p2.player_damage_taken AS dt_b,
+        WITH match_players AS (
+            SELECT m.match_id, m.match_date, m.server_hostname,
+                   p.canonical_id,
+                   SUM(p.player_frags) AS frags,
+                   SUM(p.player_damage_given) AS dmg_given,
+                   SUM(p.player_damage_taken) AS dmg_taken
+            FROM matches m
+            JOIN players p ON p.match_id = m.match_id
+            WHERE m.match_mode = %(mode)s
+              AND p.canonical_id IS NOT NULL
+              {where_extra}
+            GROUP BY m.match_id, m.match_date, m.server_hostname, p.canonical_id
+        )
+        SELECT mp1.match_id, mp1.match_date,
+               mp1.canonical_id AS cid_a, mp1.frags AS f_a, mp1.dmg_given AS dg_a, mp1.dmg_taken AS dt_a,
+               mp2.canonical_id AS cid_b, mp2.frags AS f_b, mp2.dmg_given AS dg_b, mp2.dmg_taken AS dt_b,
                s.region AS server_region
-        FROM matches m
-        JOIN players p1 ON p1.match_id = m.match_id
-        JOIN players p2 ON p2.match_id = m.match_id
-        LEFT JOIN servers s ON s.hostname = split_part(m.server_hostname, ':', 1)
-        WHERE m.match_mode = %(mode)s
-          AND p1.canonical_id IS NOT NULL
-          AND p2.canonical_id IS NOT NULL
-          AND p1.canonical_id < p2.canonical_id
-          {where_extra}
-        ORDER BY m.match_date
+        FROM match_players mp1
+        JOIN match_players mp2 ON mp1.match_id = mp2.match_id
+                              AND mp1.canonical_id < mp2.canonical_id
+        LEFT JOIN servers s ON s.hostname = split_part(mp1.server_hostname, ':', 1)
+        ORDER BY mp1.match_date
         """,
         params,
     )
