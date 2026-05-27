@@ -640,6 +640,30 @@ def head_to_head(
         player_a = shape_player(p1)
         player_b = shape_player(p2)
 
+        # Weapon-accuracy shape per player (lifetime aggregate from the players table,
+        # filtered to the requested mode). Powers the H2H radar overlay — same axes,
+        # both players drawn on the same pentagon so the weapon-style mismatch is visible.
+        cur.execute("""
+            SELECT canonical_id,
+                   AVG(player_lg_hits::float / NULLIF(player_lg_attacks, 0)) AS lg_accuracy,
+                   AVG(player_rl_virtual::float / NULLIF(player_rl_attacks, 0)) AS rl_accuracy,
+                   AVG(player_ssg_hits::float / NULLIF(player_ssg_attacks, 0)) AS ssg_accuracy,
+                   AVG(player_sg_hits::float / NULLIF(player_sg_attacks, 0)) AS sg_accuracy,
+                   AVG(player_gl_directs::float / NULLIF(player_gl_attacks, 0)) AS gl_accuracy
+            FROM players p JOIN matches m ON m.match_id = p.match_id
+            WHERE p.canonical_id = ANY(%s) AND m.match_mode = %s
+            GROUP BY canonical_id
+        """, ([p1, p2], mode))
+        weapon_shape = {r["canonical_id"]: {
+            "lg_accuracy": r["lg_accuracy"],
+            "rl_accuracy": r["rl_accuracy"],
+            "ssg_accuracy": r["ssg_accuracy"],
+            "sg_accuracy": r["sg_accuracy"],
+            "gl_accuracy": r["gl_accuracy"],
+        } for r in cur.fetchall()}
+        player_a["weapon_shape"] = weapon_shape.get(p1, {})
+        player_b["weapon_shape"] = weapon_shape.get(p2, {})
+
         # 2. H2H summary across matches in this mode (optionally within a recent time window)
         date_clause = ""
         date_param = []
@@ -1268,6 +1292,12 @@ def admin_sync(authorization: str | None = Header(default=None),
     # Step 5 — incremental rate (only new matches)
     if not skip_rate:
         summary["steps"].append({"step": "rate", **_run_script("rate.py", "--mode", "1on1", "--incremental", timeout=600)})
+
+    # Step 6 — DB invariants. Catches regressions like the matches_rated
+    # inflation bug (2026-05-27) before users see them. Non-blocking: a
+    # failure here doesn't roll back the sync, just surfaces in the response
+    # so admin/observability tools can alert on it.
+    summary["steps"].append({"step": "invariants", **_run_script("tests/test_invariants.py", timeout=60)})
 
     summary["ended_at"] = datetime.now(timezone.utc).isoformat()
     return summary

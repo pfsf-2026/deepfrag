@@ -14,11 +14,13 @@ COPY requirements-api.txt .
 RUN pip install --no-cache-dir -r requirements-api.txt
 
 # Copy what the API needs PLUS the periodic-sync scripts the admin endpoint
-# spawns (sync_all_recent, canonicalize, rate, regions, live servers).
+# spawns (sync_all_recent, canonicalize, rate, regions, live servers) AND the
+# invariants test that runs as the last step of every sync.
 COPY api.py tiers.py export_rankings.py profile_pg.py stats_pg.py \
      db.py sync.py canonicalize.py name_canon.py rate.py \
      assign_player_regions.py sync_live_servers.py geolocate_servers.py \
      aliases.yaml ./
+COPY tests/ ./tests/
 
 ENV PORT=8080
 EXPOSE 8080

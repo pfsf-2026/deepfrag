@@ -129,6 +129,35 @@ function fmtRating(r) {
   if (!r) return null
   return `${Math.round(r.cons)} (${r.wins}-${r.losses})`
 }
+function fmtAcc(v) { return v == null ? '—' : `${(v * 100).toFixed(1)}%` }
+
+// Weapon radar geometry — 5-axis pentagon, max per weapon scales the axis so
+// LG 30% and SSG 80% render at the same outer radius (shape matters, not heights).
+const weaponAxes = [
+  { key: 'lg_accuracy',  label: 'LG',  max: 0.50 },
+  { key: 'rl_accuracy',  label: 'RL',  max: 0.50 },
+  { key: 'ssg_accuracy', label: 'SSG', max: 0.90 },
+  { key: 'sg_accuracy',  label: 'SG',  max: 0.40 },
+  { key: 'gl_accuracy',  label: 'GL',  max: 0.30 }
+]
+const radarR = 70
+const radarAngles = weaponAxes.map((_, i) => -Math.PI / 2 + i * (2 * Math.PI / weaponAxes.length))
+function ringPath(frac) {
+  return radarAngles.map(a => `${(Math.cos(a) * radarR * frac).toFixed(1)},${(Math.sin(a) * radarR * frac).toFixed(1)}`).join(' ')
+}
+function dataPath(shape) {
+  if (!shape) return ''
+  return weaponAxes.map((w, i) => {
+    const v = (shape[w.key] || 0) / w.max
+    const f = Math.min(1, Math.max(0, v))
+    return `${(Math.cos(radarAngles[i]) * radarR * f).toFixed(1)},${(Math.sin(radarAngles[i]) * radarR * f).toFixed(1)}`
+  }).join(' ')
+}
+const hasWeaponShape = computed(() => {
+  const a = data.value?.player_a?.weapon_shape
+  const b = data.value?.player_b?.weapon_shape
+  return a && b && (a.lg_accuracy != null || a.rl_accuracy != null)
+})
 
 onMounted(async () => {
   await loadPlayers()
@@ -249,6 +278,54 @@ watch(mode, loadH2H)
           <div class="l">overall expected</div>
         </div>
         <div class="cell"><div class="v" style="color: var(--fg-2); font-size: 14px;">{{ String(data.h2h.last_match || '').slice(0, 10) || '—' }}</div><div class="l">last match</div></div>
+      </div>
+
+      <!-- WEAPON SHAPE OVERLAY -->
+      <div v-if="hasWeaponShape" class="weapon-overlay">
+        <div class="wo-head">
+          <div>
+            <div class="wo-title">Weapon shape comparison</div>
+            <div class="wo-sub">lifetime {{ mode }} accuracy — same pentagon, both players overlaid</div>
+          </div>
+          <div class="wo-legend">
+            <span class="swatch a"></span><span class="lbl">{{ data.player_a.display }}</span>
+            <span class="swatch b"></span><span class="lbl">{{ data.player_b.display }}</span>
+          </div>
+        </div>
+        <div class="wo-body">
+          <svg viewBox="-110 -100 220 200" class="wo-svg">
+            <!-- background rings -->
+            <polygon v-for="frac in [0.25, 0.5, 0.75, 1.0]" :key="'r' + frac"
+                     :points="ringPath(frac)" fill="none" stroke="#2b3445" stroke-width="0.7" />
+            <!-- axes -->
+            <line v-for="(a, i) in radarAngles" :key="'ax' + i"
+                  x1="0" y1="0"
+                  :x2="Math.cos(a) * radarR" :y2="Math.sin(a) * radarR"
+                  stroke="#2b3445" stroke-width="0.7" />
+            <!-- Player B (drawn first so A overlays cleaner) -->
+            <polygon :points="dataPath(data.player_b.weapon_shape)"
+                     fill="rgba(168,85,247,0.18)" stroke="#a855f7" stroke-width="1.8" stroke-linejoin="round" />
+            <!-- Player A -->
+            <polygon :points="dataPath(data.player_a.weapon_shape)"
+                     fill="rgba(20,230,192,0.18)" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" />
+            <!-- labels -->
+            <text v-for="(w, i) in weaponAxes" :key="'l' + i"
+                  :x="Math.cos(radarAngles[i]) * (radarR + 14)"
+                  :y="Math.sin(radarAngles[i]) * (radarR + 14)"
+                  fill="var(--fg-2)" font-size="9" font-weight="700"
+                  text-anchor="middle" dominant-baseline="middle">{{ w.label }}</text>
+          </svg>
+          <div class="wo-grid">
+            <div v-for="w in weaponAxes" :key="w.key" class="wo-cell">
+              <div class="wo-cell-l">{{ w.label }}</div>
+              <div class="wo-cell-vals">
+                <span class="va">{{ fmtAcc(data.player_a.weapon_shape[w.key]) }}</span>
+                <span class="vsep">·</span>
+                <span class="vb">{{ fmtAcc(data.player_b.weapon_shape[w.key]) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- TABLE -->
@@ -425,6 +502,33 @@ watch(mode, loadH2H)
   color: var(--accent); border-color: var(--accent);
   background: rgba(20,230,192,0.06);
 }
+
+/* Weapon shape overlay card — two players' radars on the same pentagon */
+.weapon-overlay {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 20px 24px; margin-bottom: 16px;
+}
+.wo-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  margin-bottom: 14px;
+}
+.wo-title { font-size: 13px; font-weight: 700; color: var(--fg); letter-spacing: -0.01em; }
+.wo-sub { font-size: 11px; color: var(--fg-3); margin-top: 2px; }
+.wo-legend { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--fg-2); }
+.wo-legend .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.wo-legend .swatch.a { background: var(--accent); }
+.wo-legend .swatch.b { background: #a855f7; }
+.wo-legend .lbl { font-weight: 700; margin-right: 4px; }
+
+.wo-body { display: grid; grid-template-columns: 280px 1fr; gap: 32px; align-items: center; }
+.wo-svg { width: 280px; height: 240px; }
+.wo-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.wo-cell { padding: 10px 12px; background: var(--panel-2); border-radius: 8px; text-align: center; }
+.wo-cell-l { font-size: 10px; color: var(--fg-3); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.wo-cell-vals { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 12px; margin-top: 4px; }
+.wo-cell-vals .va { color: var(--accent); }
+.wo-cell-vals .vb { color: #a855f7; }
+.wo-cell-vals .vsep { color: var(--fg-3); margin: 0 4px; }
 
 /* STRIP */
 .strip {
