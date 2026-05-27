@@ -1,0 +1,1894 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Cronus — Mock 4 (combined)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    /* Mock 2 palette */
+    --bg: #0a0d12;
+    --panel: #131820;
+    --panel-2: #1c2330;
+    --panel-3: #252e3d;
+    --border: #2b3445;
+    --border-2: #3a4458;
+    --fg: #f1f5f9;
+    --fg-2: #94a3b8;
+    --fg-3: #64748b;
+    --accent: #14e6c0;
+    --accent-2: #06b6d4;
+    --accent-glow: rgba(20,230,192,0.25);
+    --win: #22c55e;
+    --loss: #ef4444;
+    --draw: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 14px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Top nav (Mock 2) ── */
+  .topnav {
+    background: rgba(10,13,18,0.85); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 40px;
+    display: flex; align-items: center; gap: 32px;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .topnav .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 800; font-size: 17px; letter-spacing: -0.02em;
+  }
+  .topnav .brand .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 12px var(--accent-glow);
+  }
+  .topnav nav { display: flex; gap: 4px; }
+  .topnav nav a {
+    color: var(--fg-2); text-decoration: none;
+    padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500;
+    transition: all 0.15s;
+  }
+  .topnav nav a:hover, .topnav nav a.active { background: var(--panel-2); color: var(--fg); }
+  .topnav .spacer { flex: 1; }
+  .topnav .updated {
+    color: var(--fg-3); font-size: 12px; font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── Hero (compact, Mock 2-tinted) ── */
+  .hero {
+    position: relative; overflow: hidden;
+    padding: 36px 40px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .hero::before {
+    content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 20% 0%, rgba(20,230,192,0.10) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(6,182,212,0.06) 0%, transparent 50%),
+      linear-gradient(180deg, var(--panel) 0%, var(--bg) 100%);
+    z-index: -1;
+  }
+  .hero-inner { max-width: 1500px; margin: 0 auto; display: flex; align-items: flex-end; gap: 32px; }
+  .hero-avatar {
+    width: 80px; height: 80px; border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px; font-weight: 900; color: var(--bg);
+    box-shadow: 0 10px 28px rgba(20,230,192,0.22);
+    flex-shrink: 0;
+  }
+  .hero-id { flex: 1; min-width: 0; }
+  .hero-id .label {
+    color: var(--fg-3); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.1em; font-weight: 700; margin-bottom: 6px;
+  }
+  .hero-id h1 {
+    margin: 0; font-size: 44px; font-weight: 900;
+    line-height: 1; letter-spacing: -0.03em;
+    background: linear-gradient(180deg, var(--fg) 0%, var(--fg-2) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero-id .sub {
+    color: var(--fg-2); font-size: 13px; margin-top: 10px;
+    display: flex; gap: 18px; flex-wrap: wrap;
+  }
+  .hero-id .sub .item { display: flex; align-items: center; gap: 6px; }
+  .hero-id .sub .item .k { color: var(--fg-3); }
+  .hero-stats {
+    display: flex; gap: 24px; align-items: flex-end;
+  }
+  .hero-stat .l { color: var(--fg-3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+  .hero-stat .v { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--accent); margin-top: 2px; line-height: 1; }
+  .hero-stat .s { color: var(--fg-2); font-size: 11px; margin-top: 2px; }
+
+  /* ── Window filter pills (below hero) ── */
+  .filterbar {
+    background: var(--bg); border-bottom: 1px solid var(--border);
+    padding: 12px 40px;
+  }
+  .filterbar-inner {
+    max-width: 1500px; margin: 0 auto;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .filter-label {
+    color: var(--fg-3); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em; font-weight: 700;
+  }
+  .pill-group {
+    display: inline-flex; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 3px; gap: 2px;
+  }
+  .pill-group button {
+    background: transparent; border: 0; color: var(--fg-2);
+    padding: 6px 14px; border-radius: 5px;
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all 0.12s;
+  }
+  .pill-group button:hover { color: var(--fg); background: var(--panel-2); }
+  .pill-group button.active {
+    background: var(--accent); color: var(--bg);
+    box-shadow: 0 1px 4px rgba(20,230,192,0.3);
+  }
+  .filter-meta {
+    color: var(--fg-2); font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+  .filter-meta strong { color: var(--fg); font-weight: 700; }
+
+  /* ── Tabs (Mock 1/2 style) ── */
+  .tabbar {
+    border-bottom: 1px solid var(--border);
+    padding: 0 40px; background: var(--bg);
+    position: sticky; top: 57px; z-index: 40;
+  }
+  .tabbar-inner { max-width: 1500px; margin: 0 auto; display: flex; gap: 2px; }
+  .tabbar button {
+    background: transparent; border: 0; color: var(--fg-2);
+    padding: 14px 18px; font-size: 13px; font-weight: 600;
+    font-family: inherit; cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .tabbar button:hover { color: var(--fg); }
+  .tabbar button.active {
+    color: var(--accent); border-bottom-color: var(--accent);
+  }
+
+  /* ── Main 2-column layout (Mock 1) ── */
+  main {
+    max-width: 1500px; margin: 0 auto;
+    padding: 24px 40px 80px;
+    display: grid; grid-template-columns: 320px 1fr; gap: 24px;
+  }
+
+  /* ── Panels (Mock 2) ── */
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .panel-h {
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--fg-2);
+  }
+  .panel-h .right { color: var(--fg-3); font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+  .panel-b { padding: 16px 18px; }
+  .panel-b.no-pad { padding: 0; }
+  .stack > * + * { margin-top: 16px; }
+
+  /* ── Mock 3-style mode rows ── */
+  .mode-rows {
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .mode-row {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 20px;
+    display: grid; grid-template-columns: 140px 1fr 200px 90px;
+    gap: 24px; align-items: center;
+    transition: all 0.15s;
+  }
+  .mode-row:hover { border-color: var(--border-2); }
+  .mode-row .lead .name { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .mode-row .lead .n { color: var(--fg-3); font-size: 12px; margin-top: 2px; }
+  .mode-row .bar {
+    height: 10px; background: var(--panel-3); border-radius: 5px;
+    overflow: hidden; display: flex;
+  }
+  .mode-row .bar .w { background: var(--win); }
+  .mode-row .bar .l { background: var(--loss); }
+  .mode-row .bar .d { background: var(--draw); }
+  .mode-row .nums { color: var(--fg-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .mode-row .nums strong { color: var(--fg); font-weight: 700; }
+  .mode-row .nums .sub { color: var(--fg-3); font-size: 11px; margin-top: 4px; }
+  .mode-row .wr {
+    font-size: 22px; font-weight: 800; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .mode-row .wr.win { color: var(--win); }
+  .mode-row .wr.loss { color: var(--loss); }
+  .mode-row .wr.draw { color: var(--draw); }
+
+  /* ── Sidebar mode mini-blocks (Mock 1 style w/ Mock 2 colors) ── */
+  .side-block {
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+  }
+  .side-block:last-child { border-bottom: 0; }
+  .side-block .h {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
+  }
+  .side-block .h .name { font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+  .side-block .h .n { color: var(--fg-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .wl-bar { height: 6px; border-radius: 3px; overflow: hidden; background: var(--panel-3); display: flex; }
+  .wl-bar .w { background: var(--win); }
+  .wl-bar .l { background: var(--loss); }
+  .wl-bar .d { background: var(--draw); }
+  .side-block .wl-text {
+    font-size: 11px; color: var(--fg-2); margin-top: 6px;
+    display: flex; justify-content: space-between;
+  }
+  .side-block .wl-text .pct { font-weight: 700; color: var(--fg); }
+
+  /* ── Pills/chips (Mock 2) ── */
+  .chip {
+    display: inline-flex; align-items: center;
+    padding: 3px 9px; border-radius: 999px;
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .chip-1on1 { background: rgba(20,230,192,0.12); color: var(--accent); }
+  .chip-4on4 { background: rgba(34,197,94,0.12); color: var(--win); }
+  .chip-2on2 { background: rgba(245,158,11,0.12); color: var(--draw); }
+  .chip-3on3 { background: rgba(148,163,184,0.12); color: var(--fg-2); }
+  .chip-dmm {
+    background: var(--panel-3); color: var(--fg-2);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0;
+  }
+  .result-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 6px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .result-pill.win { background: rgba(34,197,94,0.15); color: var(--win); }
+  .result-pill.loss { background: rgba(239,68,68,0.15); color: var(--loss); }
+  .result-pill.draw { background: rgba(245,158,11,0.15); color: var(--draw); }
+
+  /* ── Tables (Mock 2 styling) ── */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    color: var(--fg-3); text-align: left;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;
+    padding: 12px 16px; background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none;
+  }
+  thead th:hover { color: var(--fg); }
+  thead th.num { text-align: right; }
+  thead th.sort-asc::after { content: ' ↑'; color: var(--accent); }
+  thead th.sort-desc::after { content: ' ↓'; color: var(--accent); }
+  tbody td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover td { background: var(--panel-2); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.win { color: var(--win); font-weight: 600; }
+  td.loss { color: var(--loss); font-weight: 600; }
+  td.draw { color: var(--draw); font-weight: 600; }
+  td.muted { color: var(--fg-3); }
+  td.small { font-size: 12px; }
+
+  .progress { display: flex; align-items: center; gap: 10px; }
+  .progress .track {
+    width: 80px; height: 6px; border-radius: 3px;
+    background: var(--panel-3); overflow: hidden; flex-shrink: 0;
+  }
+  .progress .fill {
+    height: 100%; background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%);
+    border-radius: 3px;
+  }
+  .progress .label { color: var(--fg-2); font-size: 12px; min-width: 42px; text-align: right; }
+
+  /* ── Big stat cards (for tabs other than overview) ── */
+  .stat-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px; transition: all 0.15s;
+  }
+  .stat-card:hover { border-color: var(--border-2); }
+  .stat-card .l { color: var(--fg-3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+  .stat-card .v { font-size: 24px; font-weight: 800; margin-top: 4px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .stat-card .s { color: var(--fg-2); font-size: 11px; margin-top: 1px; }
+  .grid-cols-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .grid-cols-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+
+  /* Weapon donut */
+  .weapon-donut { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .weapon-donut svg { width: 64px; height: 64px; }
+  .weapon-donut .name { font-size: 10px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+  .weapon-donut .val { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+  .section-h { margin: 4px 0 12px; display: flex; align-items: baseline; justify-content: space-between; }
+  .section-h h2 { margin: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-2); }
+  .section-h .meta { color: var(--fg-3); font-size: 12px; }
+
+  .placeholder { padding: 40px; text-align: center; color: var(--fg-3); }
+
+  /* ── Trends/Compare toolbar (mode + compare-period selectors) ── */
+  .trends-toolbar {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px;
+    display: flex; flex-wrap: wrap; gap: 24px; align-items: center;
+    margin-bottom: 16px;
+  }
+  .toolbar-group { display: flex; align-items: center; gap: 10px; }
+  .toolbar-label {
+    color: var(--fg-3); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em; font-weight: 700;
+  }
+
+  /* ── Trends tab: card grid + delta cards ── */
+  .trend-card-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .trend-bars-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;
+  }
+  .tc {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; transition: all 0.12s;
+  }
+  .tc:hover { border-color: var(--border-2); }
+  .tc-top {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 8px;
+  }
+  .tc-l { color: var(--fg-3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+  .tc-v { font-size: 22px; font-weight: 800; margin-top: 2px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .tc-spark { height: 36px !important; margin-top: 8px; width: 100%; }
+  .tc-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 8px; font-size: 10px; color: var(--fg-3);
+  }
+  .delta {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .delta.up { color: var(--win); }
+  .delta.down { color: var(--loss); }
+  .delta.flat { color: var(--fg-3); }
+
+  /* ── Compare tab ── */
+  .cmp-head {
+    display: grid; grid-template-columns: 1fr 60px 1fr; gap: 16px; align-items: center;
+    margin-bottom: 20px;
+  }
+  .cmp-period-h {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 18px;
+  }
+  .cmp-period-h.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow); }
+  .cmp-period-h .l { color: var(--fg-3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
+  .cmp-period-h .v { font-size: 14px; font-weight: 700; margin-top: 4px; color: var(--fg); }
+  .cmp-vs { text-align: center; font-size: 22px; font-weight: 800; color: var(--fg-3); letter-spacing: -0.02em; }
+
+  .cmp-table {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .cmp-section-h {
+    background: var(--panel-2); padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700;
+    color: var(--fg-3);
+  }
+  .cmp-row {
+    display: grid; grid-template-columns: 1fr 180px 100px 180px;
+    align-items: center; gap: 14px;
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+  }
+  .cmp-row:last-child { border-bottom: 0; }
+  .cmp-label { color: var(--fg-2); font-size: 13px; font-weight: 600; }
+  .cmp-val {
+    text-align: center; padding: 8px 12px; border-radius: 6px;
+    background: var(--panel-2); font-variant-numeric: tabular-nums;
+    font-weight: 800; font-size: 18px; letter-spacing: -0.01em;
+  }
+  .cmp-val.now { color: var(--accent); }
+  .cmp-val.prv { color: var(--fg-2); }
+  .cmp-diff { text-align: center; font-size: 14px; font-weight: 800; }
+
+  /* ── Overview trend strip ── */
+  .trend-strip {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .trend-strip-h {
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .trend-strip-h .title { font-size: 13px; font-weight: 700; }
+  .trend-strip-h .legend {
+    display: flex; gap: 14px; flex-wrap: wrap;
+  }
+  .trend-strip-h .legend-item {
+    display: inline-flex; align-items: center; gap: 6px;
+    cursor: pointer; user-select: none;
+    color: var(--fg-2); font-size: 12px; font-weight: 600;
+    transition: color 0.12s;
+  }
+  .trend-strip-h .legend-item:hover { color: var(--fg); }
+  .trend-strip-h .legend-item.disabled { opacity: 0.4; }
+  .trend-strip-h .legend-item .swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .trend-strip-body { padding: 8px; height: 220px; }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <a class="brand" href="/" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:10px;"><span class="dot"></span>DeepFrag</a>
+  <nav>
+    <a class="active" href="/">← All players</a>
+  </nav>
+  <div class="spacer"></div>
+  <div class="updated" id="updated"></div>
+</div>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-avatar" id="hero-avatar">?</div>
+    <div class="hero-id">
+      <div class="label">Quakeworld Profile</div>
+      <h1 id="player-name">Loading…</h1>
+      <div class="sub" id="player-meta"></div>
+    </div>
+    <div class="hero-stats" id="hero-stats"></div>
+  </div>
+</div>
+
+<div class="tabbar">
+  <div class="tabbar-inner" style="display:flex; align-items:center; gap:16px;">
+    <div id="tabs" style="display:flex; gap:4px; flex:1;"></div>
+    <select id="window-select" style="background:rgba(20,230,192,0.08); border:1px solid var(--accent); color:var(--accent); padding:7px 28px 7px 14px; border-radius:999px; font-family:inherit; font-size:13px; font-weight:700; cursor:pointer; appearance:none; -webkit-appearance:none; background-image:linear-gradient(45deg, transparent 50%, var(--accent) 50%), linear-gradient(135deg, var(--accent) 50%, transparent 50%); background-position:calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size:5px 5px; background-repeat:no-repeat;"></select>
+    <span class="filter-meta" id="filter-meta" style="color:var(--fg-3); font-size:11px; font-family:'JetBrains Mono', monospace;"></span>
+  </div>
+</div>
+
+<main>
+  <aside id="sidebar" class="stack"></aside>
+  <section id="content"><div class="placeholder">Loading…</div></section>
+</main>
+
+<script>
+const fmt = {
+  pct: v => v == null ? '—' : (v * 100).toFixed(1) + '%',
+  num: v => v == null ? '—' : Number(v).toLocaleString(),
+  dec: (v, d=1) => v == null ? '—' : Number(v).toFixed(d),
+  delta: v => v == null ? '—' : (v > 0 ? '+' : '') + Number(v).toFixed(1),
+  date: v => v == null ? '—' : new Date(v).toLocaleDateString(undefined, {year:'numeric',month:'short',day:'numeric'}),
+  shortDate: v => v == null ? '—' : new Date(v).toLocaleDateString(undefined, {month:'short',day:'numeric'}),
+};
+function el(tag, attrs={}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'html') e.innerHTML = v;
+    else if (k.startsWith('on')) e[k] = v;
+    else if (k === 'style') e.style.cssText = v;
+    else e.setAttribute(k, v);
+  }
+  kids.forEach(k => {
+    if (k == null) return;
+    e.appendChild(typeof k === 'string' || typeof k === 'number' ? document.createTextNode(String(k)) : k);
+  });
+  return e;
+}
+
+let profile;
+let activeWindow = '90';   // default
+// `data()` returns the current window's payload — every renderer reads from here
+// so a single state flip cascades to the whole UI.
+const data = () => profile.windows[activeWindow] || {};
+
+// Per-division weapon-stat averages, keyed by mode then by div slug. Used by
+// weaponDonut to render a reference ring showing where the player sits vs
+// their division's average. Lazy-loaded once per mode (cached).
+const divisionAvgStats = { '1on1': null, '2on2': null, '4on4': null };
+async function loadDivisionAverages(mode = '1on1') {
+  if (divisionAvgStats[mode]) return divisionAvgStats[mode];
+  try {
+    const base = (window.NUXT_PUBLIC_API_BASE || 'https://deepfrag-api-751658372467.us-central1.run.app');
+    const r = await fetch(base + '/api/divisions/avg-stats?mode=' + mode + '&since_days=365');
+    if (!r.ok) return {};
+    const d = await r.json();
+    divisionAvgStats[mode] = d.divisions || {};
+    return divisionAvgStats[mode];
+  } catch {
+    return {};
+  }
+}
+
+const WINDOW_LABELS = {
+  '7':   {label: 'Last 7d',   short: '7 days'},
+  '30':  {label: 'Last 30d',  short: '30 days'},
+  '90':  {label: 'Last 90d',  short: '90 days'},
+  '365': {label: 'Last year', short: '365 days'},
+  'all': {label: 'All time',  short: 'lifetime'},
+};
+const tabs = [
+  {id: 'overview', label: 'Overview'},
+  {id: 'trends', label: 'Trends'},
+  {id: 'compare', label: 'Compare'},
+  {id: '1on1', label: '1on1'},
+  {id: '4on4', label: '4on4'},
+  {id: '2on2', label: '2on2'},
+  {id: 'dmm', label: 'By DMM'},
+  {id: 'maps', label: 'Maps'},
+  {id: 'servers', label: 'Servers'},
+  {id: 'opponents', label: 'Rivals'},
+  {id: 'recent', label: 'Recent'},
+];
+let activeTab = 'overview';
+
+// Trends tab sub-navigation
+const TRENDS_SUBS = [
+  {id: 'activity',    label: 'Activity'},
+  {id: 'performance', label: 'Performance'},
+  {id: 'weapons',     label: 'Weapons'},
+  {id: 'items',       label: 'Items'},
+  {id: 'damage',      label: 'Damage'},
+];
+const TRENDS_MODES = [
+  {id: '1on1', label: '1on1'},
+  {id: '2on2', label: '2on2'},
+  {id: '4on4', label: '4on4'},
+];
+const COMPARE_PERIODS = [
+  {id: 'prior',    label: 'Previous period'},
+  {id: 'year_ago', label: 'Same period last year'},
+];
+let trendsSub = 'performance';
+let trendsMode = '1on1';
+let comparePeriod = 'prior';
+
+// Helper: pull the comparison payload (prior or year_ago) from a window object
+function comparisonData(windowData) {
+  if (!windowData) return {};
+  return (comparePeriod === 'year_ago' ? windowData.year_ago : windowData.prior) || {};
+}
+
+(async () => {
+  // Player canonical_id from ?id= param; default to cronus
+  const playerId = new URLSearchParams(location.search).get('id') || 'cronus';
+  try {
+    // Live API first — static /profiles/*.json snapshots are deploy-time stale
+    // and miss matches the every-2h scheduler has pulled since the last build.
+    // Falls back to the static JSON if the API is unreachable.
+    const apiBase = (window.NUXT_PUBLIC_API_BASE || 'https://deepfrag-api-751658372467.us-central1.run.app');
+    let r = await fetch(`${apiBase}/api/players/${playerId}/full`);
+    if (!r.ok) {
+      r = await fetch(`/profiles/${playerId}.json`);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+    }
+    profile = await r.json();
+  } catch (e) {
+    document.querySelector('main').innerHTML =
+      `<div style="padding:60px;text-align:center;color:var(--fg-3);grid-column:1/-1;">No profile data for "${playerId}".</div>`;
+    return;
+  }
+  document.getElementById('player-name').textContent = profile.player;
+  document.getElementById('hero-avatar').textContent = profile.player[0].toUpperCase();
+  const c = profile.career;
+  document.getElementById('player-meta').innerHTML = `
+    <span class="item"><span class="k">Hub matches</span><strong>${c.hub.matches.toLocaleString()}</strong></span>
+    <span class="item"><span class="k">Active since</span><strong>${fmt.date(c.hub.first_match)}</strong></span>
+    <span class="item"><span class="k">Last seen</span><strong>${fmt.date(c.hub.last_match)}</strong></span>
+  `;
+  document.getElementById('updated').textContent = 'updated ' + new Date(profile.generated_at).toLocaleString();
+  if (profile.default_window && profile.windows[profile.default_window]) activeWindow = profile.default_window;
+  // Deep link: ?id=X#tab=NAME (or just #NAME) → preselect that tab.
+  // Used by the /p/[id] profile home's nav cards to land users on a specific section.
+  const validTabs = new Set(tabs.map(t => t.id));
+  const hashTab = (location.hash || '').replace(/^#(tab=)?/, '');
+  if (validTabs.has(hashTab)) activeTab = hashTab;
+  window.addEventListener('hashchange', () => {
+    const h = (location.hash || '').replace(/^#(tab=)?/, '');
+    if (validTabs.has(h) && h !== activeTab) { activeTab = h; renderTabs(); render(); }
+  });
+  // Kick off division-average fetches in the background — they enrich the
+  // weapon donuts (reference ring) but the page renders fine without them.
+  // Re-render the mode tab when each lands so donuts redraw with the avg.
+  // Sidebar radar always shows 1on1 div-avg on non-mode tabs (Recent/Overview/etc),
+  // so re-render sidebar whenever any mode lands. Main tab body only redraws if
+  // the matching mode tab is currently active.
+  ['1on1', '2on2', '4on4'].forEach(m => {
+    loadDivisionAverages(m).then(() => {
+      renderSidebar();
+      if (activeTab === m) render();
+    });
+  });
+
+  renderHeroStats();
+  renderTabs();
+  renderWindowPills();
+  rerenderForWindow();
+})();
+
+function rerenderForWindow() {
+  renderFilterMeta();
+  renderSidebar();
+  render();
+}
+
+function renderWindowPills() {
+  // Now rendered as a dropdown next to the tab bar (inline) instead of a separate
+  // filterbar row. Same data structure, different chrome.
+  const sel = document.getElementById('window-select');
+  if (!sel) return;
+  sel.innerHTML = '';
+  (profile.windows_available || ['7','30','90','365','all']).forEach(w => {
+    const opt = el('option', {value: w}, WINDOW_LABELS[w]?.label || w);
+    if (w === activeWindow) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  sel.onchange = (e) => { activeWindow = e.target.value; rerenderForWindow(); };
+}
+
+function renderFilterMeta() {
+  const d = data();
+  const total = Object.values(d.by_mode || {}).reduce((sum, m) => sum + (m?.matches || 0), 0);
+  document.getElementById('filter-meta').innerHTML =
+    `Showing <strong>${total.toLocaleString()}</strong> matches · ${WINDOW_LABELS[activeWindow]?.short || activeWindow}`;
+}
+
+function renderHeroStats() {
+  const c = profile.career.lifetime || {};
+  const tiles = [
+    {l: 'Lifetime', v: fmt.num(c.matches || profile.career.hub.matches), s: 'matches'},
+    {l: 'Frags', v: fmt.num(c.frags), s: c.fpm ? c.fpm.toFixed(2) + ' FPM' : null},
+    {l: 'Hours', v: c.time_mins ? Math.round(c.time_mins/60).toLocaleString() : '—', s: 'played'},
+  ];
+  const c0 = document.getElementById('hero-stats');
+  c0.innerHTML = '';
+  tiles.forEach(t => c0.appendChild(el('div', {class: 'hero-stat'},
+    el('div', {class: 'l'}, t.l),
+    el('div', {class: 'v'}, t.v),
+    t.s ? el('div', {class: 's'}, t.s) : null,
+  )));
+}
+
+function renderTabs() {
+  const c = document.getElementById('tabs');
+  c.innerHTML = '';
+  tabs.forEach(t => {
+    // Overview is the Nuxt launchpad — navigate back to /p/{id} instead of
+    // rendering inline. All other tabs render here in the legacy SPA.
+    const handler = (t.id === 'overview')
+      ? () => { window.location.href = '/p/' + encodeURIComponent(profile.canonical_id); }
+      : () => { activeTab = t.id; renderTabs(); render(); };
+    const b = el('button', {class: t.id === activeTab ? 'active' : '', onclick: handler}, t.label);
+    c.appendChild(b);
+  });
+}
+
+function renderSidebar() {
+  const sb = document.getElementById('sidebar');
+  sb.innerHTML = '';
+  const d = data();
+
+  // Mode mini-blocks (Mock 1 sidebar style, Mock 2 colors)
+  const totalForWindow = Object.values(d.by_mode || {}).reduce((sum, m) => sum + (m?.matches || 0), 0);
+  const modeCard = el('div', {class: 'panel'},
+    el('div', {class: 'panel-h'},
+      el('span', {}, 'Mode breakdown'),
+      el('span', {class: 'right'}, fmt.num(totalForWindow) + ' matches'),
+    ),
+    el('div', {class: 'panel-b no-pad'}),
+  );
+  const body = modeCard.lastChild;
+  Object.entries(d.by_mode || {}).sort((a,b) => b[1].matches - a[1].matches).forEach(([mode, s]) => {
+    const wp = (s.wins/s.matches)*100, lp = (s.losses/s.matches)*100, dp = (s.draws/s.matches)*100;
+    body.appendChild(el('div', {class: 'side-block'},
+      el('div', {class: 'h'},
+        el('span', {class: 'name'},
+          el('span', {class: 'chip chip-' + mode}, mode),
+        ),
+        el('span', {class: 'n'}, fmt.num(s.matches)),
+      ),
+      (() => {
+        const bar = el('div', {class: 'wl-bar'});
+        if (wp) bar.appendChild(el('div', {class: 'w', style: 'width:' + wp + '%;'}));
+        if (lp) bar.appendChild(el('div', {class: 'l', style: 'width:' + lp + '%;'}));
+        if (dp) bar.appendChild(el('div', {class: 'd', style: 'width:' + dp + '%;'}));
+        return bar;
+      })(),
+      el('div', {class: 'wl-text'},
+        el('span', {}, s.wins + 'W · ' + s.losses + 'L' + (s.draws ? ' · ' + s.draws + 'D' : '')),
+        el('span', {class: 'pct'}, fmt.pct(s.win_rate)),
+      ),
+    ));
+  });
+  sb.appendChild(modeCard);
+
+  // By DMM sidebar block removed 2026-05-26 per user request — it's still
+  // accessible via the "By DMM" tab when users want that level of detail.
+
+  // Skill Profile radar — 5-axis pentagon (LG · RL · DDR · ±frag · Net dmg).
+  // Mode follows the active tab: if user is on the 4on4 tab, show 4on4 stats
+  // and 4on4 div-avg overlay. For non-mode tabs (overview/trends/maps/etc.),
+  // default to 1on1 (most relevant for solo skill assessment).
+  const radarMode = (activeTab === '4on4' || activeTab === '2on2') ? activeTab : '1on1';
+  const radarStats = (d.by_mode || {})[radarMode];
+  if (radarStats) {
+    // Player's current division for this mode — used to overlay the matching
+    // div-average polygon. May not exist for 2on2/4on4 yet.
+    const playerDivSlug = (profile.ratings?.[radarMode]?.tier?.slug) || null;
+    const divAvg = (divisionAvgStats[radarMode] || {})[playerDivSlug] || null;
+    sb.appendChild(weaponRadarCard(radarStats, divAvg, radarMode));
+  }
+
+  // Top rivals quick card
+  const rivalCard = el('div', {class: 'panel'},
+    el('div', {class: 'panel-h'}, el('span', {}, 'Top rivals')),
+    el('div', {class: 'panel-b no-pad'}),
+  );
+  const rivalBody = rivalCard.lastChild;
+  (d.head_to_head_1on1 || []).slice(0, 5).forEach(r => {
+    rivalBody.appendChild(el('div', {class: 'side-block'},
+      el('div', {class: 'h'},
+        el('span', {class: 'name'}, r.opponent),
+        el('span', {class: 'n'}, fmt.num(r.matches)),
+      ),
+      el('div', {class: 'wl-text', style: 'margin-top:4px;'},
+        el('span', {}, r.wins + 'W · ' + r.losses + 'L'),
+        el('span', {class: 'pct ' + (r.win_rate >= 0.5 ? 'win' : 'loss'), style: r.win_rate >= 0.5 ? 'color:var(--win)' : 'color:var(--loss)'}, fmt.pct(r.win_rate)),
+      ),
+    ));
+  });
+  sb.appendChild(rivalCard);
+}
+
+function render() {
+  const c = document.getElementById('content');
+  c.innerHTML = '';
+  if (activeTab === 'overview') return renderOverview(c);
+  if (activeTab === 'trends') return renderTrends(c);
+  if (activeTab === 'compare') return renderCompare(c);
+  if (activeTab === '1on1' || activeTab === '4on4' || activeTab === '2on2') return renderMode(c, activeTab);
+  if (activeTab === 'dmm') return renderDmm(c);
+  if (activeTab === 'maps') return renderMaps(c);
+  if (activeTab === 'servers') return renderServers(c);
+  if (activeTab === 'opponents') return renderOpponents(c);
+  if (activeTab === 'recent') return renderRecent(c);
+}
+
+function renderOverview(c) {
+  const d = data();
+
+  // Trend sparkline strip (top of overview)
+  c.appendChild(renderTrendStrip(d.trend_weekly || []));
+
+  // Mock 3-style big mode rows (this is the screenshot)
+  c.appendChild(el('div', {class: 'section-h', style: 'margin-top: 24px;'},
+    el('h2', {}, 'Modes'),
+    el('div', {class: 'meta'}, Object.keys(d.by_mode || {}).length + ' types · ' + WINDOW_LABELS[activeWindow].short),
+  ));
+  const mr = el('div', {class: 'mode-rows'});
+  Object.entries(d.by_mode || {}).sort((a,b) => b[1].matches - a[1].matches).forEach(([mode, s]) => {
+    const wp = (s.wins/s.matches)*100, lp = (s.losses/s.matches)*100, dp = (s.draws/s.matches)*100;
+    mr.appendChild(el('div', {class: 'mode-row'},
+      el('div', {class: 'lead'},
+        el('div', {class: 'name'}, el('span', {class: 'chip chip-' + mode}, mode)),
+        el('div', {class: 'n'}, fmt.num(s.matches) + ' matches'),
+      ),
+      (() => {
+        const bar = el('div', {class: 'bar'});
+        if (wp) bar.appendChild(el('div', {class: 'w', style: 'width:' + wp + '%;'}));
+        if (lp) bar.appendChild(el('div', {class: 'l', style: 'width:' + lp + '%;'}));
+        if (dp) bar.appendChild(el('div', {class: 'd', style: 'width:' + dp + '%;'}));
+        return bar;
+      })(),
+      el('div', {class: 'nums'},
+        el('strong', {}, s.wins + 'W'), ' · ',
+        el('strong', {}, s.losses + 'L'),
+        s.draws ? el('span', {}, ' · ' + s.draws + 'D') : null,
+        el('div', {class: 'sub'}, 'Avg ' + fmt.dec(s.avg_frags, 1) + ' frags · ' + fmt.delta(s.avg_frag_diff) + ' ±'),
+      ),
+      el('div', {class: 'wr ' + (s.win_rate >= 0.5 ? 'win' : 'loss')}, fmt.pct(s.win_rate)),
+    ));
+  });
+  c.appendChild(mr);
+
+  // Mock 1-style "Last 10 Matches" card (scoped to current window)
+  c.appendChild(el('div', {class: 'section-h', style: 'margin-top: 24px;'},
+    el('h2', {}, 'Last 10 matches'),
+    el('div', {class: 'meta'}, 'across all modes · ' + WINDOW_LABELS[activeWindow].short),
+  ));
+  c.appendChild(panel(null, () => recentTable((d.recent_matches || []).slice(0, 10))));
+
+  // 1on1 top maps preview
+  c.appendChild(el('div', {class: 'section-h', style: 'margin-top: 24px;'},
+    el('h2', {}, 'Top 1on1 maps'),
+    el('div', {class: 'meta'}, (d.by_map_1on1 || []).length + ' maps · ' + WINDOW_LABELS[activeWindow].short),
+  ));
+  c.appendChild(panel(null, () => tableInPanel((d.by_map_1on1 || []).slice(0, 10), [
+    {k: 'bucket', l: 'Map'},
+    {k: 'matches', l: 'N', num: true, f: fmt.num},
+    {k: 'wins', l: 'W', num: true},
+    {k: 'losses', l: 'L', num: true},
+    {k: 'win_rate', l: 'Win%', num: true, bar: true, f: fmt.pct},
+    {k: 'avg_frags', l: 'Frags', num: true, f: v => fmt.dec(v, 1)},
+    {k: 'avg_frag_diff', l: '±', num: true, f: fmt.delta, cls: v => v > 0 ? 'win' : 'loss'},
+  ], {key: 'matches', dir: 'desc'})));
+}
+
+function renderMode(c, mode) {
+  const d = data();
+  const s = (d.by_mode || {})[mode];
+  if (!s) { c.appendChild(el('div', {class: 'placeholder'}, 'No ' + mode + ' matches in ' + WINDOW_LABELS[activeWindow].short + '.')); return; }
+
+  // Prior period for this mode — used for the period-over-period delta on each tile.
+  // Null when activeWindow === 'all' (no prior to compare) or when no prior data exists.
+  const prior = ((d.prior || {}).by_mode || {})[mode] || null;
+  const ddr = (s.avg_dmg_given && s.avg_dmg_taken) ? s.avg_dmg_given / s.avg_dmg_taken : null;
+  const priorDdr = (prior?.avg_dmg_given && prior?.avg_dmg_taken) ? prior.avg_dmg_given / prior.avg_dmg_taken : null;
+
+  // delta builder: returns null when no prior. higherBetter=false flips the good/bad coloring.
+  function mkDelta(cur, prv, fmtFn, opts = {}) {
+    if (cur == null || prv == null || !prior) return null;
+    const diff = cur - prv;
+    const text = (diff > 0 ? '+' : '') + (opts.fmt ? opts.fmt(diff) : fmtFn(diff));
+    const good = opts.higherBetter === false ? (diff < 0) : (diff > 0);
+    if (diff === 0) return { text: '±0', good: null };
+    return { text: text + ' vs prior', good };
+  }
+
+  c.appendChild(el('div', {class: 'grid-cols-5'},
+    statCard(mode + ' matches', fmt.num(s.matches), null, null,
+             mkDelta(s.matches, prior?.matches, v => fmt.num(Math.round(v)))),
+    statCard('Win rate', fmt.pct(s.win_rate), s.wins + 'W · ' + s.losses + 'L', null,
+             mkDelta(s.win_rate, prior?.win_rate, v => (v * 100).toFixed(1) + 'pp')),
+    statCard('DDR', ddr != null ? ddr.toFixed(2) : '—', 'dmg given / taken', null,
+             mkDelta(ddr, priorDdr, v => v.toFixed(2))),
+    statCard('Avg ±', fmt.delta(s.avg_frag_diff), null, s.avg_frag_diff > 0 ? 'win' : 'loss',
+             mkDelta(s.avg_frag_diff, prior?.avg_frag_diff, v => v.toFixed(1))),
+    statCard('Dmg/match', fmt.num(Math.round(s.avg_dmg_given || 0)), null, null,
+             mkDelta(s.avg_dmg_given, prior?.avg_dmg_given, v => Math.round(v).toLocaleString())),
+  ));
+
+  // Player's current division for THIS mode → drives the donut reference ring.
+  const playerDivSlug = (profile.ratings?.[mode]?.tier?.slug) || null;
+  const divAvg = (divisionAvgStats[mode] || {})[playerDivSlug] || {};
+
+  c.appendChild(el('div', {class: 'section-h', style: 'margin-top: 20px;'},
+    el('h2', {}, 'Weapon proficiency'),
+    playerDivSlug ? el('div', {class: 'meta'},
+      'donut · reference arc = ' + (profile.ratings?.[mode]?.tier?.name || playerDivSlug) + ' average'
+    ) : null,
+  ));
+  const weapons = [
+    {name: 'LG',  val: s.lg_accuracy,  max: 0.35, avg: divAvg.lg_accuracy},
+    {name: 'RL',  val: s.rl_accuracy,  max: 0.50, avg: divAvg.rl_accuracy},
+    {name: 'SSG', val: s.ssg_accuracy, max: 0.40, avg: divAvg.ssg_accuracy},
+    {name: 'SG',  val: s.sg_accuracy,  max: 0.30, avg: divAvg.sg_accuracy},
+    {name: 'GL',  val: s.gl_accuracy,  max: 0.30, avg: divAvg.gl_accuracy},
+  ];
+  c.appendChild(panel(null, () => el('div', {class: 'panel-b', style: 'display:grid;grid-template-columns:repeat(5,1fr);gap:20px;'},
+    ...weapons.map(w => weaponDonut(w.name, w.val, w.max, w.avg)),
+  )));
+
+  c.appendChild(el('div', {class: 'section-h', style: 'margin-top: 20px;'}, el('h2', {}, 'Item pickups / match')));
+  c.appendChild(el('div', {class: 'grid-cols-5'},
+    statCard('Red armor', fmt.dec(s.avg_ra, 1)),
+    statCard('Yellow armor', fmt.dec(s.avg_ya, 1)),
+    statCard('Green armor', fmt.dec(s.avg_ga, 1)),
+    statCard('Megahealth', fmt.dec(s.avg_mh, 1)),
+    statCard('Quads', fmt.dec(s.avg_quads, 2)),
+  ));
+
+  const mapsKey = 'by_map_' + mode;
+  if (d[mapsKey]) {
+    c.appendChild(el('div', {class: 'section-h', style: 'margin-top: 20px;'},
+      el('h2', {}, mode + ' map breakdown'),
+      el('div', {class: 'meta'}, d[mapsKey].length + ' maps · ' + WINDOW_LABELS[activeWindow].short),
+    ));
+    c.appendChild(panel(null, () => tableInPanel(d[mapsKey], [
+      {k: 'bucket', l: 'Map'},
+      {k: 'matches', l: 'N', num: true, f: fmt.num},
+      {k: 'wins', l: 'W', num: true},
+      {k: 'losses', l: 'L', num: true},
+      {k: 'win_rate', l: 'Win%', num: true, bar: true, f: fmt.pct},
+      {k: 'avg_frags', l: 'Frags', num: true, f: v => fmt.dec(v, 1)},
+      {k: 'avg_frag_diff', l: '±', num: true, f: fmt.delta, cls: v => v > 0 ? 'win' : 'loss'},
+      {k: 'lg_accuracy', l: 'LG%', num: true, f: fmt.pct},
+      {k: 'rl_accuracy', l: 'RL%', num: true, f: fmt.pct},
+    ], {key: 'matches', dir: 'desc'})));
+  }
+}
+
+function renderDmm(c) {
+  const d = data();
+  const rows = Object.entries(d.by_dmm || {}).map(([dmm, s]) => ({dmm: 'DMM' + dmm, ...s}));
+  c.appendChild(el('div', {class: 'section-h'},
+    el('h2', {}, 'By deathmatch mode'),
+    el('div', {class: 'meta'}, 'DMM3 = duel default · DMM4 = items respawn fast, weapons stay'),
+  ));
+  c.appendChild(panel(null, () => tableInPanel(rows, [
+    {k: 'dmm', l: 'Mode', f: v => el('span', {class: 'chip chip-dmm'}, v)},
+    {k: 'matches', l: 'N', num: true, f: fmt.num},
+    {k: 'wins', l: 'W', num: true},
+    {k: 'losses', l: 'L', num: true},
+    {k: 'win_rate', l: 'Win%', num: true, bar: true, f: fmt.pct},
+    {k: 'avg_frags', l: 'Frags', num: true, f: v => fmt.dec(v, 1)},
+    {k: 'avg_frag_diff', l: '±', num: true, f: fmt.delta, cls: v => v > 0 ? 'win' : 'loss'},
+    {k: 'lg_accuracy', l: 'LG%', num: true, f: fmt.pct},
+    {k: 'rl_accuracy', l: 'RL%', num: true, f: fmt.pct},
+    {k: 'avg_dmg_given', l: 'Dmg/m', num: true, f: v => fmt.num(Math.round(v))},
+  ], {key: 'matches', dir: 'desc'})));
+}
+
+function renderMaps(c) {
+  const d = data();
+  ['1on1', '4on4', '2on2'].forEach(mode => {
+    const rows = d['by_map_' + mode] || [];
+    if (!rows.length) return;
+    c.appendChild(el('div', {class: 'section-h', style: 'margin-top: 16px;'},
+      el('h2', {}, mode),
+      el('div', {class: 'meta'}, rows.length + ' maps'),
+    ));
+    c.appendChild(panel(null, () => tableInPanel(rows, [
+      {k: 'bucket', l: 'Map'},
+      {k: 'matches', l: 'N', num: true, f: fmt.num},
+      {k: 'wins', l: 'W', num: true},
+      {k: 'losses', l: 'L', num: true},
+      {k: 'win_rate', l: 'Win%', num: true, bar: true, f: fmt.pct},
+      {k: 'avg_frags', l: 'Frags', num: true, f: v => fmt.dec(v, 1)},
+      {k: 'avg_frag_diff', l: '±', num: true, f: fmt.delta, cls: v => v > 0 ? 'win' : 'loss'},
+      {k: 'lg_accuracy', l: 'LG%', num: true, f: fmt.pct},
+      {k: 'rl_accuracy', l: 'RL%', num: true, f: fmt.pct},
+    ], {key: 'matches', dir: 'desc'})));
+  });
+}
+
+function renderServers(c) {
+  const d = data();
+  c.appendChild(el('div', {class: 'section-h'},
+    el('h2', {}, 'All servers'),
+    el('div', {class: 'meta'}, WINDOW_LABELS[activeWindow].short),
+  ));
+  c.appendChild(panel(null, () => tableInPanel(d.by_server_all || [], [
+    {k: 'bucket', l: 'Server'},
+    {k: 'matches', l: 'N', num: true, f: fmt.num},
+    {k: 'wins', l: 'W', num: true},
+    {k: 'losses', l: 'L', num: true},
+    {k: 'win_rate', l: 'Win%', num: true, bar: true, f: fmt.pct},
+    {k: 'avg_frags', l: 'Frags', num: true, f: v => fmt.dec(v, 1)},
+    {k: 'avg_frag_diff', l: '±', num: true, f: fmt.delta, cls: v => v > 0 ? 'win' : 'loss'},
+  ], {key: 'matches', dir: 'desc'})));
+}
+
+function renderOpponents(c) {
+  const d = data();
+  const rows = (d.head_to_head_1on1 || []).filter(r => r.matches >= 3);
+  c.appendChild(el('div', {class: 'section-h'},
+    el('h2', {}, '1on1 head-to-head'),
+    el('div', {class: 'meta'}, rows.length + ' opponents (≥3 matches) · ' + WINDOW_LABELS[activeWindow].short),
+  ));
+  c.appendChild(panel(null, () => tableInPanel(rows, [
+    {k: 'opponent', l: 'Opponent'},
+    {k: 'matches', l: 'N', num: true, f: fmt.num},
+    {k: 'wins', l: 'W', num: true},
+    {k: 'losses', l: 'L', num: true},
+    {k: 'win_rate', l: 'Win%', num: true, bar: true, f: fmt.pct},
+    {k: 'avg_frag_diff', l: 'Avg ±', num: true, f: fmt.delta, cls: v => v > 0 ? 'win' : 'loss'},
+    {k: 'last_played', l: 'Last', f: fmt.date},
+  ], {key: 'matches', dir: 'desc'})));
+}
+
+function renderRecent(c) {
+  const d = data();
+  c.appendChild(el('div', {class: 'section-h'},
+    el('h2', {}, 'Last 50 matches'),
+    el('div', {class: 'meta'}, WINDOW_LABELS[activeWindow].short),
+  ));
+  c.appendChild(panel(null, () => recentTable(d.recent_matches || [])));
+}
+
+// ── helpers ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// TRENDS tab
+// ═══════════════════════════════════════════════════════════════
+function renderTrends(c) {
+  const d = data();
+  // Per-mode trend data (falls back to combined if missing for that mode in this window)
+  const trendByMode = (d.trend_weekly_by_mode || {});
+  const trend = trendByMode[trendsMode] || [];
+
+  // Top row: mode selector + compare-period selector
+  c.appendChild(el('div', {class: 'trends-toolbar'},
+    el('div', {class: 'toolbar-group'},
+      el('span', {class: 'toolbar-label'}, 'Mode'),
+      el('div', {class: 'pill-group'},
+        ...TRENDS_MODES.map(m => el('button', {
+          class: m.id === trendsMode ? 'active' : '',
+          onclick: () => { trendsMode = m.id; render(); },
+        }, m.label)),
+      ),
+    ),
+    el('div', {class: 'toolbar-group'},
+      el('span', {class: 'toolbar-label'}, 'Compare to'),
+      el('div', {class: 'pill-group'},
+        ...COMPARE_PERIODS.map(p => el('button', {
+          class: p.id === comparePeriod ? 'active' : '',
+          onclick: () => { comparePeriod = p.id; render(); },
+        }, p.label)),
+      ),
+    ),
+  ));
+
+  // Sub-tab nav (Activity / Performance / Weapons / Items / Damage)
+  c.appendChild(el('div', {style: 'margin-bottom: 20px;'},
+    el('div', {class: 'pill-group'},
+      ...TRENDS_SUBS.map(s => el('button', {
+        class: s.id === trendsSub ? 'active' : '',
+        onclick: () => { trendsSub = s.id; render(); },
+      }, s.label)),
+    ),
+  ));
+
+  if (!trend.length) {
+    c.appendChild(el('div', {class: 'placeholder'},
+      `No ${trendsMode} matches in this window. Try widening with the Window pills above, or switching mode.`));
+    return;
+  }
+
+  if (trendsSub === 'activity')    return renderTrendsActivity(c, d, trend, trendsMode);
+  if (trendsSub === 'performance') return renderTrendsBlock(c, d, trend, 'performance', trendsMode);
+  if (trendsSub === 'weapons')     return renderTrendsBlock(c, d, trend, 'weapons',     trendsMode);
+  if (trendsSub === 'items')       return renderTrendsBlock(c, d, trend, 'items',       trendsMode);
+  if (trendsSub === 'damage')      return renderTrendsBlock(c, d, trend, 'damage',      trendsMode);
+}
+
+// Each "trends block" declares chart series + card grid, with mode-specific extensions.
+// Modes:
+//   1on1 — no team play, no item respawns to fight over → omit quads, pents, transfers, team dmg, EWEP, teamkills
+//   2on2 / 4on4 — full team play → all stats apply
+const NUM = v => fmt.num(Math.round(v));
+const DEC1 = v => fmt.dec(v, 1);
+const DEC2 = v => fmt.dec(v, 2);
+const TRENDS_BLOCKS = {
+  performance: {
+    title: 'Performance',
+    chartSeries: {
+      common: [
+        {key: 'avg_frags',     label: 'Avg frags',   color: '#14e6c0', axis: 'y',  scale: v => v},
+        {key: 'avg_frag_diff', label: 'Avg ±',       color: '#8ab4f8', axis: 'y',  scale: v => v},
+        {key: 'win_rate',      label: 'Win %',       color: '#fbbf24', axis: 'y2', scale: v => v == null ? null : v * 100},
+      ],
+    },
+    cards: {
+      common: [
+        {label: 'Win rate',    key: 'win_rate',      fmt: fmt.pct, spark: 'win_rate', higherBetter: true, pp: true},
+        {label: 'Avg frags',   key: 'avg_frags',     fmt: DEC1, spark: 'avg_frags', higherBetter: true},
+        {label: 'Avg ±',       key: 'avg_frag_diff', fmt: fmt.delta, spark: 'avg_frag_diff', higherBetter: true},
+        {label: 'Avg deaths',  key: 'avg_deaths',    fmt: DEC1, spark: 'avg_deaths', higherBetter: false},
+        {label: 'Spawn frags', key: 'avg_spawnfrags', fmt: DEC2, spark: 'avg_spawnfrags', higherBetter: true},
+        {label: 'Ping',        key: 'avg_ping',      fmt: v => fmt.dec(v, 0) + 'ms', spark: 'avg_ping', higherBetter: false},
+      ],
+      '4on4': [{label: 'Teamkills', key: 'avg_teamkills', fmt: DEC2, spark: 'avg_teamkills', higherBetter: false}],
+      '2on2': [{label: 'Teamkills', key: 'avg_teamkills', fmt: DEC2, spark: 'avg_teamkills', higherBetter: false}],
+    },
+  },
+  weapons: {
+    title: 'Weapons',
+    chartSeries: {
+      common: [
+        {key: 'lg_accuracy',  label: 'LG %',  color: '#8ab4f8', axis: 'y', scale: v => v == null ? null : v * 100},
+        {key: 'rl_accuracy',  label: 'RL %',  color: '#fbbf24', axis: 'y', scale: v => v == null ? null : v * 100},
+        {key: 'sg_accuracy',  label: 'SG %',  color: '#14e6c0', axis: 'y', scale: v => v == null ? null : v * 100},
+        {key: 'ssg_accuracy', label: 'SSG %', color: '#f87171', axis: 'y', scale: v => v == null ? null : v * 100},
+      ],
+    },
+    cards: {
+      common: [
+        {label: 'LG accuracy',    key: 'lg_accuracy',   fmt: fmt.pct, spark: 'lg_accuracy', higherBetter: true, pp: true},
+        {label: 'RL accuracy',    key: 'rl_accuracy',   fmt: fmt.pct, spark: 'rl_accuracy', higherBetter: true, pp: true},
+        {label: 'SG accuracy',    key: 'sg_accuracy',   fmt: fmt.pct, spark: 'sg_accuracy', higherBetter: true, pp: true},
+        {label: 'SSG accuracy',   key: 'ssg_accuracy',  fmt: fmt.pct, spark: 'ssg_accuracy', higherBetter: true, pp: true},
+        {label: 'GL accuracy',    key: 'gl_accuracy',   fmt: fmt.pct, higherBetter: true, pp: true},
+        {label: 'LG dmg / match', key: 'avg_lg_dmg',    fmt: NUM, spark: 'avg_lg_dmg', higherBetter: true},
+        {label: 'RL dmg / match', key: 'avg_rl_dmg',    fmt: NUM, spark: 'avg_rl_dmg', higherBetter: true},
+        {label: 'RL kills',       key: 'avg_rl_kills',  fmt: DEC1, higherBetter: true},
+        {label: 'LG kills',       key: 'avg_lg_kills',  fmt: DEC1, higherBetter: true},
+        {label: 'RL directs',     key: 'avg_rl_directs', fmt: DEC1, higherBetter: true},
+        {label: 'RL dropped',     key: 'avg_rl_dropped', fmt: DEC1, spark: 'avg_rl_dropped', higherBetter: false},
+        {label: 'LG dropped',     key: 'avg_lg_dropped', fmt: DEC1, spark: 'avg_lg_dropped', higherBetter: false},
+      ],
+      // Transfers (dropping a weapon to a teammate) only matter in team play.
+      '4on4': [
+        {label: 'RL transfers', key: 'avg_rl_transfer', fmt: DEC1, spark: 'avg_rl_transfer', higherBetter: true},
+        {label: 'LG transfers', key: 'avg_lg_transfer', fmt: DEC1, spark: 'avg_lg_transfer', higherBetter: true},
+      ],
+      '2on2': [
+        {label: 'RL transfers', key: 'avg_rl_transfer', fmt: DEC1, spark: 'avg_rl_transfer', higherBetter: true},
+        {label: 'LG transfers', key: 'avg_lg_transfer', fmt: DEC1, spark: 'avg_lg_transfer', higherBetter: true},
+      ],
+    },
+  },
+  items: {
+    title: 'Items',
+    chartSeries: {
+      common: [
+        {key: 'avg_ra', label: 'Red armor',    color: '#f87171', axis: 'y', scale: v => v},
+        {key: 'avg_ya', label: 'Yellow armor', color: '#fbbf24', axis: 'y', scale: v => v},
+        {key: 'avg_mh', label: 'Mega health',  color: '#14e6c0', axis: 'y', scale: v => v},
+      ],
+    },
+    cards: {
+      common: [
+        {label: 'Red armor / m',    key: 'avg_ra', fmt: DEC1, spark: 'avg_ra', higherBetter: true},
+        {label: 'Yellow armor / m', key: 'avg_ya', fmt: DEC1, spark: 'avg_ya', higherBetter: true},
+        {label: 'Green armor / m',  key: 'avg_ga', fmt: DEC1, spark: 'avg_ga', higherBetter: true},
+        {label: 'Mega health / m',  key: 'avg_mh', fmt: DEC1, spark: 'avg_mh', higherBetter: true},
+        {label: 'Health 25 / m',    key: 'avg_h25', fmt: DEC1, higherBetter: true},
+        {label: 'Health 15 / m',    key: 'avg_h15', fmt: DEC1, higherBetter: true},
+        {label: 'RL pickups / m',   key: 'avg_rl_taken', fmt: DEC1, higherBetter: true},
+        {label: 'LG pickups / m',   key: 'avg_lg_taken', fmt: DEC1, higherBetter: true},
+      ],
+      // Quads/pents/rings essentially don't appear on duel maps under DMM3 → omit for 1on1
+      '4on4': [
+        {label: 'Quads / m', key: 'avg_quads', fmt: DEC2, spark: 'avg_quads', higherBetter: true},
+        {label: 'Pents / m', key: 'avg_pents', fmt: DEC2, spark: 'avg_pents', higherBetter: true},
+      ],
+      '2on2': [
+        {label: 'Quads / m', key: 'avg_quads', fmt: DEC2, spark: 'avg_quads', higherBetter: true},
+        {label: 'Pents / m', key: 'avg_pents', fmt: DEC2, spark: 'avg_pents', higherBetter: true},
+      ],
+    },
+  },
+  damage: {
+    title: 'Damage',
+    chartSeries: {
+      common: [
+        {key: 'avg_dmg_given', label: 'Given', color: '#14e6c0', axis: 'y', scale: v => v},
+        {key: 'avg_dmg_taken', label: 'Taken', color: '#f87171', axis: 'y', scale: v => v},
+      ],
+    },
+    cards: {
+      common: [
+        {label: 'Damage given',  key: 'avg_dmg_given', fmt: NUM, spark: 'avg_dmg_given', higherBetter: true},
+        {label: 'Damage taken',  key: 'avg_dmg_taken', fmt: NUM, spark: 'avg_dmg_taken', higherBetter: false},
+        {label: 'Dmg to die',    key: 'avg_dmg_to_die', fmt: NUM, higherBetter: true},
+        {label: 'Self damage',   key: 'avg_dmg_self',  fmt: NUM, higherBetter: false},
+      ],
+      // EWEP (enemy-weapons damage), team damage, team-weapon dmg only relevant in team play
+      '4on4': [
+        {label: 'EWEP (enemy wpn dmg)', key: 'avg_dmg_enemy_weapons', fmt: NUM, spark: 'avg_dmg_enemy_weapons', higherBetter: true},
+        {label: 'Team damage',          key: 'avg_dmg_team',          fmt: NUM, spark: 'avg_dmg_team', higherBetter: false},
+        {label: 'Team wpn damage',      key: 'avg_dmg_team_weapons',  fmt: NUM, higherBetter: false},
+      ],
+      '2on2': [
+        {label: 'EWEP (enemy wpn dmg)', key: 'avg_dmg_enemy_weapons', fmt: NUM, spark: 'avg_dmg_enemy_weapons', higherBetter: true},
+        {label: 'Team damage',          key: 'avg_dmg_team',          fmt: NUM, spark: 'avg_dmg_team', higherBetter: false},
+        {label: 'Team wpn damage',      key: 'avg_dmg_team_weapons',  fmt: NUM, higherBetter: false},
+      ],
+    },
+  },
+};
+
+function blockCardsFor(blockId, mode) {
+  const b = TRENDS_BLOCKS[blockId];
+  return [...b.cards.common, ...(b.cards[mode] || [])];
+}
+function blockSeriesFor(blockId, mode) {
+  const b = TRENDS_BLOCKS[blockId];
+  return [...b.chartSeries.common, ...((b.chartSeries[mode]) || [])];
+}
+
+// Render: chart on top + cards below. Cards show current value, delta vs selected compare, optional sparkline.
+function renderTrendsBlock(c, d, trend, blockId, mode) {
+  const block = TRENDS_BLOCKS[blockId];
+  const cur   = (d.by_mode || {})[mode] || {};
+  const cmp   = (comparisonData(d).by_mode || {})[mode] || {};
+
+  const cmpLabel = comparePeriod === 'year_ago' ? 'same period last year' : 'previous ' + WINDOW_LABELS[activeWindow].short;
+
+  // Big multi-line chart with rich header (mode chip + week count)
+  const chartPanel = el('div', {class: 'panel'},
+    el('div', {class: 'panel-h'},
+      el('span', {}, block.title + ' trend — weekly'),
+      el('span', {class: 'right', style: 'display:flex;align-items:center;gap:8px;'},
+        el('span', {class: 'chip chip-' + mode}, mode),
+        el('span', {}, trend.length + ' weeks'),
+      ),
+    ),
+  );
+  const chartBody = el('div', {style: 'padding: 16px 18px; height: 320px;'});
+  const chartCanvas = el('canvas');
+  chartBody.appendChild(chartCanvas);
+  chartPanel.appendChild(chartBody);
+  c.appendChild(chartPanel);
+  setTimeout(() => makeMultilineChart(chartCanvas, trend, blockSeriesFor(blockId, mode)), 0);
+
+  // Card grid
+  c.appendChild(el('div', {class: 'section-h', style: 'margin-top: 24px;'},
+    el('h2', {}, block.title + ' breakdown'),
+    el('div', {class: 'meta'}, mode + ' · current vs ' + cmpLabel),
+  ));
+  const grid = el('div', {class: 'trend-card-grid'});
+  blockCardsFor(blockId, mode).forEach(cd => grid.appendChild(trendCard(cd, cur, cmp, trend)));
+  c.appendChild(grid);
+}
+
+// Activity tab is structurally different — uses bar charts and a summary panel.
+function renderTrendsActivity(c, d, trend, mode) {
+  c.appendChild(el('div', {class: 'section-h', style: 'margin-bottom: 12px;'},
+    el('h2', {}, 'Activity'),
+    el('div', {class: 'meta'},
+      el('span', {class: 'chip chip-' + mode, style: 'margin-right:6px;'}, mode),
+      WINDOW_LABELS[activeWindow].short,
+    ),
+  ));
+  c.appendChild(el('div', {class: 'trend-bars-grid'},
+    panel('Matches per week', () => {
+      const body = el('div', {style: 'padding: 12px 18px; height: 220px;'});
+      const canvas = el('canvas');
+      body.appendChild(canvas);
+      setTimeout(() => makeBarChart(canvas, trend, 'matches', '#14e6c0'), 0);
+      return body;
+    }),
+    panel('Frags per week', () => {
+      const body = el('div', {style: 'padding: 12px 18px; height: 220px;'});
+      const canvas = el('canvas');
+      body.appendChild(canvas);
+      const fragsPerWeek = trend.map(w => ({...w, total_frags: (w.matches || 0) * (w.avg_frags || 0)}));
+      setTimeout(() => makeBarChart(canvas, fragsPerWeek, 'total_frags', '#8ab4f8'), 0);
+      return body;
+    }),
+  ));
+
+  // Summary card
+  const totalMatches = trend.reduce((s, w) => s + (w.matches || 0), 0);
+  const totalFrags = trend.reduce((s, w) => s + (w.matches || 0) * (w.avg_frags || 0), 0);
+  const activeWeeks = trend.filter(w => w.matches > 0).length;
+  const peakWeek = trend.reduce((best, w) => (w.matches || 0) > (best?.matches || 0) ? w : best, trend[0]);
+  const peakLgWeek = trend.filter(w => w.lg_accuracy != null && w.matches > 5).reduce((best, w) => (w.lg_accuracy || 0) > (best?.lg_accuracy || 0) ? w : best, null);
+
+  c.appendChild(panel(mode + ' activity summary — ' + WINDOW_LABELS[activeWindow].short, () => {
+    return el('div', {style: 'padding: 8px 0;'},
+      summaryRow('Active weeks', activeWeeks + ' of ' + trend.length),
+      summaryRow('Total matches', fmt.num(totalMatches)),
+      summaryRow('Total frags (approx)', fmt.num(Math.round(totalFrags))),
+      summaryRow('Avg matches per active week', fmt.dec(totalMatches / Math.max(activeWeeks, 1), 1)),
+      summaryRow('Peak week', peakWeek ? (peakWeek.matches + ' matches on ' + fmt.shortDate(peakWeek.week_start)) : '—'),
+      summaryRow('Best LG week', peakLgWeek ? (fmt.pct(peakLgWeek.lg_accuracy) + ' on ' + fmt.shortDate(peakLgWeek.week_start) + ' (' + peakLgWeek.matches + ' matches)') : '—'),
+    );
+  }));
+}
+
+function summaryRow(k, v) {
+  return el('div', {style: 'display:flex;justify-content:space-between;padding:10px 18px;border-bottom:1px solid var(--border);'},
+    el('span', {style: 'color:var(--fg-3);font-size:12px;'}, k),
+    el('span', {style: 'font-weight:700;font-variant-numeric:tabular-nums;'}, v),
+  );
+}
+
+// A trend card: label, current value, delta vs prior, optional sparkline
+function trendCard(spec, cur, prior, trend) {
+  const card = el('div', {class: 'tc'});
+  const v = cur[spec.key];
+  const pv = prior[spec.key];
+  const delta = computeDelta(v, pv, spec.higherBetter, spec.pp);
+
+  card.appendChild(el('div', {class: 'tc-top'},
+    el('div', {},
+      el('div', {class: 'tc-l'}, spec.label),
+      el('div', {class: 'tc-v'}, spec.fmt(v)),
+    ),
+    delta.node,
+  ));
+  if (spec.spark) {
+    const cv = el('canvas', {class: 'tc-spark'});
+    card.appendChild(cv);
+    setTimeout(() => makeSparkline(cv, trend, spec.spark, '#14e6c0'), 0);
+  }
+  const cmpShort = comparePeriod === 'year_ago'
+    ? 'vs last year (' + WINDOW_LABELS[activeWindow].short + ')'
+    : 'vs prior ' + WINDOW_LABELS[activeWindow].short;
+  const priorLabel = comparePeriod === 'year_ago' ? 'last yr' : 'prior';
+  card.appendChild(el('div', {class: 'tc-foot'},
+    el('span', {}, cmpShort),
+    el('span', {}, priorLabel + ': ' + (pv == null ? '—' : spec.fmt(pv))),
+  ));
+  return card;
+}
+
+function computeDelta(cur, prior, higherBetter=true, pp=false) {
+  if (cur == null || prior == null) return {node: el('span', {class: 'delta flat'}, '—'), value: null};
+  const d = cur - prior;
+  if (Math.abs(d) < 0.00001) return {node: el('span', {class: 'delta flat'}, '·'), value: 0};
+  const up = higherBetter ? d > 0 : d < 0;
+  const arrow = d > 0 ? '▲' : '▼';
+  let str;
+  if (pp) str = (d * 100 > 0 ? '+' : '') + (d * 100).toFixed(1) + 'pp';
+  else if (Math.abs(prior) > 50) str = (d > 0 ? '+' : '') + Math.round(d);
+  else if (Math.abs(prior) > 1) str = (d > 0 ? '+' : '') + d.toFixed(1);
+  else str = (d > 0 ? '+' : '') + d.toFixed(2);
+  return {node: el('span', {class: 'delta ' + (up ? 'up' : 'down')}, arrow + ' ' + str), value: d};
+}
+
+// ═══════════════════════════════════════════════════════════════
+// COMPARE tab
+// ═══════════════════════════════════════════════════════════════
+function renderCompare(c) {
+  const d = data();
+  const cmp = comparisonData(d);
+  const hasCompare = cmp && Object.keys(cmp).length > 0;
+  if (!hasCompare) {
+    c.appendChild(el('div', {class: 'placeholder'},
+      'No comparison data for this window. Pick 7d / 30d / 90d / 1y at the top.'));
+    return;
+  }
+
+  // Toolbar: mode + compare-period (same controls as Trends tab)
+  c.appendChild(el('div', {class: 'trends-toolbar'},
+    el('div', {class: 'toolbar-group'},
+      el('span', {class: 'toolbar-label'}, 'Mode'),
+      el('div', {class: 'pill-group'},
+        ...TRENDS_MODES.map(m => el('button', {
+          class: m.id === trendsMode ? 'active' : '',
+          onclick: () => { trendsMode = m.id; render(); },
+        }, m.label)),
+      ),
+    ),
+    el('div', {class: 'toolbar-group'},
+      el('span', {class: 'toolbar-label'}, 'Compare to'),
+      el('div', {class: 'pill-group'},
+        ...COMPARE_PERIODS.map(p => el('button', {
+          class: p.id === comparePeriod ? 'active' : '',
+          onclick: () => { comparePeriod = p.id; render(); },
+        }, p.label)),
+      ),
+    ),
+  ));
+
+  const cmpLabelLong = comparePeriod === 'year_ago'
+    ? 'same period last year'
+    : 'previous ' + WINDOW_LABELS[activeWindow].short;
+  const cmpLabelShort = comparePeriod === 'year_ago' ? 'Last year' : 'Prior';
+
+  c.appendChild(el('div', {class: 'section-h'},
+    el('h2', {}, 'Period comparison'),
+    el('div', {class: 'meta'},
+      el('span', {class: 'chip chip-' + trendsMode, style: 'margin-right: 6px;'}, trendsMode),
+      'current ' + WINDOW_LABELS[activeWindow].short + ' vs ' + cmpLabelLong,
+    ),
+  ));
+
+  // Period headers with date ranges
+  const days = Number(activeWindow);
+  const dayMs = 86400000;
+  const now = Date.now();
+  const curRange = fmt.date(new Date(now - dayMs * days)) + ' → today';
+  const cmpStartMs = comparePeriod === 'year_ago' ? now - dayMs * 365 : now - dayMs * days * 2;
+  const cmpEndMs   = comparePeriod === 'year_ago' ? now - dayMs * (365 - days) : now - dayMs * days;
+  const cmpRange = fmt.date(new Date(cmpStartMs)) + ' → ' + fmt.date(new Date(cmpEndMs));
+  c.appendChild(el('div', {class: 'cmp-head'},
+    el('div', {class: 'cmp-period-h current'},
+      el('div', {class: 'l'}, 'Current ' + WINDOW_LABELS[activeWindow].short),
+      el('div', {class: 'v'}, curRange),
+    ),
+    el('div', {class: 'cmp-vs'}, 'vs'),
+    el('div', {class: 'cmp-period-h prior'},
+      el('div', {class: 'l'}, cmpLabelShort + ' ' + WINDOW_LABELS[activeWindow].short),
+      el('div', {class: 'v'}, cmpRange),
+    ),
+  ));
+
+  const cur = (d.by_mode || {})[trendsMode] || {};
+  const prv = (cmp.by_mode || {})[trendsMode] || {};
+
+  const baseRows = {
+    Volume: [
+      {l: 'Matches',  k: 'matches',  f: fmt.num, higher: true},
+      {l: 'Wins',     k: 'wins',     f: fmt.num, higher: true},
+      {l: 'Losses',   k: 'losses',   f: fmt.num, higher: false},
+      {l: 'Win rate', k: 'win_rate', f: fmt.pct, higher: true, pp: true},
+    ],
+    Performance: [
+      {l: 'Avg frags',  k: 'avg_frags',     f: DEC1, higher: true},
+      {l: 'Avg deaths', k: 'avg_deaths',    f: DEC1, higher: false},
+      {l: 'Avg ±',      k: 'avg_frag_diff', f: fmt.delta, higher: true},
+      {l: 'Spawn frags', k: 'avg_spawnfrags', f: DEC2, higher: true},
+    ],
+    Damage: [
+      {l: 'Dmg given',  k: 'avg_dmg_given', f: NUM, higher: true},
+      {l: 'Dmg taken',  k: 'avg_dmg_taken', f: NUM, higher: false},
+      {l: 'Dmg to die', k: 'avg_dmg_to_die', f: NUM, higher: true},
+      {l: 'Self damage', k: 'avg_dmg_self', f: NUM, higher: false},
+    ],
+    'Weapon accuracy': [
+      {l: 'LG %',  k: 'lg_accuracy',  f: fmt.pct, higher: true, pp: true},
+      {l: 'RL %',  k: 'rl_accuracy',  f: fmt.pct, higher: true, pp: true},
+      {l: 'SG %',  k: 'sg_accuracy',  f: fmt.pct, higher: true, pp: true},
+      {l: 'SSG %', k: 'ssg_accuracy', f: fmt.pct, higher: true, pp: true},
+    ],
+    'Weapon damage / match': [
+      {l: 'LG damage',  k: 'avg_lg_dmg', f: NUM, higher: true},
+      {l: 'RL damage',  k: 'avg_rl_dmg', f: NUM, higher: true},
+      {l: 'RL kills',   k: 'avg_rl_kills', f: DEC1, higher: true},
+      {l: 'LG kills',   k: 'avg_lg_kills', f: DEC1, higher: true},
+      {l: 'RL dropped', k: 'avg_rl_dropped', f: DEC1, higher: false},
+      {l: 'LG dropped', k: 'avg_lg_dropped', f: DEC1, higher: false},
+    ],
+    'Item control / match': [
+      {l: 'Red armor',    k: 'avg_ra', f: DEC1, higher: true},
+      {l: 'Yellow armor', k: 'avg_ya', f: DEC1, higher: true},
+      {l: 'Mega health',  k: 'avg_mh', f: DEC1, higher: true},
+      {l: 'RL pickups',   k: 'avg_rl_taken', f: DEC1, higher: true},
+      {l: 'LG pickups',   k: 'avg_lg_taken', f: DEC1, higher: true},
+    ],
+  };
+  // Team-mode-only sections
+  if (trendsMode !== '1on1') {
+    baseRows.Performance.push({l: 'Teamkills', k: 'avg_teamkills', f: DEC2, higher: false});
+    baseRows.Damage.push(
+      {l: 'EWEP (enemy wpn dmg)', k: 'avg_dmg_enemy_weapons', f: NUM, higher: true},
+      {l: 'Team damage', k: 'avg_dmg_team', f: NUM, higher: false},
+      {l: 'Team wpn damage', k: 'avg_dmg_team_weapons', f: NUM, higher: false},
+    );
+    baseRows['Weapon damage / match'].push(
+      {l: 'RL transfers', k: 'avg_rl_transfer', f: DEC1, higher: true},
+      {l: 'LG transfers', k: 'avg_lg_transfer', f: DEC1, higher: true},
+    );
+    baseRows['Item control / match'].push(
+      {l: 'Quads',  k: 'avg_quads', f: DEC2, higher: true},
+      {l: 'Pents',  k: 'avg_pents', f: DEC2, higher: true},
+    );
+  }
+  const sections = Object.entries(baseRows).map(([h, rows]) => ({h, rows}));
+
+  const tbl = el('div', {class: 'cmp-table'});
+  sections.forEach(s => {
+    tbl.appendChild(el('div', {class: 'cmp-section-h'}, s.h));
+    s.rows.forEach(r => {
+      const cv = cur[r.k], pv = prv[r.k];
+      const delta = computeDelta(cv, pv, r.higher, r.pp);
+      tbl.appendChild(el('div', {class: 'cmp-row'},
+        el('div', {class: 'cmp-label'}, r.l),
+        el('div', {class: 'cmp-val now'}, r.f(cv)),
+        el('div', {class: 'cmp-diff'}, delta.node),
+        el('div', {class: 'cmp-val prv'}, r.f(pv)),
+      ));
+    });
+  });
+  c.appendChild(tbl);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Chart helpers
+// ═══════════════════════════════════════════════════════════════
+function makeMultilineChart(canvas, weekly, series) {
+  const labels = weekly.map(w => w.week_start.slice(0, 10));
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: series.map(s => ({
+        label: s.label,
+        data: weekly.map(w => s.scale(w[s.key])),
+        borderColor: s.color,
+        backgroundColor: 'transparent',
+        yAxisID: s.axis,
+        tension: 0.25,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        borderWidth: 2,
+        spanGaps: true,
+      })),
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: {mode: 'index', intersect: false},
+      plugins: {
+        legend: {labels: {color: '#f1f5f9', usePointStyle: true, padding: 14}},
+        tooltip: {backgroundColor: '#1c2330', borderColor: '#2b3445', borderWidth: 1},
+      },
+      scales: {
+        x: {ticks: {color: '#64748b', maxTicksLimit: 12}, grid: {color: '#1c2330'}},
+        y: {ticks: {color: '#64748b'}, grid: {color: '#1c2330'}},
+        y2: {position: 'right', ticks: {color: '#64748b', callback: v => v + '%'}, grid: {drawOnChartArea: false}, display: series.some(s => s.axis === 'y2')},
+      },
+    },
+  });
+}
+function makeBarChart(canvas, weekly, key, color) {
+  new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: weekly.map(w => w.week_start.slice(0, 10)),
+      datasets: [{
+        data: weekly.map(w => w[key]),
+        backgroundColor: color + '99',
+        borderWidth: 0, borderRadius: 2,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {legend: {display: false}, tooltip: {backgroundColor: '#1c2330', borderColor: '#2b3445', borderWidth: 1}},
+      scales: {
+        x: {ticks: {color: '#64748b', maxTicksLimit: 8}, grid: {display: false}},
+        y: {ticks: {color: '#64748b'}, grid: {color: '#1c2330'}},
+      },
+    },
+  });
+}
+function makeSparkline(canvas, weekly, key, color) {
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: weekly.map((_, i) => i),
+      datasets: [{data: weekly.map(w => w[key]), borderColor: color, borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true, backgroundColor: color + '22'}],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {legend: {display: false}, tooltip: {enabled: false}},
+      scales: {x: {display: false}, y: {display: false}},
+      elements: {point: {radius: 0}},
+    },
+  });
+}
+
+// Trend sparkline (top of overview tab). Three toggleable series: avg frags, LG%, RL%.
+// Each render rebuilds chart from scratch (we have no live state otherwise).
+const TREND_SERIES = [
+  {key: 'avg_frags',   label: 'Avg frags', color: '#14e6c0', axis: 'y',  scale: v => v},
+  {key: 'lg_accuracy', label: 'LG %',      color: '#8ab4f8', axis: 'y2', scale: v => v == null ? null : v * 100},
+  {key: 'rl_accuracy', label: 'RL %',      color: '#fbbf24', axis: 'y2', scale: v => v == null ? null : v * 100},
+];
+const trendEnabled = {avg_frags: true, lg_accuracy: true, rl_accuracy: true};
+
+function renderTrendStrip(weekly) {
+  const strip = el('div', {class: 'trend-strip'});
+  const header = el('div', {class: 'trend-strip-h'},
+    el('span', {class: 'title'}, 'Weekly trend — ' + WINDOW_LABELS[activeWindow].short),
+  );
+  const legend = el('div', {class: 'legend'});
+  TREND_SERIES.forEach(s => {
+    const item = el('span', {class: 'legend-item' + (trendEnabled[s.key] ? '' : ' disabled')},
+      el('span', {class: 'swatch', style: 'background:' + s.color}),
+      s.label,
+    );
+    item.onclick = () => {
+      trendEnabled[s.key] = !trendEnabled[s.key];
+      // Re-render just this strip in place; cheaper than full overview re-render.
+      const parent = strip.parentNode;
+      const newStrip = renderTrendStrip(weekly);
+      parent.replaceChild(newStrip, strip);
+    };
+    legend.appendChild(item);
+  });
+  header.appendChild(legend);
+  strip.appendChild(header);
+
+  if (!weekly.length) {
+    strip.appendChild(el('div', {style: 'padding:32px;text-align:center;color:var(--fg-3);'}, 'No matches in this window.'));
+    return strip;
+  }
+
+  const body = el('div', {class: 'trend-strip-body'});
+  const canvas = el('canvas');
+  body.appendChild(canvas);
+  strip.appendChild(body);
+
+  setTimeout(() => {
+    const labels = weekly.map(w => w.week_start.slice(0, 10));
+    new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: TREND_SERIES.filter(s => trendEnabled[s.key]).map(s => ({
+          label: s.label,
+          data: weekly.map(w => s.scale(w[s.key])),
+          borderColor: s.color,
+          backgroundColor: s.key === 'avg_frags' ? 'rgba(20,230,192,0.1)' : 'transparent',
+          fill: s.key === 'avg_frags',
+          yAxisID: s.axis,
+          tension: 0.25,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          borderWidth: 2,
+          spanGaps: true,
+        })),
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: {mode: 'index', intersect: false},
+        plugins: {
+          legend: {display: false},
+          tooltip: {
+            backgroundColor: '#1c2330', borderColor: '#2b3445', borderWidth: 1,
+            titleColor: '#f1f5f9', bodyColor: '#94a3b8',
+          },
+        },
+        scales: {
+          x: {ticks: {color: '#64748b', maxTicksLimit: 8}, grid: {color: '#1c2330'}},
+          y: {ticks: {color: '#64748b'}, grid: {color: '#1c2330'}, title: {display: true, text: 'frags', color: '#64748b'}},
+          y2: {position: 'right', ticks: {color: '#64748b', callback: v => v + '%'}, grid: {drawOnChartArea: false}, title: {display: true, text: '%', color: '#64748b'}},
+        },
+      },
+    });
+  }, 0);
+
+  return strip;
+}
+
+function statCard(label, value, sub, cls, delta) {
+  // delta = { text: '+12%', good: true } | null. Rendered as a small chip below
+  // the value when present (and not 'all time' window — no prior period to compare).
+  const parts = [
+    el('div', {class: 'l'}, label),
+    el('div', {class: 'v', style: cls === 'win' ? 'color:var(--win)' : cls === 'loss' ? 'color:var(--loss)' : ''}, value),
+  ];
+  if (sub) parts.push(el('div', {class: 's'}, sub));
+  if (delta && activeWindow !== 'all') {
+    const color = delta.good ? 'var(--win)' : delta.good === false ? 'var(--loss)' : 'var(--fg-3)';
+    parts.push(el('div', {
+      class: 's',
+      style: 'color:' + color + '; font-family:\"JetBrains Mono\", monospace; font-weight:700; font-size:11px;'
+    }, delta.text));
+  }
+  return el('div', {class: 'stat-card'}, ...parts);
+}
+function panel(title, bodyFn) {
+  const p = el('div', {class: 'panel'});
+  if (title) p.appendChild(el('div', {class: 'panel-h'}, title));
+  p.appendChild(bodyFn());
+  return p;
+}
+function tableInPanel(rows, cols, defaultSort) {
+  const wrap = el('div', {class: 'panel-b no-pad'});
+  wrap.appendChild(makeTable(rows, cols, defaultSort));
+  return wrap;
+}
+function recentTable(rows) {
+  return tableInPanel(rows, [
+    {k: 'match_date', l: 'When', f: fmt.shortDate},
+    {k: 'match_mode', l: 'Mode', f: v => el('span', {class: 'chip chip-' + v}, v)},
+    {k: 'match_dmm', l: 'DMM', f: v => v ? el('span', {class: 'chip chip-dmm'}, 'DMM'+v) : '—'},
+    {k: 'match_map', l: 'Map'},
+    {k: 'server_hostname', l: 'Server', f: v => v || '—', cls: () => 'small muted'},
+    {k: 'outcome', l: 'Result', f: v => v ? el('span', {class: 'result-pill ' + v}, v) : '—'},
+    {k: 'opponent_name', l: 'Opp', f: v => v || '—'},
+    {k: 'player_frags', l: 'F', num: true},
+    {k: 'opponent_frags', l: 'Opp F', num: true},
+    {k: 'lg_acc', l: 'LG%', num: true, f: fmt.pct},
+    {k: 'rl_acc', l: 'RL%', num: true, f: fmt.pct},
+  ], {key: 'match_date', dir: 'desc'});
+}
+function makeTable(rows, cols, defaultSort) {
+  let key = defaultSort?.key || cols[0].k;
+  let dir = defaultSort?.dir || 'desc';
+  const t = el('table');
+  const trh = el('tr');
+  cols.forEach(c => {
+    const th = el('th', {class: c.num ? 'num' : ''}, c.l);
+    th.onclick = () => { if (key === c.k) dir = dir === 'asc' ? 'desc' : 'asc'; else { key = c.k; dir = c.num ? 'desc' : 'asc'; } draw(); };
+    trh.appendChild(th);
+  });
+  t.appendChild(el('thead', {}, trh));
+  const tb = el('tbody'); t.appendChild(tb);
+  function draw() {
+    [...trh.children].forEach((th, i) => {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (cols[i].k === key) th.classList.add(dir === 'asc' ? 'sort-asc' : 'sort-desc');
+    });
+    const sorted = [...rows].sort((a, b) => {
+      const av = a[key], bv = b[key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1; if (bv == null) return -1;
+      if (typeof av === 'number') return dir === 'asc' ? av - bv : bv - av;
+      return dir === 'asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+    });
+    tb.innerHTML = '';
+    sorted.forEach(r => {
+      const tr = el('tr');
+      cols.forEach(c => {
+        const v = r[c.k];
+        const td = el('td', {class: (c.num ? 'num ' : '') + (c.cls ? c.cls(v, r) : '')});
+        if (c.bar && v != null) {
+          td.appendChild(el('div', {class: 'progress'},
+            el('span', {class: 'track'}, el('span', {class: 'fill', style: 'width:' + Math.min(100, Math.max(0, v*100)) + '%;'})),
+            el('span', {class: 'label'}, fmt.pct(v)),
+          ));
+        } else {
+          const r2 = c.f ? c.f(v, r) : v;
+          td.appendChild(r2 instanceof Node ? r2 : document.createTextNode(r2 == null ? '—' : String(r2)));
+        }
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+  }
+  draw();
+  return t;
+}
+// Sidebar weapon-radar card — five-axis pentagon showing this player's accuracy
+// shape (LG/RL/SSG/SG/GL) at a glance. Sized for ~280px sidebar width.
+//
+// Each axis is scaled by its own per-weapon max so 75% SSG and 35% LG render
+// at the same outer radius — the "shape" is what matters, not absolute heights.
+// (Same approach as the per-mode donuts above.)
+function weaponRadarCard(stats, divAvg, mode = '1on1') {
+  // 1on1-focused axes (replaced LG/RL/SSG/SG/GL — SSG/SG/GL barely matter in duel).
+  // Each axis has a cap that represents "elite ceiling"; player & div-avg get
+  // normalized to that cap so the polygon shape encodes ratio-to-elite.
+  // Negative values (±frag, net_dmg) clamp at 0 (collapsed center) so the
+  // pentagon math stays well-formed.
+  const axes = [
+    { key: 'lg_accuracy',   label: 'LG',      max: 0.50,  type: 'pct' },
+    { key: 'rl_accuracy',   label: 'RL',      max: 0.50,  type: 'pct' },
+    { key: 'avg_ddr',       label: 'DDR',     max: 2.50,  type: 'ratio' },
+    { key: 'avg_frag_diff', label: '±frag',   max: 40,    type: 'frag' },
+    { key: 'avg_net_dmg',   label: 'Net dmg', max: 8000,  type: 'dmg' },
+  ];
+  // Compute DDR / net_dmg on the fly from the stats payload — they aren't
+  // pre-stored on each by_mode entry but the components are.
+  const ddr = (stats.avg_dmg_given && stats.avg_dmg_taken)
+    ? stats.avg_dmg_given / stats.avg_dmg_taken : 0;
+  const netDmg = (stats.avg_dmg_given || 0) - (stats.avg_dmg_taken || 0);
+  const playerVals = {
+    lg_accuracy:   stats.lg_accuracy,
+    rl_accuracy:   stats.rl_accuracy,
+    avg_ddr:       ddr,
+    avg_frag_diff: stats.avg_frag_diff,
+    avg_net_dmg:   netDmg,
+  };
+  // Pentagon geometry
+  const R = 70;
+  const angles = axes.map((_, i) => -Math.PI / 2 + i * (2 * Math.PI / axes.length));
+  const pt = (a, frac) => [Math.cos(a) * R * frac, Math.sin(a) * R * frac];
+  const ringPath = (frac) => axes.map((_, i) => pt(angles[i], frac).join(',')).join(' ');
+
+  // Polygon vertex sets: player's shape (always rendered) + div-avg shape (overlay
+  // when divAvg passed in, drawn faintly behind so player's line sits on top).
+  const polyFor = (vals) => axes.map((ax, i) => {
+    const v = (vals?.[ax.key] || 0) / ax.max;
+    return pt(angles[i], Math.min(1, Math.max(0, v))).join(',');
+  }).join(' ');
+
+  const playerPoly = polyFor(playerVals);
+  const divPoly = divAvg ? polyFor(divAvg) : null;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `${-R * 1.55} ${-R * 1.40} ${R * 3.1} ${R * 2.8}`);
+  svg.setAttribute('width', '100%');
+  svg.style.maxWidth = '260px';
+  svg.style.display = 'block';
+  svg.style.margin = '0 auto';
+  svg.innerHTML = `
+    <polygon points="${ringPath(1.0)}" fill="none" stroke="var(--panel-3)" stroke-width="1"/>
+    <polygon points="${ringPath(0.75)}" fill="none" stroke="var(--panel-3)" stroke-width="1"/>
+    <polygon points="${ringPath(0.5)}" fill="none" stroke="var(--panel-3)" stroke-width="1"/>
+    <polygon points="${ringPath(0.25)}" fill="none" stroke="var(--panel-3)" stroke-width="1"/>
+    ${angles.map(a => {
+      const [x, y] = pt(a, 1.0);
+      return `<line x1="0" y1="0" x2="${x}" y2="${y}" stroke="var(--panel-3)" stroke-width="1"/>`;
+    }).join('')}
+    ${divPoly ? `<polygon points="${divPoly}" fill="rgba(148,163,184,0.10)" stroke="rgba(148,163,184,0.7)" stroke-width="1.2" stroke-dasharray="3,3" stroke-linejoin="round"/>` : ''}
+    <polygon points="${playerPoly}" fill="rgba(20,230,192,0.22)" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+    ${axes.map((w, i) => {
+      const [lx, ly] = pt(angles[i], 1.25);
+      return `<text x="${lx}" y="${ly}" fill="var(--fg-2)" font-size="10" font-weight="700"
+              text-anchor="middle" dominant-baseline="middle">${w.label}</text>`;
+    }).join('')}
+  `;
+
+  const card = el('div', { class: 'panel' },
+    el('div', { class: 'panel-h' },
+      el('span', {}, 'Skill Profile — ' + mode),
+      el('span', { class: 'right' }, WINDOW_LABELS[activeWindow].short),
+    ),
+    el('div', { class: 'panel-b', style: 'padding: 14px 8px 8px;' }),
+  );
+  card.lastChild.appendChild(svg);
+
+  // Per-axis formatter (each metric has different units — pct vs ratio vs frags vs dmg)
+  const fmtAxis = (ax, v) => {
+    if (v == null) return '—';
+    if (ax.type === 'pct') return (v * 100).toFixed(1) + '%';
+    if (ax.type === 'ratio') return v.toFixed(2);
+    if (ax.type === 'frag') return (v > 0 ? '+' : '') + v.toFixed(1);
+    if (ax.type === 'dmg') return (v > 0 ? '+' : '') + Math.round(v).toLocaleString();
+    return String(v);
+  };
+
+  // Compact stat grid under the radar — player's value on top, div avg below
+  // (faint) so you can compare numerically without doing pentagon-fraction math.
+  const grid = el('div', { style: 'display:grid; grid-template-columns:repeat(5,1fr); gap:4px; padding:8px 8px 4px; font-family:\"JetBrains Mono\", monospace;' });
+  axes.forEach(ax => {
+    grid.appendChild(el('div', { style: 'text-align:center;' },
+      el('div', { style: 'color:var(--fg-3); font-weight:700; letter-spacing:0.06em; font-size:9px;' }, ax.label),
+      el('div', { style: 'color:var(--fg); font-weight:700; margin-top:2px; font-size:12px;' }, fmtAxis(ax, playerVals[ax.key])),
+      divAvg ? el('div', { style: 'color:var(--fg-3); font-weight:500; margin-top:1px; font-size:9px;' },
+                          'div ' + fmtAxis(ax, divAvg[ax.key])) : null,
+    ));
+  });
+  card.lastChild.appendChild(grid);
+
+  // Legend chip when div overlay is present
+  if (divAvg) {
+    card.lastChild.appendChild(el('div', {
+      style: 'display:flex; gap:10px; justify-content:center; padding:6px 0 2px; font-size:9px; color:var(--fg-3); letter-spacing:0.04em;'
+    },
+      el('span', {}, '— you'),
+      el('span', { style: 'color:var(--fg-3);' }, '⋯ Div avg'),
+    ));
+  }
+
+  return card;
+}
+
+function weaponDonut(name, val, max, divAvg) {
+  // divAvg = average value for the player's division on this weapon (0-1).
+  // Rendered as a thin reference arc behind the player's arc so you can see
+  // at a glance whether they're above or below their division's average.
+  const pct = val == null ? 0 : Math.min(1, val / max);
+  const r = 36, c = 2 * Math.PI * r;
+  const filled = c * pct;
+  const avgPct = divAvg == null ? null : Math.min(1, divAvg / max);
+  const avgFilled = avgPct == null ? 0 : c * avgPct;
+  return el('div', {class: 'weapon-donut'},
+    (() => {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 92 92');
+      // Layers (back→front): track / div-avg reference arc (faint) / player arc /
+      // marker tick at the div-avg position so the comparison is precise.
+      const avgLayer = avgPct == null ? '' : `
+        <circle cx="46" cy="46" r="${r}" stroke="var(--fg-3)" stroke-width="2" fill="none"
+                stroke-dasharray="${avgFilled} ${c}" stroke-dashoffset="0"
+                transform="rotate(-90 46 46)" opacity="0.45"/>
+      `;
+      const tickAngle = avgPct == null ? null : -90 + 360 * avgPct;
+      const tickLayer = tickAngle == null ? '' : `
+        <line x1="46" y1="${46 - r - 5}" x2="46" y2="${46 - r + 5}"
+              stroke="var(--fg-2)" stroke-width="1.5"
+              transform="rotate(${tickAngle} 46 46)" opacity="0.85"/>
+      `;
+      svg.innerHTML = `
+        <circle cx="46" cy="46" r="${r}" stroke="var(--panel-3)" stroke-width="8" fill="none"/>
+        ${avgLayer}
+        <circle cx="46" cy="46" r="${r}" stroke="url(#g${name})" stroke-width="8" fill="none"
+                stroke-dasharray="${filled} ${c}" stroke-dashoffset="0"
+                transform="rotate(-90 46 46)" stroke-linecap="round"/>
+        ${tickLayer}
+        <defs>
+          <linearGradient id="g${name}" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="var(--accent)"/>
+            <stop offset="100%" stop-color="var(--accent-2)"/>
+          </linearGradient>
+        </defs>`;
+      // Hover tooltip via native title — shows player vs div avg side-by-side
+      if (divAvg != null) {
+        svg.innerHTML += `<title>${name}: ${fmt.pct(val)} (div avg ${fmt.pct(divAvg)})</title>`;
+      }
+      return svg;
+    })(),
+    el('div', {class: 'val'}, fmt.pct(val)),
+    el('div', {class: 'name'}, name),
+  );
+}
+</script>
+</body>
+</html>
