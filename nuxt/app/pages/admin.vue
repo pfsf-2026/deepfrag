@@ -103,6 +103,24 @@ async function loadStatus() {
   }
 }
 
+async function loadActivity() {
+  try {
+    const r = await $fetch(`${apiBase}/api/admin/activity?limit=40`, { headers: adminHeaders() })
+    // Replace prior backend-sourced events; keep any session events at the front
+    const sessionEvents = eventLog.value.filter(e => !e.fromBackend)
+    const backendEvents = (r.events || []).map(e => ({
+      ts: e.ts ? new Date(e.ts).toISOString().slice(11, 19) : '',
+      level: e.level,
+      tag: e.tag,
+      msg: e.msg,
+      fromBackend: true,
+    }))
+    eventLog.value = [...sessionEvents, ...backendEvents].slice(0, eventLogMax)
+  } catch (e) {
+    // Silent — feed just stays empty
+  }
+}
+
 function pushEvent(level, tag, msg) {
   eventLog.value.unshift({ ts: new Date().toISOString().slice(11, 19), level, tag, msg })
   if (eventLog.value.length > eventLogMax) eventLog.value = eventLog.value.slice(0, eventLogMax)
@@ -197,8 +215,24 @@ const playersFiltered = computed(() => {
   return list
 })
 
-function selectPlayer(p) { selectedPlayer.value = p }
-function closeInspector() { selectedPlayer.value = null }
+const playerDetail = ref(null)
+const playerDetailLoading = ref(false)
+async function selectPlayer(p) {
+  selectedPlayer.value = p
+  playerDetail.value = null
+  playerDetailLoading.value = true
+  try {
+    playerDetail.value = await $fetch(
+      `${apiBase}/api/admin/players/${encodeURIComponent(p.canonical_id)}`,
+      { headers: adminHeaders() }
+    )
+  } catch (e) {
+    pushEvent('err', 'PLAYER', `detail fetch failed: ${e?.data?.detail || e?.message}`)
+  } finally {
+    playerDetailLoading.value = false
+  }
+}
+function closeInspector() { selectedPlayer.value = null; playerDetail.value = null }
 
 // ─── hotkeys ─────────────────────────────────────────────────────────────
 function onKey(e) {
@@ -399,25 +433,61 @@ function fmtDate(s) { return s ? new Date(s).toLocaleString() : '—' }
               </table>
             </div>
 
-            <!-- Inspector slide-in -->
+            <!-- Inspector slide-in — richer detail from /api/admin/players/{id} -->
             <div v-if="selectedPlayer" class="inspector">
               <div class="insp-head">
                 <h3>{{ selectedPlayer.display }}</h3>
                 <button class="x" @click="closeInspector">✕</button>
               </div>
-              <div class="kv">
-                <span class="k">canonical_id</span><span class="v">{{ selectedPlayer.canonical_id }}</span>
-                <span class="k">region</span><span class="v">{{ selectedPlayer.region || '—' }}</span>
-                <span class="k">division</span><span class="v">{{ selectedPlayer.tier?.name || '—' }}</span>
-                <span class="k">cons</span><span class="v brand">{{ Math.round(selectedPlayer.conservative) }}</span>
-                <span class="k">μ / σ</span><span class="v">{{ Math.round(selectedPlayer.mu) }} / {{ Math.round(selectedPlayer.sigma) }}</span>
-                <span class="k">matches</span><span class="v">{{ selectedPlayer.matches.toLocaleString() }}</span>
-                <span class="k">W / L / D</span><span class="v">{{ selectedPlayer.wins }} / {{ selectedPlayer.losses }} / {{ selectedPlayer.draws }}</span>
-                <span class="k">DDR</span><span class="v">{{ selectedPlayer.avg_ddr ?? '—' }}</span>
-                <span class="k">±frag</span><span class="v">{{ selectedPlayer.avg_frag_diff != null ? (selectedPlayer.avg_frag_diff >= 0 ? '+' : '') + selectedPlayer.avg_frag_diff.toFixed(1) : '—' }}</span>
-                <span class="k">unique opps</span><span class="v">{{ selectedPlayer.unique_opponents }}</span>
-                <span class="k">last seen</span><span class="v">{{ fmtDate(selectedPlayer.last_match) }}</span>
-              </div>
+              <div v-if="playerDetailLoading" class="muted center" style="padding: 20px 0;">Loading detail…</div>
+              <template v-else-if="playerDetail">
+                <div class="insp-section-h">Identity</div>
+                <div class="kv">
+                  <span class="k">canonical_id</span><span class="v">{{ playerDetail.canonical_id }}</span>
+                  <span class="k">display</span><span class="v">{{ playerDetail.display }}</span>
+                  <span class="k">login</span><span class="v">{{ playerDetail.login || '—' }}</span>
+                  <span class="k">region</span><span class="v">{{ playerDetail.region || '—' }}<span v-if="playerDetail.region_confidence" class="muted"> · conf {{ Math.round(playerDetail.region_confidence * 100) }}%</span></span>
+                  <span class="k">created</span><span class="v">{{ String(playerDetail.created_at || '').slice(0, 10) }}</span>
+                </div>
+
+                <div class="insp-section-h">Career</div>
+                <div class="kv">
+                  <span class="k">hub matches</span><span class="v brand">{{ (playerDetail.career.matches || 0).toLocaleString() }}</span>
+                  <span class="k">first match</span><span class="v">{{ String(playerDetail.career.first_match || '').slice(0, 10) }}</span>
+                  <span class="k">last match</span><span class="v">{{ String(playerDetail.career.last_match || '').slice(0, 10) }}</span>
+                  <span class="k">by mode</span><span class="v">{{ playerDetail.career.matches_1on1 }} · {{ playerDetail.career.matches_2on2 }} · {{ playerDetail.career.matches_4on4 }} <span class="muted">1/2/4on</span></span>
+                  <span class="k">last 90d</span><span class="v">{{ playerDetail.career.matches_90d || 0 }} matches</span>
+                </div>
+
+                <div v-if="playerDetail.ratings['1on1']" class="insp-section-h">1on1 rating</div>
+                <div v-if="playerDetail.ratings['1on1']" class="kv">
+                  <span class="k">division</span><span class="v">
+                    <span v-if="playerDetail.ratings['1on1'].tier" class="badge" :style="{ color: playerDetail.ratings['1on1'].tier.color, borderColor: playerDetail.ratings['1on1'].tier.color, background: playerDetail.ratings['1on1'].tier.color + '14' }">{{ playerDetail.ratings['1on1'].tier.name }}</span>
+                  </span>
+                  <span class="k">cons</span><span class="v brand">{{ Math.round(playerDetail.ratings['1on1'].conservative) }}</span>
+                  <span class="k">μ / σ</span><span class="v">{{ Math.round(playerDetail.ratings['1on1'].mu) }} / {{ Math.round(playerDetail.ratings['1on1'].sigma) }}</span>
+                  <span class="k">matches</span><span class="v">{{ playerDetail.ratings['1on1'].matches_rated.toLocaleString() }}</span>
+                  <span class="k">W / L / D</span><span class="v">{{ playerDetail.ratings['1on1'].wins }} / {{ playerDetail.ratings['1on1'].losses }} / {{ playerDetail.ratings['1on1'].draws }}</span>
+                  <span class="k">win rate</span><span class="v">{{ fmtPct(playerDetail.ratings['1on1'].wins / playerDetail.ratings['1on1'].matches_rated) }}</span>
+                  <span class="k">DDR</span><span class="v">{{ playerDetail.ratings['1on1'].avg_ddr?.toFixed(2) ?? '—' }}</span>
+                  <span class="k">±frag</span><span class="v">{{ playerDetail.ratings['1on1'].avg_frag_diff != null ? (playerDetail.ratings['1on1'].avg_frag_diff >= 0 ? '+' : '') + playerDetail.ratings['1on1'].avg_frag_diff.toFixed(1) : '—' }}</span>
+                  <span class="k">unique opps</span><span class="v">{{ playerDetail.ratings['1on1'].unique_opponents }}</span>
+                  <span class="k">rated at</span><span class="v small">{{ fmtDate(playerDetail.ratings['1on1'].updated_at) }}</span>
+                </div>
+
+                <div v-if="playerDetail.aliases?.length" class="insp-section-h">Aliases ({{ playerDetail.aliases.length }})</div>
+                <div v-if="playerDetail.aliases?.length" class="alias-list">
+                  <div v-for="a in playerDetail.aliases.slice(0, 8)" :key="a.name" class="alias-row">
+                    <span class="alias-name">{{ a.name }}</span>
+                    <span class="alias-uses">{{ a.uses.toLocaleString() }}</span>
+                  </div>
+                  <div v-if="playerDetail.aliases.length > 8" class="muted small" style="text-align:center; padding:4px;">+ {{ playerDetail.aliases.length - 8 }} more</div>
+                </div>
+
+                <div class="insp-section-h">Federation</div>
+                <div class="muted small" style="padding: 4px 0 0;">No identity linked yet. Q2 federation will let this player claim their canonical_id.</div>
+              </template>
+
               <div class="insp-actions">
                 <a :href="`/p/${encodeURIComponent(selectedPlayer.canonical_id)}`" target="_blank" class="btn ghost">Open public profile →</a>
               </div>
@@ -571,4 +641,16 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .kv .v.brand { color: var(--accent); font-weight: 700; }
 .insp-actions { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
 .insp-actions .btn { text-decoration: none; }
+.insp-section-h {
+  margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border);
+  font-size: 10px; color: var(--fg-3); font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; margin-bottom: 8px;
+}
+.insp-section-h:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+.kv .v.small { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-2); }
+.alias-list { display: flex; flex-direction: column; gap: 2px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+.alias-row { display: flex; justify-content: space-between; padding: 4px 8px; background: var(--panel); border-radius: 4px; }
+.alias-name { color: var(--fg); }
+.alias-uses { color: var(--fg-3); }
+.small { font-size: 11px; }
 </style>

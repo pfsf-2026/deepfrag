@@ -1359,6 +1359,124 @@ def admin_status(authorization: str | None = Header(default=None)):
     }
 
 
+@app.get("/api/admin/players/{canonical_id}")
+def admin_player_detail(canonical_id: str,
+                        authorization: str | None = Header(default=None)):
+    """Admin-only deep profile. Returns ratings row + career + aliases + recent
+    activity for a single canonical_id. Populates the Players-tab inspector."""
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT canonical_id, display_name, login, created_at, updated_at,
+                   region, region_confidence, region_distribution
+            FROM players_canonical WHERE canonical_id = %s
+        """, (canonical_id,))
+        canon = cur.fetchone()
+        if not canon:
+            raise HTTPException(404, "player not found")
+
+        cur.execute("""
+            SELECT COUNT(DISTINCT m.match_id) AS matches,
+                   MIN(m.match_date) AS first_match,
+                   MAX(m.match_date) AS last_match,
+                   COUNT(DISTINCT CASE WHEN m.match_mode='1on1' THEN m.match_id END) AS matches_1on1,
+                   COUNT(DISTINCT CASE WHEN m.match_mode='2on2' THEN m.match_id END) AS matches_2on2,
+                   COUNT(DISTINCT CASE WHEN m.match_mode='4on4' THEN m.match_id END) AS matches_4on4,
+                   COUNT(DISTINCT CASE WHEN m.match_date::timestamptz >= NOW() - INTERVAL '90 days' THEN m.match_id END) AS matches_90d
+            FROM matches m JOIN players p ON p.match_id = m.match_id
+            WHERE p.canonical_id = %s
+        """, (canonical_id,))
+        career = dict(cur.fetchone() or {})
+
+        cur.execute("""
+            SELECT player_name, COUNT(*) AS uses
+            FROM players WHERE canonical_id = %s
+            GROUP BY player_name ORDER BY uses DESC LIMIT 20
+        """, (canonical_id,))
+        aliases = [{"name": r["player_name"], "uses": r["uses"]} for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT mode, mu, sigma, conservative, matches_rated, wins, losses, draws,
+                   unique_opponents, avg_ddr, avg_frag_diff, updated_at
+            FROM ratings WHERE canonical_id = %s AND map = ''
+        """, (canonical_id,))
+        ratings = {r["mode"]: dict(r) for r in cur.fetchall()}
+
+        cutoffs = _get_tier_cutoffs(cur, "1on1")
+        if "1on1" in ratings:
+            ratings["1on1"]["tier"] = tier_for(ratings["1on1"]["conservative"], cutoffs)
+
+    return {
+        "canonical_id": canon["canonical_id"],
+        "display": canon["display_name"],
+        "login": canon["login"],
+        "created_at": canon["created_at"],
+        "updated_at": canon["updated_at"],
+        "region": canon["region"],
+        "region_confidence": canon["region_confidence"],
+        "region_distribution": canon["region_distribution"],
+        "career": career,
+        "aliases": aliases,
+        "ratings": ratings,
+    }
+
+
+@app.get("/api/admin/activity")
+def admin_activity(authorization: str | None = Header(default=None),
+                   limit: int = Query(40, ge=1, le=200)):
+    """Live activity feed for the admin dashboard. Returns recent system events
+    composed from: matches added in last 24h, last scheduler run summary,
+    invariant check status. Each event has {ts, level, tag, msg}."""
+    _check_admin_auth(authorization)
+    events = []
+    with pg() as conn:
+        cur = conn.cursor()
+        # Recent matches — one event per match added (most recent first)
+        cur.execute("""
+            SELECT m.match_id, m.match_date, m.match_mode, m.match_map,
+                   m.server_hostname,
+                   string_agg(DISTINCT p.canonical_id, ', ' ORDER BY p.canonical_id) AS players
+            FROM matches m
+            LEFT JOIN players p ON p.match_id = m.match_id AND p.canonical_id IS NOT NULL
+            WHERE m.match_date > NOW() - INTERVAL '24 hours'
+            GROUP BY m.match_id, m.match_date, m.match_mode, m.match_map, m.server_hostname
+            ORDER BY m.match_date DESC
+            LIMIT %s
+        """, (limit,))
+        for r in cur.fetchall():
+            host = (r["server_hostname"] or "").split(":")[0]
+            events.append({
+                "ts": r["match_date"],
+                "level": "ok",
+                "tag": r["match_mode"].upper(),
+                "msg": f"{r['match_map']} · {r['players'] or '?'} @ {host}",
+                "match_id": r["match_id"],
+            })
+        # Latest re-rate marker (max updated_at on ratings table)
+        cur.execute("SELECT MAX(updated_at) AS last FROM ratings WHERE mode='1on1' AND map=''")
+        last_rate = cur.fetchone()["last"]
+        if last_rate:
+            events.append({
+                "ts": last_rate,
+                "level": "info",
+                "tag": "RATE",
+                "msg": "last 1on1 rating-run completed",
+            })
+        # Latest server sync — max last_seen_live on servers
+        cur.execute("SELECT MAX(last_seen_live) AS last, COUNT(*) FILTER (WHERE is_live) AS live FROM servers")
+        srv = cur.fetchone()
+        if srv["last"]:
+            events.append({
+                "ts": srv["last"],
+                "level": "info",
+                "tag": "SRV",
+                "msg": f"hub sync · {srv['live']} live servers",
+            })
+    events.sort(key=lambda e: e["ts"] or "", reverse=True)
+    return {"events": events[:limit]}
+
+
 @app.post("/api/admin/scheduler/{action}")
 def admin_scheduler(action: str, authorization: str | None = Header(default=None)):
     """Pause or resume the deepfrag-periodic-sync Cloud Scheduler job.

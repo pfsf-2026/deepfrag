@@ -160,7 +160,10 @@ def _bulk_insert_ratings(cur, rows):
              losses=EXCLUDED.losses, draws=EXCLUDED.draws,
              last_match_id=EXCLUDED.last_match_id, last_match_date=EXCLUDED.last_match_date,
              updated_at=EXCLUDED.updated_at, unique_opponents=EXCLUDED.unique_opponents,
-             avg_ddr=EXCLUDED.avg_ddr, avg_frag_diff=EXCLUDED.avg_frag_diff""",
+             -- Don't blow away perf precompute for players who had no NEW matches
+             -- in this incremental run (their EXCLUDED.avg_ddr would be NULL).
+             avg_ddr=COALESCE(EXCLUDED.avg_ddr, ratings.avg_ddr),
+             avg_frag_diff=COALESCE(EXCLUDED.avg_frag_diff, ratings.avg_frag_diff)""",
         rows,
         page_size=2000,
     )
