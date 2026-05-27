@@ -1431,6 +1431,7 @@ def admin_deploys(authorization: str | None = Header(default=None),
     _check_admin_auth(authorization)
     try:
         import google.auth, google.auth.transport.requests
+        import requests
         creds, _ = google.auth.default()
         creds.refresh(google.auth.transport.requests.Request())
         # Fetch revisions + active service traffic config in parallel-ish.
