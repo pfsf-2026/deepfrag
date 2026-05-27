@@ -1899,6 +1899,25 @@ def admin_matches_by_region(
     }
 
 
+@app.post("/api/admin/sync-live")
+def admin_sync_live(authorization: str | None = Header(default=None)):
+    """Lightweight live-server snapshot refresh. Only runs sync_live_servers.py
+    (~5-10s) — no match pull, no canonicalize, no rate. Designed to be hit
+    every 60s by a dedicated Cloud Scheduler so the 'live' indicators on the
+    Servers page + admin Matches tab stay fresh without piling up the heavy
+    /api/admin/sync pipeline (which still runs every 2h)."""
+    expected = os.environ.get("SYNC_SECRET")
+    if not expected:
+        raise HTTPException(503, "SYNC_SECRET not configured")
+    if authorization != f"Bearer {expected}":
+        raise HTTPException(401, "missing or invalid bearer token")
+    return {
+        "step": "sync_live_servers",
+        **_run_script("sync_live_servers.py", timeout=60),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @app.post("/api/admin/sync")
 def admin_sync(authorization: str | None = Header(default=None),
                skip_servers: bool = False,
