@@ -139,6 +139,7 @@ def extract_row(s: dict, now: str) -> dict:
         "qtv_viewer_count": to_int(qtv.get("viewer_count")),
         "last_seen_live":   now,
         "resolved_at":      now,
+        "players_json":     players_json,
     }
 
 
