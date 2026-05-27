@@ -26,15 +26,19 @@ function build() {
   if (!canvas.value || !props.points.length) return
   chart?.destroy()
   const data = downsample(props.points)
-  const conservative = data.map(p => p.conservative)
+  // Plot μ (point estimate) not conservative (μ − 3σ). σ starts at 500 with
+  // OpenSkill defaults, so conservative dips to ~-600 before stabilizing —
+  // mathematically correct but visually reads as "you were a -600 player."
+  // μ moves naturally from the 1500 default → reflects skill changes only.
+  const mu = data.map(p => p.mu)
   const labels = data.map(p => p.match_date)
   chart = new Chart(canvas.value, {
     type: 'line',
     data: {
       labels,
       datasets: [{
-        label: 'Conservative (μ − 3σ)',
-        data: conservative,
+        label: 'Rating (μ)',
+        data: mu,
         borderColor: '#14e6c0',
         backgroundColor: 'rgba(20, 230, 192, 0.12)',
         borderWidth: 1.8,

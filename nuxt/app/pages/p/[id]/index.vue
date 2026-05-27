@@ -276,20 +276,27 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         </div>
       </div>
 
-      <!-- ── ELO history chart ── -->
-      <div v-if="ratings[ratingHistoryMode]?.provisional" class="rh-section rh-empty">
-        <strong>Not enough unique opponents</strong> to plot a meaningful {{ ratingHistoryMode }} ELO history.
-        Faced {{ ratings[ratingHistoryMode].unique_opponents }} of 10 needed for a stable rating —
-        the trajectory would be dominated by a tiny pool and wouldn't reflect real skill.
-      </div>
-      <div v-else-if="ratingHistory.length" class="rh-section">
-        <div class="rh-head">
-          <h3>{{ ratingHistoryMode }} ELO history <span class="rh-sub">· {{ ratingHistory.length }} rated matches</span></h3>
-          <span class="rh-hint">Click a mode tile above to switch</span>
+      <!-- ── ELO history chart — only in Nav view ──
+           The Metrics view is meant for dense numerical scanning; the chart
+           occupies ~500px and disrupts that. The Nav/Metrics toggle in the
+           hero now meaningfully gates this: chart visible in Nav, hidden in
+           Metrics. The toggle itself was previously cosmetic (just swapped
+           the section below the tab bar). -->
+      <template v-if="view === 'nav'">
+        <div v-if="ratings[ratingHistoryMode]?.provisional" class="rh-section rh-empty">
+          <strong>Not enough unique opponents</strong> to plot a meaningful {{ ratingHistoryMode }} rating history.
+          Faced {{ ratings[ratingHistoryMode].unique_opponents }} of 10 needed for a stable rating —
+          the trajectory would be dominated by a tiny pool and wouldn't reflect real skill.
         </div>
-        <RatingHistoryChart :points="ratingHistory" :height="220" />
-      </div>
-      <div v-else-if="ratingHistoryLoading" class="rh-section rh-empty">Loading ELO history…</div>
+        <div v-else-if="ratingHistory.length" class="rh-section">
+          <div class="rh-head">
+            <h3>{{ ratingHistoryMode }} rating history <span class="rh-sub">· {{ ratingHistory.length }} rated matches</span></h3>
+            <span class="rh-hint">Click a mode tile above to switch</span>
+          </div>
+          <RatingHistoryChart :points="ratingHistory" :height="220" />
+        </div>
+        <div v-else-if="ratingHistoryLoading" class="rh-section rh-empty">Loading rating history…</div>
+      </template>
 
       <!-- ── Tab bar (shared chrome with /profile.html) ── -->
       <!-- Overview is this page; other tabs deep-link to the legacy profile.html
