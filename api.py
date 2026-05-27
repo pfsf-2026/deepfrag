@@ -693,16 +693,16 @@ def head_to_head(
         player_a = shape_player(p1)
         player_b = shape_player(p2)
 
-        # Weapon-accuracy shape per player (lifetime aggregate from the players table,
-        # filtered to the requested mode). Powers the H2H radar overlay — same axes,
-        # both players drawn on the same pentagon so the weapon-style mismatch is visible.
+        # Skill-profile shape per player — 5 axes matching the profile sidebar's
+        # Skill Profile radar (LG / RL / DDR / ±frag / Net dmg). Both players
+        # drawn on the same pentagon so the skill-mismatch is visible.
         cur.execute("""
             SELECT canonical_id,
                    AVG(player_lg_hits::float / NULLIF(player_lg_attacks, 0)) AS lg_accuracy,
                    AVG(player_rl_virtual::float / NULLIF(player_rl_attacks, 0)) AS rl_accuracy,
-                   AVG(player_ssg_hits::float / NULLIF(player_ssg_attacks, 0)) AS ssg_accuracy,
-                   AVG(player_sg_hits::float / NULLIF(player_sg_attacks, 0)) AS sg_accuracy,
-                   AVG(player_gl_directs::float / NULLIF(player_gl_attacks, 0)) AS gl_accuracy
+                   SUM(player_damage_given)::float / NULLIF(SUM(player_damage_taken), 0) AS avg_ddr,
+                   AVG(player_frags - player_deaths)::float AS avg_frag_diff,
+                   AVG(player_damage_given - player_damage_taken)::float AS avg_net_dmg
             FROM players p JOIN matches m ON m.match_id = p.match_id
             WHERE p.canonical_id = ANY(%s) AND m.match_mode = %s
             GROUP BY canonical_id
@@ -710,12 +710,49 @@ def head_to_head(
         weapon_shape = {r["canonical_id"]: {
             "lg_accuracy": r["lg_accuracy"],
             "rl_accuracy": r["rl_accuracy"],
-            "ssg_accuracy": r["ssg_accuracy"],
-            "sg_accuracy": r["sg_accuracy"],
-            "gl_accuracy": r["gl_accuracy"],
+            "avg_ddr": r["avg_ddr"],
+            "avg_frag_diff": r["avg_frag_diff"],
+            "avg_net_dmg": r["avg_net_dmg"],
         } for r in cur.fetchall()}
         player_a["weapon_shape"] = weapon_shape.get(p1, {})
         player_b["weapon_shape"] = weapon_shape.get(p2, {})
+
+        # Population min/max per axis (rated 1on1 players, last 365d).
+        # Same algorithm as /api/divisions/avg-stats — drives radar normalization
+        # so Div 4 ±frag/Net dmg negative values render proportionally instead
+        # of collapsing to center.
+        cur.execute("""
+            WITH per_player AS (
+                SELECT p.canonical_id,
+                       AVG(p.player_lg_hits::float / NULLIF(p.player_lg_attacks, 0)) AS lg,
+                       AVG(p.player_rl_virtual::float / NULLIF(p.player_rl_attacks, 0)) AS rl,
+                       SUM(p.player_damage_given)::float / NULLIF(SUM(p.player_damage_taken), 0) AS ddr,
+                       AVG(p.player_frags - p.player_deaths)::float AS frag_diff,
+                       AVG(p.player_damage_given - p.player_damage_taken)::float AS net_dmg
+                FROM players p
+                JOIN matches m ON m.match_id = p.match_id
+                JOIN ratings r ON r.canonical_id = p.canonical_id
+                    AND r.mode = %(mode)s AND r.map = '' AND r.matches_rated >= 10
+                WHERE m.match_mode = %(mode)s
+                  AND m.match_date >= (NOW() - INTERVAL '365 days')::text
+                GROUP BY p.canonical_id
+                HAVING COUNT(*) >= 5
+            )
+            SELECT MIN(lg) AS lg_min, MAX(lg) AS lg_max,
+                   MIN(rl) AS rl_min, MAX(rl) AS rl_max,
+                   MIN(ddr) AS ddr_min, MAX(ddr) AS ddr_max,
+                   MIN(frag_diff) AS fd_min, MAX(frag_diff) AS fd_max,
+                   MIN(net_dmg) AS nd_min, MAX(net_dmg) AS nd_max
+            FROM per_player
+        """, {"mode": mode})
+        rng = cur.fetchone() or {}
+        skill_profile_ranges = {
+            "lg_accuracy":   {"min": rng.get("lg_min"),  "max": rng.get("lg_max")},
+            "rl_accuracy":   {"min": rng.get("rl_min"),  "max": rng.get("rl_max")},
+            "avg_ddr":       {"min": rng.get("ddr_min"), "max": rng.get("ddr_max")},
+            "avg_frag_diff": {"min": rng.get("fd_min"),  "max": rng.get("fd_max")},
+            "avg_net_dmg":   {"min": rng.get("nd_min"),  "max": rng.get("nd_max")},
+        }
 
         # 2. H2H summary across matches in this mode (optionally within a recent time window)
         date_clause = ""
@@ -870,6 +907,7 @@ def head_to_head(
         "overall_predict_win_b": overall_pred_b,
         "maps": maps_out,
         "recent_matches": recent,
+        "skill_profile_ranges": skill_profile_ranges,
     }
 
 

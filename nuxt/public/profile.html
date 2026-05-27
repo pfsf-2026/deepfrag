@@ -586,7 +586,7 @@ function comparisonData(windowData) {
     // cache key includes the full URL so a new ?_v= forces a MISS+revalidate.
     // (Pages Function caches with s-maxage=7200; we don't have purge perms
     // on the API token to invalidate cache directly.)
-    let r = await fetch(`/api/players/${playerId}/full?_v=3`);
+    let r = await fetch(`/api/players/${playerId}/full?_v=4`);
     if (!r.ok) {
       r = await fetch(`/profiles/${playerId}.json`);
       if (!r.ok) throw new Error('HTTP ' + r.status);

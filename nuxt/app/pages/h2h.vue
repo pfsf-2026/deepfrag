@@ -133,27 +133,48 @@ function fmtRating(r) {
 }
 function fmtAcc(v) { return v == null ? '—' : `${(v * 100).toFixed(1)}%` }
 
-// Weapon radar geometry — 5-axis pentagon, max per weapon scales the axis so
-// LG 30% and SSG 80% render at the same outer radius (shape matters, not heights).
-const weaponAxes = [
-  { key: 'lg_accuracy',  label: 'LG',  max: 0.50 },
-  { key: 'rl_accuracy',  label: 'RL',  max: 0.50 },
-  { key: 'ssg_accuracy', label: 'SSG', max: 0.90 },
-  { key: 'sg_accuracy',  label: 'SG',  max: 0.40 },
-  { key: 'gl_accuracy',  label: 'GL',  max: 0.30 }
-]
+// Skill Profile radar — mirrors profile.html's sidebar radar (LG/RL/DDR/±frag/Net dmg).
+// Inner pentagon = population MIN on that axis (worst rated player), outer
+// pentagon = population MAX (best). Both players plotted on the same pentagon
+// so the skill mismatch is visible. Ranges come from the H2H endpoint
+// (skill_profile_ranges, mode-scoped, last 365d, rated players only) with
+// fallback caps when the API doesn't deliver them.
+const weaponAxes = computed(() => {
+  const r = data.value?.skill_profile_ranges || {}
+  const rng = (key, fallbackMin, fallbackMax) => ({
+    min: r[key]?.min ?? fallbackMin,
+    max: r[key]?.max ?? fallbackMax
+  })
+  return [
+    { key: 'lg_accuracy',   label: 'LG',      type: 'pct',   ...rng('lg_accuracy',   0, 0.50) },
+    { key: 'rl_accuracy',   label: 'RL',      type: 'pct',   ...rng('rl_accuracy',   0, 0.50) },
+    { key: 'avg_ddr',       label: 'DDR',     type: 'ratio', ...rng('avg_ddr',       0, 2.50) },
+    { key: 'avg_frag_diff', label: '±frag',   type: 'frag',  ...rng('avg_frag_diff', -20, 40) },
+    { key: 'avg_net_dmg',   label: 'Net dmg', type: 'dmg',   ...rng('avg_net_dmg',   -3000, 8000) }
+  ]
+})
 const radarR = 70
-const radarAngles = weaponAxes.map((_, i) => -Math.PI / 2 + i * (2 * Math.PI / weaponAxes.length))
+const radarAngles = computed(() => weaponAxes.value.map((_, i) => -Math.PI / 2 + i * (2 * Math.PI / weaponAxes.value.length)))
 function ringPath(frac) {
-  return radarAngles.map(a => `${(Math.cos(a) * radarR * frac).toFixed(1)},${(Math.sin(a) * radarR * frac).toFixed(1)}`).join(' ')
+  return radarAngles.value.map(a => `${(Math.cos(a) * radarR * frac).toFixed(1)},${(Math.sin(a) * radarR * frac).toFixed(1)}`).join(' ')
 }
 function dataPath(shape) {
   if (!shape) return ''
-  return weaponAxes.map((w, i) => {
-    const v = (shape[w.key] || 0) / w.max
-    const f = Math.min(1, Math.max(0, v))
-    return `${(Math.cos(radarAngles[i]) * radarR * f).toFixed(1)},${(Math.sin(radarAngles[i]) * radarR * f).toFixed(1)}`
+  return weaponAxes.value.map((w, i) => {
+    const v = shape[w.key]
+    if (v == null) return `${(Math.cos(radarAngles.value[i]) * 0).toFixed(1)},${(Math.sin(radarAngles.value[i]) * 0).toFixed(1)}`
+    const span = w.max - w.min
+    const f = span > 0 ? Math.min(1, Math.max(0, (v - w.min) / span)) : 0
+    return `${(Math.cos(radarAngles.value[i]) * radarR * f).toFixed(1)},${(Math.sin(radarAngles.value[i]) * radarR * f).toFixed(1)}`
   }).join(' ')
+}
+function fmtAxisValue(ax, v) {
+  if (v == null) return '—'
+  if (ax.type === 'pct') return `${(v * 100).toFixed(1)}%`
+  if (ax.type === 'ratio') return v.toFixed(2)
+  if (ax.type === 'frag') return `${v > 0 ? '+' : ''}${v.toFixed(1)}`
+  if (ax.type === 'dmg') return `${v > 0 ? '+' : ''}${Math.round(v).toLocaleString()}`
+  return String(v)
 }
 const hasWeaponShape = computed(() => {
   const a = data.value?.player_a?.weapon_shape
@@ -282,12 +303,12 @@ watch(mode, loadH2H)
         <div class="cell"><div class="v" style="color: var(--fg-2); font-size: 14px;">{{ String(data.h2h.last_match || '').slice(0, 10) || '—' }}</div><div class="l">last match</div></div>
       </div>
 
-      <!-- WEAPON SHAPE OVERLAY -->
+      <!-- SKILL PROFILE OVERLAY -->
       <div v-if="hasWeaponShape" class="weapon-overlay">
         <div class="wo-head">
           <div>
-            <div class="wo-title">Weapon shape comparison</div>
-            <div class="wo-sub">lifetime {{ mode }} accuracy — same pentagon, both players overlaid</div>
+            <div class="wo-title">Skill profile — {{ mode }}</div>
+            <div class="wo-sub">LG / RL / DDR / ±frag / Net dmg — inner = population min, outer = population max</div>
           </div>
           <div class="wo-legend">
             <span class="swatch a"></span><span class="lbl">{{ data.player_a.display }}</span>
@@ -321,9 +342,9 @@ watch(mode, loadH2H)
             <div v-for="w in weaponAxes" :key="w.key" class="wo-cell">
               <div class="wo-cell-l">{{ w.label }}</div>
               <div class="wo-cell-vals">
-                <span class="va">{{ fmtAcc(data.player_a.weapon_shape[w.key]) }}</span>
+                <span class="va">{{ fmtAxisValue(w, data.player_a.weapon_shape[w.key]) }}</span>
                 <span class="vsep">·</span>
-                <span class="vb">{{ fmtAcc(data.player_b.weapon_shape[w.key]) }}</span>
+                <span class="vb">{{ fmtAxisValue(w, data.player_b.weapon_shape[w.key]) }}</span>
               </div>
             </div>
           </div>
