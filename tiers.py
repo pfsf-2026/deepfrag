@@ -1,10 +1,12 @@
 """Tier classifier — maps conservative OpenSkill rating → DeepFrag division.
 
-Tiers (high → low):
-  Div 0   top 15%   — elite, the genuine top tier across all regions
-  Div 1   next 30%  — strong, multi-region competitive
-  Div 2   next 35%  — solid, regular competitors
-  Div 3   bottom 20% — climbing / casual / new players
+Tiers (high → low) — follows QW community division convention:
+
+  Div 0   top 5%    — elite of elites
+  Div 1   6-10%     — top tier proper
+  Div 2   11-40%    — strong, multi-region competitive (next 30%)
+  Div 3   41-75%    — solid, regular competitors (next 35%)
+  Div 4   76-100%   — climbing / casual / new players (bottom 25%)
 
 Boundaries are **percentile-based**, recomputed on demand from the current rated
 population (overall 1on1, matches_rated ≥ 10). Cutoffs are absolute rating values
@@ -20,12 +22,13 @@ from __future__ import annotations
 
 # Tier definitions: (slug, display name, percentile_floor, color)
 # percentile_floor is the LOWER bound of this tier within the population —
-# i.e. Div 0 starts at 85th percentile (top 15%).
+# i.e. Div 0 starts at 95th percentile (top 5%).
 TIER_SPECS = [
-    ("div0", "Div 0", 0.85, "#fbbf24"),  # gold
-    ("div1", "Div 1", 0.55, "#a855f7"),  # violet
-    ("div2", "Div 2", 0.20, "#14e6c0"),  # teal
-    ("div3", "Div 3", 0.00, "#64748b"),  # gray
+    ("div0", "Div 0", 0.95, "#fbbf24"),  # gold
+    ("div1", "Div 1", 0.90, "#ef4444"),  # red
+    ("div2", "Div 2", 0.60, "#a855f7"),  # violet
+    ("div3", "Div 3", 0.25, "#14e6c0"),  # teal
+    ("div4", "Div 4", 0.00, "#64748b"),  # gray
 ]
 
 

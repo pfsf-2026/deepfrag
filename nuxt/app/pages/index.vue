@@ -33,10 +33,11 @@ const current = computed(() => df.useApi
 // stat's explanation. Returns { title, body }.
 function tierRtip(t) {
   const labels = {
-    div0: 'Top 15% of rated players. Genuinely elite across the game.',
-    div1: 'Next 30% (55th–85th percentile). Strong, multi-region competitive.',
-    div2: 'Next 35% (20th–55th percentile). Solid, regular competitors.',
-    div3: 'Bottom 20%. Climbing or casual.'
+    div0: 'Top 5% of rated players. Elite of elites.',
+    div1: 'Top 6–10%. The top tier proper.',
+    div2: 'Top 11–40%. Strong, multi-region competitive.',
+    div3: 'Top 41–75%. Solid, regular competitors.',
+    div4: 'Bottom 25%. Climbing or casual.'
   }
   return { title: t.name, body: labels[t.slug] || 'Percentile-based tier from the rated 1on1 population.' }
 }
