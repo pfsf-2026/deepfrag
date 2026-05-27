@@ -976,6 +976,10 @@ def divisions_avg_stats(
                    AVG(p.player_ya_taken)::float AS avg_ya,
                    AVG(p.player_ga_taken)::float AS avg_ga,
                    AVG(p.player_health100_taken)::float AS avg_mh,
+                   -- Composite metrics used by the new 1on1-focused radar
+                   SUM(p.player_damage_given)::float / NULLIF(SUM(p.player_damage_taken), 0) AS avg_ddr,
+                   AVG(p.player_frags - p.player_deaths)::float AS avg_frag_diff,
+                   AVG(p.player_damage_given - p.player_damage_taken)::float AS avg_net_dmg,
                    COUNT(DISTINCT pd.canonical_id) AS player_count,
                    COUNT(*) AS match_player_rows
             FROM player_div pd
