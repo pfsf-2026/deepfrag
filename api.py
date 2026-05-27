@@ -853,6 +853,85 @@ def rating_history(
     return {"canonical_id": canonical_id, "mode": mode, "map": map, "count": len(out), "points": out}
 
 
+# ── Per-division weapon-stat averages (for profile donut reference rings) ────
+
+@app.get("/api/divisions/avg-stats")
+def divisions_avg_stats(
+    response: Response,
+    mode: str = Query("1on1", pattern="^(1on1|2on2|4on4)$"),
+    since_days: int = Query(90, ge=1, le=10_000),
+):
+    """For each division, return the average weapon-accuracy + item-pickup stats
+    across all players currently in that division, computed over matches in the
+    last `since_days`. Used by profile donuts to render a 'where you sit vs your
+    division' reference marker."""
+    response.headers["Cache-Control"] = "public, max-age=600, stale-while-revalidate=3600"
+    since_iso = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
+
+    with pg() as conn:
+        cur = conn.cursor()
+        cutoffs = _get_tier_cutoffs(cur, mode)
+        if not cutoffs:
+            return {"mode": mode, "since_days": since_days, "divisions": {}}
+
+        # Map each rated player to their current division (based on cons cutoffs),
+        # then aggregate match-level stats from the players table within the window.
+        # CASE chain mirrors the order of TIER_SPECS so higher cutoffs win first.
+        cur.execute("""
+            WITH player_div AS (
+                SELECT canonical_id,
+                       CASE
+                           WHEN conservative >= %(c0)s THEN 'div0'
+                           WHEN conservative >= %(c1)s THEN 'div1'
+                           WHEN conservative >= %(c2)s THEN 'div2'
+                           WHEN conservative >= %(c3)s THEN 'div3'
+                           ELSE 'div4'
+                       END AS div
+                FROM ratings
+                WHERE mode = %(mode)s AND map = '' AND matches_rated >= 10
+            )
+            SELECT pd.div,
+                   AVG(p.player_lg_hits::float / NULLIF(p.player_lg_attacks, 0)) AS lg_accuracy,
+                   AVG(p.player_rl_virtual::float / NULLIF(p.player_rl_attacks, 0)) AS rl_accuracy,
+                   AVG(p.player_ssg_hits::float / NULLIF(p.player_ssg_attacks, 0)) AS ssg_accuracy,
+                   AVG(p.player_sg_hits::float / NULLIF(p.player_sg_attacks, 0)) AS sg_accuracy,
+                   AVG(p.player_gl_directs::float / NULLIF(p.player_gl_attacks, 0)) AS gl_accuracy,
+                   AVG(p.player_ra_taken)::float AS avg_ra,
+                   AVG(p.player_ya_taken)::float AS avg_ya,
+                   AVG(p.player_ga_taken)::float AS avg_ga,
+                   AVG(p.player_health100_taken)::float AS avg_mh,
+                   COUNT(DISTINCT pd.canonical_id) AS player_count,
+                   COUNT(*) AS match_player_rows
+            FROM player_div pd
+            JOIN players p ON p.canonical_id = pd.canonical_id
+            JOIN matches m ON m.match_id = p.match_id
+            WHERE m.match_mode = %(mode)s AND m.match_date >= %(since)s
+            GROUP BY pd.div
+        """, {
+            "mode": mode, "since": since_iso,
+            "c0": cutoffs.get("div0", float("inf")),
+            "c1": cutoffs.get("div1", float("inf")),
+            "c2": cutoffs.get("div2", float("inf")),
+            "c3": cutoffs.get("div3", float("inf")),
+        })
+        out = {}
+        for r in cur.fetchall():
+            out[r["div"]] = {
+                "lg_accuracy": r["lg_accuracy"],
+                "rl_accuracy": r["rl_accuracy"],
+                "ssg_accuracy": r["ssg_accuracy"],
+                "sg_accuracy": r["sg_accuracy"],
+                "gl_accuracy": r["gl_accuracy"],
+                "avg_ra": r["avg_ra"],
+                "avg_ya": r["avg_ya"],
+                "avg_ga": r["avg_ga"],
+                "avg_mh": r["avg_mh"],
+                "player_count": r["player_count"],
+                "match_player_rows": r["match_player_rows"],
+            }
+    return {"mode": mode, "since_days": since_days, "divisions": out}
+
+
 # ── Full profile (drop-in replacement for the static profile JSON shape) ───────
 
 @app.get("/api/players/{canonical_id}/full")
