@@ -49,7 +49,8 @@ export default defineNuxtConfig({
     '/rankings/maps/**': { prerender: false, ssr: false },
     '/servers': { prerender: true },
     '/stats': { prerender: true },
-    '/h2h': { prerender: true }
+    '/h2h': { prerender: true },
+    '/admin': { prerender: true }
   },
 
   nitro: {
