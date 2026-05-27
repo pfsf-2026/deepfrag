@@ -144,6 +144,24 @@ useHead({ title: () => profile.value ? `Maps · ${profile.value.player} · DeepF
         <div class="sub">1on1 per-map ELO + stats</div>
       </div>
 
+      <!-- Tab bar so this page feels like the Maps tab of the profile, not a
+           standalone page. Matches the chrome on /p/{id} overview. -->
+      <div class="profile-tabbar">
+        <div class="profile-tabs">
+          <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}`">Overview</NuxtLink>
+          <a class="ptab" :href="`/profile?id=${encodeURIComponent(id)}#trends`">Trends</a>
+          <a class="ptab" :href="`/profile?id=${encodeURIComponent(id)}#compare`">Compare</a>
+          <a class="ptab" :href="`/profile?id=${encodeURIComponent(id)}#1on1`">1on1</a>
+          <a class="ptab" :href="`/profile?id=${encodeURIComponent(id)}#4on4`">4on4</a>
+          <a class="ptab" :href="`/profile?id=${encodeURIComponent(id)}#2on2`">2on2</a>
+          <a class="ptab" :href="`/profile?id=${encodeURIComponent(id)}#dmm`">By DMM</a>
+          <a class="ptab active">Maps</a>
+          <a class="ptab" :href="`/profile?id=${encodeURIComponent(id)}#servers`">Servers</a>
+          <a class="ptab" :href="`/profile?id=${encodeURIComponent(id)}#opponents`">Rivals</a>
+          <a class="ptab" :href="`/profile?id=${encodeURIComponent(id)}#recent`">Recent</a>
+        </div>
+      </div>
+
       <div class="controls">
         <span class="ctl-label">Window</span>
         <div class="pill-group">
@@ -314,6 +332,13 @@ useHead({ title: () => profile.value ? `Maps · ${profile.value.player} · DeepF
 .placeholder { padding: 60px; text-align: center; color: var(--fg-3); }
 .muted { color: var(--fg-3); }
 .mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+
+/* Tab bar — mirrors index.vue so the Maps tab feels integrated. */
+.profile-tabbar { display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+.profile-tabs { display: flex; gap: 0; flex: 1; flex-wrap: wrap; }
+.ptab { padding: 10px 14px; color: var(--fg-2); font-size: 13px; font-weight: 500; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
+.ptab:hover { color: var(--fg); }
+.ptab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
 .hero { margin-bottom: 18px; }
 .hero .back {
