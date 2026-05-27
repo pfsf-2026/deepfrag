@@ -53,12 +53,13 @@ app = FastAPI(title="DeepFrag API", version="0.1")
 # Compress rankings (240KB → ~30KB) and any future large payloads.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
-# Wide-open CORS for now — only static JSON is served and the only consumer
-# is the Cloudflare Pages frontend. Tighten when we add write endpoints.
+# Wide-open CORS for now — the Cloudflare Pages frontend is the only consumer.
+# Admin write endpoints (scheduler pause/resume, rerate) need POST, so we allow
+# all standard methods. Auth still gates writes via Bearer SYNC_SECRET.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -1498,7 +1499,7 @@ def admin_activity(authorization: str | None = Header(default=None),
                    string_agg(DISTINCT p.canonical_id, ', ' ORDER BY p.canonical_id) AS players
             FROM matches m
             LEFT JOIN players p ON p.match_id = m.match_id AND p.canonical_id IS NOT NULL
-            WHERE m.match_date > NOW() - INTERVAL '24 hours'
+            WHERE m.match_date::timestamptz > NOW() - INTERVAL '24 hours'
             GROUP BY m.match_id, m.match_date, m.match_mode, m.match_map, m.server_hostname
             ORDER BY m.match_date DESC
             LIMIT %s
