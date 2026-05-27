@@ -1177,20 +1177,49 @@ def player_profile_full(
         win_payload["year_ago"] = None  # skip year_ago for now — rarely used, expensive
 
         # Recent matches list for the Recent tab + Overview's last-10 strip.
-        # Pulls last 50 across all modes (Recent tab paginates, Overview slices).
+        # Shape mirrors the legacy static /profiles/*.json: match_mode/match_map
+        # (not mode/map), player_frags + opponent_frags + outcome (W/L/D) for the
+        # 1on1 row, accuracy fields. Profile.html's recentTable column defs
+        # depend on these exact key names.
         cur.execute("""
-            SELECT m.match_id, m.match_date, m.match_mode AS mode, m.match_map AS map,
-                   m.server_hostname, p.player_frags AS frags,
-                   (SELECT json_agg(json_build_object(
-                        'canonical_id', p2.canonical_id,
-                        'display_name', p2.player_name,
-                        'frags', p2.player_frags))
-                    FROM players p2 WHERE p2.match_id = m.match_id) AS players
-            FROM matches m JOIN players p ON p.match_id = m.match_id
-            WHERE p.canonical_id = %s
-            ORDER BY m.match_date DESC
-            LIMIT 50
-        """, (canonical_id,))
+            WITH me AS (
+                SELECT m.match_id, m.match_date, m.match_mode, m.match_map,
+                       m.match_dmm, m.server_hostname,
+                       p.player_frags, p.player_deaths,
+                       (p.player_lg_hits::float / NULLIF(p.player_lg_attacks, 0)) AS lg_acc,
+                       (p.player_rl_virtual::float / NULLIF(p.player_rl_attacks, 0)) AS rl_acc
+                FROM matches m JOIN players p ON p.match_id = m.match_id
+                WHERE p.canonical_id = %(cid)s
+                ORDER BY m.match_date DESC
+                LIMIT 50
+            ),
+            opp AS (
+                -- For 1on1 only: the other player in the match is the opponent.
+                -- For 2on2/4on4 leave opponent_name = null (the recentTable shows '—').
+                SELECT me.match_id,
+                       MAX(p2.player_name) FILTER (WHERE p2.canonical_id IS DISTINCT FROM %(cid)s) AS opponent_name,
+                       MAX(p2.player_frags) FILTER (WHERE p2.canonical_id IS DISTINCT FROM %(cid)s) AS opponent_frags
+                FROM me
+                JOIN players p2 ON p2.match_id = me.match_id
+                WHERE me.match_mode = '1on1'
+                GROUP BY me.match_id
+            )
+            SELECT me.match_id, me.match_date, me.match_mode, me.match_map, me.match_dmm,
+                   me.server_hostname, me.player_frags, me.player_deaths,
+                   me.lg_acc, me.rl_acc,
+                   opp.opponent_name, opp.opponent_frags,
+                   CASE
+                       WHEN me.match_mode = '1on1' AND opp.opponent_frags IS NOT NULL THEN
+                           CASE
+                               WHEN me.player_frags > opp.opponent_frags THEN 'win'
+                               WHEN me.player_frags < opp.opponent_frags THEN 'loss'
+                               ELSE 'draw'
+                           END
+                       ELSE NULL  -- 2on2/4on4 outcome needs team join, skip for now
+                   END AS outcome
+            FROM me LEFT JOIN opp ON opp.match_id = me.match_id
+            ORDER BY me.match_date DESC
+        """, {"cid": canonical_id})
         recent_matches = [dict(r) for r in cur.fetchall()]
 
     return {
