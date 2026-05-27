@@ -621,6 +621,28 @@ function shortStatus(s) {
           </div>
         </template>
 
+        <template v-else-if="activeSection === 'activity'">
+          <div class="pane-head">
+            <div>
+              <h2>Activity log</h2>
+              <div class="scope">{{ eventLog.length }} events · runtime data only (deploys live in their own tab)</div>
+            </div>
+            <div class="actions">
+              <button class="btn ghost" @click="loadActivity">⟳ Refresh</button>
+            </div>
+          </div>
+          <div class="card" style="padding: 0;">
+            <div class="feed feed-full">
+              <div v-if="!eventLog.length" class="muted center" style="padding: 24px;">No events yet.</div>
+              <div v-for="(e, i) in eventLog" :key="i" class="line">
+                <span class="ts">{{ e.ts }}</span>
+                <span :class="['level', e.level]">{{ e.tag }}</span>
+                <span class="msg">{{ e.msg }}</span>
+              </div>
+            </div>
+          </div>
+        </template>
+
         <!-- Placeholders for other sections -->
         <template v-else>
           <div class="pane-head">
@@ -736,6 +758,7 @@ function shortStatus(s) {
 
 /* Live feed */
 .feed { font-family: 'JetBrains Mono', monospace; font-size: 11px; max-height: 380px; overflow-y: auto; }
+.feed-full { max-height: none; padding: 8px 16px; }
 .line { display: grid; grid-template-columns: 72px 56px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--panel-2); align-items: baseline; }
 .line:last-child { border-bottom: 0; }
 .line .ts { color: var(--fg-3); }
