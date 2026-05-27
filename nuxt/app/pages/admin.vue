@@ -223,7 +223,43 @@ async function loadPlayers() {
 watch(activeSection, (s) => {
   if (s === 'players') loadPlayers()
   if (s === 'deploys') loadDeploys()
+  if (s === 'matches') loadMatches()
 })
+
+// ─── Matches tab: Region Switcher ─────────────────────────────────────────
+const matchesData = ref(null)
+const matchesLoading = ref(false)
+const matchesError = ref('')
+const matchesRegion = ref('all')
+const matchesWindow = ref('30')
+const matchesMode = ref('all')
+
+async function loadMatches() {
+  matchesLoading.value = true
+  matchesError.value = ''
+  try {
+    const params = new URLSearchParams({
+      region: matchesRegion.value,
+      window: matchesWindow.value,
+      mode: matchesMode.value,
+    })
+    matchesData.value = await $fetch(`${apiBase}/api/admin/matches/by-region?${params}`,
+      { headers: adminHeaders() })
+  } catch (e) {
+    matchesError.value = e?.data?.detail || e?.message || 'fetch failed'
+    pushEvent('err', 'MATCHES', matchesError.value)
+  } finally {
+    matchesLoading.value = false
+  }
+}
+
+// Re-load whenever any filter changes (debounced via Vue's reactivity batching).
+watch([matchesRegion, matchesWindow, matchesMode], () => {
+  if (activeSection.value === 'matches') loadMatches()
+})
+
+// Pretty 12h labels for the heatmap axis without bringing in a TZ lib.
+const HEAT_HOUR_LABELS = ['00', '06', '12', '18', '23']
 
 const playersFiltered = computed(() => {
   let list = players.value
@@ -566,6 +602,135 @@ function shortStatus(s) {
         </template>
 
         <!-- DEPLOY LOG — full table of every Cloud Run revision -->
+        <template v-else-if="activeSection === 'matches'">
+          <div class="pane-head">
+            <div>
+              <h2>Matches by region</h2>
+              <div class="scope">Click a region to drill in · numbers reflect the window + mode picker</div>
+            </div>
+            <div class="actions">
+              <select v-model="matchesWindow" class="btn">
+                <option value="7">Last 7d</option>
+                <option value="30">Last 30d</option>
+                <option value="90">Last 90d</option>
+                <option value="365">Last year</option>
+                <option value="all">All time</option>
+              </select>
+              <button class="btn ghost" @click="loadMatches" :disabled="matchesLoading">⟳ Refresh</button>
+            </div>
+          </div>
+
+          <div v-if="matchesError" class="placeholder err">{{ matchesError }}</div>
+          <div v-else-if="matchesLoading && !matchesData" class="placeholder">Loading matches…</div>
+
+          <template v-else-if="matchesData">
+            <!-- Region tab row -->
+            <div class="region-tabs">
+              <div v-for="r in matchesData.region_totals" :key="r.region"
+                   class="rt" :class="{ active: matchesRegion === r.region }"
+                   @click="matchesRegion = r.region">
+                <div v-if="r.servers_live" class="rt-live"><i></i>{{ r.servers_live }} LIVE</div>
+                <div class="rt-flag">{{ r.flag }}</div>
+                <div class="rt-name">{{ r.name }}</div>
+                <div class="rt-val">{{ r.matches.toLocaleString() }}</div>
+                <div class="rt-sub">{{ r.servers != null ? `${r.servers} server${r.servers === 1 ? '' : 's'}` : `${matchesData.region_totals.length - 1} regions` }}</div>
+              </div>
+            </div>
+
+            <!-- Region header -->
+            <div class="region-header">
+              <h3>
+                {{ matchesData.region_totals.find(r => r.region === matchesRegion)?.flag }}
+                {{ matchesData.region_totals.find(r => r.region === matchesRegion)?.name }} activity
+              </h3>
+              <span v-if="matchesData.summary.servers_live" class="chip">{{ matchesData.summary.servers_live }} live</span>
+            </div>
+
+            <!-- KPI strip -->
+            <div class="m-kpi-strip">
+              <div class="m-kpi"><div class="l">Matches</div><div class="v">{{ matchesData.summary.matches.toLocaleString() }}</div></div>
+              <div class="m-kpi"><div class="l">Unique players</div><div class="v">{{ matchesData.summary.unique_players.toLocaleString() }}</div></div>
+              <div class="m-kpi"><div class="l">Servers</div><div class="v">{{ matchesData.summary.servers }}<span v-if="matchesData.summary.servers_live" class="sub-inline">{{ matchesData.summary.servers_live }} live</span></div></div>
+              <div class="m-kpi"><div class="l">Peak hour</div><div class="v">{{ matchesData.summary.peak_hour_matches }}<span v-if="matchesData.summary.peak_hour != null" class="sub-inline">{{ String(matchesData.summary.peak_hour).padStart(2,'0') }}:00 {{ matchesData.summary.timezone_label }}</span></div></div>
+            </div>
+
+            <!-- Mode sub-tabs -->
+            <div class="mode-tabs">
+              <div class="mt" :class="{ active: matchesMode === 'all' }" @click="matchesMode = 'all'">
+                All modes <span class="count">{{ (matchesData.mode_breakdown.all || 0).toLocaleString() }}</span>
+              </div>
+              <div class="mt" :class="{ active: matchesMode === '1on1' }" @click="matchesMode = '1on1'">
+                1on1 <span class="count">{{ (matchesData.mode_breakdown['1on1'] || 0).toLocaleString() }}</span>
+              </div>
+              <div class="mt" :class="{ active: matchesMode === '2on2' }" @click="matchesMode = '2on2'">
+                2on2 <span class="count">{{ (matchesData.mode_breakdown['2on2'] || 0).toLocaleString() }}</span>
+              </div>
+              <div class="mt" :class="{ active: matchesMode === '4on4' }" @click="matchesMode = '4on4'">
+                4on4 <span class="count">{{ (matchesData.mode_breakdown['4on4'] || 0).toLocaleString() }}</span>
+              </div>
+            </div>
+
+            <!-- 3-col: heatmap + top maps + top servers -->
+            <div class="m-grid-3">
+              <div class="card">
+                <h4>Hourly activity · last 7 days <span class="total">{{ matchesData.timezone_label }}</span></h4>
+                <div v-for="row in matchesData.heatmap" :key="row.day" class="hm-day-row">
+                  <span class="d">{{ row.day }}</span>
+                  <div class="heatmap">
+                    <div v-for="h in row.hours" :key="h.hour" class="hm" :class="'l' + h.level"
+                         :title="`${row.day} ${String(h.hour).padStart(2,'0')}:00 ${matchesData.timezone_label} · ${h.n} match${h.n === 1 ? '' : 'es'}`"></div>
+                  </div>
+                </div>
+                <div class="hm-hours">
+                  <span></span>
+                  <div class="h"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+                </div>
+                <div class="hm-legend">
+                  Less
+                  <i></i><i class="l1-i"></i><i class="l2-i"></i><i class="l3-i"></i><i class="l4-i"></i><i class="l5-i"></i>
+                  More · peak {{ matchesData.heatmap_max }} matches/hr
+                </div>
+              </div>
+
+              <div class="card">
+                <h4>Top maps <span class="total">{{ matchesData.top_maps.length }} unique</span></h4>
+                <div class="m-lb">
+                  <div v-for="(m, i) in matchesData.top_maps" :key="m.map" class="m-lb-row">
+                    <span class="rank">{{ i + 1 }}</span>
+                    <span class="name">{{ m.map }}</span>
+                    <span class="val">{{ m.n.toLocaleString() }}</span>
+                  </div>
+                  <div v-if="!matchesData.top_maps.length" class="muted center" style="padding:20px 0;">No matches in scope</div>
+                </div>
+              </div>
+
+              <div class="card">
+                <h4>Top servers <span class="total">{{ matchesData.top_servers.length }} active</span></h4>
+                <div class="m-lb">
+                  <div v-for="(s, i) in matchesData.top_servers" :key="s.host_root" class="m-lb-row" :class="{ live: s.is_live }">
+                    <span class="rank">{{ i + 1 }}</span>
+                    <span class="name">{{ s.host_root }} <span class="sub" v-if="s.country">· {{ s.country }}</span></span>
+                    <span class="val">{{ s.n.toLocaleString() }}</span>
+                  </div>
+                  <div v-if="!matchesData.top_servers.length" class="muted center" style="padding:20px 0;">No matches in scope</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Top players strip -->
+            <div class="card" style="margin-top: 14px;">
+              <h4>Top players in scope <span class="total">{{ matchesData.top_players.length }} unique</span></h4>
+              <div class="m-players-grid">
+                <div v-for="(p, i) in matchesData.top_players" :key="p.canonical_id" class="m-lb-row">
+                  <span class="rank">{{ i + 1 }}</span>
+                  <span class="name">{{ p.canonical_id }}</span>
+                  <span class="val">{{ p.n.toLocaleString() }}</span>
+                </div>
+              </div>
+            </div>
+          </template>
+        </template>
+
         <template v-else-if="activeSection === 'deploys'">
           <div class="pane-head">
             <div>
@@ -768,6 +933,76 @@ function shortStatus(s) {
 .line .level.warn { color: var(--gold); }
 .line .level.err { color: var(--loss); }
 .line .msg { color: var(--fg-2); }
+
+/* ─── Matches by Region (Region Switcher) ─────────────────────────────── */
+.region-tabs { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 22px; }
+.region-tabs .rt { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 12px; cursor: pointer; transition: all 0.15s; position: relative; text-align: center; }
+.region-tabs .rt:hover { border-color: var(--accent); transform: translateY(-1px); }
+.region-tabs .rt.active { border-color: var(--accent); background: linear-gradient(180deg, rgba(20,230,192,0.12), var(--panel)); }
+.region-tabs .rt.active::after { content: ''; position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 7px solid var(--accent); }
+.region-tabs .rt .rt-flag { font-size: 24px; line-height: 1; margin-bottom: 5px; }
+.region-tabs .rt .rt-name { font-size: 10px; color: var(--fg-2); text-transform: uppercase; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 6px; }
+.region-tabs .rt .rt-val { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.region-tabs .rt.active .rt-val { color: var(--accent); }
+.region-tabs .rt .rt-sub { font-size: 10px; color: var(--fg-3); margin-top: 5px; font-family: 'JetBrains Mono', monospace; }
+.region-tabs .rt .rt-live { position: absolute; top: 6px; right: 8px; display: flex; align-items: center; gap: 3px; font-size: 9px; color: var(--win); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.region-tabs .rt .rt-live i { display: inline-block; width: 5px; height: 5px; background: var(--win); border-radius: 50%; animation: pulse-dot 2s infinite; }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+.region-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.region-header h3 { font-size: 17px; font-weight: 800; }
+.region-header .chip { padding: 3px 10px; border-radius: 5px; background: var(--accent); color: var(--bg); font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+
+.m-kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+.m-kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.m-kpi .l { font-size: 10px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; margin-bottom: 4px; }
+.m-kpi .v { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.m-kpi .v .sub-inline { font-size: 10px; color: var(--fg-3); margin-left: 6px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+
+.mode-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+.mode-tabs .mt { padding: 10px 18px; color: var(--fg-2); font-size: 12px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+.mode-tabs .mt:hover { color: var(--fg); }
+.mode-tabs .mt.active { color: var(--accent); border-bottom-color: var(--accent); }
+.mode-tabs .mt .count { margin-left: 6px; color: var(--fg-3); font-size: 10px; font-variant-numeric: tabular-nums; font-family: 'JetBrains Mono', monospace; }
+
+.m-grid-3 { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.m-grid-3 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.m-grid-3 .card h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-2); font-weight: 700; margin-bottom: 14px; display: flex; justify-content: space-between; }
+.m-grid-3 .card h4 .total { color: var(--fg-3); font-weight: 600; }
+
+/* Heatmap */
+.heatmap { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
+.hm { aspect-ratio: 1; border-radius: 2px; background: var(--panel-3); cursor: default; }
+.hm.l0 { background: var(--panel-3); }
+.hm.l1 { background: rgba(20,230,192,0.18); }
+.hm.l2 { background: rgba(20,230,192,0.35); }
+.hm.l3 { background: rgba(20,230,192,0.55); }
+.hm.l4 { background: rgba(20,230,192,0.75); }
+.hm.l5 { background: rgba(20,230,192,1); }
+.hm:hover { outline: 1px solid var(--accent); }
+.hm-day-row { display: grid; grid-template-columns: 30px 1fr; gap: 6px; align-items: center; margin-bottom: 3px; }
+.hm-day-row .d { font-size: 10px; color: var(--fg-3); text-transform: uppercase; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.hm-hours { display: grid; grid-template-columns: 30px 1fr; gap: 6px; margin-top: 6px; color: var(--fg-3); font-size: 9px; font-family: 'JetBrains Mono', monospace; }
+.hm-hours .h { display: flex; justify-content: space-between; }
+.hm-legend { display: flex; align-items: center; gap: 5px; margin-top: 12px; font-size: 10px; color: var(--fg-3); }
+.hm-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--panel-3); }
+.hm-legend i.l1-i { background: rgba(20,230,192,0.18); }
+.hm-legend i.l2-i { background: rgba(20,230,192,0.35); }
+.hm-legend i.l3-i { background: rgba(20,230,192,0.55); }
+.hm-legend i.l4-i { background: rgba(20,230,192,0.75); }
+.hm-legend i.l5-i { background: rgba(20,230,192,1); }
+
+/* Matches leaderboards */
+.m-lb { display: flex; flex-direction: column; }
+.m-lb-row { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: center; font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--panel-2); }
+.m-lb-row:last-child { border-bottom: 0; }
+.m-lb-row .rank { color: var(--fg-3); font-variant-numeric: tabular-nums; text-align: right; font-size: 10px; font-family: 'JetBrains Mono', monospace; }
+.m-lb-row .name { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-lb-row .name .sub { color: var(--fg-3); font-size: 10px; font-weight: 400; margin-left: 4px; }
+.m-lb-row .val { color: var(--fg); font-weight: 700; font-variant-numeric: tabular-nums; font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+.m-lb-row.live { position: relative; }
+.m-lb-row.live::before { content: ''; position: absolute; left: -6px; top: 50%; transform: translateY(-50%); width: 4px; height: 4px; background: var(--win); border-radius: 50%; animation: pulse-dot 2s infinite; }
+.m-players-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 18px; }
 
 /* Modal */
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }

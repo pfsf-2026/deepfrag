@@ -1648,6 +1648,257 @@ def admin_rerate(authorization: str | None = Header(default=None),
     return {"rerate": result, "invariants": invariants}
 
 
+# Postgres TZ names for the per-region heatmap. Picked to match where most
+# players in each region actually live — heatmap reads naturally that way.
+REGION_TIMEZONES = {
+    "EU":    {"tz": "Europe/Berlin",      "label": "CET/CEST"},
+    "NA":    {"tz": "America/New_York",   "label": "ET"},
+    "SA":    {"tz": "America/Sao_Paulo",  "label": "BRT"},
+    "OC":    {"tz": "Australia/Sydney",   "label": "AEST"},
+    "AS-AF": {"tz": "Asia/Tokyo",         "label": "JST"},
+    "OTHER": {"tz": "UTC",                "label": "UTC"},
+    "all":   {"tz": "UTC",                "label": "UTC"},
+}
+REGION_LABELS = {
+    "EU":    {"flag": "🇪🇺", "name": "Europe"},
+    "NA":    {"flag": "🇺🇸", "name": "N. America"},
+    "SA":    {"flag": "🇧🇷", "name": "S. America"},
+    "OC":    {"flag": "🇦🇺", "name": "Oceania"},
+    "AS-AF": {"flag": "🇯🇵", "name": "Asia/Africa"},
+    "OTHER": {"flag": "🌐", "name": "Other"},
+    "all":   {"flag": "🌐", "name": "All regions"},
+}
+
+@app.get("/api/admin/matches/by-region")
+def admin_matches_by_region(
+    authorization: str | None = Header(default=None),
+    region: str = Query("all", description="all|EU|NA|SA|OC|AS-AF|OTHER"),
+    window: str = Query("30", description="7|30|90|365|all"),
+    mode: str = Query("all", description="all|1on1|2on2|4on4"),
+):
+    """Powers the admin Matches tab (Region Switcher design). Returns:
+      - region_totals: per-region match count for the tab row + live indicator
+      - region_summary: matches/players/servers/peak-hour for the selected region
+      - top_maps / top_servers / top_players: ranked lists scoped to region+mode+window
+      - heatmap: 7d × 24h grid in the region's local timezone (so the activity
+        pattern reads correctly — EU evenings are EU evenings, not UTC times)
+      - mode_breakdown: counts per mode for the sub-tab pills
+    """
+    _check_admin_auth(authorization)
+
+    # Window → date filter (None means 'all time')
+    days = None if window == "all" else int(window)
+    date_filter = "" if days is None else "AND m.match_date::timestamptz >= NOW() - INTERVAL %(days)s"
+    date_params = {} if days is None else {"days": f"{days} days"}
+    mode_filter = "" if mode == "all" else "AND m.match_mode = %(mode)s"
+    mode_params = {} if mode == "all" else {"mode": mode}
+    region_filter = "" if region == "all" else "AND s.region = %(region)s"
+    region_params = {} if region == "all" else {"region": region}
+
+    tz_info = REGION_TIMEZONES.get(region, REGION_TIMEZONES["all"])
+    base_params = {**date_params, **mode_params, **region_params}
+
+    with pg() as conn:
+        cur = conn.cursor()
+
+        # Region totals — ALWAYS spans all regions so the tabs work regardless
+        # of which region is currently selected. Window+mode filters DO apply
+        # so the tab numbers match the window/mode picker.
+        cur.execute(f"""
+            SELECT COALESCE(s.region, 'OTHER') AS region,
+                   COUNT(*) AS matches,
+                   COUNT(*) FILTER (WHERE s.is_live) AS matches_on_live_servers,
+                   COUNT(DISTINCT split_part(m.server_hostname, ':', 1)) AS servers,
+                   COUNT(DISTINCT split_part(m.server_hostname, ':', 1)) FILTER (WHERE s.is_live) AS servers_live
+            FROM matches m
+            LEFT JOIN (
+                SELECT DISTINCT ON (split_part(hostname, ':', 1))
+                       split_part(hostname, ':', 1) AS host_root, region, is_live
+                FROM servers ORDER BY split_part(hostname, ':', 1), is_live DESC NULLS LAST
+            ) s ON s.host_root = split_part(m.server_hostname, ':', 1)
+            WHERE m.server_hostname IS NOT NULL {date_filter} {mode_filter}
+            GROUP BY COALESCE(s.region, 'OTHER')
+        """, {**date_params, **mode_params})
+        region_totals = []
+        total_all_regions = 0
+        for r in cur.fetchall():
+            region_totals.append({
+                "region": r["region"],
+                "flag": REGION_LABELS.get(r["region"], {}).get("flag", "🌐"),
+                "name": REGION_LABELS.get(r["region"], {}).get("name", r["region"]),
+                "matches": r["matches"],
+                "servers": r["servers"],
+                "servers_live": r["servers_live"],
+            })
+            total_all_regions += r["matches"]
+        # Synthetic "all" row
+        cur.execute(f"""
+            SELECT COUNT(DISTINCT split_part(m.server_hostname, ':', 1)) FILTER (WHERE s.is_live) AS live
+            FROM matches m
+            LEFT JOIN (
+                SELECT DISTINCT ON (split_part(hostname, ':', 1))
+                       split_part(hostname, ':', 1) AS host_root, is_live
+                FROM servers ORDER BY split_part(hostname, ':', 1), is_live DESC NULLS LAST
+            ) s ON s.host_root = split_part(m.server_hostname, ':', 1)
+            WHERE m.server_hostname IS NOT NULL {date_filter} {mode_filter}
+        """, {**date_params, **mode_params})
+        all_live = cur.fetchone()["live"] or 0
+        region_totals.insert(0, {
+            "region": "all", "flag": "🌐", "name": "All regions",
+            "matches": total_all_regions, "servers": None, "servers_live": all_live,
+        })
+
+        # Mode breakdown for sub-tabs (always region-scoped, never mode-filtered)
+        cur.execute(f"""
+            SELECT m.match_mode AS mode, COUNT(*) AS n
+            FROM matches m
+            LEFT JOIN (
+                SELECT DISTINCT ON (split_part(hostname, ':', 1))
+                       split_part(hostname, ':', 1) AS host_root, region
+                FROM servers ORDER BY split_part(hostname, ':', 1), is_live DESC NULLS LAST
+            ) s ON s.host_root = split_part(m.server_hostname, ':', 1)
+            WHERE m.server_hostname IS NOT NULL {date_filter} {region_filter}
+            GROUP BY m.match_mode
+        """, {**date_params, **region_params})
+        mode_breakdown = {r["mode"]: r["n"] for r in cur.fetchall()}
+        mode_breakdown["all"] = sum(mode_breakdown.values())
+
+        # Region summary (selected region only, all filters applied)
+        cur.execute(f"""
+            SELECT COUNT(*) AS matches,
+                   COUNT(DISTINCT split_part(m.server_hostname, ':', 1)) AS servers,
+                   COUNT(DISTINCT split_part(m.server_hostname, ':', 1))
+                     FILTER (WHERE s.is_live) AS servers_live,
+                   COUNT(DISTINCT p.canonical_id) AS unique_players
+            FROM matches m
+            LEFT JOIN players p ON p.match_id = m.match_id
+            LEFT JOIN (
+                SELECT DISTINCT ON (split_part(hostname, ':', 1))
+                       split_part(hostname, ':', 1) AS host_root, region, is_live
+                FROM servers ORDER BY split_part(hostname, ':', 1), is_live DESC NULLS LAST
+            ) s ON s.host_root = split_part(m.server_hostname, ':', 1)
+            WHERE m.server_hostname IS NOT NULL {date_filter} {mode_filter} {region_filter}
+        """, base_params)
+        summary_row = dict(cur.fetchone())
+
+        # Peak hour — hour-of-day with the most matches, in the region's local TZ.
+        cur.execute(f"""
+            SELECT EXTRACT(HOUR FROM m.match_date::timestamptz AT TIME ZONE %(tz)s)::int AS hour,
+                   COUNT(*) AS n
+            FROM matches m
+            LEFT JOIN (
+                SELECT DISTINCT ON (split_part(hostname, ':', 1))
+                       split_part(hostname, ':', 1) AS host_root, region
+                FROM servers ORDER BY split_part(hostname, ':', 1), is_live DESC NULLS LAST
+            ) s ON s.host_root = split_part(m.server_hostname, ':', 1)
+            WHERE m.server_hostname IS NOT NULL {date_filter} {mode_filter} {region_filter}
+            GROUP BY hour ORDER BY n DESC LIMIT 1
+        """, {**base_params, "tz": tz_info["tz"]})
+        peak = cur.fetchone()
+        summary = {
+            **summary_row,
+            "peak_hour": peak["hour"] if peak else None,
+            "peak_hour_matches": peak["n"] if peak else 0,
+            "timezone_label": tz_info["label"],
+        }
+
+        # Top maps in this scope
+        cur.execute(f"""
+            SELECT m.match_map AS map, COUNT(*) AS n
+            FROM matches m
+            LEFT JOIN (
+                SELECT DISTINCT ON (split_part(hostname, ':', 1))
+                       split_part(hostname, ':', 1) AS host_root, region
+                FROM servers ORDER BY split_part(hostname, ':', 1), is_live DESC NULLS LAST
+            ) s ON s.host_root = split_part(m.server_hostname, ':', 1)
+            WHERE m.server_hostname IS NOT NULL AND m.match_map IS NOT NULL
+              {date_filter} {mode_filter} {region_filter}
+            GROUP BY m.match_map ORDER BY n DESC LIMIT 12
+        """, base_params)
+        top_maps = [dict(r) for r in cur.fetchall()]
+
+        # Top servers in this scope
+        cur.execute(f"""
+            SELECT split_part(m.server_hostname, ':', 1) AS host_root,
+                   COUNT(*) AS n,
+                   MAX(s.country) AS country,
+                   BOOL_OR(s.is_live) AS is_live
+            FROM matches m
+            LEFT JOIN (
+                SELECT DISTINCT ON (split_part(hostname, ':', 1))
+                       split_part(hostname, ':', 1) AS host_root, region, country, is_live
+                FROM servers ORDER BY split_part(hostname, ':', 1), is_live DESC NULLS LAST
+            ) s ON s.host_root = split_part(m.server_hostname, ':', 1)
+            WHERE m.server_hostname IS NOT NULL
+              {date_filter} {mode_filter} {region_filter}
+            GROUP BY split_part(m.server_hostname, ':', 1)
+            ORDER BY n DESC LIMIT 12
+        """, base_params)
+        top_servers = [dict(r) for r in cur.fetchall()]
+
+        # Top players in this scope
+        cur.execute(f"""
+            SELECT p.canonical_id, COUNT(DISTINCT m.match_id) AS n
+            FROM matches m
+            JOIN players p ON p.match_id = m.match_id
+            LEFT JOIN (
+                SELECT DISTINCT ON (split_part(hostname, ':', 1))
+                       split_part(hostname, ':', 1) AS host_root, region
+                FROM servers ORDER BY split_part(hostname, ':', 1), is_live DESC NULLS LAST
+            ) s ON s.host_root = split_part(m.server_hostname, ':', 1)
+            WHERE m.server_hostname IS NOT NULL AND p.canonical_id IS NOT NULL
+              {date_filter} {mode_filter} {region_filter}
+            GROUP BY p.canonical_id ORDER BY n DESC LIMIT 12
+        """, base_params)
+        top_players = [dict(r) for r in cur.fetchall()]
+
+        # Hourly heatmap — 7 days × 24 hours, in region TZ. Day 0 = today,
+        # day 6 = 6 days ago. Hour 0-23 in local time. NULL filled = 0.
+        cur.execute(f"""
+            SELECT EXTRACT(DOW FROM m.match_date::timestamptz AT TIME ZONE %(tz)s)::int AS dow,
+                   EXTRACT(HOUR FROM m.match_date::timestamptz AT TIME ZONE %(tz)s)::int AS hour,
+                   COUNT(*) AS n
+            FROM matches m
+            LEFT JOIN (
+                SELECT DISTINCT ON (split_part(hostname, ':', 1))
+                       split_part(hostname, ':', 1) AS host_root, region
+                FROM servers ORDER BY split_part(hostname, ':', 1), is_live DESC NULLS LAST
+            ) s ON s.host_root = split_part(m.server_hostname, ':', 1)
+            WHERE m.server_hostname IS NOT NULL
+              AND m.match_date::timestamptz >= NOW() - INTERVAL '7 days'
+              {mode_filter} {region_filter}
+            GROUP BY dow, hour
+        """, {**mode_params, **region_params, "tz": tz_info["tz"]})
+        heat_raw = {(r["dow"], r["hour"]): r["n"] for r in cur.fetchall()}
+        # Build 7×24 grid: dow 1=Mon ... 0=Sun. We render Mon-Sun.
+        dow_order = [1, 2, 3, 4, 5, 6, 0]  # Mon, Tue, Wed, Thu, Fri, Sat, Sun
+        dow_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        heatmap_max = max(heat_raw.values()) if heat_raw else 1
+        heatmap = []
+        for i, dow in enumerate(dow_order):
+            row = {"day": dow_labels[i], "hours": []}
+            for h in range(24):
+                n = heat_raw.get((dow, h), 0)
+                row["hours"].append({"hour": h, "n": n, "level": min(5, int(5 * n / heatmap_max)) if heatmap_max else 0})
+            heatmap.append(row)
+
+    return {
+        "region": region,
+        "window": window,
+        "mode": mode,
+        "timezone_label": tz_info["label"],
+        "timezone": tz_info["tz"],
+        "region_totals": region_totals,
+        "summary": summary,
+        "mode_breakdown": mode_breakdown,
+        "top_maps": top_maps,
+        "top_servers": top_servers,
+        "top_players": top_players,
+        "heatmap": heatmap,
+        "heatmap_max": heatmap_max,
+    }
+
+
 @app.post("/api/admin/sync")
 def admin_sync(authorization: str | None = Header(default=None),
                skip_servers: bool = False,
