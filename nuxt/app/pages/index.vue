@@ -4,8 +4,9 @@ const pending = ref(true)
 const mode = ref('1on1')
 const search = ref('')
 const minMatches = ref(20)
-const activeOnly = ref(false)  // default to All time — show every rated player; user can toggle to Last 90d
-const region = ref('')         // '' = Global; 'EU' / 'NA' / 'SA' / 'OC' / 'AS' / 'AF'
+const activity = ref('all')    // 'all' or '90'
+const region = ref('')         // '' = Global; 'EU' / 'NA' / 'SA' / 'OC' / 'AS-AF'
+const divFilter = ref('')      // '' = all divs; 'div0' / 'div1' / 'div2' / 'div3' / 'div4'
 
 const df = useDeepFrag()
 
@@ -74,7 +75,8 @@ function fragDiffRtip(p) {
 }
 const filtered = computed(() => {
   let list = current.value.filter(p => p.matches >= minMatches.value)
-  if (activeOnly.value) list = list.filter(p => p.active_90d)
+  if (activity.value === '90') list = list.filter(p => p.active_90d)
+  if (divFilter.value) list = list.filter(p => p.tier?.slug === divFilter.value)
   if (search.value) {
     const q = search.value.toLowerCase()
     list = list.filter(p => (p.display || '').toLowerCase().includes(q)
@@ -110,24 +112,38 @@ useHead({ title: 'Rankings · DeepFrag' })
     </div>
 
     <div class="controls">
-      <span class="label">Region</span>
-      <div class="pill-group">
-        <button :class="{active: region === ''}" @click="region = ''">Global</button>
-        <button v-for="r in ['EU','NA','SA','OC','AS-AF']" :key="r" :class="{active: region === r}" @click="region = r">{{ r }}</button>
-      </div>
-      <span class="label">Mode</span>
-      <div class="pill-group">
-        <button v-for="m in ['1on1','2on2','4on4']" :key="m" :class="{active: mode === m}" @click="mode = m">{{ m }}</button>
-      </div>
-      <span class="label">Min matches</span>
-      <div class="pill-group">
-        <button v-for="n in [10, 20, 50, 100, 250]" :key="n" :class="{active: minMatches === n}" @click="minMatches = n">{{ n }}</button>
-      </div>
-      <span class="label">Active</span>
-      <div class="pill-group">
-        <button :class="{active: activeOnly}" @click="activeOnly = true">Last 90d</button>
-        <button :class="{active: !activeOnly}" @click="activeOnly = false">All time</button>
-      </div>
+      <select v-model="region" class="dd">
+        <option value="">Global</option>
+        <option value="EU">EU</option>
+        <option value="NA">NA</option>
+        <option value="SA">SA</option>
+        <option value="OC">OC</option>
+        <option value="AS-AF">AS-AF</option>
+      </select>
+      <select v-model="mode" class="dd">
+        <option value="1on1">1on1</option>
+        <option value="2on2">2on2</option>
+        <option value="4on4">4on4</option>
+      </select>
+      <select v-model="divFilter" class="dd">
+        <option value="">All divs</option>
+        <option value="div0">Div 0</option>
+        <option value="div1">Div 1</option>
+        <option value="div2">Div 2</option>
+        <option value="div3">Div 3</option>
+        <option value="div4">Div 4</option>
+      </select>
+      <select v-model.number="minMatches" class="dd">
+        <option :value="10">10+ matches</option>
+        <option :value="20">20+ matches</option>
+        <option :value="50">50+ matches</option>
+        <option :value="100">100+ matches</option>
+        <option :value="250">250+ matches</option>
+      </select>
+      <select v-model="activity" class="dd">
+        <option value="all">All time</option>
+        <option value="90">Last 90d</option>
+      </select>
       <input v-model="search" type="text" placeholder="Filter by name…" class="search">
       <span class="count">{{ filtered.length }} of {{ current.length }}</span>
     </div>
@@ -215,29 +231,34 @@ useHead({ title: 'Rankings · DeepFrag' })
 .maps-link:hover { background: rgba(20,230,192,0.12); border-color: var(--accent); }
 
 .controls {
-  display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 24px;
+  display: flex; gap: 8px; align-items: center; margin-bottom: 24px; flex-wrap: nowrap;
 }
-.controls .label {
-  color: var(--fg-3); font-size: 11px; text-transform: uppercase;
-  letter-spacing: 0.08em; font-weight: 700;
-}
-.pill-group {
-  display: inline-flex; background: var(--panel); border: 1px solid var(--border);
-  border-radius: 8px; padding: 3px; gap: 2px;
-}
-.pill-group button {
-  background: transparent; border: 0; color: var(--fg-2);
-  padding: 6px 14px; border-radius: 5px; cursor: pointer;
+.dd {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 7px 26px 7px 12px;
+  border-radius: 6px;
   font-family: inherit; font-size: 12px; font-weight: 600;
+  cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  /* tiny chevron arrow drawn with two gradients */
+  background-image: linear-gradient(45deg, transparent 50%, var(--fg-3) 50%),
+                    linear-gradient(135deg, var(--fg-3) 50%, transparent 50%);
+  background-position: calc(100% - 12px) 50%, calc(100% - 8px) 50%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
 }
-.pill-group button:hover { color: var(--fg); background: var(--panel-2); }
-.pill-group button.active { background: var(--accent); color: var(--bg); }
+.dd:hover { border-color: var(--accent); color: var(--fg); }
+.dd:focus { outline: none; border-color: var(--accent); }
+.dd option { background: var(--panel); color: var(--fg); }
 .search {
   background: var(--panel); border: 1px solid var(--border); color: var(--fg);
-  padding: 8px 14px; border-radius: 8px; font-size: 13px; min-width: 220px; font-family: inherit;
+  padding: 7px 12px; border-radius: 6px; font-size: 12px; font-family: inherit;
+  flex: 1; min-width: 0;
 }
 .search:focus { outline: none; border-color: var(--accent); }
-.count { color: var(--fg-3); font-size: 12px; margin-left: auto; }
+.count { color: var(--fg-3); font-size: 12px; font-family: 'JetBrains Mono', monospace; white-space: nowrap; flex-shrink: 0; }
 
 .list { display: flex; flex-direction: column; gap: 8px; }
 
