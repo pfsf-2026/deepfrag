@@ -68,7 +68,11 @@ const sections = [
 onMounted(() => {
   const t = localStorage.getItem('deepfrag_admin_token')
   if (t) authed.value = true
-  if (authed.value) loadStatus()
+  if (authed.value) {
+    loadStatus()
+    loadActivity()
+    loadDeploys()    // dashboard "Latest deploys" card
+  }
 })
 
 function submitToken() {
@@ -100,6 +104,24 @@ async function loadStatus() {
     if (e?.status === 401) { authed.value = false; localStorage.removeItem('deepfrag_admin_token') }
   } finally {
     statusLoading.value = false
+  }
+}
+
+const deploys = ref([])
+const deploysLoading = ref(false)
+const deploysError = ref('')
+const activeRevision = ref(null)
+async function loadDeploys() {
+  deploysLoading.value = true
+  deploysError.value = ''
+  try {
+    const r = await $fetch(`${apiBase}/api/admin/deploys?limit=50`, { headers: adminHeaders() })
+    deploys.value = r.deploys || []
+    activeRevision.value = r.active_revision
+  } catch (e) {
+    deploysError.value = e?.data?.detail || e?.message || 'Failed to load'
+  } finally {
+    deploysLoading.value = false
   }
 }
 
@@ -200,6 +222,7 @@ async function loadPlayers() {
 
 watch(activeSection, (s) => {
   if (s === 'players') loadPlayers()
+  if (s === 'deploys') loadDeploys()
 })
 
 const playersFiltered = computed(() => {
@@ -234,19 +257,8 @@ async function selectPlayer(p) {
 }
 function closeInspector() { selectedPlayer.value = null; playerDetail.value = null }
 
-// ─── hotkeys ─────────────────────────────────────────────────────────────
-function onKey(e) {
-  if (!authed.value) return
-  if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'SELECT') return
-  if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); triggerSync() }
-  if ((e.metaKey || e.ctrlKey) && e.key === 'r') { e.preventDefault(); startRerate() }
-  if ((e.metaKey || e.ctrlKey) && e.key === 'i') { e.preventDefault(); loadStatus() }
-  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
-    e.preventDefault(); toggleScheduler()
-  }
-}
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+// Hotkeys removed 2026-05-27 — conflicted with macOS system shortcuts
+// (⌘S = save page, ⌘R = reload, etc). Buttons still work via click.
 
 useHead({ title: 'Admin · DeepFrag' })
 
@@ -311,9 +323,9 @@ function fmtDate(s) { return s ? new Date(s).toLocaleString() : '—' }
               <div class="scope">live status · refreshed {{ status?.now ? fmtDate(status.now) : '—' }}</div>
             </div>
             <div class="actions">
-              <button class="btn" @click="loadStatus" :disabled="statusLoading">⟳ Refresh <span class="kbd">⌘I</span></button>
-              <button class="btn ghost" @click="triggerSync">Trigger sync <span class="kbd">⌘S</span></button>
-              <button class="btn warn" @click="startRerate">Full re-rate <span class="kbd">⌘R</span></button>
+              <button class="btn" @click="loadStatus" :disabled="statusLoading">⟳ Refresh</button>
+              <button class="btn ghost" @click="triggerSync">Trigger sync</button>
+              <button class="btn warn" @click="startRerate">Full re-rate</button>
             </div>
           </div>
 
@@ -329,15 +341,42 @@ function fmtDate(s) { return s ? new Date(s).toLocaleString() : '—' }
               <div class="nt"><div class="l">Last match</div><div class="v small">{{ fmtDate(status.stats.last_match_date) }}</div></div>
             </div>
 
-            <!-- Live activity feed -->
-            <div class="card">
-              <h3>Live activity <span class="meta">{{ eventLog.length }} events this session</span></h3>
-              <div class="feed">
-                <div v-if="!eventLog.length" class="muted center">No events yet. Trigger an action to see it here.</div>
-                <div v-for="(e, i) in eventLog" :key="i" class="line">
-                  <span class="ts">{{ e.ts }}</span>
-                  <span :class="['level', e.level]">{{ e.tag }}</span>
-                  <span class="msg">{{ e.msg }}</span>
+            <!-- Live activity + latest deploys, side-by-side -->
+            <div class="dash-grid">
+              <div class="card">
+                <h3>Live activity <span class="meta">{{ eventLog.length }} events</span></h3>
+                <div class="feed">
+                  <div v-if="!eventLog.length" class="muted center">No events yet. Trigger an action to see it here.</div>
+                  <div v-for="(e, i) in eventLog" :key="i" class="line">
+                    <span class="ts">{{ e.ts }}</span>
+                    <span :class="['level', e.level]">{{ e.tag }}</span>
+                    <span class="msg">{{ e.msg }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card">
+                <h3>Latest deploys
+                  <span class="meta">
+                    <a class="link" @click="activeSection = 'deploys'">view all →</a>
+                  </span>
+                </h3>
+                <div v-if="deploysLoading && !deploys.length" class="muted center" style="padding:20px 0;">Loading…</div>
+                <div v-else-if="deploysError" class="muted center" style="padding:20px 0; color: var(--loss);">{{ deploysError }}</div>
+                <div v-else-if="!deploys.length" class="muted center" style="padding:20px 0;">No revisions found.</div>
+                <div v-else class="feed">
+                  <div v-for="d in deploys.slice(0, 8)" :key="d.name" class="line deploy-line"
+                       :class="{ active: d.active }">
+                    <span class="ts">{{ String(d.create_time || '').slice(11, 19) }}</span>
+                    <span :class="['level', d.status === 'CONDITION_SUCCEEDED' ? 'ok' : d.status === 'CONDITION_FAILED' ? 'err' : 'info']">
+                      {{ d.active ? 'LIVE' : (d.status || 'rev').replace('CONDITION_', '').slice(0, 4) }}
+                    </span>
+                    <span class="msg">
+                      <span class="rev-name">{{ d.name.replace('deepfrag-api-', '') }}</span>
+                      <span v-if="d.traffic_percent" class="muted">· {{ d.traffic_percent }}% traffic</span>
+                      <span v-if="d.image_sha" class="muted"> · {{ d.image_sha }}</span>
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -495,6 +534,54 @@ function fmtDate(s) { return s ? new Date(s).toLocaleString() : '—' }
           </div>
         </template>
 
+        <!-- DEPLOY LOG — full table of every Cloud Run revision -->
+        <template v-else-if="activeSection === 'deploys'">
+          <div class="pane-head">
+            <div>
+              <h2>Deploy log</h2>
+              <div class="scope">Cloud Run revisions for deepfrag-api · {{ deploys.length }} revisions</div>
+            </div>
+            <div class="actions">
+              <button class="btn ghost" @click="loadDeploys" :disabled="deploysLoading">⟳ Refresh</button>
+            </div>
+          </div>
+
+          <div v-if="deploysError" class="placeholder err">{{ deploysError }}</div>
+          <div v-else-if="deploysLoading && !deploys.length" class="placeholder">Loading deploys…</div>
+          <div v-else class="card" style="padding: 0;">
+            <table class="deploy-table">
+              <thead>
+                <tr>
+                  <th>Revision</th>
+                  <th>Created</th>
+                  <th>Status</th>
+                  <th class="num">Traffic</th>
+                  <th>Image SHA</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="d in deploys" :key="d.name" :class="{ active: d.active }">
+                  <td>
+                    <div class="rev-name">{{ d.name }}</div>
+                    <div class="muted small">{{ d.image }}</div>
+                  </td>
+                  <td class="muted small">{{ fmtDate(d.create_time) }}</td>
+                  <td>
+                    <span :class="['badge', d.status === 'CONDITION_SUCCEEDED' ? 'ok' : d.status === 'CONDITION_FAILED' ? 'err' : 'info']">
+                      {{ (d.status || '—').replace('CONDITION_', '') }}
+                    </span>
+                  </td>
+                  <td class="num">
+                    <span v-if="d.traffic_percent" class="badge ok">{{ d.traffic_percent }}%</span>
+                    <span v-else class="muted">—</span>
+                  </td>
+                  <td class="muted small mono">{{ d.image_sha || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
         <!-- Placeholders for other sections -->
         <template v-else>
           <div class="pane-head">
@@ -582,6 +669,31 @@ function fmtDate(s) { return s ? new Date(s).toLocaleString() : '—' }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; }
 .card h3 { font-size: 12px; color: var(--fg-3); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
 .card h3 .meta { color: var(--fg-3); text-transform: none; letter-spacing: 0; font-size: 11px; font-family: 'JetBrains Mono', monospace; font-weight: 500; }
+
+/* Dashboard 2-col grid (activity feed + latest deploys) */
+.dash-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; }
+.card h3 .link { color: var(--accent); text-decoration: none; cursor: pointer; font-weight: 600; font-size: 11px; }
+.card h3 .link:hover { text-decoration: underline; }
+
+/* Deploy lines in the dashboard mini-card */
+.deploy-line.active { background: rgba(20,230,192,0.04); border-left: 2px solid var(--accent); padding-left: 8px; }
+.deploy-line .rev-name { color: var(--fg); font-weight: 700; }
+
+/* Deploy log full table */
+.deploy-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+.deploy-table th { padding: 10px 14px; font-size: 10px; color: var(--fg-3); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; text-align: left; background: var(--panel-2); border-bottom: 1px solid var(--border); }
+.deploy-table th.num { text-align: right; }
+.deploy-table td { padding: 10px 14px; border-bottom: 1px solid var(--panel-2); font-size: 12px; vertical-align: middle; }
+.deploy-table tr:last-child td { border-bottom: 0; }
+.deploy-table td.num { text-align: right; font-family: 'JetBrains Mono', monospace; }
+.deploy-table .rev-name { font-weight: 700; color: var(--fg); font-family: 'JetBrains Mono', monospace; }
+.deploy-table tr.active td { background: rgba(20,230,192,0.04); }
+.deploy-table tr.active td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.deploy-table .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.04em; }
+.deploy-table .badge.ok { background: rgba(34,197,94,0.15); color: var(--win); }
+.deploy-table .badge.err { background: rgba(239,68,68,0.15); color: var(--loss); }
+.deploy-table .badge.info { background: rgba(74,159,255,0.15); color: var(--accent-2); }
+.deploy-table .mono { font-family: 'JetBrains Mono', monospace; }
 
 /* Live feed */
 .feed { font-family: 'JetBrains Mono', monospace; font-size: 11px; max-height: 380px; overflow-y: auto; }

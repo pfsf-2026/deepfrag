@@ -1422,6 +1422,64 @@ def admin_player_detail(canonical_id: str,
     }
 
 
+@app.get("/api/admin/deploys")
+def admin_deploys(authorization: str | None = Header(default=None),
+                  limit: int = Query(30, ge=1, le=100)):
+    """Recent Cloud Run revisions for the deepfrag-api service. Used by the
+    Deploy log tab + the dashboard's latest-deploys card. Requires Cloud Run's
+    default service account to have roles/run.viewer."""
+    _check_admin_auth(authorization)
+    try:
+        import google.auth, google.auth.transport.requests
+        creds, _ = google.auth.default()
+        creds.refresh(google.auth.transport.requests.Request())
+        # Fetch revisions + active service traffic config in parallel-ish.
+        svc_base = "https://run.googleapis.com/v2/projects/deepfrag-prod/locations/us-central1/services/deepfrag-api"
+        headers = {"Authorization": f"Bearer {creds.token}"}
+        revs_r = requests.get(f"{svc_base}/revisions?pageSize={limit}", headers=headers, timeout=15)
+        svc_r = requests.get(svc_base, headers=headers, timeout=15)
+        revs_r.raise_for_status()
+        svc_r.raise_for_status()
+
+        # Build a {revision_name: traffic_percent} map from the Service's
+        # current traffic split — usually a single revision at 100%.
+        traffic_map = {}
+        for t in (svc_r.json().get("trafficStatuses") or svc_r.json().get("traffic") or []):
+            rev = (t.get("revision") or "").split("/")[-1]
+            if rev:
+                traffic_map[rev] = t.get("percent", 0)
+
+        out = []
+        for rev in (revs_r.json().get("revisions") or []):
+            name = (rev.get("name") or "").split("/")[-1]
+            # Conditions[0] is usually "Ready" — surface its status + reason.
+            ready_status = "unknown"
+            for c in (rev.get("conditions") or []):
+                if c.get("type") == "Ready":
+                    ready_status = c.get("state", "unknown")
+                    break
+            image = ""
+            containers = rev.get("containers") or []
+            if containers:
+                image = containers[0].get("image", "")
+            out.append({
+                "name": name,
+                "create_time": rev.get("createTime"),
+                "image": image,
+                "image_sha": image.split("@sha256:")[1][:12] if "@sha256:" in image else None,
+                "status": ready_status,
+                "traffic_percent": traffic_map.get(name, 0),
+                "active": traffic_map.get(name, 0) > 0,
+            })
+        # Newest first
+        out.sort(key=lambda r: r["create_time"] or "", reverse=True)
+        return {"deploys": out[:limit], "active_revision": next((r["name"] for r in out if r["active"]), None)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Cloud Run API error: {type(e).__name__}: {str(e)[:200]}")
+
+
 @app.get("/api/admin/activity")
 def admin_activity(authorization: str | None = Header(default=None),
                    limit: int = Query(40, ge=1, le=200)):
