@@ -33,6 +33,14 @@ watch(id, loadProfile)
 watch(windowKey, () => { if (df.useApi) loadProfile() })
 
 const w = computed(() => profile.value?.windows?.[windowKey.value] || {})
+// Human-friendly window label for card subtitles ("last 90d" / "last year" / "all time")
+const windowLabel = computed(() => ({
+  '7':   'last 7d',
+  '30':  'last 30d',
+  '90':  'last 90d',
+  '365': 'last year',
+  'all': 'all time'
+}[windowKey.value] || windowKey.value))
 const m1on1 = computed(() => w.value.by_mode?.['1on1'] || {})
 const m4on4 = computed(() => w.value.by_mode?.['4on4'] || {})
 const m2on2 = computed(() => w.value.by_mode?.['2on2'] || {})
@@ -256,7 +264,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         <a class="nav-card" :href="deepHref('1on1')">
           <div class="nc-head">
             <div>
-              <div class="nc-sub">Mode breakdown · last 90d</div>
+              <div class="nc-sub">Mode breakdown · {{ windowLabel }}</div>
               <div class="nc-title">1on1 duel</div>
             </div>
             <div class="nc-arrow">→</div>
@@ -300,7 +308,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         <a class="nav-card" :href="deepHref('4on4')">
           <div class="nc-head">
             <div>
-              <div class="nc-sub">Mode breakdown · last 90d</div>
+              <div class="nc-sub">Mode breakdown · {{ windowLabel }}</div>
               <div class="nc-title">4on4 team</div>
             </div>
             <div class="nc-arrow">→</div>
@@ -341,7 +349,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         <a class="nav-card" :href="deepHref('2on2')">
           <div class="nc-head">
             <div>
-              <div class="nc-sub">Mode breakdown · last 90d</div>
+              <div class="nc-sub">Mode breakdown · {{ windowLabel }}</div>
               <div class="nc-title">2on2 team</div>
             </div>
             <div class="nc-arrow">→</div>
@@ -382,7 +390,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         <a class="nav-card" :href="deepHref('trends')">
           <div class="nc-head">
             <div>
-              <div class="nc-sub">Time analysis · last 90d</div>
+              <div class="nc-sub">Time analysis · {{ windowLabel }}</div>
               <div class="nc-title">Trends</div>
             </div>
             <div class="nc-arrow">→</div>
@@ -393,7 +401,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         <NuxtLink class="nav-card" :to="`/p/${encodeURIComponent(id)}/maps`">
           <div class="nc-head">
             <div>
-              <div class="nc-sub">Per-map ELO + stats · last 90d</div>
+              <div class="nc-sub">Per-map ELO + stats · {{ windowLabel }}</div>
               <div class="nc-title">Maps</div>
             </div>
             <div class="nc-arrow">→</div>
@@ -417,7 +425,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         <a class="nav-card" :href="deepHref('opponents')">
           <div class="nc-head">
             <div>
-              <div class="nc-sub">Head-to-head · last 90d</div>
+              <div class="nc-sub">Head-to-head · {{ windowLabel }}</div>
               <div class="nc-title">Rivals</div>
             </div>
             <div class="nc-arrow">→</div>
@@ -442,7 +450,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         <a class="nav-card" :href="deepHref('compare')">
           <div class="nc-head">
             <div>
-              <div class="nc-sub">Period comparison · last 90d</div>
+              <div class="nc-sub">Period comparison · {{ windowLabel }}</div>
               <div class="nc-title">Compare</div>
             </div>
             <div class="nc-arrow">→</div>
@@ -567,11 +575,26 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
 .ptab:hover { color: var(--fg); }
 .ptab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .window-select {
-  background: var(--panel-2); border: 1px solid var(--border); color: var(--fg);
-  padding: 6px 10px; border-radius: 6px; font-family: inherit; font-size: 13px;
-  font-weight: 600; cursor: pointer;
+  background: rgba(20, 230, 192, 0.08);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 7px 14px; border-radius: 999px;
+  font-family: inherit; font-size: 13px;
+  font-weight: 700; letter-spacing: 0.01em;
+  cursor: pointer;
+  /* Native arrow styling varies by OS — replace with our own teal chevron */
+  appearance: none; -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--accent) 50%),
+                    linear-gradient(135deg, var(--accent) 50%, transparent 50%);
+  background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 28px;
+  transition: background-color 0.12s, box-shadow 0.12s;
 }
-.window-select:focus { outline: none; border-color: var(--accent); }
+.window-select:hover { background-color: rgba(20, 230, 192, 0.15); box-shadow: 0 0 0 3px rgba(20, 230, 192, 0.08); }
+.window-select:focus { outline: none; box-shadow: 0 0 0 3px rgba(20, 230, 192, 0.18); }
+.window-select option { background: var(--panel-2); color: var(--fg); font-weight: 600; }
 .ctl-label {
   color: var(--fg-3); font-size: 11px; text-transform: uppercase;
   letter-spacing: 0.08em; font-weight: 700;
