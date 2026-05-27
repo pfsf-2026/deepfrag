@@ -9,3 +9,6 @@ requests~=2.32.5
 beautifulsoup4~=4.12.0
 PyYAML~=6.0
 rapidfuzz~=3.13
+# Cloud Scheduler client — admin panel uses this to pause/resume the
+# every-2h sync job via /api/admin/scheduler/{pause,resume}.
+google-cloud-scheduler~=2.14

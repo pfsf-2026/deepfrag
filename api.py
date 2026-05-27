@@ -1303,6 +1303,107 @@ def _run_script(script: str, *args: str, timeout: int = 600) -> dict:
         return {"script": script, "args": list(args), "returncode": -1, "error": "timeout"}
 
 
+def _check_admin_auth(authorization: str | None):
+    """Bearer auth shared by every /api/admin/* endpoint. Returns 503 if no
+    SYNC_SECRET configured, 401 if the token doesn't match."""
+    expected = os.environ.get("SYNC_SECRET")
+    if not expected:
+        raise HTTPException(503, "SYNC_SECRET not configured on the server")
+    if authorization != f"Bearer {expected}":
+        raise HTTPException(401, "missing or invalid bearer token")
+
+
+@app.get("/api/admin/status")
+def admin_status(authorization: str | None = Header(default=None)):
+    """One-stop admin dashboard payload: scheduler state, last sync time,
+    DB row counts. Cheap (a handful of COUNT queries + one gcloud subprocess
+    for the scheduler state)."""
+    _check_admin_auth(authorization)
+
+    # Scheduler state via Google Cloud Scheduler client. Cloud Run's default
+    # service account needs roles/cloudscheduler.viewer (admin for pause/resume).
+    sched_state = "unknown"
+    sched_next = None
+    try:
+        from google.cloud import scheduler_v1
+        client = scheduler_v1.CloudSchedulerClient()
+        name = "projects/deepfrag-prod/locations/us-central1/jobs/deepfrag-periodic-sync"
+        job = client.get_job(name=name)
+        sched_state = scheduler_v1.Job.State(job.state).name.lower()  # ENABLED / PAUSED / DISABLED
+        if job.schedule_time:
+            sched_next = job.schedule_time.isoformat()
+    except Exception as e:
+        sched_state = f"unknown ({type(e).__name__}: {str(e)[:80]})"
+
+    with pg() as conn:
+        cur = conn.cursor()
+        stats = {}
+        cur.execute("SELECT COUNT(*) AS n FROM matches")
+        stats["matches"] = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM ratings WHERE mode='1on1' AND map=''")
+        stats["rated_1on1"] = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM servers")
+        stats["servers"] = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM servers WHERE is_live = TRUE")
+        stats["servers_live"] = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM players_canonical")
+        stats["canonical_players"] = cur.fetchone()["n"]
+        cur.execute("SELECT MAX(match_date) AS last FROM matches")
+        stats["last_match_date"] = cur.fetchone()["last"]
+
+    return {
+        "scheduler": {"state": sched_state, "next_run": sched_next},
+        "stats": stats,
+        "api_revision": os.environ.get("K_REVISION", "unknown"),
+        "now": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.post("/api/admin/scheduler/{action}")
+def admin_scheduler(action: str, authorization: str | None = Header(default=None)):
+    """Pause or resume the deepfrag-periodic-sync Cloud Scheduler job.
+    `action` must be 'pause' or 'resume'."""
+    _check_admin_auth(authorization)
+    if action not in ("pause", "resume"):
+        raise HTTPException(400, "action must be 'pause' or 'resume'")
+    try:
+        from google.cloud import scheduler_v1
+        client = scheduler_v1.CloudSchedulerClient()
+        name = "projects/deepfrag-prod/locations/us-central1/jobs/deepfrag-periodic-sync"
+        if action == "pause":
+            job = client.pause_job(name=name)
+        else:
+            job = client.resume_job(name=name)
+        return {
+            "action": action,
+            "state": scheduler_v1.Job.State(job.state).name.lower(),
+        }
+    except Exception as e:
+        raise HTTPException(500, f"scheduler {action} failed: {type(e).__name__}: {e}")
+
+
+@app.post("/api/admin/rerate")
+def admin_rerate(authorization: str | None = Header(default=None),
+                 confirm: str = Query(...,
+                     description="must equal 'I-understand-this-wipes-ratings'")):
+    """Full re-rate of every 1on1 rating row. Wipes the ratings table for
+    mode=1on1 (across all map buckets) and rebuilds from scratch. Takes ~3-8
+    minutes; the request blocks until done.
+
+    Use cases: algorithm change (tier breakpoints, perf weights), bug fix in
+    rate.py, schema change. NOT for daily ops — that's what /api/admin/sync
+    + the every-2h scheduler is for.
+
+    Requires confirm param to prevent accidental clicks."""
+    _check_admin_auth(authorization)
+    if confirm != "I-understand-this-wipes-ratings":
+        raise HTTPException(400, "missing confirm token")
+    result = _run_script("rate.py", "--mode", "1on1", timeout=1200)
+    # Also run invariants right after — re-rate is exactly the moment to verify.
+    invariants = _run_script("tests/test_invariants.py", timeout=60)
+    return {"rerate": result, "invariants": invariants}
+
+
 @app.post("/api/admin/sync")
 def admin_sync(authorization: str | None = Header(default=None),
                skip_servers: bool = False,
