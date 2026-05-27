@@ -1006,6 +1006,10 @@ def divisions_avg_stats(
                 "avg_ya": r["avg_ya"],
                 "avg_ga": r["avg_ga"],
                 "avg_mh": r["avg_mh"],
+                # New Skill Profile metrics (2026-05-27) — needed by the radar overlay
+                "avg_ddr": r["avg_ddr"],
+                "avg_frag_diff": r["avg_frag_diff"],
+                "avg_net_dmg": r["avg_net_dmg"],
                 "player_count": r["player_count"],
                 "match_player_rows": r["match_player_rows"],
             }
