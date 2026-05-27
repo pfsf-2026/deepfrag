@@ -354,7 +354,19 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
         cache, stats = load_existing_ratings(db, mode, map_bucket)
 
     map_filter = map_bucket if map_bucket else None
-    matches = list(fetch_matches(db, mode, map_filter=map_filter))
+    # Incremental: only fetch matches AFTER the latest rating_history row for
+    # this bucket. Without this filter, --incremental re-processes EVERY match
+    # on top of the loaded matches_rated counts, inflating them on every run
+    # (verified 2026-05-27 — 4 scheduler runs got cronus from 5,228 → 26,164).
+    since_date = None
+    if not full_rebuild:
+        cur.execute(
+            "SELECT MAX(match_date) AS last FROM rating_history WHERE mode=%s AND map=%s",
+            (mode, map_bucket),
+        )
+        row = cur.fetchone()
+        since_date = row["last"] if row else None
+    matches = list(fetch_matches(db, mode, since_date=since_date, map_filter=map_filter))
     if not matches:
         return 0, 0
 
