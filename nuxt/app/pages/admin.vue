@@ -288,7 +288,12 @@ function isOkStatus(s) { return s === 'CONDITION_SUCCEEDED' || s === 'success' }
 function isErrStatus(s) { return s === 'CONDITION_FAILED' || s === 'failure' }
 function shortStatus(s) {
   if (!s) return '—'
-  return s.replace('CONDITION_', '').toLowerCase()
+  // Normalize CF Pages tense (success/failure) to match Cloud Run (succeeded/failed)
+  // so both sources read consistently in the badge.
+  const lower = s.replace('CONDITION_', '').toLowerCase()
+  if (lower === 'success') return 'succeeded'
+  if (lower === 'failure') return 'failed'
+  return lower
 }
 </script>
 
