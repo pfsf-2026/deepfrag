@@ -337,21 +337,34 @@ def _weights_for_match(player_a_region, player_b_region, server_region):
     return w_a, w_b
 
 
-# ELO update for per-map ratings. Expected outcome comes from GLOBAL ratings
+# ELO update for per-map ratings. Expected outcome uses the OPPONENT's GLOBAL μ
 # (so beating someone 700 pts above you globally on metron gives a big metron
-# jump even if your metron-specific rating is high). The corsi perf factor +
-# cross-region weight scale the delta. σ contracts linearly per match toward a
-# floor — simpler than full Glicko but the same qualitative behavior.
-ELO_K = 32  # classical chess K. Tunable; lower = slower convergence.
-ELO_SIGMA_DECAY = 0.985  # ~1.5% σ shrink per match
-ELO_SIGMA_FLOOR = 50.0   # σ never drops below this so cons doesn't pin to μ
+# jump on the first such win) blended with the PLAYER's PER-MAP μ on the self
+# side. The blend gives bounded math — as your per-map μ climbs above your
+# global, expected outcome rises against the same opponents, so each
+# subsequent win delivers less delta. Without this blend, the system runs
+# away: pure-global expected means a low-rated player winning against higher
+# opponents gains big delta forever with no convergence.
+# Corsi perf factor (DDR + ±frag) and cross-region weight (0.6× away)
+# multiply onto delta unchanged. σ contracts toward a floor (Glicko-lite).
+ELO_K = 32                # classical chess K
+ELO_SIGMA_DECAY = 0.985   # ~1.5% σ shrink per match
+ELO_SIGMA_FLOOR = 50.0    # σ never drops below this so cons doesn't pin to μ
+ELO_SELF_BLEND = 0.5      # weight of per-map μ in the self side of expected
+                          # (0 = pure global → runaway, 1 = pure per-map →
+                          # classical Elo; 0.5 = balanced bounded convergence)
 
 
 def _elo_update_map(map_rating, global_mu_self, global_mu_opp, won, perf_w, cr_w):
-    """ELO-style delta on a per-map rating, with the expected-outcome
-    calculation driven by both players' GLOBAL μ (not the map μ). Returns a
-    new Rating object with updated μ + decayed σ."""
-    expected = 1.0 / (1.0 + 10.0 ** ((global_mu_opp - global_mu_self) / 400.0))
+    """ELO-style delta on a per-map rating. Expected outcome uses opponent's
+    GLOBAL μ vs a blend of (player's GLOBAL μ + player's PER-MAP μ on self).
+    Blend keeps the user-spec'd "beat higher-globally → big delta" property
+    on first wins while bounding cumulative climb (otherwise unbounded)."""
+    effective_self_mu = (
+        (1 - ELO_SELF_BLEND) * global_mu_self
+        + ELO_SELF_BLEND * map_rating.mu
+    )
+    expected = 1.0 / (1.0 + 10.0 ** ((global_mu_opp - effective_self_mu) / 400.0))
     if won is True:
         actual = 1.0
     elif won is False:
