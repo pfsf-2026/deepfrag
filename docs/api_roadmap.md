@@ -40,6 +40,13 @@ noted. Consumer docs in [api.md](./api.md).
 - [x] `/api/servers` — server list
 - [x] `/api/servers/{host}/detail` — server deep-dive
 
+**Map annotations (annotator)**
+- [x] `/api/maps/annotations` — index (counts + lock status)
+- [x] `/api/maps/{map}/annotations` — full payload (geometry + spawns + teles)
+- [x] `PUT /api/maps/{map}/annotations` — admin write (409 if locked)
+- [x] `POST /api/admin/maps/{map}/lock` — admin lock toggle
+- [x] `POST /api/admin/maps/seed-geometry` — idempotent table-create + geometry seed
+
 **Meta**
 - [x] `/api/health`
 - [x] `/api/divisions/avg-stats` — per-division avg + radar scales

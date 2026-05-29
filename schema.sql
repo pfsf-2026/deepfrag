@@ -134,3 +134,22 @@ CREATE TABLE IF NOT EXISTS career_totals (
     fpm REAL,
     scraped_at TEXT NOT NULL
 );
+
+-- Community-sourced spawn points + teleport pairs per map, plus a cached copy
+-- of the map's loc/triangle geometry (from the mvd_analyzer maps endpoint) so
+-- the annotator UI can render without hitting an external preview URL at
+-- runtime. One row per map.
+--   spawns:   [{x,y,z,loc}]
+--   teles:    [{from:{x,y,z,loc}, to:{x,y,z,loc}, bidir:bool}]
+--   geometry: {map,version,bounds,locs:[{name,z,tris:[...]}]}  (cached, read-only)
+--   locked:   when true, the annotator serves read-only — set once spawn+tele
+--             data for a map is confirmed complete (gates community editing).
+CREATE TABLE IF NOT EXISTS map_annotations (
+    map         TEXT PRIMARY KEY,
+    spawns      JSONB NOT NULL DEFAULT '[]'::jsonb,
+    teles       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    geometry    JSONB,
+    locked      BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_by  TEXT,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

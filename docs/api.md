@@ -86,6 +86,29 @@ map dropdown).
 
 ---
 
+## Map annotations (spawns + teleports)
+
+Spawn points and teleport pairs per map, plus cached loc/triangle geometry —
+backs the spawn/tele annotator. Reads are public; writes are admin-only.
+
+### `GET /api/maps/annotations`
+Index of every map with cached geometry: spawn/tele counts, loc count, lock
+status. Powers the annotator's map picker.
+
+### `GET /api/maps/{map}/annotations`
+Full payload for one map: `{map, spawns, teles, geometry, locked, updated_by,
+updated_at}`. `geometry` is `{bounds, locs:[{name,z,tris}]}`; `spawns` is
+`[{x,y,z,loc}]`; `teles` is `[{from:{x,y,z,loc}, to:{...}, bidir}]`.
+
+### `PUT /api/maps/{map}/annotations` *(admin)*
+Replace a map's spawns + teles. Bearer-auth; returns `409` if the map is
+`locked`. Body: `{spawns:[...], teles:[...]}`.
+
+### `POST /api/admin/maps/{map}/lock?locked=true|false` *(admin)*
+Set/clear the lock flag. Locked maps reject `PUT` (read-only).
+
+---
+
 ## Players
 
 ### `GET /api/players`

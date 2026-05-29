@@ -1440,6 +1440,103 @@ def players_index(
     }
 
 
+# ── Map annotations (spawn points + teleports) ──────────────────────────────────
+# Backs the spawn/tele annotator. Geometry (loc triangle meshes) is cached in
+# map_annotations.geometry by seed_map_geometry.py; spawns/teles are authored
+# via the annotator UI. `locked` gates writes once a map's data is confirmed
+# complete — when locked, the map serves read-only (the path to public,
+# community-sourced annotation once locking is trusted).
+from fastapi import Body
+
+
+@app.get("/api/maps/annotations")
+def list_map_annotations(response: Response):
+    """Index of every map that has cached geometry, with spawn/tele counts +
+    lock status. Powers the annotator's map picker. Public, cacheable."""
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=3600"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT map,
+                   jsonb_array_length(spawns) AS spawn_count,
+                   jsonb_array_length(teles)  AS tele_count,
+                   (geometry IS NOT NULL)     AS has_geometry,
+                   COALESCE(jsonb_array_length(geometry->'locs'), 0) AS loc_count,
+                   locked, updated_by, updated_at
+            FROM map_annotations
+            ORDER BY map
+        """)
+        return {"maps": cur.fetchall()}
+
+
+@app.get("/api/maps/{map_name}/annotations")
+def get_map_annotations(map_name: str, response: Response):
+    """Full annotation payload for one map: cached geometry + spawns + teles +
+    lock status. The annotator loads this to render and edit. Public read."""
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=3600"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT map, spawns, teles, geometry, locked, updated_by, updated_at
+            FROM map_annotations WHERE map = %s
+        """, (map_name,))
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, f"no annotations for map '{map_name}'")
+    return row
+
+
+@app.put("/api/maps/{map_name}/annotations")
+def put_map_annotations(
+    map_name: str,
+    authorization: str | None = Header(default=None),
+    spawns: list = Body(..., embed=True),
+    teles: list = Body(default=[], embed=True),
+):
+    """Admin write: replace a map's spawns + teles. Blocked (409) if the map is
+    locked. Geometry is never written here (it's seeded separately). Creates
+    the row if the map doesn't exist yet (geometry stays null until seeded)."""
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT locked FROM map_annotations WHERE map = %s", (map_name,))
+        row = cur.fetchone()
+        if row and row["locked"]:
+            raise HTTPException(409, f"map '{map_name}' is locked; unlock before editing")
+        cur.execute("""
+            INSERT INTO map_annotations (map, spawns, teles, updated_by, updated_at)
+            VALUES (%s, %s::jsonb, %s::jsonb, 'annotator', now())
+            ON CONFLICT (map) DO UPDATE SET
+                spawns = EXCLUDED.spawns,
+                teles = EXCLUDED.teles,
+                updated_by = 'annotator',
+                updated_at = now()
+        """, (map_name, json.dumps(spawns), json.dumps(teles)))
+        conn.commit()
+    return {"map": map_name, "spawns": len(spawns), "teles": len(teles), "saved": True}
+
+
+@app.post("/api/admin/maps/{map_name}/lock")
+def set_map_lock(
+    map_name: str,
+    locked: bool = Query(...),
+    authorization: str | None = Header(default=None),
+):
+    """Admin: set/clear the locked flag on a map. Locked maps serve read-only
+    via PUT (409). This is the gate we flip once a map's spawn+tele data is
+    confirmed complete, and eventually the basis for public community editing
+    of only the still-unlocked maps."""
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE map_annotations SET locked = %s, updated_at = now() WHERE map = %s",
+                    (locked, map_name))
+        if cur.rowcount == 0:
+            raise HTTPException(404, f"no annotations for map '{map_name}'")
+        conn.commit()
+    return {"map": map_name, "locked": locked}
+
+
 # ── Search ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/search")
@@ -2140,3 +2237,37 @@ def admin_sync(authorization: str | None = Header(default=None),
 
     summary["ended_at"] = datetime.now(timezone.utc).isoformat()
     return summary
+
+
+@app.post("/api/admin/maps/seed-geometry")
+def admin_seed_map_geometry(authorization: str | None = Header(default=None)):
+    """One-shot (re-runnable) setup for the map annotator:
+      1. CREATE TABLE map_annotations IF NOT EXISTS (idempotent migration).
+      2. Run seed_map_geometry.py to fetch + cache loc/triangle geometry for
+         all known maps into map_annotations.geometry.
+    Runs inside Cloud Run, which is the only place with both the Cloud SQL
+    socket and outbound internet to reach the geometry source. Safe to re-run:
+    geometry is refreshed, user-authored spawns/teles are preserved."""
+    _check_admin_auth(authorization)
+    # 1. Idempotent table create (mirrors schema.sql).
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS map_annotations (
+                map         TEXT PRIMARY KEY,
+                spawns      JSONB NOT NULL DEFAULT '[]'::jsonb,
+                teles       JSONB NOT NULL DEFAULT '[]'::jsonb,
+                geometry    JSONB,
+                locked      BOOLEAN NOT NULL DEFAULT FALSE,
+                updated_by  TEXT,
+                updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        conn.commit()
+    # 2. Seed geometry (subprocess; passes prod PG_URL through the env). The
+    #    legacy-spawns import is a no-op in prod (the sandbox file isn't there).
+    return {
+        "step": "seed_map_geometry",
+        **_run_script("seed_map_geometry.py", timeout=600),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }

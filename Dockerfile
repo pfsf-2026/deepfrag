@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir -r requirements-api.txt
 COPY api.py tiers.py export_rankings.py profile_pg.py stats_pg.py \
      db.py sync.py canonicalize.py name_canon.py rate.py \
      assign_player_regions.py sync_live_servers.py geolocate_servers.py \
-     aliases.yaml ./
+     seed_map_geometry.py aliases.yaml ./
 COPY tests/ ./tests/
 
 ENV PORT=8080
