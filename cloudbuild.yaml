@@ -1,0 +1,66 @@
+# Cloud Build pipeline for the DeepFrag backend API.
+#
+# Fired by a Cloud Build trigger on push to `main` (see docs/deploy.md for the
+# one-time GitHub-connection setup). The trigger uses an included-files filter
+# so this only runs when backend files change — frontend/docs-only pushes are
+# handled by Cloudflare Pages and shouldn't rebuild the container.
+#
+# Env vars and secrets (DEEPFRAG_PG_URL, SYNC_SECRET, etc.) are NOT set here —
+# they already live on the Cloud Run service and persist across deploys. A
+# deploy that doesn't pass --set-env-vars / --set-secrets leaves them intact.
+# If you ever need to change one, do it once with `gcloud run services update`
+# (or in the console); don't bake them into this file (it's in a public repo).
+
+substitutions:
+  _SERVICE: deepfrag-api
+  _REGION: us-central1
+  _IMAGE: us-central1-docker.pkg.dev/deepfrag-prod/cloud-run-source-deploy/deepfrag-api
+
+steps:
+  # 1. Build the container from the repo Dockerfile. Tag with both the commit
+  #    SHA (immutable, for rollbacks) and :latest (human-friendly).
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - -t
+      - ${_IMAGE}:$SHORT_SHA
+      - -t
+      - ${_IMAGE}:latest
+      - .
+
+  # 2. Push both tags to Artifact Registry.
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    args: [push, --all-tags, ${_IMAGE}]
+
+  # 3. Deploy the freshly-built image to Cloud Run. Mirrors the service's
+  #    existing config (CloudSQL, SA, resources). Env/secrets untouched.
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_IMAGE}:$SHORT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --service-account=751658372467-compute@developer.gserviceaccount.com
+      - --add-cloudsql-instances=deepfrag-prod:us-central1:deepfrag-db
+      - --memory=512Mi
+      - --cpu=1
+      - --timeout=300
+      - --concurrency=80
+      - --max-instances=100
+      - --cpu-boost
+      - --quiet
+
+images:
+  - ${_IMAGE}:$SHORT_SHA
+  - ${_IMAGE}:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1200s
