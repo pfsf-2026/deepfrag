@@ -189,6 +189,27 @@ def rankings(
 
 # ── Player profile (lightweight version — only the fields the UI actually shows on first load) ─
 
+# NOTE: /api/players/map MUST be registered before /api/players/{canonical_id}
+# or FastAPI captures 'map' as a canonical_id and the map 404s.
+@app.get("/api/players/map")
+def players_map(response: Response):
+    """All players with geo data, for the player map. Precise lat/lon where
+    known (from the config sheet) plus nationality for country-level placement.
+    Public, cacheable."""
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT pc.canonical_id, pc.nick, pc.nationality, pc.lat, pc.lon,
+                   COALESCE(can.display_name, pc.nick) AS display
+            FROM player_configs pc
+            LEFT JOIN players_canonical can ON can.canonical_id = pc.canonical_id
+            WHERE pc.nationality IS NOT NULL OR pc.lat IS NOT NULL
+            ORDER BY pc.nick
+        """)
+        return {"players": cur.fetchall()}
+
+
 @app.get("/api/players/{canonical_id}")
 def player_profile(canonical_id: str):
     with pg() as conn:
