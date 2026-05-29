@@ -58,7 +58,7 @@ useHead({ title: 'Stats leaderboards · DeepFrag' })
       <h1>Stats leaderboards</h1>
       <p class="sub">
         Mechanical-skill leaderboards — accuracy, damage, item control. <strong>Separate</strong> from
-        the TrueSkill rankings; this measures how you play, not who you beat.
+        the skill rankings; this measures how you play, not who you beat.
       </p>
     </div>
 

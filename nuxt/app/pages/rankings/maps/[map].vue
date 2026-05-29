@@ -62,7 +62,7 @@ useHead({ title: () => `${mapName.value} ${mode.value} rankings · DeepFrag` })
     <div class="head">
       <NuxtLink to="/" class="back">← All rankings</NuxtLink>
       <h1>{{ mapName }} <span class="mode-chip" :class="'chip-' + mode">{{ mode }}</span></h1>
-      <p class="sub">Per-map TrueSkill ratings on <strong>{{ mapName }}</strong>. Sorted by conservative (μ − 3σ).</p>
+      <p class="sub">Per-map ratings on <strong>{{ mapName }}</strong>. Sorted by conservative (μ − 3σ).</p>
     </div>
 
     <div class="controls">

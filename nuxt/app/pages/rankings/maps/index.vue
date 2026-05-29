@@ -31,7 +31,7 @@ useHead({ title: 'Map rankings · DeepFrag' })
       <NuxtLink to="/" class="back">← All rankings</NuxtLink>
       <h1>Map rankings</h1>
       <p class="sub">
-        Each map has its own TrueSkill leaderboard. Pick a map below to see who's best on it.
+        Each map has its own leaderboard. Pick a map below to see who's best on it.
       </p>
     </div>
 

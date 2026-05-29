@@ -471,7 +471,7 @@ def recent_matches(db, aliases, limit=50, days=None, offset_days=0):
 
 
 def build_profile_with_ratings(db, player, aliases, canonical_id, windows=DEFAULT_WINDOWS):
-    """Build profile and tack on per-mode TrueSkill ratings."""
+    """Build profile and tack on per-mode OpenSkill ratings."""
     profile = build_profile(db, player, aliases, windows)
     profile["ratings"] = ratings_for_player(db, canonical_id)
     return profile
@@ -506,7 +506,7 @@ def _window_payload(db, aliases, days, offset_days=0):
 
 
 def ratings_for_player(db, canonical_id):
-    """Return per-mode TrueSkill ratings if rate.py has been run for this player.
+    """Return per-mode OpenSkill ratings if rate.py has been run for this player.
 
     Returns {'1on1': {...}, '2on2': null, '4on4': null} — null modes are not yet rated.
     """
@@ -543,7 +543,7 @@ def ratings_for_player(db, canonical_id):
 
 
 def per_map_ratings_for_player(db, canonical_id, mode="1on1"):
-    """Return per-map TrueSkill for a player in a given mode.
+    """Return per-map OpenSkill for a player in a given mode.
 
     {map_name: {mu, sigma, conservative, matches, wins, losses, rank, total_rated}}
     Map name is the bucket key from rate.py (lowercase, as stored in matches.match_map).
@@ -580,7 +580,7 @@ def per_map_ratings_for_player(db, canonical_id, mode="1on1"):
 
 def build_profile(db, player, aliases, windows=DEFAULT_WINDOWS):
     # Per-map ratings (1on1 only for now). Used to enrich the Maps card so
-    # each map row shows that player's per-map TrueSkill alongside W/L stats.
+    # each map row shows that player's per-map OpenSkill alongside W/L stats.
     canon = aliases if isinstance(aliases, str) else None
     map_ratings_1on1 = per_map_ratings_for_player(db, canon, "1on1") if canon else {}
 
@@ -649,7 +649,7 @@ def main():
             display_name = row["display_name"] if row else args.canonical_id
         profile = build_profile(db, display_name, scope)
         profile["canonical_id"] = args.canonical_id
-        # Per-mode TrueSkill ratings (Phase A: 1on1 only; 2on2/4on4 null until Phase B)
+        # Per-mode OpenSkill ratings (Phase A: 1on1 only; 2on2/4on4 null until Phase B)
         profile["ratings"] = ratings_for_player(db, args.canonical_id)
     finally:
         db.close()

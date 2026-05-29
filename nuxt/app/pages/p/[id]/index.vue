@@ -193,7 +193,7 @@ function modeDelta(mode, key, opts = {}) {
   const prior = (w.value.prior?.by_mode || {})[mode]?.[key]
   return computeDelta(cur, prior, opts)
 }
-// Per-map TrueSkill ratings (1on1 only for now). Keyed by lowercase map name.
+// Per-map ratings (1on1 only for now). Keyed by lowercase map name.
 const mapRatings1on1 = computed(() => profile.value?.map_ratings_1on1 || {})
 function mapRating(bucket) { return mapRatings1on1.value[bucket]?.conservative }
 
@@ -253,7 +253,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         </div>
       </div>
 
-      <!-- ── Per-mode ratings (TrueSkill) ── -->
+      <!-- ── Per-mode ratings ── -->
       <div class="rating-row">
         <div v-for="mode in ['1on1', '2on2', '4on4']" :key="mode" class="rating-group">
           <div class="rating-tile" :class="{ 'rating-tile-active': ratingHistoryMode === mode && ratings[mode] }"

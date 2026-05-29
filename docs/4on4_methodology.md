@@ -1,6 +1,6 @@
 # 4on4 Rating Methodology — DeepFrag
 
-> Status: **NOT YET BUILT.** This is the design bible for 4on4 TrueSkill, carry rating, and the team-mode performance metrics that will eventually unlock match-quality scoring. Read [1on1_methodology.md](./1on1_methodology.md) first for the rating engine basics, and [2on2_methodology.md](./2on2_methodology.md) for the team-rating fundamentals — this document focuses on what's UNIQUE about 4on4.
+> Status: **NOT YET BUILT.** This is the design bible for 4on4 OpenSkill, carry rating, and the team-mode performance metrics that will eventually unlock match-quality scoring. Read [1on1_methodology.md](./1on1_methodology.md) first for the rating engine basics, and [2on2_methodology.md](./2on2_methodology.md) for the team-rating fundamentals — this document focuses on what's UNIQUE about 4on4.
 
 ---
 
@@ -8,7 +8,7 @@
 
 If 1on1 is "the player IS the team" and 2on2 has "one teammate to confound things," 4on4 is **three teammates of variable skill plus role differentiation plus item-control dynamics that don't exist anywhere else**. The naive failure modes from 2on2 ([§1](./2on2_methodology.md#1-why-2on2-isnt-just-1on1-with-two-players)) all amplify:
 
-- A 2400-rated player can win games carrying THREE weaker partners with vanilla TrueSkill assuming the whole team contributed equally to the outcome.
+- A 2400-rated player can win games carrying THREE weaker partners with vanilla team-rating assuming the whole team contributed equally to the outcome.
 - "Who you played WITH" is now a 3-dimensional question — your partners' skills, your partners' role-compatibility, AND the opponent-team composition.
 - Match outcomes have higher variance — one 4-stack of pugs can beat a stacked clan on the right map with the right rolls. Sample size needed to converge is larger than 1on1 or 2on2.
 
@@ -57,7 +57,7 @@ This is harder to compute (need to track armor/weapon state per second from MVD 
 
 ### Why it matters for ratings
 
-TrueSkill only sees W/L. Corsi-likes give us a *match-quality* signal underneath the result. Two players with the same TrueSkill might have wildly different DDRs — the high-DDR one is "actually better, getting unlucky," the low-DDR one is "fragile, due to regress." Over time we could use this to either:
+OpenSkill only sees W/L. Corsi-likes give us a *match-quality* signal underneath the result. Two players with the same OpenSkill rating might have wildly different DDRs — the high-DDR one is "actually better, getting unlucky," the low-DDR one is "fragile, due to regress." Over time we could use this to either:
 
 1. **Accelerate rating adjustments** — high-DDR underrated players get bigger gains per win (Bayesian "expected goals" treatment).
 2. **Surface as a separate "form" indicator** on profiles — the QW equivalent of expected goals shown alongside actual goals.
@@ -70,9 +70,9 @@ The second is cheaper to ship and informationally rich. The first is the deeper 
 
 Inherits 2on2's three layers ([2on2 §3](./2on2_methodology.md#3-proposed-rating-architecture)) with 4on4-specific tweaks:
 
-### Layer 1: Team TrueSkill (baseline)
+### Layer 1: Team OpenSkill (baseline)
 
-`[a, b, c, d]` vs `[e, f, g, h]`. TrueSkill handles N-vs-N natively. Tuning:
+`[a, b, c, d]` vs `[e, f, g, h]`. OpenSkill (Weng-Lin) handles N-vs-N natively. Tuning:
 - `tau` higher than 2on2 (~15-20) due to 4-player variance.
 - `beta` lower (~100-150) — outcomes are less spiky.
 - `draw_probability` slightly higher than 1on1/2on2 — 4on4 draws happen (timed maps + close clan matches).
@@ -183,6 +183,7 @@ The role-differentiation problem means a single tier ladder is less informative 
 
 - Corsi statistic: [Wikipedia](https://en.wikipedia.org/wiki/Corsi_(statistic))
 - Expected Goals (xG) in soccer: closest analog to what stacked-DDR would be — outcome-decoupled performance metric
-- TrueSkill N-vs-N: [Microsoft Research](https://www.microsoft.com/en-us/research/project/trueskill-ranking-system/)
+- OpenSkill (Weng-Lin) N-vs-N: [openskill.py docs](https://openskill.me/en/stable/)
+- TrueSkill N-vs-N (historical reference): [Microsoft Research](https://www.microsoft.com/en-us/research/project/trueskill-ranking-system/)
 - Dota 2 MMR / "personal performance": [Valve blog post on MMR](https://web.archive.org/web/2020/https://blog.dota2.com/) — basis for Layer 2 carry coefficient
 - ezQuake MVD format spec: [QuakeWorld wiki](https://wiki.quakeworld.nu/MVD) — required reading before per-frame parsing

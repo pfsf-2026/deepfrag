@@ -101,12 +101,12 @@ useHead({ title: 'Rankings · DeepFrag' })
     <div class="head">
       <div class="head-top">
         <h1>{{ region || 'Global' }} · {{ mode }} Rankings</h1>
-        <NuxtLink to="/rankings/maps" class="maps-link" title="Browse per-map TrueSkill leaderboards">
+        <NuxtLink to="/rankings/maps" class="maps-link" title="Browse per-map leaderboards">
           Per-map rankings →
         </NuxtLink>
       </div>
       <p class="sub">
-        The rating shown is the <strong>conservative</strong> TrueSkill value (μ − 3σ) — that's what we sort by.
+        The rating shown is the <strong>conservative</strong> OpenSkill value (μ − 3σ) — that's what we sort by.
         μ is raw skill, σ is uncertainty (lower = more settled).
       </p>
     </div>

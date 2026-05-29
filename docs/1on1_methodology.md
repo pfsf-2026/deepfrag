@@ -40,7 +40,7 @@ OpenSkill produces a ~700pt gap between low- and high-diversity rating arcs *wit
 
 - Every 1on1 match in the `matches` table where `match_mode = '1on1'` and `match_id` resolves to exactly two distinct `canonical_id`s in `players`.
 - Players who join/leave mid-match (multiple `players` rows per match per player) are deduplicated — we use their *aggregate* frag totals to determine winner.
-- Draws are detected (equal frags) and use TrueSkill's draw machinery.
+- Draws are detected (equal frags) and use OpenSkill's draw machinery.
 
 ### Per-bucket ratings
 
@@ -142,7 +142,7 @@ The `0.6` factor was chosen by reasoning, not data. Revisit after a quarter of c
 
 ## 7. Stats leaderboards (mechanical-skill, separate from rating)
 
-In addition to TrueSkill (who you BEAT), we expose mechanical leaderboards (how you PLAY) at `/stats`. From [stats_pg.py](../stats_pg.py):
+In addition to OpenSkill (who you BEAT), we expose mechanical leaderboards (how you PLAY) at `/stats`. From [stats_pg.py](../stats_pg.py):
 
 | Stat | Direction | Notes |
 |---|---|---|
@@ -162,7 +162,7 @@ In addition to TrueSkill (who you BEAT), we expose mechanical leaderboards (how 
 
 Default filter: `min_matches >= 100`. Region and map filters available.
 
-**The DDR/Net-damage story** is the QW-equivalent of hockey's Corsi: damage is the "shot attempts" underlying frags. A high DDR with low TrueSkill suggests "actually better, getting unlucky"; the inverse suggests "fragile, due to regress." See [4on4_methodology.md](./4on4_methodology.md#corsi-narrative) for the full theoretical framing — it informs team-mode design more than 1on1.
+**The DDR/Net-damage story** is the QW-equivalent of hockey's Corsi: damage is the "shot attempts" underlying frags. A high DDR with low OpenSkill rating suggests "actually better, getting unlucky"; the inverse suggests "fragile, due to regress." See [4on4_methodology.md](./4on4_methodology.md#corsi-narrative) for the full theoretical framing — it informs team-mode design more than 1on1.
 
 ---
 
@@ -173,14 +173,13 @@ Default filter: `min_matches >= 100`. Region and map filters available.
 - **Mix vs divisional split** — EU has formal divs (Div 1/2/3/4 league play); NA/AU/BR are pickup-only. A rating earned in structured div play arguably carries different weight than mix-game wins. Optional per-region split.
 
 ### Open questions
-- **Weng-Lin vs TrueSkill** — Weng-Lin (used by openskill.js) is a simpler, faster Bayesian rating system with better-documented math. TrueSkill works but is patent-encumbered historically and the Python lib is unmaintained. Worth a side-by-side eval before any major rewrite.
-- **Frag-differential weighting** — currently a 21-19 win and a 21-3 win count identically for TrueSkill. Margin-of-victory is information we're discarding. Could either feed into `beta` per match or post-hoc adjust μ delta.
-- **Score decay** — should a 5-year-old win count the same as last week's? TrueSkill σ-decay handles this for INACTIVE players, but an active player's old wins still anchor their μ. Time-weighted re-rating would let skill genuinely improve faster.
+- **Frag-differential weighting** — currently a 21-19 win and a 21-3 win count identically. Margin-of-victory is information we're discarding. Could either feed into `beta` per match or post-hoc adjust μ delta.
+- **Score decay** — should a 5-year-old win count the same as last week's? σ-decay handles this for INACTIVE players, but an active player's old wins still anchor their μ. Time-weighted re-rating would let skill genuinely improve faster.
 - **Tier renaming** — see Section 4.
 
 ### Limitations
 - Only stores ratings for `per_map_min ≥ 5` matches per map — obscure maps with 1-2 games show no per-map rating.
-- TrueSkill's tau=5 is a global compromise. Players whose skill is genuinely volatile (returning veterans, rapid improvers) get penalized.
+- OpenSkill's `tau` is a global compromise. Players whose skill is genuinely volatile (returning veterans, rapid improvers) get penalized.
 - No "team you played FOR/AGAINST" awareness — irrelevant for 1on1 but relevant downstream when we use 1on1 as a prior for team modes.
 
 ---

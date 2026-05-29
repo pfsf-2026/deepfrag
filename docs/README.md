@@ -10,7 +10,7 @@ Living design documents for the rating and stats systems. Each "bible" captures 
 
 ## How these documents relate
 
-- **1on1** is the foundation — the TrueSkill engine, diversity penalty, decay, tier ladder, and stats leaderboards all originated here. Read it first.
+- **1on1** is the foundation — the OpenSkill engine, decay, tier ladder, and stats leaderboards all originated here (TrueSkill + diversity-penalty was deprecated 2026-05-26). Read it first.
 - **2on2** explains the team-rating problem (carry, partner quality) and proposes the three-layer architecture we'll inherit for 4on4.
 - **4on4** focuses on what's UNIQUE to 4on4 — role differentiation, the stacked-vs-naked damage diff problem, and the Corsi-derived performance metrics. The Corsi narrative lives in §2 of the 4on4 doc and informs the DDR and Net Damage stats already shipped for 1on1.
 

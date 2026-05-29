@@ -582,7 +582,7 @@ def map_rankings(
 ):
     # Per-map already requires 5 by default; enforce as hard floor too.
     min_matches = max(min_matches, 5)
-    """Per-map TrueSkill leaderboard. Used by the Maps deep-dive's rank pill
+    """Per-map OpenSkill leaderboard. Used by the Maps deep-dive's rank pill
     link and the dedicated /rankings/maps page."""
     response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=3600"
     with pg() as conn:
@@ -913,7 +913,7 @@ def head_to_head(
 
 @app.get("/api/maps")
 def list_maps(mode: str = Query("1on1", pattern="^(1on1|2on2|4on4)$"), min_players: int = Query(5, ge=1, le=1000)):
-    """List every map that has TrueSkill ratings in this mode, sorted by how many
+    """List every map that has OpenSkill ratings in this mode, sorted by how many
     players are rated on it. Powers the map dropdown on /rankings/maps."""
     with pg() as conn:
         cur = conn.cursor()
@@ -937,9 +937,9 @@ def rating_history(
     map: str = Query("", description="Empty = overall mode rating; else map name"),
     limit: int = Query(20000, ge=1, le=50000),
 ):
-    """Per-match TrueSkill trajectory for a player. Each row is one rated match
+    """Per-match OpenSkill trajectory for a player. Each row is one rated match
     with mu_after, sigma_after, conservative-after, delta, opponent. Used to draw
-    the ELO history chart on the profile page. High default limit so even players
+    the rating history chart on the profile page. High default limit so even players
     with multi-thousand-match histories (Cronus = 5144) get full coverage."""
     response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=3600"
 
@@ -1332,7 +1332,7 @@ def player_opponents_on_map(canonical_id: str, map_name: str, limit: int = Query
 def player_maps(canonical_id: str, min_matches: int = Query(5, ge=1, le=100)):
     with pg() as conn:
         cur = conn.cursor()
-        # Lifetime per-map stats for this player in 1on1, joined with per-map TrueSkill.
+        # Lifetime per-map stats for this player in 1on1, joined with per-map OpenSkill.
         cur.execute("""
             WITH pm AS (
                 SELECT m.match_map AS bucket,
