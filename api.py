@@ -65,15 +65,69 @@ app.add_middleware(
 )
 
 
+# Bounded Postgres connection pool. WHY: a fresh psycopg2.connect per request,
+# combined with Cloud Run concurrency=80 × maxScale and the per-minute sync-live
+# job + slow coaching calls, exhausted Cloud SQL's connection slots ("remaining
+# connection slots are reserved" → every request fails to connect → site down,
+# 2026-05-29). A ThreadedConnectionPool caps total connections per instance so we
+# can never blow past the server limit; requests briefly wait for a free slot
+# instead of failing. maxconn × maxScale must stay under the Cloud SQL limit:
+# 10 × 5 instances = 50, safely under Postgres default 100 (minus reserved).
+from psycopg2.pool import ThreadedConnectionPool
+
+_POOL_MAX = int(os.environ.get("PG_POOL_MAX", "10"))
+_pool = None
+
+
+def _get_pool():
+    global _pool
+    if _pool is None:
+        _pool = ThreadedConnectionPool(
+            1, _POOL_MAX, PG_URL, cursor_factory=psycopg2.extras.RealDictCursor
+        )
+    return _pool
+
+
+import threading
+import time as _time
+
+_pool_lock = threading.Condition()
+
+
 @contextmanager
 def pg():
-    """Per-request Postgres connection. Cloud SQL connection pooling will come
-    later; for now a fresh connection per request is fine (~10ms overhead)."""
-    conn = psycopg2.connect(PG_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    """Per-request Postgres connection drawn from a bounded pool. Returned to the
+    pool (not closed) on exit. IMPORTANT: callers that do slow work (demo parse,
+    LLM calls) must finish the DB work and let the `with pg()` block CLOSE before
+    that slow work, so the connection isn't held idle for tens of seconds.
+
+    ThreadedConnectionPool.getconn() RAISES when exhausted rather than waiting, so
+    we wrap it in a short wait-and-retry (FastAPI runs sync endpoints in a ~40-
+    thread pool, which can momentarily exceed the connection cap). Cloud Run
+    concurrency is also capped low so this rarely triggers."""
+    pool = _get_pool()
+    conn = None
+    deadline = _time.monotonic() + 10.0
+    while conn is None:
+        try:
+            with _pool_lock:
+                conn = pool.getconn()
+        except psycopg2.pool.PoolError:
+            if _time.monotonic() > deadline:
+                raise HTTPException(503, "database busy, retry shortly")
+            _time.sleep(0.05)
     try:
         yield conn
+        conn.rollback()  # clean any open/aborted txn so the pooled conn is reusable
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
     finally:
-        conn.close()
+        with _pool_lock:
+            pool.putconn(conn)
 
 
 @app.get("/api/health")
