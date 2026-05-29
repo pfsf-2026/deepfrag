@@ -8,6 +8,13 @@ Living design documents for the rating and stats systems. Each "bible" captures 
 | 2on2 | 🔜 Designed, not yet built | [2on2_methodology.md](./2on2_methodology.md) |
 | 4on4 | 🔜 Designed, not yet built | [4on4_methodology.md](./4on4_methodology.md) |
 
+## API docs
+
+| Doc | Purpose |
+|---|---|
+| [api.md](./api.md) | **Public API reference** — base URLs, every read endpoint, params, examples. The "what anyone can use" doc. |
+| [api_roadmap.md](./api_roadmap.md) | **Surface audit & roadmap** — what's shipped, what we could build from existing data, quality/security debt. Living tracker with checkboxes. |
+
 ## How these documents relate
 
 - **1on1** is the foundation — the OpenSkill engine, decay, tier ladder, and stats leaderboards all originated here (TrueSkill + diversity-penalty was deprecated 2026-05-26). Read it first.
