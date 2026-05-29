@@ -72,6 +72,85 @@ onMounted(loadRatingHistory)
 watch(id, loadRatingHistory)
 watch(ratingHistoryMode, loadRatingHistory)
 
+// ── Config Profile (hardware/settings) ──────────────────────────────────────
+// Seeded from the community config sheet; user-editable. Stored as a free-form
+// key→value bag plus nationality. We render it grouped (mouse/screen/cfg/binds)
+// and offer an inline edit form (admin-gated server-side for now).
+const config = ref(null)
+const configLoading = ref(true)
+const configEditing = ref(false)
+const configDraft = ref({})
+
+async function loadConfig() {
+  const url = df.configUrl(id.value)
+  if (!url) { config.value = null; configLoading.value = false; return }
+  configLoading.value = true
+  try {
+    const r = await fetch(url)
+    config.value = r.ok ? await r.json() : null
+  } catch { config.value = null } finally { configLoading.value = false }
+}
+onMounted(loadConfig)
+watch(id, loadConfig)
+
+// Field groups for display + editing. label → config key.
+const configGroups = [
+  { title: 'Mouse', fields: [
+    ['Sensitivity (cm/360)', 'sens_cm360'], ['DPI', 'dpi'], ['Mouse', 'mouse'],
+    ['Grip', 'grip'], ['Hand', 'hand'], ['Accel', 'accel'], ['Wireless', 'wireless'],
+  ]},
+  { title: 'Mousepad / Screen', fields: [
+    ['Mousepad', 'mousepad'], ['Pad size', 'mousepad_size'], ['Pad type', 'mousepad_type'],
+    ['Monitor', 'monitor'], ['Resolution', 'resolution'], ['Refresh (Hz)', 'refresh_hz'],
+    ['Monitor inches', 'monitor_inches'],
+  ]},
+  { title: 'Config', fields: [
+    ['FOV', 'fov'], ['Movement', 'movement'], ['Invert X', 'invert_x'], ['Invert Y', 'invert_y'],
+    ['Shaft lower sens', 'shaft_lower_sens'],
+  ]},
+  { title: 'Binds', fields: [
+    ['RL', 'bind_rl'], ['LG', 'bind_lg'], ['GL', 'bind_gl'], ['SNG', 'bind_sng'],
+    ['NG', 'bind_ng'], ['SSG', 'bind_ssg'], ['SG', 'bind_sg'], ['Axe', 'bind_axe'],
+    ['Jump', 'bind_jump'], ['Movement keys', 'bind_movement'], ['Weapon change', 'bind_weapon_change'],
+  ]},
+]
+const configHasData = computed(() => {
+  const c = config.value?.config
+  return c && Object.keys(c).length > 0
+})
+
+function startConfigEdit() {
+  configDraft.value = { ...(config.value?.config || {}), _nationality: config.value?.nationality || '' }
+  configEditing.value = true
+}
+function cancelConfigEdit() { configEditing.value = false }
+
+const configSaving = ref(false)
+const configSaveErr = ref('')
+async function saveConfig() {
+  const url = df.configUrl(id.value)
+  if (!url) return
+  configSaving.value = true; configSaveErr.value = ''
+  const draft = { ...configDraft.value }
+  const nationality = draft._nationality || null
+  delete draft._nationality
+  // Drop empties so we don't store blank keys
+  const clean = {}
+  for (const [k, v] of Object.entries(draft)) if (v != null && String(v).trim() !== '') clean[k] = v
+  try {
+    const r = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: clean, nationality }),
+    })
+    if (!r.ok) throw new Error(r.status === 401 || r.status === 503
+      ? 'Editing is admin-only right now (per-user login coming soon).'
+      : `Save failed (${r.status})`)
+    configEditing.value = false
+    await loadConfig()
+  } catch (e) { configSaveErr.value = String(e.message || e) } finally { configSaving.value = false }
+}
+
 function fmtPct(v) { return v == null ? '—' : (v * 100).toFixed(1) + '%' }
 function fmtNum(v) { return v == null ? '—' : Number(v).toLocaleString() }
 function fmtDec(v, d = 1) { return v == null ? '—' : Number(v).toFixed(d) }
@@ -296,6 +375,64 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
           <RatingHistoryChart :points="ratingHistory" :height="220" />
         </div>
         <div v-else-if="ratingHistoryLoading" class="rh-section rh-empty">Loading rating history…</div>
+      </template>
+
+      <!-- ── Config Profile (hardware/settings) — Nav view only ── -->
+      <template v-if="view === 'nav'">
+        <div class="cfg-section">
+          <div class="cfg-head">
+            <h3>⚙️ Config Profile
+              <span class="cfg-sub" v-if="config && config.source">· from {{ config.source === 'sheet' ? 'community sheet' : config.source }}</span>
+            </h3>
+            <button v-if="!configEditing" class="cfg-edit-btn" @click="startConfigEdit">
+              {{ configHasData ? 'Edit' : 'Add config' }}
+            </button>
+          </div>
+
+          <div v-if="configLoading" class="cfg-empty">Loading config…</div>
+
+          <!-- View mode -->
+          <div v-else-if="!configEditing && configHasData" class="cfg-grid">
+            <div v-for="g in configGroups" :key="g.title" class="cfg-group">
+              <div class="cfg-group-title">{{ g.title }}</div>
+              <template v-for="[label, key] in g.fields" :key="key">
+                <div v-if="config.config[key]" class="cfg-row">
+                  <span class="cfg-k">{{ label }}</span>
+                  <span class="cfg-v">{{ config.config[key] }}</span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div v-else-if="!configEditing && !configHasData" class="cfg-empty">
+            No config on file. <a href="#" @click.prevent="startConfigEdit">Add yours</a> — sens, mouse, binds, screen.
+          </div>
+
+          <!-- Edit mode -->
+          <div v-else class="cfg-edit">
+            <div class="cfg-grid">
+              <div v-for="g in configGroups" :key="g.title" class="cfg-group">
+                <div class="cfg-group-title">{{ g.title }}</div>
+                <label v-for="[label, key] in g.fields" :key="key" class="cfg-field">
+                  <span>{{ label }}</span>
+                  <input v-model="configDraft[key]" type="text" :placeholder="label">
+                </label>
+              </div>
+              <div class="cfg-group">
+                <div class="cfg-group-title">Location</div>
+                <label class="cfg-field"><span>Nationality (e.g. US, SE, PL)</span>
+                  <input v-model="configDraft._nationality" type="text" placeholder="country code"></label>
+              </div>
+            </div>
+            <div class="cfg-actions">
+              <button class="cfg-save" :disabled="configSaving" @click="saveConfig">
+                {{ configSaving ? 'Saving…' : 'Save config' }}
+              </button>
+              <button class="cfg-cancel" @click="cancelConfigEdit">Cancel</button>
+              <span v-if="configSaveErr" class="cfg-err">{{ configSaveErr }}</span>
+            </div>
+          </div>
+        </div>
       </template>
 
       <!-- ── Tab bar (shared chrome with /profile.html) ── -->
@@ -664,6 +801,29 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
 .rh-head .rh-sub { color: var(--fg-3); font-weight: 400; }
 .rh-head .rh-hint { color: var(--fg-3); font-size: 11px; }
 .rh-empty { color: var(--fg-3); padding: 30px; text-align: center; font-size: 13px; }
+
+/* Config Profile card */
+.cfg-section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px 18px; margin-bottom: 24px; }
+.cfg-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.cfg-head h3 { margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-2); }
+.cfg-head .cfg-sub { color: var(--fg-3); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.cfg-edit-btn { background: var(--panel-2); border: 1px solid var(--border); color: var(--accent); padding: 5px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.cfg-edit-btn:hover { border-color: var(--accent); }
+.cfg-empty { color: var(--fg-3); padding: 20px; text-align: center; font-size: 13px; }
+.cfg-empty a { color: var(--accent); }
+.cfg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.cfg-group-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-3); font-weight: 700; margin-bottom: 6px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.cfg-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 13px; }
+.cfg-k { color: var(--fg-2); }
+.cfg-v { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.cfg-field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 7px; font-size: 11px; color: var(--fg-3); }
+.cfg-field input { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 5px 8px; border-radius: 5px; font-size: 13px; font-family: inherit; }
+.cfg-field input:focus { outline: none; border-color: var(--accent); }
+.cfg-actions { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+.cfg-save { background: var(--accent); color: var(--bg); border: 0; padding: 7px 18px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 13px; }
+.cfg-save:disabled { opacity: 0.6; cursor: default; }
+.cfg-cancel { background: transparent; border: 1px solid var(--border); color: var(--fg-2); padding: 7px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.cfg-err { color: var(--loss, #ef4444); font-size: 12px; }
 
 /* Controls */
 .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }

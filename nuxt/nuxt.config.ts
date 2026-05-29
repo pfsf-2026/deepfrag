@@ -40,6 +40,7 @@ export default defineNuxtConfig({
   routeRules: {
     '/': { prerender: true },
     '/players': { prerender: true },
+    '/map': { prerender: true },
     '/p/*': { prerender: true },
     // Deep-dive sub-routes hydrate from the same JSON — leave them as SPA-only.
     '/p/*/**': { prerender: false, ssr: false },

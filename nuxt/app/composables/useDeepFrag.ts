@@ -40,6 +40,15 @@ export function useDeepFrag() {
       return useApi ? `${base}/api/players` : '/profiles/index.json'
     },
 
+    configUrl(id: string): string | null {
+      // Player hardware/config profile (sens, mouse, binds, geo). API-only.
+      return useApi ? `${base}/api/players/${encodeURIComponent(id)}/config` : null
+    },
+
+    playerMapUrl(): string | null {
+      return useApi ? `${base}/api/players/map` : null
+    },
+
     mapRankingsUrl(map: string, mode: string = '1on1'): string | null {
       return useApi
         ? `${base}/api/rankings/maps/${encodeURIComponent(map)}?mode=${mode}&min_matches=5&limit=500`
