@@ -1485,29 +1485,28 @@ def get_player_config(canonical_id: str, response: Response):
 @app.put("/api/players/{canonical_id}/config")
 def put_player_config(
     canonical_id: str,
-    authorization: str | None = Header(default=None),
     config: dict = Body(..., embed=True),
     nationality: str | None = Body(default=None, embed=True),
     lat: float | None = Body(default=None, embed=True),
     lon: float | None = Body(default=None, embed=True),
 ):
-    """Admin-gated edit of a player's config profile. (Per-user auth deferred to
-    federated login.) Upserts; marks source='admin' so the sheet re-seed won't
-    clobber it."""
-    _check_admin_auth(authorization)
+    """Edit a player's config profile. OPEN for now — anyone can edit any
+    player's config (community-sourced, low-stakes; per-user auth comes with
+    federated login). Marks source='user' so the sheet re-seed won't clobber
+    a hand-edited row."""
     with pg() as conn:
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO player_configs
                 (canonical_id, nick, nationality, lat, lon, config, source, updated_by, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, 'admin', 'admin', now())
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb, 'user', 'public', now())
             ON CONFLICT (canonical_id) WHERE canonical_id IS NOT NULL
             DO UPDATE SET
                 nationality = COALESCE(EXCLUDED.nationality, player_configs.nationality),
                 lat = COALESCE(EXCLUDED.lat, player_configs.lat),
                 lon = COALESCE(EXCLUDED.lon, player_configs.lon),
                 config = EXCLUDED.config,
-                source = 'admin', updated_by = 'admin', updated_at = now()
+                source = 'user', updated_by = 'public', updated_at = now()
         """, (canonical_id, canonical_id, nationality, lat, lon, json.dumps(config)))
         conn.commit()
     return {"canonical_id": canonical_id, "saved": True}

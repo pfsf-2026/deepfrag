@@ -143,9 +143,7 @@ async function saveConfig() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ config: clean, nationality }),
     })
-    if (!r.ok) throw new Error(r.status === 401 || r.status === 503
-      ? 'Editing is admin-only right now (per-user login coming soon).'
-      : `Save failed (${r.status})`)
+    if (!r.ok) throw new Error(`Save failed (${r.status})`)
     configEditing.value = false
     await loadConfig()
   } catch (e) { configSaveErr.value = String(e.message || e) } finally { configSaving.value = false }
