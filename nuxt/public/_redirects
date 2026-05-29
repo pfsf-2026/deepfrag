@@ -5,3 +5,7 @@
 
 /rankings/maps/*  /rankings/maps/  200
 /p/*/maps         /p/:splat/       200
+# Any profile not prerendered (new player, or a CI build whose index fetch
+# failed) falls back to the bare shell, which hydrates from the URL client-side.
+# Keep LAST among /p rules so prerendered /p/{id}/index.html still wins.
+/p/*              /p/_fallback/    200

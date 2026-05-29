@@ -4,14 +4,23 @@ import { resolve } from 'node:path'
 
 // Read the player index at build time and emit a /p/[id] prerender route per player
 // so `nuxi generate` produces a static HTML shell for each profile.
+// ALWAYS emits /p/_fallback — a bare shell the _redirects rule
+// (/p/* -> /p/_fallback 200) serves for any profile NOT prerendered (a new
+// player, or a CI build where the index fetch failed). The shell hydrates
+// client-side from the URL, so profiles never hard-404. Safety net that turns
+// "prerender produced nothing" from an outage into graceful SPA mode.
+// The CI build command is `npm run generate`, which fetches a fresh
+// public/profiles/index.json BEFORE this runs (index.json is gitignored, so a
+// plain `nuxi generate` in CI would otherwise see no players → 0 profiles).
 function loadPrerenderRoutes(): string[] {
   const idxPath = resolve(process.cwd(), 'public/profiles/index.json')
-  if (!existsSync(idxPath)) return []
+  const always = ['/p/_fallback']
+  if (!existsSync(idxPath)) return always
   const idx = JSON.parse(readFileSync(idxPath, 'utf8'))
   // Only the main profile page gets prerendered — the deep-dive routes
   // (/p/[id]/maps, etc.) all hydrate from the same profile.json client-side
   // and don't need a per-player HTML shell. Halves the build + deploy time.
-  return (idx.players || []).map((p: any) => `/p/${p.canonical_id}`)
+  return [...always, ...(idx.players || []).map((p: any) => `/p/${p.canonical_id}`)]
 }
 
 export default defineNuxtConfig({
