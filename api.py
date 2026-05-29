@@ -16,6 +16,7 @@ Run local:
   uvicorn api:app --reload --port 8000
 """
 
+import json
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -557,8 +558,7 @@ def server_detail(response: Response, host_root: str):
             players = None
             if r["current_players_json"]:
                 try:
-                    import json as _json
-                    players = _json.loads(r["current_players_json"])
+                    players = json.loads(r["current_players_json"])
                 except Exception:
                     players = None
             ports.append({
