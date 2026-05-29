@@ -32,7 +32,10 @@ steps:
   # 2. Push both tags to Artifact Registry.
   - name: gcr.io/cloud-builders/docker
     id: push
-    args: [push, --all-tags, ${_IMAGE}]
+    args:
+      - push
+      - --all-tags
+      - ${_IMAGE}
 
   # 3. Deploy the freshly-built image to Cloud Run. Mirrors the service's
   #    existing config (CloudSQL, SA, resources). Env/secrets untouched.
@@ -50,9 +53,10 @@ steps:
       - --add-cloudsql-instances=deepfrag-prod:us-central1:deepfrag-db
       - --memory=512Mi
       - --cpu=1
-      - --timeout=300
+      - --timeout=1800
       - --concurrency=80
-      - --max-instances=100
+      - --min-instances=1
+      - --max-instances=5
       - --cpu-boost
       - --quiet
 
