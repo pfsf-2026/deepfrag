@@ -1385,6 +1385,61 @@ def player_maps(canonical_id: str, min_matches: int = Query(5, ge=1, le=100)):
     return {"canonical_id": canonical_id, "mode": "1on1", "maps": out}
 
 
+# ── Players index ──────────────────────────────────────────────────────────────
+
+@app.get("/api/players")
+def players_index(
+    threshold: int = Query(10, ge=1, le=10000),
+    recent_min: int = Query(5, ge=1, le=10000),
+    recent_window_days: int = Query(90, ge=1, le=3650),
+):
+    """Full player index — the live replacement for /profiles/index.json.
+    Includes every canonical player meeting EITHER lifetime threshold OR
+    recent-activity threshold (so active newcomers show up before they
+    cross the lifetime bar)."""
+    # match_date is stored as text; cast to timestamptz for window comparison.
+    # Pass days as int and build the interval Postgres-side to avoid a string
+    # concat in SQL.
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            WITH stats AS (
+                SELECT p.canonical_id,
+                       pc.display_name,
+                       COUNT(DISTINCT p.match_id) AS matches,
+                       SUM(CASE WHEN m.match_date::timestamptz >= NOW() - (%(days)s || ' days')::interval
+                                THEN 1 ELSE 0 END) AS recent_matches,
+                       MIN(m.match_date) AS first_seen,
+                       MAX(m.match_date) AS last_seen
+                FROM players p
+                JOIN matches m ON m.match_id = p.match_id
+                LEFT JOIN players_canonical pc ON pc.canonical_id = p.canonical_id
+                WHERE p.canonical_id IS NOT NULL
+                GROUP BY p.canonical_id, pc.display_name
+            )
+            SELECT canonical_id, display_name, matches, first_seen, last_seen
+            FROM stats
+            WHERE matches >= %(threshold)s OR recent_matches >= %(recent_min)s
+            ORDER BY matches DESC
+        """, {"days": recent_window_days, "threshold": threshold, "recent_min": recent_min})
+        rows = cur.fetchall()
+    players = [
+        {
+            "canonical_id": r["canonical_id"],
+            "display": r["display_name"] or r["canonical_id"],
+            "matches": r["matches"],
+            "first_seen": r["first_seen"],
+            "last_seen": r["last_seen"],
+        }
+        for r in rows
+    ]
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "count": len(players),
+        "players": players,
+    }
+
+
 # ── Search ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/search")

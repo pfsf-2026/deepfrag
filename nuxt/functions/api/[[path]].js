@@ -10,7 +10,7 @@ const ORIGIN = 'https://deepfrag-api-751658372467.us-central1.run.app';
 // Cloudflare's level; here pathname still includes /api/.
 const CACHEABLE_PREFIXES = [
   '/api/rankings',           // rankings, rankings/maps/*
-  '/api/players/',           // individual profile + /full + /maps + /rating-history
+  '/api/players',            // index + individual profile + /full + /maps + /rating-history
   '/api/divisions/',         // div avg stats
   '/api/stats/',             // leaderboards, maps
   '/api/servers',            // server list + per-server detail

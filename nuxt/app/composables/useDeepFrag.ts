@@ -37,7 +37,7 @@ export function useDeepFrag() {
     },
 
     indexUrl(): string {
-      return useApi ? `${base}/api/search?q=&limit=2000` : '/profiles/index.json'
+      return useApi ? `${base}/api/players` : '/profiles/index.json'
     },
 
     mapRankingsUrl(map: string, mode: string = '1on1'): string | null {

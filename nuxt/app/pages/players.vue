@@ -1,4 +1,5 @@
 <script setup>
+const { indexUrl } = useDeepFrag()
 const idx = ref(null)
 const pending = ref(true)
 const search = ref('')
@@ -6,7 +7,7 @@ const sortBy = ref('matches') // 'matches' | 'recent' | 'name'
 
 onMounted(async () => {
   try {
-    const r = await fetch('/profiles/index.json')
+    const r = await fetch(indexUrl())
     idx.value = await r.json()
   } catch (e) {
     console.error('Failed to load index:', e)
