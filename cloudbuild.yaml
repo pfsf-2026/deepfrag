@@ -54,7 +54,11 @@ steps:
       - --memory=512Mi
       - --cpu=1
       - --timeout=1800
-      - --concurrency=80
+      # concurrency must stay <= the PG pool size (PG_POOL_MAX, default 10) so an
+      # instance never needs more DB connections than the pool holds; excess load
+      # scales out to more instances instead of 503-ing. pool 10 × maxScale 5 = 50
+      # connections, under Cloud SQL's ~95 usable. See pg() in api.py.
+      - --concurrency=10
       - --min-instances=1
       - --max-instances=5
       - --cpu-boost
