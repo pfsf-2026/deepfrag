@@ -48,7 +48,7 @@ import stats_pg
 
 PG_URL = os.environ.get("DEEPFRAG_PG_URL", "postgresql:///deepfrag")
 
-app = FastAPI(title="DeepFrag API", version="0.1")
+app = FastAPI(title="DeepFrag API", version="0.2")
 
 # Compress rankings (240KB → ~30KB) and any future large payloads.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
