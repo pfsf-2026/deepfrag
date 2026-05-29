@@ -49,6 +49,14 @@ export function useDeepFrag() {
       return useApi ? `${base}/api/players/map` : null
     },
 
+    coachingReportUrl(id: string, mode = '1on1', limit = 15): string | null {
+      // AI coaching report (metrics -> levers -> narration). API-only, slow
+      // (~20s, parses N demos), cached 1h server-side.
+      return useApi
+        ? `${base}/api/players/${encodeURIComponent(id)}/coaching/report?mode=${mode}&limit=${limit}`
+        : null
+    },
+
     mapRankingsUrl(map: string, mode: string = '1on1'): string | null {
       return useApi
         ? `${base}/api/rankings/maps/${encodeURIComponent(map)}?mode=${mode}&min_matches=5&limit=500`

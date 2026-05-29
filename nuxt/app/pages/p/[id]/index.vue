@@ -72,6 +72,45 @@ onMounted(loadRatingHistory)
 watch(id, loadRatingHistory)
 watch(ratingHistoryMode, loadRatingHistory)
 
+// ── AI Coach (on-demand; parses recent demos server-side, ~20s) ─────────────
+const coach = ref(null)
+const coachLoading = ref(false)
+const coachErr = ref('')
+const coachRequested = ref(false)
+async function loadCoach() {
+  const url = df.coachingReportUrl(id.value, '1on1', 15)
+  if (!url) { coachErr.value = 'Coaching requires the live API.'; return }
+  coachRequested.value = true
+  coachLoading.value = true; coachErr.value = ''
+  try {
+    const r = await fetch(url)
+    if (!r.ok) throw new Error(`Report failed (${r.status})`)
+    coach.value = await r.json()
+  } catch (e) { coachErr.value = String(e.message || e) } finally { coachLoading.value = false }
+}
+// Reset when switching players so the button reappears.
+watch(id, () => { coach.value = null; coachRequested.value = false; coachErr.value = '' })
+
+// Minimal, safe markdown: escape HTML, then **bold**, _italic_, and newlines.
+function coachMarkdown(t) {
+  if (!t) return ''
+  const esc = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return esc
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/_(.+?)_/g, '<em>$1</em>')
+    .replace(/\n/g, '<br>')
+}
+// Lever bar: your value as a % of elite (capped 100). For "lower is better"
+// levers (restack, enemy-stack-at-death) invert so a full bar still = good.
+function leverPct(L) {
+  const num = s => parseFloat(String(s).replace(/[^0-9.]/g, ''))
+  const you = num(L.you), elite = num(L.elite)
+  if (!elite || isNaN(you)) return 0
+  const lowerBetter = (L.key === 'restack_sec' || L.key === 'enemy_stack_at_my_death')
+  const ratio = lowerBetter ? elite / you : you / elite
+  return Math.max(4, Math.min(100, Math.round(ratio * 100)))
+}
+
 // ── Config Profile (hardware/settings) ──────────────────────────────────────
 // Seeded from the community config sheet; user-editable. Stored as a free-form
 // key→value bag plus nationality. We render it grouped (mouse/screen/cfg/binds)
@@ -373,6 +412,41 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
           <RatingHistoryChart :points="ratingHistory" :height="220" />
         </div>
         <div v-else-if="ratingHistoryLoading" class="rh-section rh-empty">Loading rating history…</div>
+      </template>
+
+      <!-- ── AI Coach — Nav view only ── -->
+      <template v-if="view === 'nav'">
+        <div class="coach-section">
+          <div class="coach-head">
+            <h3>🎯 AI Coach <span class="coach-sub">· 1on1 · last 15 rated demos</span></h3>
+            <button v-if="!coachRequested" class="coach-btn" @click="loadCoach">Analyze my game</button>
+          </div>
+          <div v-if="coachLoading" class="coach-empty">
+            Parsing your recent demos &amp; computing your levers… <span class="coach-spin">(~20s)</span>
+          </div>
+          <div v-else-if="coachErr" class="coach-empty coach-err">{{ coachErr }}</div>
+          <div v-else-if="coach" class="coach-body">
+            <div class="coach-narration" v-html="coachMarkdown(coach.narration.text)" />
+            <div v-if="coach.weakness?.levers?.length" class="coach-levers">
+              <div class="coach-levers-title">Your levers (ranked) — you vs elite</div>
+              <div v-for="L in coach.weakness.levers" :key="L.key" class="lever">
+                <span class="lever-label">{{ L.label }}</span>
+                <span class="lever-bar-wrap">
+                  <span class="lever-you" :style="{ width: leverPct(L) + '%' }" />
+                </span>
+                <span class="lever-vals"><b>{{ L.you }}</b> <span class="lever-elite">/ {{ L.elite }}</span></span>
+              </div>
+            </div>
+            <div class="coach-foot">
+              {{ coach.parsed }} demos analyzed · {{ coach.weakness.record.wins }}W/{{ coach.weakness.record.losses }}L ·
+              narration: {{ coach.narration.source === 'llm' ? 'AI' : 'auto' }}
+            </div>
+          </div>
+          <div v-else class="coach-empty">
+            Get a data-driven read on your 1on1 game — item control, stack management, and the
+            specific levers separating your wins from losses.
+          </div>
+        </div>
       </template>
 
       <!-- ── Config Profile (hardware/settings) — Nav view only ── -->
@@ -799,6 +873,29 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
 .rh-head .rh-sub { color: var(--fg-3); font-weight: 400; }
 .rh-head .rh-hint { color: var(--fg-3); font-size: 11px; }
 .rh-empty { color: var(--fg-3); padding: 30px; text-align: center; font-size: 13px; }
+
+/* AI Coach card */
+.coach-section { background: linear-gradient(135deg, rgba(20,230,192,0.05), var(--panel)); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px 18px; margin-bottom: 24px; }
+.coach-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.coach-head h3 { margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-2); }
+.coach-head .coach-sub { color: var(--fg-3); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.coach-btn { background: var(--accent); color: var(--bg); border: 0; padding: 7px 18px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 13px; }
+.coach-btn:hover { filter: brightness(1.1); }
+.coach-empty { color: var(--fg-3); padding: 16px 4px; font-size: 13px; line-height: 1.6; }
+.coach-err { color: var(--loss, #ef4444); }
+.coach-spin { color: var(--accent); }
+.coach-narration { font-size: 14px; line-height: 1.65; color: var(--fg); }
+.coach-narration :deep(strong) { color: var(--accent); }
+.coach-levers { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.coach-levers-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-3); font-weight: 700; margin-bottom: 8px; }
+.lever { display: grid; grid-template-columns: 170px 1fr 110px; gap: 10px; align-items: center; padding: 3px 0; font-size: 12px; }
+.lever-label { color: var(--fg-2); }
+.lever-bar-wrap { background: var(--panel-2); border-radius: 4px; height: 10px; overflow: hidden; }
+.lever-you { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2, #0ea5e9)); border-radius: 4px; }
+.lever-vals { text-align: right; font-variant-numeric: tabular-nums; }
+.lever-vals b { color: var(--fg); }
+.lever-elite { color: var(--fg-3); }
+.coach-foot { margin-top: 12px; font-size: 11px; color: var(--fg-3); }
 
 /* Config Profile card */
 .cfg-section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px 18px; margin-bottom: 24px; }
