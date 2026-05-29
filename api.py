@@ -1440,6 +1440,92 @@ def players_index(
     }
 
 
+# ── Player configs + map ─────────────────────────────────────────────────────
+# Hardware/config profiles (sens, mouse, binds, geo) seeded from the community
+# sheet, per-user editable (admin-gated for now). Powers the profile "Config
+# Profile" card and the player map.
+
+@app.get("/api/players/{canonical_id}/config")
+def get_player_config(canonical_id: str, response: Response):
+    """A player's config profile (sens/mouse/binds/geo). Public read."""
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=3600"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT canonical_id, nick, nationality, lat, lon, config, source, updated_at
+            FROM player_configs WHERE canonical_id = %s
+        """, (canonical_id,))
+        row = cur.fetchone()
+    if not row:
+        return {"canonical_id": canonical_id, "config": None}
+    return row
+
+
+@app.put("/api/players/{canonical_id}/config")
+def put_player_config(
+    canonical_id: str,
+    authorization: str | None = Header(default=None),
+    config: dict = Body(..., embed=True),
+    nationality: str | None = Body(default=None, embed=True),
+    lat: float | None = Body(default=None, embed=True),
+    lon: float | None = Body(default=None, embed=True),
+):
+    """Admin-gated edit of a player's config profile. (Per-user auth deferred to
+    federated login.) Upserts; marks source='admin' so the sheet re-seed won't
+    clobber it."""
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO player_configs
+                (canonical_id, nick, nationality, lat, lon, config, source, updated_by, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb, 'admin', 'admin', now())
+            ON CONFLICT (canonical_id) WHERE canonical_id IS NOT NULL
+            DO UPDATE SET
+                nationality = COALESCE(EXCLUDED.nationality, player_configs.nationality),
+                lat = COALESCE(EXCLUDED.lat, player_configs.lat),
+                lon = COALESCE(EXCLUDED.lon, player_configs.lon),
+                config = EXCLUDED.config,
+                source = 'admin', updated_by = 'admin', updated_at = now()
+        """, (canonical_id, canonical_id, nationality, lat, lon, json.dumps(config)))
+        conn.commit()
+    return {"canonical_id": canonical_id, "saved": True}
+
+
+@app.post("/api/admin/configs/seed-from-sheet")
+def admin_seed_configs(authorization: str | None = Header(default=None)):
+    """One-shot (re-runnable) config setup: CREATE TABLE player_configs IF NOT
+    EXISTS, then import the community config sheet. Runs inside Cloud Run (needs
+    the Cloud SQL socket + outbound net to fetch the sheet). Idempotent; never
+    clobbers user/admin-edited rows."""
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS player_configs (
+                canonical_id  TEXT,
+                nick          TEXT NOT NULL,
+                nationality   TEXT,
+                lat           DOUBLE PRECISION,
+                lon           DOUBLE PRECISION,
+                config        JSONB NOT NULL DEFAULT '{}'::jsonb,
+                source        TEXT,
+                updated_by    TEXT,
+                updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        cur.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_player_configs_cid
+                       ON player_configs(canonical_id) WHERE canonical_id IS NOT NULL""")
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_player_configs_nick
+                       ON player_configs(LOWER(nick))""")
+        conn.commit()
+    return {
+        "step": "seed_player_configs",
+        **_run_script("seed_player_configs.py", timeout=120),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # ── Map annotations (spawn points + teleports) ──────────────────────────────────
 # Backs the spawn/tele annotator. Geometry (loc triangle meshes) is cached in
 # map_annotations.geometry by seed_map_geometry.py; spawns/teles are authored

@@ -153,3 +153,25 @@ CREATE TABLE IF NOT EXISTS map_annotations (
     updated_by  TEXT,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Player hardware/config profiles (sens, mouse, binds, etc.) + geo for the
+-- player map. Seeded from the community Google Sheet (104 players), then
+-- per-user editable. `canonical_id` links to a known player when the sheet
+-- nick matched; otherwise null and we keep the raw nick for later linking.
+-- `config` is a free-form JSONB bag so we can add fields without migrations
+-- (sens_cm360, dpi, grip, hand, movement, accel, mouse, mousepad, fov,
+--  resolution, refresh, binds{rl,lg,gl,...}, etc.).
+CREATE TABLE IF NOT EXISTS player_configs (
+    canonical_id  TEXT,
+    nick          TEXT NOT NULL,
+    nationality   TEXT,          -- 2-letter-ish code from the sheet (PL, SE, ...)
+    lat           DOUBLE PRECISION,
+    lon           DOUBLE PRECISION,
+    config        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    source        TEXT,          -- 'sheet' | 'user' | 'admin'
+    updated_by    TEXT,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_player_configs_cid
+    ON player_configs(canonical_id) WHERE canonical_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_player_configs_nick ON player_configs(LOWER(nick));

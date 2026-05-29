@@ -109,6 +109,31 @@ Set/clear the lock flag. Locked maps reject `PUT` (read-only).
 
 ---
 
+## Player configs + map
+
+Hardware/config profiles (sens, mouse, binds, geo), seeded from the community
+config sheet and per-user editable (admin-gated for now).
+
+### `GET /api/players/{id}/config`
+A player's config profile: `{canonical_id, nick, nationality, lat, lon, config,
+source, updated_at}`. `config` is a free-form bag (sens_cm360, dpi, grip, hand,
+movement, mouse, mousepad, fov, resolution, refresh, binds, …). Returns
+`{config: null}` if none on file.
+
+### `PUT /api/players/{id}/config` *(admin)*
+Edit a config profile. Body: `{config:{...}, nationality?, lat?, lon?}`.
+Marks `source='admin'` so the sheet re-seed won't clobber it.
+
+### `GET /api/players/map`
+All players with geo data (precise lat/lon where known, else nationality for
+country-level placement) — powers the player map.
+
+### `POST /api/admin/configs/seed-from-sheet` *(admin)*
+Idempotent table-create + import of the community config sheet (~104 players).
+Never clobbers user/admin-edited rows.
+
+---
+
 ## Players
 
 ### `GET /api/players`
