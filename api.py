@@ -1520,6 +1520,55 @@ def coaching_metrics(
     }
 
 
+@app.get("/api/players/{canonical_id}/coaching/report")
+def coaching_report(
+    canonical_id: str,
+    response: Response,
+    mode: str = Query("1on1", pattern="^(1on1|2on2|4on4)$"),
+    limit: int = Query(15, ge=1, le=40),
+):
+    """Full coaching read: metrics -> ranked weakness levers -> narration.
+    The narration is LLM (Claude) when ANTHROPIC_API_KEY is configured, else a
+    deterministic template. Cached 1h. This is the Coach tab's data source."""
+    import coaching as coaching_mod
+    import coaching_weakness
+    import coaching_narrate
+    response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id = %s", (canonical_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "player not found")
+        display = row["display_name"]
+        cur.execute("""
+            SELECT p.match_id, p.player_frags AS mf, opp.player_frags AS of
+            FROM players p
+            JOIN matches m ON m.match_id = p.match_id AND m.match_mode = %(mode)s
+            JOIN players opp ON opp.match_id = p.match_id AND opp.canonical_id <> p.canonical_id
+            WHERE p.canonical_id = %(cid)s AND p.match_id > 0
+            ORDER BY m.match_date DESC LIMIT %(limit)s
+        """, {"cid": canonical_id, "mode": mode, "limit": limit})
+        matches = cur.fetchall()
+
+    per_match, results = [], []
+    for mrow in matches:
+        per_match.append(coaching_mod.match_metrics(mrow["match_id"], display))
+        results.append("W" if (mrow["mf"] or 0) > (mrow["of"] or 0) else "L")
+    agg = coaching_mod.aggregate(per_match, results)
+    weakness = coaching_weakness.detect(agg, mode)
+    narration = coaching_narrate.narrate(display, mode, weakness)
+    return {
+        "canonical_id": canonical_id,
+        "display": display,
+        "mode": mode,
+        "parsed": len([m for m in per_match if m]),
+        "aggregate": agg,
+        "weakness": weakness,
+        "narration": narration,
+    }
+
+
 # ── Player configs + map ─────────────────────────────────────────────────────
 # Hardware/config profiles (sens, mouse, binds, geo) seeded from the community
 # sheet, per-user editable (admin-gated for now). Powers the profile "Config
