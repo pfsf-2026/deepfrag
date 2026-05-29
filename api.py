@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 import psycopg2
 import psycopg2.extras
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import Body, FastAPI, Header, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
@@ -1446,7 +1446,6 @@ def players_index(
 # via the annotator UI. `locked` gates writes once a map's data is confirmed
 # complete — when locked, the map serves read-only (the path to public,
 # community-sourced annotation once locking is trusted).
-from fastapi import Body
 
 
 @app.get("/api/maps/annotations")
@@ -1560,7 +1559,6 @@ def search(q: str = Query(..., min_length=1, max_length=64), limit: int = Query(
 # env var. Runs the full sync pipeline inline; Cloud Run hard cap is 60min
 # which is plenty (typical run = 30s sync + 30s rate.py + ~60s misc).
 
-from fastapi import Header
 import subprocess
 
 
