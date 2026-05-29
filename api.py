@@ -1461,6 +1461,65 @@ def players_index(
     }
 
 
+# ── Coaching (AI coach metric layer) ─────────────────────────────────────────
+# Deterministic coaching primitives over a player's recent matches: item
+# control, stack-at-engagement, restack efficiency, accuracy, death weapons —
+# split win vs loss. The weakness engine + LLM narration sit on top of this.
+# See docs/ai_coaching_platform.md. Heavy (parses N demos via mvd-api), so
+# cache hard and cap N.
+
+@app.get("/api/players/{canonical_id}/coaching/metrics")
+def coaching_metrics(
+    canonical_id: str,
+    response: Response,
+    mode: str = Query("1on1", pattern="^(1on1|2on2|4on4)$"),
+    limit: int = Query(15, ge=1, le=40),
+):
+    """Compute coaching primitives over the player's most recent `limit` matches
+    in `mode` that have parseable demos (positive match_id = hub gameId). Returns
+    per-match rows + a win/loss aggregate. Cached 1h (demos are immutable)."""
+    import coaching as coaching_mod
+    response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id = %s", (canonical_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "player not found")
+        display = row["display_name"]
+        # Recent matches with a usable gameId (match_id > 0) + the W/L outcome.
+        cur.execute("""
+            SELECT p.match_id, p.player_frags AS mf, opp.player_frags AS of
+            FROM players p
+            JOIN matches m ON m.match_id = p.match_id AND m.match_mode = %(mode)s
+            JOIN players opp ON opp.match_id = p.match_id AND opp.canonical_id <> p.canonical_id
+            WHERE p.canonical_id = %(cid)s AND p.match_id > 0
+            ORDER BY m.match_date DESC
+            LIMIT %(limit)s
+        """, {"cid": canonical_id, "mode": mode, "limit": limit})
+        matches = cur.fetchall()
+
+    per_match, results = [], []
+    for mrow in matches:
+        m = coaching_mod.match_metrics(mrow["match_id"], display)
+        per_match.append(m)
+        results.append("W" if (mrow["mf"] or 0) > (mrow["of"] or 0) else "L")
+    parsed = [m for m in per_match if m]
+    agg = coaching_mod.aggregate(per_match, results)
+    return {
+        "canonical_id": canonical_id,
+        "display": display,
+        "mode": mode,
+        "requested": len(matches),
+        "parsed": len(parsed),
+        "aggregate": agg,
+        "matches": [
+            {**m, "result": r}
+            for m, r in zip(per_match, results) if m
+        ],
+    }
+
+
 # ── Player configs + map ─────────────────────────────────────────────────────
 # Hardware/config profiles (sens, mouse, binds, geo) seeded from the community
 # sheet, per-user editable (admin-gated for now). Powers the profile "Config
