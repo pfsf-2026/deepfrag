@@ -144,7 +144,33 @@ def main():
     total = cur.fetchone()[0]
     cur.execute("SELECT count(*) FROM matches WHERE hub_game_id IS NULL")
     still = cur.fetchone()[0]
-    log(f"DONE. hub_game_id populated: {total}, still null: {still}")
+    log(f"DONE backfill. hub_game_id populated: {total}, still null: {still}")
+
+    # Dedup cross-epoch duplicates: the SAME game imported as both an old
+    # (negative match_id) row and a new (positive) row double-counts in stats.
+    # Now that hub_game_id is the canonical key, drop the negative copy where a
+    # positive twin exists. Transactional; safe to re-run (no-op once clean).
+    cur.execute("""
+        CREATE TEMP TABLE _dups ON COMMIT DROP AS
+        SELECT min(match_id) FILTER (WHERE match_id < 0) AS neg_id
+        FROM matches WHERE demo_source_url IS NOT NULL
+        GROUP BY demo_source_url
+        HAVING count(*) > 1 AND bool_or(match_id>0) AND bool_or(match_id<0)
+    """)
+    cur.execute("SELECT count(*) FROM _dups WHERE neg_id IS NOT NULL")
+    ndup = cur.fetchone()[0]
+    if ndup:
+        cur.execute("DELETE FROM players WHERE match_id IN (SELECT neg_id FROM _dups WHERE neg_id IS NOT NULL)")
+        pdel = cur.rowcount
+        cur.execute("DELETE FROM rating_history WHERE match_id IN (SELECT neg_id FROM _dups WHERE neg_id IS NOT NULL)")
+        rdel = cur.rowcount
+        cur.execute("DELETE FROM matches WHERE match_id IN (SELECT neg_id FROM _dups WHERE neg_id IS NOT NULL)")
+        mdel = cur.rowcount
+        conn.commit()
+        log(f"DEDUP: removed {mdel} duplicate old-epoch games ({pdel} player rows, {rdel} rating rows)")
+    else:
+        conn.commit()
+        log("DEDUP: no cross-epoch duplicates found")
     conn.close()
 
 
