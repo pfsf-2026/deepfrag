@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir -r requirements-api.txt
 COPY api.py tiers.py export_rankings.py profile_pg.py stats_pg.py \
      db.py sync.py canonicalize.py name_canon.py rate.py \
      assign_player_regions.py sync_live_servers.py geolocate_servers.py \
-     seed_map_geometry.py seed_player_configs.py \
+     seed_map_geometry.py seed_player_configs.py backfill_hub_game_id.py \
      coaching.py coaching_weakness.py coaching_narrate.py aliases.yaml ./
 COPY tests/ ./tests/
 

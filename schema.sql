@@ -14,8 +14,13 @@ CREATE TABLE IF NOT EXISTS matches (
     match_demo_sha256 TEXT,
     demo_source_url TEXT,
     has_bots INTEGER DEFAULT 0,          -- 1 if any player is_bot=true
+    -- Real hub gameId (mvd-api demo-addressing key). For live-synced rows this
+    -- equals match_id; for old migrated rows (negative-hash match_id) it's
+    -- backfilled from the demo filename via backfill_hub_game_id.py.
+    hub_game_id BIGINT,
     ktx_fetched INTEGER DEFAULT 0        -- 1 once we've pulled KTX stats
 );
+CREATE INDEX IF NOT EXISTS idx_matches_hub_game_id ON matches(hub_game_id) WHERE hub_game_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(match_date);
 CREATE INDEX IF NOT EXISTS idx_matches_mode ON matches(match_mode);

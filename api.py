@@ -1541,13 +1541,16 @@ def coaching_metrics(
         if not row:
             raise HTTPException(404, "player not found")
         display = row["display_name"]
-        # Recent matches with a usable gameId (match_id > 0) + the W/L outcome.
+        # Recent matches with a resolvable hub gameId + the W/L outcome.
+        # hub_game_id is the demo-addressing key for BOTH epochs (new rows where
+        # match_id IS the gameId, and old migrated rows where it's a negative
+        # hash but hub_game_id was backfilled from the demo filename).
         cur.execute("""
-            SELECT p.match_id, p.player_frags AS mf, opp.player_frags AS of
+            SELECT m.hub_game_id AS game_id, p.player_frags AS mf, opp.player_frags AS of
             FROM players p
             JOIN matches m ON m.match_id = p.match_id AND m.match_mode = %(mode)s
             JOIN players opp ON opp.match_id = p.match_id AND opp.canonical_id <> p.canonical_id
-            WHERE p.canonical_id = %(cid)s AND p.match_id > 0
+            WHERE p.canonical_id = %(cid)s AND m.hub_game_id IS NOT NULL
             ORDER BY m.match_date DESC
             LIMIT %(limit)s
         """, {"cid": canonical_id, "mode": mode, "limit": limit})
@@ -1555,7 +1558,7 @@ def coaching_metrics(
 
     per_match, results = [], []
     for mrow in matches:
-        m = coaching_mod.match_metrics(mrow["match_id"], display)
+        m = coaching_mod.match_metrics(mrow["game_id"], display)
         per_match.append(m)
         results.append("W" if (mrow["mf"] or 0) > (mrow["of"] or 0) else "L")
     parsed = [m for m in per_match if m]
@@ -1595,19 +1598,21 @@ def coaching_report(
         if not row:
             raise HTTPException(404, "player not found")
         display = row["display_name"]
+        # hub_game_id is the demo-addressing key for both data epochs (see the
+        # metrics endpoint above). Backfilled for ~99% of old migrated matches.
         cur.execute("""
-            SELECT p.match_id, p.player_frags AS mf, opp.player_frags AS of
+            SELECT m.hub_game_id AS game_id, p.player_frags AS mf, opp.player_frags AS of
             FROM players p
             JOIN matches m ON m.match_id = p.match_id AND m.match_mode = %(mode)s
             JOIN players opp ON opp.match_id = p.match_id AND opp.canonical_id <> p.canonical_id
-            WHERE p.canonical_id = %(cid)s AND p.match_id > 0
+            WHERE p.canonical_id = %(cid)s AND m.hub_game_id IS NOT NULL
             ORDER BY m.match_date DESC LIMIT %(limit)s
         """, {"cid": canonical_id, "mode": mode, "limit": limit})
         matches = cur.fetchall()
 
     per_match, results = [], []
     for mrow in matches:
-        per_match.append(coaching_mod.match_metrics(mrow["match_id"], display))
+        per_match.append(coaching_mod.match_metrics(mrow["game_id"], display))
         results.append("W" if (mrow["mf"] or 0) > (mrow["of"] or 0) else "L")
     agg = coaching_mod.aggregate(per_match, results)
     weakness = coaching_weakness.detect(agg, mode)
@@ -1704,6 +1709,29 @@ def admin_seed_configs(authorization: str | None = Header(default=None)):
     return {
         "step": "seed_player_configs",
         **_run_script("seed_player_configs.py", timeout=120),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.post("/api/admin/backfill-hub-game-id")
+def admin_backfill_hub_game_id(authorization: str | None = Header(default=None)):
+    """One-shot (re-runnable) fix for the two-epoch match_id problem: add the
+    hub_game_id column, set it = match_id for live-synced (positive) rows, then
+    run backfill_hub_game_id.py to correlate the ~141k old migrated rows
+    (negative match_id, no sha) to their real hub gameId via demo filename.
+    hub_game_id is the demo-addressing key the coaching layer uses. Idempotent.
+    Heavy: pages all ~167k hub games, ~3-5 min."""
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("ALTER TABLE matches ADD COLUMN IF NOT EXISTS hub_game_id BIGINT")
+        cur.execute("""CREATE INDEX IF NOT EXISTS idx_matches_hub_game_id
+                       ON matches(hub_game_id) WHERE hub_game_id IS NOT NULL""")
+        cur.execute("UPDATE matches SET hub_game_id = match_id WHERE match_id > 0 AND hub_game_id IS NULL")
+        conn.commit()
+    return {
+        "step": "backfill_hub_game_id",
+        **_run_script("backfill_hub_game_id.py", timeout=900),
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
 

@@ -143,8 +143,8 @@ def insert_match(db, match, ktx):
             match_id, match_date, match_mode, match_map, match_tag,
             server_hostname, server_port,
             match_dmm, match_tp, match_time_limit_mins, match_duration_secs,
-            match_demo_sha256, demo_source_url, has_bots, ktx_fetched
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
+            match_demo_sha256, demo_source_url, has_bots, hub_game_id, ktx_fetched
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
         ON CONFLICT (match_id) DO UPDATE SET
           match_date=EXCLUDED.match_date, match_mode=EXCLUDED.match_mode,
           match_map=EXCLUDED.match_map, match_tag=EXCLUDED.match_tag,
@@ -154,6 +154,7 @@ def insert_match(db, match, ktx):
           match_duration_secs=EXCLUDED.match_duration_secs,
           match_demo_sha256=EXCLUDED.match_demo_sha256,
           demo_source_url=EXCLUDED.demo_source_url, has_bots=EXCLUDED.has_bots,
+          hub_game_id=EXCLUDED.hub_game_id,
           ktx_fetched=1
         """,
         (
@@ -171,6 +172,7 @@ def insert_match(db, match, ktx):
             match["demo_sha256"],
             match.get("demo_source_url"),
             has_bots,
+            match["id"],  # hub_game_id: live-synced rows have hub id == match_id
         ),
     )
 
