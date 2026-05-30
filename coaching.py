@@ -47,6 +47,38 @@ def _get(path: str, timeout: int = 90):
     return None
 
 
+def _norm_name(s):
+    """Lowercase + strip everything but alphanumerics, so demo keys like
+    'BLooD_DoG(D_P)' match a stored display_name 'BLooD_DoG(D_P' (truncated /
+    different bracket/quake-color punctuation). QW names carry color codes,
+    clan brackets, and get truncated differently across KTX vs the demo header."""
+    return "".join(ch for ch in s.lower() if ch.isalnum())
+
+
+def _resolve_player_key(wanted, keys):
+    """Find the demo's player key for `wanted`. Tries: exact, case-insensitive,
+    normalized-equal, then normalized-prefix (handles truncation). Returns the
+    matched key or None."""
+    if wanted in keys:
+        return wanted
+    low = wanted.lower()
+    for k in keys:
+        if k.lower() == low:
+            return k
+    nw = _norm_name(wanted)
+    if not nw:
+        return None
+    nk = {k: _norm_name(k) for k in keys}
+    for k, n in nk.items():
+        if n == nw:
+            return k
+    # truncation: one is a prefix of the other (>=4 chars to avoid false hits)
+    for k, n in nk.items():
+        if len(nw) >= 4 and (n.startswith(nw) or nw.startswith(n)):
+            return k
+    return None
+
+
 def match_metrics(game_id: int, player: str) -> dict | None:
     """Compute coaching primitives for one player in one match.
 
@@ -57,12 +89,9 @@ def match_metrics(game_id: int, player: str) -> dict | None:
     if not buckets or "players" not in buckets:
         return None
     players = buckets["players"]
-    if player not in players:
-        # try case-insensitive match
-        match = next((k for k in players if k.lower() == player.lower()), None)
-        if not match:
-            return None
-        player = match
+    player = _resolve_player_key(player, list(players.keys()))
+    if player is None:
+        return None
     me = players[player]
     opp_key = next((k for k in players if k != player), None)
     en = players.get(opp_key) if opp_key else None
