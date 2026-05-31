@@ -1515,6 +1515,21 @@ def players_index(
     }
 
 
+def _items_by_map(cur, maps: set) -> dict:
+    """Load BSP item locations [{kind,x,y,z}] per map from map_annotations.
+    Powers first-item-intent (armor-first vs weapon-first). Returns {map: items};
+    maps without entity data are simply absent (intent skipped for them)."""
+    maps = [m for m in maps if m]
+    if not maps:
+        return {}
+    cur.execute(
+        "SELECT map, entities->'items' AS items FROM map_annotations "
+        "WHERE map = ANY(%s) AND entities ? 'items'",
+        (maps,),
+    )
+    return {r["map"]: r["items"] for r in cur.fetchall()}
+
+
 # ── Coaching (AI coach metric layer) ─────────────────────────────────────────
 # Deterministic coaching primitives over a player's recent matches: item
 # control, stack-at-engagement, restack efficiency, accuracy, death weapons —
@@ -1546,7 +1561,8 @@ def coaching_metrics(
         # match_id IS the gameId, and old migrated rows where it's a negative
         # hash but hub_game_id was backfilled from the demo filename).
         cur.execute("""
-            SELECT m.hub_game_id AS game_id, p.player_frags AS mf, opp.player_frags AS of
+            SELECT m.hub_game_id AS game_id, m.match_map AS map,
+                   p.player_frags AS mf, opp.player_frags AS of
             FROM players p
             JOIN matches m ON m.match_id = p.match_id AND m.match_mode = %(mode)s
             JOIN players opp ON opp.match_id = p.match_id AND opp.canonical_id <> p.canonical_id
@@ -1555,10 +1571,12 @@ def coaching_metrics(
             LIMIT %(limit)s
         """, {"cid": canonical_id, "mode": mode, "limit": limit})
         matches = cur.fetchall()
+        items_by_map = _items_by_map(cur, {mr["map"] for mr in matches})
 
     per_match, results = [], []
     for mrow in matches:
-        m = coaching_mod.match_metrics(mrow["game_id"], display)
+        m = coaching_mod.match_metrics(mrow["game_id"], display,
+                                       items=items_by_map.get(mrow["map"]))
         per_match.append(m)
         results.append("W" if (mrow["mf"] or 0) > (mrow["of"] or 0) else "L")
     parsed = [m for m in per_match if m]
@@ -1732,6 +1750,24 @@ def admin_backfill_hub_game_id(authorization: str | None = Header(default=None))
     return {
         "step": "backfill_hub_game_id",
         **_run_script("backfill_hub_game_id.py", timeout=900),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.post("/api/admin/maps/seed-entities")
+def admin_seed_map_entities(authorization: str | None = Header(default=None)):
+    """Idempotent: add map_annotations.entities column + load the BSP map-entity
+    corpus (spawns + items + paired teleporters) from the mvd_analyzer read-dmg
+    branch. Powers first-item-intent coaching + the upgraded annotator. ~110
+    maps with data, pulls from GitHub raw, ~1-2 min."""
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("ALTER TABLE map_annotations ADD COLUMN IF NOT EXISTS entities JSONB")
+        conn.commit()
+    return {
+        "step": "seed_map_entities",
+        **_run_script("seed_map_entities.py", timeout=300),
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
 
