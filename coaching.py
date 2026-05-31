@@ -302,6 +302,13 @@ def aggregate(per_match: list, results: list) -> dict:
     def split(key):
         return {"win": mean(W, key), "loss": mean(L, key), "all": mean([m for m, _ in rows], key)}
 
+    def armor_first_rate(ms):
+        # Pool armor/weapon counts across matches (not a mean of per-match rates)
+        # so each spawn decision is weighted equally.
+        af = sum((m.get("first_item") or {}).get("armor_first", 0) for m in ms)
+        wf = sum((m.get("first_item") or {}).get("weapon_first", 0) for m in ms)
+        return round(af / (af + wf), 3) if (af + wf) else None
+
     death_wpns = defaultdict(int)
     for m, _ in rows:
         for w, c in m.get("death_weapons", {}).items():
@@ -317,6 +324,8 @@ def aggregate(per_match: list, results: list) -> dict:
         "enemy_stack_at_my_death": split("enemy_stack_at_my_death"),
         "avg_armor": split("avg_armor"),
         "restack_avg_sec": split("restack_avg_sec"),
+        "armor_first_rate": {"win": armor_first_rate(W), "loss": armor_first_rate(L),
+                             "all": armor_first_rate([m for m, _ in rows])},
         "item_control": {
             kind: {"win": item_share(W, kind), "loss": item_share(L, kind), "all": item_share([m for m, _ in rows], kind)}
             for kind in MAJOR_ITEMS
