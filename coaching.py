@@ -107,7 +107,12 @@ def _first_item_intent(me: dict, n: int, items: list) -> dict | None:
     def nearest(pos, pts):
         return min(math.hypot(pos[0] - p[0], pos[1] - p[1]) for p in pts)
 
-    TRACE, TOUCH_R = 30, 45  # ~1.5s window; 45 BSP units = a pickup touch
+    # ~3s window: at spawn players are 200-800 units from any item, so 1.5s is
+    # too short to reach one. TOUCH_R 60 = a pickup (50ms sampling can skip the
+    # exact-overlap bucket). If they touch neither in 3s, fall back to which
+    # class they got CLOSEST to — but only if that approach is meaningful
+    # (<160 units), else the spawn is indecisive and excluded.
+    TRACE, TOUCH_R, APPROACH = 60, 60, 160
     armor_first = weapon_first = excluded_stacked = 0
     for i in range(n):
         cnt = sp[i] if i < len(sp) else 0
@@ -118,9 +123,8 @@ def _first_item_intent(me: dict, n: int, items: list) -> dict | None:
             if s < len(arm) and arm[s] >= STACK_ARMOR:
                 excluded_stacked += 1
                 continue
-            spawn_pos = (X[s], Y[s])
-            d_arm0, d_wpn0 = nearest(spawn_pos, armors), nearest(spawn_pos, weapons)
-            best_arm, best_wpn, touched = d_arm0, d_wpn0, None
+            best_arm = best_wpn = 9e9
+            touched = None
             for j in range(s, min(s + TRACE, n)):
                 if j >= len(X) or not (j < len(alive) and alive[j]):
                     break
@@ -135,14 +139,12 @@ def _first_item_intent(me: dict, n: int, items: list) -> dict | None:
                 armor_first += 1
             elif touched == "weapon":
                 weapon_first += 1
-            else:
-                arm_prog, wpn_prog = d_arm0 - best_arm, d_wpn0 - best_wpn
-                if max(arm_prog, wpn_prog) < 60:  # negligible movement; skip
-                    continue
-                if arm_prog >= wpn_prog:
+            elif min(best_arm, best_wpn) <= APPROACH:
+                if best_arm <= best_wpn:
                     armor_first += 1
                 else:
                     weapon_first += 1
+            # else: never got close to either in 3s — indecisive, excluded
     decisive = armor_first + weapon_first
     if decisive == 0:
         return None

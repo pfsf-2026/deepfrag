@@ -41,6 +41,7 @@ def _extract(agg: dict):
         "pct_stacked":  agg.get("pct_stacked", {}),
         "restack_sec":  agg.get("restack_avg_sec", {}),
         "enemy_stack_at_my_death": agg.get("enemy_stack_at_my_death", {}),
+        "armor_first":  agg.get("armor_first_rate", {}),
     }
 
 
