@@ -94,3 +94,21 @@ gcloud run services update deepfrag-api --region us-central1 \
 
 Never put secret *values* in cloudbuild.yaml or any committed file — the repo
 is public.
+
+## ⚠️ Frontend deploy gotcha (2026-05-31)
+CF Pages git-builds were succeeding but shipping output WITHOUT the latest
+page code (e.g. the AI Coach card committed in 63f8703 never appeared live,
+and /p/{id} served a 2KB fallback shell instead of the prerendered page).
+Local `npm run generate` produced correct dist WITH the coaching code, so it's
+a CF-build-config problem, not source/build.
+
+RELIABLE DEPLOY until CF git build is fixed:
+  cd nuxt && NITRO_PRESET=cloudflare-pages npm run generate
+  npx wrangler pages deploy dist --project-name=deepfrag --branch=main --commit-dirty=true
+
+ALWAYS verify after deploy:
+  curl -sL https://deepfrag.pages.dev/p/cronus | wc -c   # should be ~120KB+, not ~2KB
+  # and grep a live _nuxt chunk for the feature string you just shipped
+
+TODO: audit CF Pages build settings (build command must be `npm run generate`,
+output dir `dist`, root `nuxt`) — the dashboard config likely drifted.
