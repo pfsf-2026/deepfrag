@@ -1530,21 +1530,6 @@ def _items_by_map(cur, maps: set) -> dict:
     return {r["map"]: r["items"] for r in cur.fetchall()}
 
 
-def _items_by_map(cur, maps: set) -> dict:
-    """Load BSP item locations [{kind,x,y,z}] per map from map_annotations.
-    Powers first-item-intent (armor-first vs weapon-first). Returns {map: items};
-    maps without entity data are simply absent (intent skipped for them)."""
-    maps = [m for m in maps if m]
-    if not maps:
-        return {}
-    cur.execute(
-        "SELECT map, entities->'items' AS items FROM map_annotations "
-        "WHERE map = ANY(%s) AND entities ? 'items'",
-        (maps,),
-    )
-    return {r["map"]: r["items"] for r in cur.fetchall()}
-
-
 # ── Coaching (AI coach metric layer) ─────────────────────────────────────────
 # Deterministic coaching primitives over a player's recent matches: item
 # control, stack-at-engagement, restack efficiency, accuracy, death weapons —
@@ -1634,7 +1619,8 @@ def coaching_report(
         # hub_game_id is the demo-addressing key for both data epochs (see the
         # metrics endpoint above). Backfilled for ~99% of old migrated matches.
         cur.execute("""
-            SELECT m.hub_game_id AS game_id, p.player_frags AS mf, opp.player_frags AS of
+            SELECT m.hub_game_id AS game_id, m.match_map AS map,
+                   p.player_frags AS mf, opp.player_frags AS of
             FROM players p
             JOIN matches m ON m.match_id = p.match_id AND m.match_mode = %(mode)s
             JOIN players opp ON opp.match_id = p.match_id AND opp.canonical_id <> p.canonical_id
@@ -1642,6 +1628,7 @@ def coaching_report(
             ORDER BY m.match_date DESC LIMIT %(limit)s
         """, {"cid": canonical_id, "mode": mode, "limit": limit})
         matches = cur.fetchall()
+        items_by_map = _items_by_map(cur, {mr["map"] for mr in matches})
 
     per_match, results = [], []
     for mrow in matches:
@@ -1824,7 +1811,7 @@ def get_map_annotations(map_name: str, response: Response):
     with pg() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT map, spawns, teles, geometry, locked, updated_by, updated_at
+            SELECT map, spawns, teles, geometry, entities, locked, updated_by, updated_at
             FROM map_annotations WHERE map = %s
         """, (map_name,))
         row = cur.fetchone()
