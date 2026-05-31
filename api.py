@@ -1530,6 +1530,21 @@ def _items_by_map(cur, maps: set) -> dict:
     return {r["map"]: r["items"] for r in cur.fetchall()}
 
 
+def _items_by_map(cur, maps: set) -> dict:
+    """Load BSP item locations [{kind,x,y,z}] per map from map_annotations.
+    Powers first-item-intent (armor-first vs weapon-first). Returns {map: items};
+    maps without entity data are simply absent (intent skipped for them)."""
+    maps = [m for m in maps if m]
+    if not maps:
+        return {}
+    cur.execute(
+        "SELECT map, entities->'items' AS items FROM map_annotations "
+        "WHERE map = ANY(%s) AND entities ? 'items'",
+        (maps,),
+    )
+    return {r["map"]: r["items"] for r in cur.fetchall()}
+
+
 # ── Coaching (AI coach metric layer) ─────────────────────────────────────────
 # Deterministic coaching primitives over a player's recent matches: item
 # control, stack-at-engagement, restack efficiency, accuracy, death weapons —
