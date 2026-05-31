@@ -79,11 +79,88 @@ def _resolve_player_key(wanted, keys):
     return None
 
 
-def match_metrics(game_id: int, player: str) -> dict | None:
+_ARMOR_KINDS = {"ra", "ya", "ga"}
+_WEAPON_KINDS = {"rl", "lg", "sg", "ssg", "gl", "ng", "sng"}
+
+
+def _first_item_intent(me: dict, n: int, items: list) -> dict | None:
+    """Armor-first vs weapon-first decision off each fresh spawn.
+
+    For each spawn where the player is NOT already stacked, look at the first
+    ~1.5s: classify by (a) which item class they TOUCH first (definitive), else
+    (b) which class they closed more distance toward (intent vector). Spawns
+    already-stacked, or with negligible movement, are excluded from the
+    decisive rate. Elite hypothesis: top players stack armor before weapons.
+    """
+    import math
+    armors = [(it["x"], it["y"]) for it in items
+              if it.get("kind") in _ARMOR_KINDS and it.get("x") is not None]
+    weapons = [(it["x"], it["y"]) for it in items
+               if it.get("kind") in _WEAPON_KINDS and it.get("x") is not None]
+    if not armors or not weapons:
+        return None
+    X, Y, arm, alive = me.get("x", []), me.get("y", []), me.get("a", []), me.get("alive", [])
+    sp = me.get("sp") or []
+    if not X or not Y:
+        return None
+
+    def nearest(pos, pts):
+        return min(math.hypot(pos[0] - p[0], pos[1] - p[1]) for p in pts)
+
+    TRACE, TOUCH_R = 30, 45  # ~1.5s window; 45 BSP units = a pickup touch
+    armor_first = weapon_first = excluded_stacked = 0
+    for i in range(n):
+        cnt = sp[i] if i < len(sp) else 0
+        for _ in range(cnt):
+            s = min(i + 1, n - 1)
+            if s >= len(X):
+                continue
+            if s < len(arm) and arm[s] >= STACK_ARMOR:
+                excluded_stacked += 1
+                continue
+            spawn_pos = (X[s], Y[s])
+            d_arm0, d_wpn0 = nearest(spawn_pos, armors), nearest(spawn_pos, weapons)
+            best_arm, best_wpn, touched = d_arm0, d_wpn0, None
+            for j in range(s, min(s + TRACE, n)):
+                if j >= len(X) or not (j < len(alive) and alive[j]):
+                    break
+                pos = (X[j], Y[j])
+                da, dw = nearest(pos, armors), nearest(pos, weapons)
+                best_arm, best_wpn = min(best_arm, da), min(best_wpn, dw)
+                if da <= TOUCH_R:
+                    touched = "armor"; break
+                if dw <= TOUCH_R:
+                    touched = "weapon"; break
+            if touched == "armor":
+                armor_first += 1
+            elif touched == "weapon":
+                weapon_first += 1
+            else:
+                arm_prog, wpn_prog = d_arm0 - best_arm, d_wpn0 - best_wpn
+                if max(arm_prog, wpn_prog) < 60:  # negligible movement; skip
+                    continue
+                if arm_prog >= wpn_prog:
+                    armor_first += 1
+                else:
+                    weapon_first += 1
+    decisive = armor_first + weapon_first
+    if decisive == 0:
+        return None
+    return {
+        "armor_first": armor_first,
+        "weapon_first": weapon_first,
+        "excluded_stacked": excluded_stacked,
+        "armor_first_rate": round(armor_first / decisive, 3),
+    }
+
+
+def match_metrics(game_id: int, player: str, items: list | None = None) -> dict | None:
     """Compute coaching primitives for one player in one match.
 
     Returns None if the demo isn't parseable or the player isn't in it.
     `player` is the in-demo name (display_name); mvd-api keys players by name.
+    `items`: optional BSP item locations [{kind,x,y,z}] (map_annotations.entities).
+    When given, also computes first-item intent (armor-first vs weapon-first).
     """
     buckets = _get(f"/v1/demos/gameId:{game_id}/buckets?windowMs={BUCKET_MS}&layout=column")
     if not buckets or "players" not in buckets:
