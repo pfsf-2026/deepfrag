@@ -50,3 +50,6 @@ nuxt/public/rankings.json
 
 # OS
 Thumbs.db
+
+# Claude working scratch (durable, but not committed)
+work/
