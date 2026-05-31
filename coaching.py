@@ -156,13 +156,15 @@ def _first_item_intent(me: dict, n: int, items: list) -> dict | None:
     }
 
 
-def match_metrics(game_id: int, player: str, items: list | None = None) -> dict | None:
+def match_metrics(game_id: int, player: str, item_locs: list | None = None) -> dict | None:
     """Compute coaching primitives for one player in one match.
 
     Returns None if the demo isn't parseable or the player isn't in it.
     `player` is the in-demo name (display_name); mvd-api keys players by name.
-    `items`: optional BSP item locations [{kind,x,y,z}] (map_annotations.entities).
-    When given, also computes first-item intent (armor-first vs weapon-first).
+    `item_locs`: optional BSP item locations [{kind,x,y,z}] (map_annotations.
+    entities). When given, also computes first-item intent. NOTE: kept distinct
+    from the local `items` var below (the mvd-api item-control response) — they
+    were the same name once and the param got shadowed -> intent always None.
     """
     buckets = _get(f"/v1/demos/gameId:{game_id}/buckets?windowMs={BUCKET_MS}&layout=column")
     if not buckets or "players" not in buckets:
@@ -252,10 +254,15 @@ def match_metrics(game_id: int, player: str, items: list | None = None) -> dict 
     def avg(x):
         return round(sum(x) / len(x), 1) if x else None
 
+    # First-item intent (armor-first vs weapon-first) needs the BSP item
+    # locations passed in via item_locs; skipped when not provided.
+    intent = _first_item_intent(me, n, item_locs) if item_locs else None
+
     return {
         "game_id": game_id,
         "player": player,
         "n_buckets": n,
+        "first_item": intent,
         "avg_armor": round(avg_armor),
         "pct_stacked": round(pct_stacked, 3),
         "enemy_avg_armor": round(en_avg_armor),

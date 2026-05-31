@@ -1576,7 +1576,7 @@ def coaching_metrics(
     per_match, results = [], []
     for mrow in matches:
         m = coaching_mod.match_metrics(mrow["game_id"], display,
-                                       items=items_by_map.get(mrow["map"]))
+                                       item_locs=items_by_map.get(mrow["map"]))
         per_match.append(m)
         results.append("W" if (mrow["mf"] or 0) > (mrow["of"] or 0) else "L")
     parsed = [m for m in per_match if m]
@@ -1630,7 +1630,8 @@ def coaching_report(
 
     per_match, results = [], []
     for mrow in matches:
-        per_match.append(coaching_mod.match_metrics(mrow["game_id"], display))
+        per_match.append(coaching_mod.match_metrics(
+            mrow["game_id"], display, item_locs=items_by_map.get(mrow["map"])))
         results.append("W" if (mrow["mf"] or 0) > (mrow["of"] or 0) else "L")
     agg = coaching_mod.aggregate(per_match, results)
     weakness = coaching_weakness.detect(agg, mode)
