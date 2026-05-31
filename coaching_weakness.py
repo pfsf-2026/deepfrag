@@ -26,6 +26,10 @@ BENCHMARKS_1ON1 = {
     "pct_stacked":    {"label": "% time stacked", "elite": 0.76, "higher_better": True, "fmt": "pct"},
     "restack_sec":    {"label": "Restack time after death", "elite": 8.0, "higher_better": False, "fmt": "sec"},
     "enemy_stack_at_my_death": {"label": "Enemy stack when you die", "elite": 120, "higher_better": False, "fmt": "num"},
+    # First-item intent off the spawn. elite 0.75 is PROVISIONAL pending an
+    # elite-cohort calibration; the win/loss self-split is the trustworthy
+    # signal until then. From BSP item locations + spawn paths.
+    "armor_first":    {"label": "Armor-first off spawn", "elite": 0.75, "higher_better": True, "fmt": "pct"},
 }
 
 # Map a benchmark key -> how to pull win/loss/all from the aggregate.
