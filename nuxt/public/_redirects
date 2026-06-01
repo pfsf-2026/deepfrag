@@ -5,7 +5,9 @@
 
 /rankings/maps/*  /rankings/maps/  200
 /p/*/maps         /p/:splat/       200
-# Any profile not prerendered (new player, or a CI build whose index fetch
-# failed) falls back to the bare shell, which hydrates from the URL client-side.
-# Keep LAST among /p rules so prerendered /p/{id}/index.html still wins.
-/p/*              /p/_fallback/    200
+# NOTE: do NOT add a `/p/*  /p/_fallback/  200` rule here. On Cloudflare Pages,
+# `_redirects` rules take PRECEDENCE over static files, so a `/p/*` wildcard
+# shadows every prerendered /p/{id}/index.html and serves the bare 2KB shell
+# instead — which silently hid all profile content (incl. the AI Coach card)
+# for days. Nitro auto-appends its own catch-all SPA fallback to this file at
+# build time, so unmatched/new profiles already hydrate client-side without it.
