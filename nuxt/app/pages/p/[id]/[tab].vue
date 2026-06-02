@@ -35,18 +35,27 @@ watch([id, tab, windowKey], load)
 const recent = computed(() => profile.value?.recent_matches || [])
 
 function enc(s) { return encodeURIComponent(s) }
+// Tabs already in Nuxt link internally; not-yet-ported tabs link straight to the
+// legacy SPA (avoids a broken hop / direct-load 404). PORTED grows per migration.
+const INTERNAL = new Set(['overview', 'coach', 'maps', ...PORTED])
 const TABS = computed(() => {
   const b = `/p/${enc(id.value)}`
-  return [
+  const defs = [
     { key: 'overview', label: 'Overview', to: b },
     { key: 'coach', label: '🎯 Coach', to: { path: b, query: { view: 'coach' } } },
-    { key: 'trends', label: 'Trends', to: `${b}/trends` }, { key: 'compare', label: 'Compare', to: `${b}/compare` },
-    { key: '1on1', label: '1on1', to: `${b}/1on1` }, { key: '4on4', label: '4on4', to: `${b}/4on4` }, { key: '2on2', label: '2on2', to: `${b}/2on2` },
-    { key: 'dmm', label: 'By DMM', to: `${b}/dmm` },
+    { key: 'trends', label: 'Trends' }, { key: 'compare', label: 'Compare' },
+    { key: '1on1', label: '1on1' }, { key: '4on4', label: '4on4' }, { key: '2on2', label: '2on2' },
+    { key: 'dmm', label: 'By DMM' },
     { key: 'maps', label: 'Maps', to: `${b}/maps` },
-    { key: 'servers', label: 'Servers', to: `${b}/servers` }, { key: 'opponents', label: 'Rivals', to: `${b}/opponents` },
+    { key: 'servers', label: 'Servers' }, { key: 'opponents', label: 'Rivals' },
     { key: 'recent', label: 'Recent', to: `${b}/recent` },
   ]
+  return defs.map(t => ({
+    ...t,
+    internal: INTERNAL.has(t.key),
+    to: t.to || `${b}/${t.key}`,
+    legacy: `/profile.html?id=${enc(id.value)}#${t.key}`,
+  }))
 })
 
 function fmtDate(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? d : x.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
@@ -63,8 +72,10 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 
     <div class="profile-tabbar">
       <div class="profile-tabs">
-        <NuxtLink v-for="t in TABS" :key="t.key" :to="t.to"
-                  class="ptab" :class="{ active: t.key === tab, 'ptab-coach': t.key === 'coach' }">{{ t.label }}</NuxtLink>
+        <template v-for="t in TABS" :key="t.key">
+          <NuxtLink v-if="t.internal" :to="t.to" class="ptab" :class="{ active: t.key === tab, 'ptab-coach': t.key === 'coach' }">{{ t.label }}</NuxtLink>
+          <a v-else :href="t.legacy" class="ptab">{{ t.label }}</a>
+        </template>
       </div>
       <select v-model="windowKey" class="window-select">
         <option value="7">Last 7d</option><option value="30">Last 30d</option>

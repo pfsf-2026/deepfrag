@@ -15,10 +15,39 @@ const requested = ref(false)
 const readMore = ref(false)
 const deep = ref({})          // game_id -> {loading, error, data}
 
-async function analyze() {
-  const rUrl = df.coachingReportUrl(props.cid, '1on1', 15)
-  if (!rUrl) { err.value = 'Coaching requires the live API.'; return }
+// Live progress steps shown during the (~20-40s) server-side analysis. The work
+// is one HTTP call; these advance on a timer so it's visibly working, not frozen.
+const STEPS = [
+  'Fetching your last 15 rated demos…',
+  'Reconstructing item control & stacks (per 50ms)…',
+  'Scoring first-spawn efficiency vs elites…',
+  'Ranking your levers against your win-state…',
+  'Writing your coach read…',
+]
+const step = ref(0)
+let stepTimer = null
+
+const cacheKey = () => `coach:${props.cid}`
+function saveCache() {
+  try { sessionStorage.setItem(cacheKey(), JSON.stringify({ report: report.value, history: history.value, at: Date.now() })) } catch { /* quota/SSR */ }
+}
+function restoreCache() {
+  try {
+    const c = JSON.parse(sessionStorage.getItem(cacheKey()) || 'null')
+    if (c?.report) { report.value = c.report; history.value = c.history; requested.value = true; return true }
+  } catch { /* ignore */ }
+  return false
+}
+
+async function analyze(force = false) {
+  const base = df.coachingReportUrl(props.cid, '1on1', 15)
+  if (!base) { err.value = 'Coaching requires the live API.'; return }
+  // force = cache-bypassing fresh run (unique query → CDN cache miss → recompute)
+  const rUrl = force ? base + (base.includes('?') ? '&' : '?') + 'fresh=' + Date.now() : base
   requested.value = true; loading.value = true; err.value = ''
+  step.value = 0
+  clearInterval(stepTimer)
+  stepTimer = setInterval(() => { if (step.value < STEPS.length - 1) step.value++ }, 4500)
   try {
     const [rep, hist] = await Promise.all([
       fetch(rUrl).then(r => r.ok ? r.json() : Promise.reject(new Error(`report ${r.status}`))),
@@ -26,10 +55,18 @@ async function analyze() {
     ])
     report.value = rep
     history.value = hist
-  } catch (e) { err.value = String(e.message || e) } finally { loading.value = false }
+    saveCache()
+  } catch (e) { err.value = String(e.message || e) } finally { loading.value = false; clearInterval(stepTimer) }
 }
 
-watch(() => props.cid, () => { report.value = null; history.value = null; requested.value = false; err.value = ''; deep.value = {} })
+// Restore the last analysis instantly when returning to the page (survives
+// navigating away + back within the session).
+onMounted(() => { restoreCache() })
+onBeforeUnmount(() => clearInterval(stepTimer))
+watch(() => props.cid, () => {
+  report.value = null; history.value = null; requested.value = false; err.value = ''; deep.value = {}
+  restoreCache()
+})
 
 // ---- helpers ----
 function md(t) {
@@ -89,7 +126,15 @@ async function runDeep(m) {
       <p>Get a data-driven read on your 1on1 game — item control, stack management, first-spawn efficiency, and the specific levers separating your wins from losses.</p>
       <button class="btn" @click="analyze">Analyze my game</button>
     </div>
-    <div v-else-if="loading" class="empty">Parsing your recent demos &amp; computing your levers… <span class="spin">(~20s)</span></div>
+    <div v-else-if="loading" class="loadbox">
+      <div class="loadtitle">Analyzing your game <span class="spin">· ~20–40s</span></div>
+      <ol class="steps">
+        <li v-for="(s, i) in STEPS" :key="i" :class="{ done: i < step, active: i === step }">
+          <span class="dot">{{ i < step ? '✓' : i === step ? '◍' : '○' }}</span>{{ s }}
+        </li>
+      </ol>
+      <div class="loadnote">You can switch windows — this keeps running and will be here when you come back.</div>
+    </div>
     <div v-else-if="err" class="empty err">{{ err }}</div>
 
     <template v-else-if="report">
@@ -99,7 +144,10 @@ async function runDeep(m) {
         <div class="card">
           <div class="read" :class="{ clamp: !readMore }" v-html="md(report.narration.text)" />
           <button class="readmore" @click="readMore = !readMore">{{ readMore ? '▾ Show less' : '▸ Read the full breakdown' }}</button>
-          <div class="foot">{{ report.parsed }} demos · {{ report.weakness.record.wins }}W/{{ report.weakness.record.losses }}L · narration: {{ report.narration.source === 'llm' ? 'AI' : 'auto' }}</div>
+          <div class="foot">
+            {{ report.parsed }} demos · {{ report.weakness.record.wins }}W/{{ report.weakness.record.losses }}L · narration: {{ report.narration.source === 'llm' ? 'AI' : 'auto' }}
+            <button class="reanalyze" @click="analyze(true)">↻ Re-analyze (fresh)</button>
+          </div>
         </div>
       </section>
 
@@ -175,6 +223,16 @@ async function runDeep(m) {
 .intro .btn { margin-top: 12px; }
 .empty { padding: 22px 0; } .empty.err { color: var(--loss); }
 .spin { color: var(--fg-3); }
+.loadbox { background: var(--p2); border: 1px solid var(--b); border-radius: 10px; padding: 18px; }
+.loadtitle { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.steps li { font-size: 13px; color: var(--fg-3); display: flex; gap: 8px; align-items: center; transition: color .2s; }
+.steps li .dot { width: 14px; text-align: center; }
+.steps li.done { color: var(--fg-2); } .steps li.done .dot { color: var(--win, #34e6b0); }
+.steps li.active { color: var(--fg); font-weight: 600; } .steps li.active .dot { color: var(--accent); }
+.loadnote { margin-top: 12px; font-size: 12px; color: var(--fg-3); font-style: italic; }
+.reanalyze { background: none; border: 1px solid var(--b); color: var(--fg-2); border-radius: 6px; padding: 3px 9px; font-size: 11px; cursor: pointer; margin-left: 8px; }
+.reanalyze:hover { color: var(--fg); border-color: var(--accent); }
 .btn { background: var(--accent); color: var(--bg, #04110c); border: 0; padding: 9px 16px; border-radius: 7px; font-weight: 700; font-size: 13px; cursor: pointer; }
 .btn-ghost { background: transparent; border: 1px solid var(--b); color: var(--fg-2); padding: 7px 13px; border-radius: 7px; font-size: 12.5px; cursor: pointer; }
 .btn-ghost:disabled { opacity: .6; cursor: default; }
