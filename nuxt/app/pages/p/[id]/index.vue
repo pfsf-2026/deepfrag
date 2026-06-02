@@ -76,7 +76,7 @@ watch(ratingHistoryMode, loadRatingHistory)
 // The CoachTab component owns its own data loading (report + history + per-match
 // deep-analyze); this page just hosts it and the tab scroll-to behaviour.
 function goCoach() {
-  view.value = 'nav'
+  view.value = 'coach'
   nextTick(() => {
     document.getElementById('ai-coach')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
@@ -385,16 +385,6 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         <div v-else-if="ratingHistoryLoading" class="rh-section rh-empty">Loading rating history…</div>
       </template>
 
-      <!-- ── AI Coach — Nav view only ── -->
-      <template v-if="view === 'nav'">
-        <div id="ai-coach" class="coach-section">
-          <div class="coach-head">
-            <h3>🎯 AI Coach <span class="coach-sub">· 1on1 · last 15 rated demos</span></h3>
-          </div>
-          <CoachTab :cid="id" />
-        </div>
-      </template>
-
       <!-- ── Config Profile (hardware/settings) — Nav view only ── -->
       <template v-if="view === 'nav'">
         <div class="cfg-section">
@@ -458,8 +448,8 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
            SPA at the matching #tab. Window dropdown sits inline on the right. -->
       <div class="profile-tabbar">
         <div class="profile-tabs">
-          <a class="ptab active">Overview</a>
-          <a class="ptab ptab-coach" @click="goCoach">🎯 Coach</a>
+          <a class="ptab" :class="{ active: view !== 'coach' }" style="cursor:pointer" @click="view = 'nav'">Overview</a>
+          <a class="ptab ptab-coach" :class="{ active: view === 'coach' }" style="cursor:pointer" @click="goCoach">🎯 Coach</a>
           <a class="ptab" :href="deepHref('trends')">Trends</a>
           <a class="ptab" :href="deepHref('compare')">Compare</a>
           <a class="ptab" :href="deepHref('1on1')">1on1</a>
@@ -478,6 +468,16 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
           <option value="365">Last year</option>
           <option value="all">All time</option>
         </select>
+      </div>
+
+      <!-- ── COACH view (combined AI Coach: read + focus + journal + Deep Analyze) ──
+           CoachTab owns its own gate: shows "Analyze my game" until the report is
+           run, then renders the full combined layout. ── -->
+      <div v-if="view === 'coach'" id="ai-coach" class="coach-section">
+        <div class="coach-head">
+          <h3>🎯 AI Coach <span class="coach-sub">· 1on1 · last 15 rated demos</span></h3>
+        </div>
+        <CoachTab :cid="id" />
       </div>
 
       <!-- ── NAV view (default, Mock 5 — large launchpad cards) ── -->
