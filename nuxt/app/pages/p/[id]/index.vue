@@ -454,9 +454,9 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
           <a class="ptab ptab-coach" :class="{ active: view === 'coach' }" style="cursor:pointer" @click="goCoach">🎯 Coach</a>
           <a class="ptab" :href="deepHref('trends')">Trends</a>
           <a class="ptab" :href="deepHref('compare')">Compare</a>
-          <a class="ptab" :href="deepHref('1on1')">1on1</a>
-          <a class="ptab" :href="deepHref('4on4')">4on4</a>
-          <a class="ptab" :href="deepHref('2on2')">2on2</a>
+          <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/1on1`">1on1</NuxtLink>
+          <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/4on4`">4on4</NuxtLink>
+          <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/2on2`">2on2</NuxtLink>
           <a class="ptab" :href="deepHref('dmm')">By DMM</a>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/maps`">Maps</NuxtLink>
           <a class="ptab" :href="deepHref('servers')">Servers</a>

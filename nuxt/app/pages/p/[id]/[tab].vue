@@ -11,7 +11,7 @@ const id = computed(() => String(route.params.id))
 const tab = computed(() => String(route.params.tab || ''))
 const windowKey = ref('90')
 
-const PORTED = new Set(['recent', 'opponents'])  // grows as tabs are migrated
+const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2'])  // grows as tabs are migrated
 
 const profile = ref(null)
 const pending = ref(true)
@@ -27,6 +27,13 @@ async function load() {
     const url = df.useApi ? `${df.profileUrl(id.value)}/full?window=${windowKey.value}` : df.profileUrl(id.value)
     const r = await fetch(url)
     profile.value = r.ok ? await r.json() : null
+    // Mode tabs need division averages for the weapon-donut reference arcs.
+    if (MODES.includes(tab.value) && !divisions.value[tab.value + '_loaded']) {
+      try {
+        const dr = await fetch(`/api/divisions/avg-stats?mode=${tab.value}&since_days=365`)
+        if (dr.ok) divisions.value = { ...((await dr.json()).divisions || {}), [tab.value + '_loaded']: true }
+      } catch { /* donuts just omit the reference arc */ }
+    }
   } catch { profile.value = null } finally { pending.value = false }
 }
 onMounted(load)
@@ -47,6 +54,59 @@ const rivalCols = [
   { key: 'win_rate', label: 'Win%', num: true, bar: true, fmt: v => fmtPct(v) },
   { key: 'avg_frag_diff', label: 'Avg ±', num: true, fmt: fmtDelta, cls: winLoss },
   { key: 'last_played', label: 'Last', fmt: v => fmtDate(v) },
+]
+
+// ── mode tabs (1on1/4on4/2on2): stats + weapon donuts + item pickups + by_map ──
+const MODES = ['1on1', '4on4', '2on2']
+const isMode = computed(() => MODES.includes(tab.value))
+const modeStats = computed(() => d.value.by_mode?.[tab.value] || null)
+const priorStats = computed(() => d.value.prior?.by_mode?.[tab.value] || null)
+const byMap = computed(() => d.value['by_map_' + tab.value] || [])
+const divisions = ref({})
+const divSlug = computed(() => profile.value?.ratings?.[tab.value]?.tier?.slug || null)
+function divAvg(k) { return (divisions.value[divSlug.value] || {})[k] ?? null }
+const WEAPONS = [
+  { name: 'LG', key: 'lg_accuracy', max: 0.35 }, { name: 'RL', key: 'rl_accuracy', max: 0.50 },
+  { name: 'SSG', key: 'ssg_accuracy', max: 0.40 }, { name: 'SG', key: 'sg_accuracy', max: 0.30 },
+  { name: 'GL', key: 'gl_accuracy', max: 0.30 },
+]
+function dec(v, n = 1) { return v == null ? '—' : Number(v).toFixed(n) }
+function delta(cur, prv, fmtFn, higherBetter = true) {
+  if (cur == null || prv == null || windowKey.value === 'all' || !priorStats.value) return null
+  const diff = cur - prv
+  if (Math.abs(diff) < 1e-9) return { text: '±0', good: null }
+  return { text: (diff > 0 ? '+' : '') + fmtFn(diff) + ' vs prior', good: higherBetter ? diff > 0 : diff < 0 }
+}
+const ddr = computed(() => { const s = modeStats.value; return s?.avg_dmg_given && s?.avg_dmg_taken ? s.avg_dmg_given / s.avg_dmg_taken : null })
+const priorDdr = computed(() => { const p = priorStats.value; return p?.avg_dmg_given && p?.avg_dmg_taken ? p.avg_dmg_given / p.avg_dmg_taken : null })
+const modeCards = computed(() => {
+  const s = modeStats.value, p = priorStats.value
+  if (!s) return []
+  return [
+    { label: `${tab.value} matches`, value: fmtNum(s.matches), delta: delta(s.matches, p?.matches, v => fmtNum(Math.round(v))) },
+    { label: 'Win rate', value: fmtPct(s.win_rate), sub: `${s.wins}W · ${s.losses}L`, delta: delta(s.win_rate, p?.win_rate, v => (v * 100).toFixed(1) + 'pp') },
+    { label: 'DDR', value: ddr.value != null ? ddr.value.toFixed(2) : '—', sub: 'dmg given / taken', delta: delta(ddr.value, priorDdr.value, v => v.toFixed(2)) },
+    { label: 'Avg ±', value: fmtDelta(s.avg_frag_diff), cls: winLoss(s.avg_frag_diff), delta: delta(s.avg_frag_diff, p?.avg_frag_diff, v => v.toFixed(1)) },
+    { label: 'Dmg/match', value: fmtNum(Math.round(s.avg_dmg_given || 0)), delta: delta(s.avg_dmg_given, p?.avg_dmg_given, v => Math.round(v).toLocaleString()) },
+  ]
+})
+const itemCards = computed(() => {
+  const s = modeStats.value
+  if (!s) return []
+  return [
+    { label: 'Red armor', value: dec(s.avg_ra, 1) }, { label: 'Yellow armor', value: dec(s.avg_ya, 1) },
+    { label: 'Green armor', value: dec(s.avg_ga, 1) }, { label: 'Megahealth', value: dec(s.avg_mh, 1) }, { label: 'Quads', value: dec(s.avg_quads, 2) },
+  ]
+})
+const mapCols = [
+  { key: 'bucket', label: 'Map' },
+  { key: 'matches', label: 'N', num: true, fmt: fmtNum },
+  { key: 'wins', label: 'W', num: true }, { key: 'losses', label: 'L', num: true },
+  { key: 'win_rate', label: 'Win%', num: true, bar: true, fmt: v => fmtPct(v) },
+  { key: 'avg_frags', label: 'Frags', num: true, fmt: v => dec(v, 1) },
+  { key: 'avg_frag_diff', label: '±', num: true, fmt: fmtDelta, cls: winLoss },
+  { key: 'lg_accuracy', label: 'LG%', num: true, fmt: v => fmtPct(v) },
+  { key: 'rl_accuracy', label: 'RL%', num: true, fmt: v => fmtPct(v) },
 ]
 
 function enc(s) { return encodeURIComponent(s) }
@@ -135,6 +195,37 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
       <StatTable :rows="rivals" :cols="rivalCols" sort-key="matches" sort-dir="desc" />
     </template>
 
+    <!-- MODE BREAKDOWN (1on1 / 4on4 / 2on2) -->
+    <template v-else-if="isMode">
+      <template v-if="modeStats">
+        <div class="grid5">
+          <div v-for="c in modeCards" :key="c.label" class="stat-card">
+            <div class="l">{{ c.label }}</div>
+            <div class="v" :class="c.cls">{{ c.value }}</div>
+            <div v-if="c.sub" class="s">{{ c.sub }}</div>
+            <div v-if="c.delta" class="s delta" :class="c.delta.good === true ? 'up' : c.delta.good === false ? 'down' : ''">{{ c.delta.text }}</div>
+          </div>
+        </div>
+
+        <div class="section-h" style="margin-top:20px"><h2>Weapon proficiency</h2>
+          <span v-if="divSlug" class="meta">reference arc = your division average</span></div>
+        <div class="panel"><div class="donuts">
+          <WeaponDonut v-for="w in WEAPONS" :key="w.name" :name="w.name" :val="modeStats[w.key]" :max="w.max" :div-avg="divAvg(w.key)" />
+        </div></div>
+
+        <div class="section-h" style="margin-top:20px"><h2>Item pickups / match</h2></div>
+        <div class="grid5">
+          <div v-for="c in itemCards" :key="c.label" class="stat-card"><div class="l">{{ c.label }}</div><div class="v">{{ c.value }}</div></div>
+        </div>
+
+        <template v-if="byMap.length">
+          <div class="section-h" style="margin-top:20px"><h2>{{ tab }} map breakdown</h2><span class="meta">{{ byMap.length }} maps</span></div>
+          <StatTable :rows="byMap" :cols="mapCols" sort-key="matches" sort-dir="desc" />
+        </template>
+      </template>
+      <div v-else class="placeholder">No {{ tab }} matches in this window.</div>
+    </template>
+
     <div v-else class="placeholder">Redirecting…</div>
   </div>
 </template>
@@ -165,4 +256,15 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .result-pill.loss { background: rgba(255,93,108,0.16); color: #ff5d6c; }
 .result-pill.draw { background: rgba(245,158,11,0.16); color: #f59e0b; }
 .placeholder { padding: 50px; text-align: center; color: var(--fg-3); }
+.grid5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+@media (max-width: 760px) { .grid5 { grid-template-columns: repeat(2, 1fr); } }
+.stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.stat-card .l { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.stat-card .v { font-size: 24px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.stat-card .v.win { color: var(--win, #34e6b0); } .stat-card .v.loss { color: var(--loss, #ff5d6c); }
+.stat-card .s { font-size: 11px; color: var(--fg-3); margin-top: 3px; }
+.stat-card .s.delta { font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-card .s.delta.up { color: var(--win, #34e6b0); } .stat-card .s.delta.down { color: var(--loss, #ff5d6c); }
+.donuts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; padding: 14px 4px; }
+@media (max-width: 760px) { .donuts { grid-template-columns: repeat(3, 1fr); } }
 </style>
