@@ -1530,6 +1530,38 @@ def _items_by_map(cur, maps: set) -> dict:
     return {r["map"]: r["items"] for r in cur.fetchall()}
 
 
+def _spawns_by_map(cur, maps: set) -> dict:
+    """BSP spawn entities per map (for FSO first-spawn extraction + deep-analyze)."""
+    maps = [m for m in maps if m]
+    if not maps:
+        return {}
+    cur.execute(
+        "SELECT map, entities->'spawns' AS spawns FROM map_annotations "
+        "WHERE map = ANY(%s) AND entities ? 'spawns'",
+        (maps,),
+    )
+    return {r["map"]: r["spawns"] for r in cur.fetchall()}
+
+
+_COACHING_DDL = """
+CREATE TABLE IF NOT EXISTS coaching_runs (
+  id BIGSERIAL PRIMARY KEY, canonical_id TEXT NOT NULL, mode TEXT NOT NULL,
+  run_date DATE NOT NULL, matches_analyzed INT, wins INT, losses INT,
+  metrics JSONB, levers JSONB, narration TEXT, narration_source TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(), UNIQUE (canonical_id, mode, run_date));
+CREATE TABLE IF NOT EXISTS match_analysis (
+  id BIGSERIAL PRIMARY KEY, game_id BIGINT NOT NULL, canonical_id TEXT NOT NULL,
+  map TEXT, result TEXT, timeline JSONB, analysis TEXT, source TEXT, model TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(), UNIQUE (game_id, canonical_id));
+"""
+
+
+def _ensure_coaching_tables(cur):
+    """Idempotent: create coaching_runs + match_analysis if missing. Cheap; lets
+    the feature self-provision in prod without a separate migration step."""
+    cur.execute(_COACHING_DDL)
+
+
 # ── Coaching (AI coach metric layer) ─────────────────────────────────────────
 # Deterministic coaching primitives over a player's recent matches: item
 # control, stack-at-engagement, restack efficiency, accuracy, death weapons —
@@ -1608,6 +1640,7 @@ def coaching_report(
     import coaching as coaching_mod
     import coaching_weakness
     import coaching_narrate
+    import coaching_fso
     response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
     with pg() as conn:
         cur = conn.cursor()
@@ -1620,7 +1653,8 @@ def coaching_report(
         # metrics endpoint above). Backfilled for ~99% of old migrated matches.
         cur.execute("""
             SELECT m.hub_game_id AS game_id, m.match_map AS map,
-                   p.player_frags AS mf, opp.player_frags AS of
+                   p.player_frags AS mf, opp.player_frags AS of,
+                   opp.player_name AS opp_name, m.match_date AS date
             FROM players p
             JOIN matches m ON m.match_id = p.match_id AND m.match_mode = %(mode)s
             JOIN players opp ON opp.match_id = p.match_id AND opp.canonical_id <> p.canonical_id
@@ -1628,7 +1662,10 @@ def coaching_report(
             ORDER BY m.match_date DESC LIMIT %(limit)s
         """, {"cid": canonical_id, "mode": mode, "limit": limit})
         matches = cur.fetchall()
-        items_by_map = _items_by_map(cur, {mr["map"] for mr in matches})
+        maps = {mr["map"] for mr in matches}
+        items_by_map = _items_by_map(cur, maps)
+        spawn_locs_by_map = _spawns_by_map(cur, maps)
+        fso_benchmark = coaching_fso.load_benchmark(cur, maps)
 
     per_match, results = [], []
     for mrow in matches:
@@ -1637,7 +1674,62 @@ def coaching_report(
         results.append("W" if (mrow["mf"] or 0) > (mrow["of"] or 0) else "L")
     agg = coaching_mod.aggregate(per_match, results)
     weakness = coaching_weakness.detect(agg, mode)
+
+    # First Spawn Optimization — extra lever (time-to-Mega vs the elite spawn_runs
+    # reference). Inject into the ranked levers so the narration covers it too.
+    fso = coaching_fso.player_fso(matches, display, fso_benchmark, spawn_locs_by_map)
+    if fso.get("fso") is not None:
+        you, elite = fso["fso"], fso["elite_fso"]
+        gap = max(elite - you, 0) / (elite or 1)
+        weakness.setdefault("levers", []).append({
+            "key": "first_spawn_opt", "label": "First-spawn optimization", "fmt": "pct",
+            "win": None, "loss": None, "you": f"{round(you * 100)}%",
+            "elite": f"{round(elite * 100)}%", "self_gap": None,
+            "below_benchmark": you < elite, "priority": round(gap, 3),
+        })
+        weakness["levers"].sort(key=lambda x: x["priority"], reverse=True)
+
     narration = coaching_narrate.narrate(display, mode, weakness)
+
+    # Persist a daily snapshot so the training journal + since-first-report trends
+    # accrue automatically. Upsert per (player, mode, day). Best-effort.
+    try:
+        ic = agg.get("item_control", {})
+        wins, losses = agg.get("wins", 0), agg.get("losses", 0)
+        snap = {
+            "ra_control": ic.get("ra", {}).get("all"),
+            "stack_at_kill": agg.get("stack_at_kill", {}).get("all"),
+            "pct_stacked": agg.get("pct_stacked", {}).get("all"),
+            "armor_first": agg.get("armor_first_rate", {}).get("all"),
+            "fso": fso.get("fso"),
+            "win_rate": round(wins / (wins + losses), 3) if (wins + losses) else None,
+        }
+        with pg() as conn:
+            cur = conn.cursor()
+            _ensure_coaching_tables(cur)
+            cur.execute("""
+                INSERT INTO coaching_runs (canonical_id, mode, run_date, matches_analyzed,
+                    wins, losses, metrics, levers, narration, narration_source)
+                VALUES (%s,%s,CURRENT_DATE,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (canonical_id, mode, run_date) DO UPDATE SET
+                    matches_analyzed=EXCLUDED.matches_analyzed, wins=EXCLUDED.wins,
+                    losses=EXCLUDED.losses, metrics=EXCLUDED.metrics, levers=EXCLUDED.levers,
+                    narration=EXCLUDED.narration, narration_source=EXCLUDED.narration_source,
+                    created_at=now()
+            """, (canonical_id, mode, agg.get("matches_analyzed", 0), wins, losses,
+                  json.dumps(snap), json.dumps(weakness.get("levers", [])),
+                  narration.get("text"), narration.get("source")))
+            conn.commit()
+    except Exception:
+        pass  # journal persistence is best-effort; never break the live report
+
+    recent_matches = [{
+        "game_id": mr["game_id"], "map": mr["map"],
+        "result": "W" if (mr["mf"] or 0) > (mr["of"] or 0) else "L",
+        "my_frags": mr["mf"], "opp_frags": mr["of"], "opponent": mr["opp_name"],
+        "date": mr["date"].isoformat() if mr["date"] else None,
+    } for mr in matches]
+
     return {
         "canonical_id": canonical_id,
         "display": display,
@@ -1646,7 +1738,109 @@ def coaching_report(
         "aggregate": agg,
         "weakness": weakness,
         "narration": narration,
+        "fso": fso,
+        "recent_matches": recent_matches,
     }
+
+
+@app.get("/api/players/{canonical_id}/coaching/history")
+def coaching_history(
+    canonical_id: str,
+    response: Response,
+    mode: str = Query("1on1", pattern="^(1on1|2on2|4on4)$"),
+):
+    """Training-journal history: the persisted daily coaching snapshots for this
+    player (oldest→newest), plus since-first-report deltas. Powers the journal +
+    progress table. Snapshots are written by the report endpoint."""
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_coaching_tables(cur)
+        cur.execute("""
+            SELECT run_date, matches_analyzed, wins, losses, metrics, narration_source
+            FROM coaching_runs WHERE canonical_id=%s AND mode=%s ORDER BY run_date ASC
+        """, (canonical_id, mode))
+        rows = cur.fetchall()
+    if not rows:
+        return {"canonical_id": canonical_id, "mode": mode, "runs": [], "since_first": None}
+    first, last = rows[0]["metrics"] or {}, rows[-1]["metrics"] or {}
+    keys = ["ra_control", "stack_at_kill", "pct_stacked", "armor_first", "fso", "win_rate"]
+    since_first = {k: {"from": first.get(k), "to": last.get(k)} for k in keys
+                   if first.get(k) is not None or last.get(k) is not None}
+    return {
+        "canonical_id": canonical_id, "mode": mode,
+        "runs": [dict(r, run_date=r["run_date"].isoformat()) for r in reversed(rows)],
+        "first_report": rows[0]["run_date"].isoformat(),
+        "since_first": since_first,
+    }
+
+
+@app.get("/api/players/{canonical_id}/matches/{game_id}/deep-analyze")
+def deep_analyze_match(
+    canonical_id: str,
+    game_id: int,
+    response: Response,
+    refresh: bool = Query(False, description="recompute even if cached"),
+):
+    """Deep single-match review (LLM, grounded in a structured timeline). Cached
+    in match_analysis — one Claude call per (game, player), since demos are
+    immutable. Slow on first run (~parse + LLM); instant when cached."""
+    import deep_analyze
+    response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_coaching_tables(cur)
+        if not refresh:
+            cur.execute("""SELECT game_id, map, result, timeline, analysis, source, model, created_at
+                           FROM match_analysis WHERE game_id=%s AND canonical_id=%s""",
+                        (game_id, canonical_id))
+            cached = cur.fetchone()
+            if cached:
+                return {"cached": True, **cached, "created_at": cached["created_at"].isoformat()}
+        cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id=%s", (canonical_id,))
+        prow = cur.fetchone()
+        if not prow:
+            raise HTTPException(404, "player not found")
+        display = prow["display_name"]
+        cur.execute("""
+            SELECT m.match_map AS map, p.player_frags AS mf, opp.player_frags AS of
+            FROM players p
+            JOIN matches m ON m.match_id = p.match_id
+            JOIN players opp ON opp.match_id = p.match_id AND opp.canonical_id <> p.canonical_id
+            WHERE p.canonical_id=%s AND m.hub_game_id=%s LIMIT 1
+        """, (canonical_id, game_id))
+        mrow = cur.fetchone()
+        if not mrow:
+            raise HTTPException(404, "match not found for player")
+        map_name = mrow["map"]
+        result = "W" if (mrow["mf"] or 0) > (mrow["of"] or 0) else "L"
+        item_locs = _items_by_map(cur, {map_name}).get(map_name)
+        spawn_locs = _spawns_by_map(cur, {map_name}).get(map_name)
+
+    # LLM/parse is slow — run it OUTSIDE the pooled connection (see pg() docstring).
+    out = deep_analyze.analyze(game_id, display, map_name, result, spawn_locs, item_locs)
+    if not out:
+        raise HTTPException(422, "match demo not analyzable")
+
+    try:
+        with pg() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO match_analysis (game_id, canonical_id, map, result, timeline, analysis, source, model)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (game_id, canonical_id) DO UPDATE SET
+                    timeline=EXCLUDED.timeline, analysis=EXCLUDED.analysis,
+                    source=EXCLUDED.source, model=EXCLUDED.model, created_at=now()
+            """, (game_id, canonical_id, map_name, result, json.dumps(out["timeline"]),
+                  out["analysis"]["text"], out["analysis"].get("source"),
+                  out["analysis"].get("model")))
+            conn.commit()
+    except Exception:
+        pass
+
+    return {"cached": False, "game_id": game_id, "map": map_name, "result": result,
+            "timeline": out["timeline"], "analysis": out["analysis"]["text"],
+            "source": out["analysis"].get("source"), "model": out["analysis"].get("model")}
 
 
 # ── Player configs + map ─────────────────────────────────────────────────────

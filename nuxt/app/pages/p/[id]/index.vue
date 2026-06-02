@@ -72,43 +72,14 @@ onMounted(loadRatingHistory)
 watch(id, loadRatingHistory)
 watch(ratingHistoryMode, loadRatingHistory)
 
-// ── AI Coach (on-demand; parses recent demos server-side, ~20s) ─────────────
-const coach = ref(null)
-const coachLoading = ref(false)
-const coachErr = ref('')
-const coachRequested = ref(false)
-async function loadCoach() {
-  const url = df.coachingReportUrl(id.value, '1on1', 15)
-  if (!url) { coachErr.value = 'Coaching requires the live API.'; return }
-  coachRequested.value = true
-  coachLoading.value = true; coachErr.value = ''
-  try {
-    const r = await fetch(url)
-    if (!r.ok) throw new Error(`Report failed (${r.status})`)
-    coach.value = await r.json()
-  } catch (e) { coachErr.value = String(e.message || e) } finally { coachLoading.value = false }
-}
-// Reset when switching players so the button reappears.
-watch(id, () => { coach.value = null; coachRequested.value = false; coachErr.value = '' })
-
-// Minimal, safe markdown: escape HTML, then **bold**, _italic_, and newlines.
-function coachMarkdown(t) {
-  if (!t) return ''
-  const esc = t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return esc
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/_(.+?)_/g, '<em>$1</em>')
-    .replace(/\n/g, '<br>')
-}
-// Lever bar: your value as a % of elite (capped 100). For "lower is better"
-// levers (restack, enemy-stack-at-death) invert so a full bar still = good.
-function leverPct(L) {
-  const num = s => parseFloat(String(s).replace(/[^0-9.]/g, ''))
-  const you = num(L.you), elite = num(L.elite)
-  if (!elite || isNaN(you)) return 0
-  const lowerBetter = (L.key === 'restack_sec' || L.key === 'enemy_stack_at_my_death')
-  const ratio = lowerBetter ? elite / you : you / elite
-  return Math.max(4, Math.min(100, Math.round(ratio * 100)))
+// ── AI Coach tab (combined) ──────────────────────────────────────────────────
+// The CoachTab component owns its own data loading (report + history + per-match
+// deep-analyze); this page just hosts it and the tab scroll-to behaviour.
+function goCoach() {
+  view.value = 'nav'
+  nextTick(() => {
+    document.getElementById('ai-coach')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
 }
 
 // ── Config Profile (hardware/settings) ──────────────────────────────────────
@@ -416,36 +387,11 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
 
       <!-- ── AI Coach — Nav view only ── -->
       <template v-if="view === 'nav'">
-        <div class="coach-section">
+        <div id="ai-coach" class="coach-section">
           <div class="coach-head">
             <h3>🎯 AI Coach <span class="coach-sub">· 1on1 · last 15 rated demos</span></h3>
-            <button v-if="!coachRequested" class="coach-btn" @click="loadCoach">Analyze my game</button>
           </div>
-          <div v-if="coachLoading" class="coach-empty">
-            Parsing your recent demos &amp; computing your levers… <span class="coach-spin">(~20s)</span>
-          </div>
-          <div v-else-if="coachErr" class="coach-empty coach-err">{{ coachErr }}</div>
-          <div v-else-if="coach" class="coach-body">
-            <div class="coach-narration" v-html="coachMarkdown(coach.narration.text)" />
-            <div v-if="coach.weakness?.levers?.length" class="coach-levers">
-              <div class="coach-levers-title">Your levers (ranked) — you vs elite</div>
-              <div v-for="L in coach.weakness.levers" :key="L.key" class="lever">
-                <span class="lever-label">{{ L.label }}</span>
-                <span class="lever-bar-wrap">
-                  <span class="lever-you" :style="{ width: leverPct(L) + '%' }" />
-                </span>
-                <span class="lever-vals"><b>{{ L.you }}</b> <span class="lever-elite">/ {{ L.elite }}</span></span>
-              </div>
-            </div>
-            <div class="coach-foot">
-              {{ coach.parsed }} demos analyzed · {{ coach.weakness.record.wins }}W/{{ coach.weakness.record.losses }}L ·
-              narration: {{ coach.narration.source === 'llm' ? 'AI' : 'auto' }}
-            </div>
-          </div>
-          <div v-else class="coach-empty">
-            Get a data-driven read on your 1on1 game — item control, stack management, and the
-            specific levers separating your wins from losses.
-          </div>
+          <CoachTab :cid="id" />
         </div>
       </template>
 
@@ -513,6 +459,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
       <div class="profile-tabbar">
         <div class="profile-tabs">
           <a class="ptab active">Overview</a>
+          <a class="ptab ptab-coach" @click="goCoach">🎯 Coach</a>
           <a class="ptab" :href="deepHref('trends')">Trends</a>
           <a class="ptab" :href="deepHref('compare')">Compare</a>
           <a class="ptab" :href="deepHref('1on1')">1on1</a>
@@ -938,6 +885,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
 }
 .ptab:hover { color: var(--fg); }
 .ptab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.ptab-coach { color: var(--accent); font-weight: 600; }
 .window-select {
   background: rgba(20, 230, 192, 0.08);
   border: 1px solid var(--accent);

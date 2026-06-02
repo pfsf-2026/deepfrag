@@ -57,6 +57,16 @@ export function useDeepFrag() {
         : null
     },
 
+    coachingHistoryUrl(id: string, mode = '1on1'): string | null {
+      // Persisted daily coaching snapshots (training journal + since-first trends).
+      return useApi ? `${base}/api/players/${encodeURIComponent(id)}/coaching/history?mode=${mode}` : null
+    },
+
+    deepAnalyzeUrl(id: string, gameId: number | string): string | null {
+      // Deep single-match LLM review (cached server-side per game+player).
+      return useApi ? `${base}/api/players/${encodeURIComponent(id)}/matches/${gameId}/deep-analyze` : null
+    },
+
     mapRankingsUrl(map: string, mode: string = '1on1'): string | null {
       return useApi
         ? `${base}/api/rankings/maps/${encodeURIComponent(map)}?mode=${mode}&min_matches=5&limit=500`
