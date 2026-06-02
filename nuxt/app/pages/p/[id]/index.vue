@@ -460,7 +460,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
           <a class="ptab" :href="deepHref('dmm')">By DMM</a>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/maps`">Maps</NuxtLink>
           <a class="ptab" :href="deepHref('servers')">Servers</a>
-          <a class="ptab" :href="deepHref('opponents')">Rivals</a>
+          <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/opponents`">Rivals</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/recent`">Recent</NuxtLink>
         </div>
         <select v-model="windowKey" class="window-select">

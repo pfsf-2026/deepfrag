@@ -11,7 +11,7 @@ const id = computed(() => String(route.params.id))
 const tab = computed(() => String(route.params.tab || ''))
 const windowKey = ref('90')
 
-const PORTED = new Set(['recent'])  // grows as tabs are migrated
+const PORTED = new Set(['recent', 'opponents'])  // grows as tabs are migrated
 
 const profile = ref(null)
 const pending = ref(true)
@@ -33,6 +33,21 @@ onMounted(load)
 watch([id, tab, windowKey], load)
 
 const recent = computed(() => profile.value?.recent_matches || [])
+const d = computed(() => profile.value?.windows?.[windowKey.value] || {})
+const rivals = computed(() => (d.value.head_to_head_1on1 || []).filter(r => (r.matches || 0) >= 3))
+
+function fmtNum(v) { return v == null ? '—' : Number(v).toLocaleString() }
+function fmtDelta(v) { return v == null ? '—' : (v > 0 ? '+' : '') + Number(v).toFixed(1) }
+const winLoss = v => v > 0 ? 'win' : v < 0 ? 'loss' : ''
+const rivalCols = [
+  { key: 'opponent', label: 'Opponent' },
+  { key: 'matches', label: 'N', num: true, fmt: fmtNum },
+  { key: 'wins', label: 'W', num: true },
+  { key: 'losses', label: 'L', num: true },
+  { key: 'win_rate', label: 'Win%', num: true, bar: true, fmt: v => fmtPct(v) },
+  { key: 'avg_frag_diff', label: 'Avg ±', num: true, fmt: fmtDelta, cls: winLoss },
+  { key: 'last_played', label: 'Last', fmt: v => fmtDate(v) },
+]
 
 function enc(s) { return encodeURIComponent(s) }
 // Tabs already in Nuxt link internally; not-yet-ported tabs link straight to the
@@ -114,6 +129,12 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
       </div>
     </template>
 
+    <!-- RIVALS (1on1 head-to-head) -->
+    <template v-else-if="tab === 'opponents'">
+      <div class="section-h"><h2>1on1 head-to-head</h2><span class="meta">{{ rivals.length }} opponents (≥3 matches)</span></div>
+      <StatTable :rows="rivals" :cols="rivalCols" sort-key="matches" sort-dir="desc" />
+    </template>
+
     <div v-else class="placeholder">Redirecting…</div>
   </div>
 </template>
@@ -131,6 +152,7 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .window-select { background: var(--panel); border: 1px solid var(--border); color: var(--fg); padding: 6px 10px; border-radius: 7px; font-size: 12px; }
 .section-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
 .section-h h2 { font-size: 16px; font-weight: 800; }
+.section-h .meta { color: var(--fg-3); font-size: 12px; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 4px 14px; overflow-x: auto; }
 .rtab { width: 100%; border-collapse: collapse; font-size: 13px; }
 .rtab th, .rtab td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
