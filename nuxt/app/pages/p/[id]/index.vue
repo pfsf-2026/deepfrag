@@ -452,7 +452,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         <div class="profile-tabs">
           <a class="ptab" :class="{ active: view !== 'coach' }" style="cursor:pointer" @click="view = 'nav'">Overview</a>
           <a class="ptab ptab-coach" :class="{ active: view === 'coach' }" style="cursor:pointer" @click="goCoach">🎯 Coach</a>
-          <a class="ptab" :href="deepHref('trends')">Trends</a>
+          <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/trends`">Trends</NuxtLink>
           <a class="ptab" :href="deepHref('compare')">Compare</a>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/1on1`">1on1</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/4on4`">4on4</NuxtLink>

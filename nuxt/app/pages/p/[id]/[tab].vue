@@ -11,7 +11,7 @@ const id = computed(() => String(route.params.id))
 const tab = computed(() => String(route.params.tab || ''))
 const windowKey = ref('90')
 
-const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2'])  // grows as tabs are migrated
+const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2', 'trends'])  // grows as tabs are migrated
 
 const profile = ref(null)
 const pending = ref(true)
@@ -108,6 +108,36 @@ const mapCols = [
   { key: 'lg_accuracy', label: 'LG%', num: true, fmt: v => fmtPct(v) },
   { key: 'rl_accuracy', label: 'RL%', num: true, fmt: v => fmtPct(v) },
 ]
+
+// ── Trends tab: per-metric weekly trend cards (sparklines) ──
+const trendsMode = ref('1on1')
+const trendSeries = computed(() => d.value.trend_weekly_by_mode?.[trendsMode.value] || [])
+const TREND_METRICS = [
+  { label: 'Win rate', key: 'win_rate', fmt: v => fmtPct(v), pp: true, hb: true },
+  { label: 'Avg frags', key: 'avg_frags', fmt: v => dec(v, 1), hb: true },
+  { label: 'Avg ±', key: 'avg_frag_diff', fmt: v => fmtDelta(v), hb: true },
+  { label: 'LG accuracy', key: 'lg_accuracy', fmt: v => fmtPct(v), pp: true, hb: true },
+  { label: 'RL accuracy', key: 'rl_accuracy', fmt: v => fmtPct(v), pp: true, hb: true },
+  { label: 'Dmg given', key: 'avg_dmg_given', fmt: v => fmtNum(Math.round(v)), hb: true },
+  { label: 'Dmg taken', key: 'avg_dmg_taken', fmt: v => fmtNum(Math.round(v)), hb: false },
+  { label: 'Ping', key: 'avg_ping', fmt: v => v == null ? '—' : Math.round(v) + 'ms', hb: false },
+]
+const trendCards = computed(() => {
+  const s = trendSeries.value
+  return TREND_METRICS.map(m => {
+    const series = s.map(b => b[m.key] == null ? null : b[m.key])
+    const vals = series.filter(v => v != null)
+    const cur = vals.length ? vals[vals.length - 1] : null
+    const first = vals.length ? vals[0] : null
+    let deltaTxt = null, good = null
+    if (cur != null && first != null && vals.length > 1 && Math.abs(cur - first) > 1e-9) {
+      const diff = cur - first
+      good = m.hb ? diff > 0 : diff < 0
+      deltaTxt = (diff > 0 ? '+' : '') + (m.pp ? (diff * 100).toFixed(1) + 'pp' : (Math.abs(diff) >= 100 ? Math.round(diff) : diff.toFixed(1)))
+    }
+    return { label: m.label, value: m.fmt(cur), series, deltaTxt, good, color: good === false ? '#ff5d6c' : '#34e6b0' }
+  })
+})
 
 function enc(s) { return encodeURIComponent(s) }
 // Tabs already in Nuxt link internally; not-yet-ported tabs link straight to the
@@ -226,6 +256,23 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
       <div v-else class="placeholder">No {{ tab }} matches in this window.</div>
     </template>
 
+    <!-- TRENDS (weekly per-metric) -->
+    <template v-else-if="tab === 'trends'">
+      <div class="section-h"><h2>Weekly trends</h2><span class="meta">{{ trendSeries.length }} weeks</span></div>
+      <div class="pill-row">
+        <button v-for="m in ['1on1', '4on4', '2on2']" :key="m" class="mpill" :class="{ on: trendsMode === m }" @click="trendsMode = m">{{ m }}</button>
+      </div>
+      <div v-if="trendSeries.length" class="trendgrid">
+        <div v-for="c in trendCards" :key="c.label" class="tcard">
+          <div class="tc-top"><span class="tc-l">{{ c.label }}</span>
+            <span v-if="c.deltaTxt" class="tc-d" :class="c.good ? 'up' : 'down'">{{ c.deltaTxt }}</span></div>
+          <div class="tc-v">{{ c.value }}</div>
+          <Sparkline :data="c.series" :color="c.color" :height="40" />
+        </div>
+      </div>
+      <div v-else class="placeholder">No {{ trendsMode }} trend data in this window.</div>
+    </template>
+
     <div v-else class="placeholder">Redirecting…</div>
   </div>
 </template>
@@ -267,4 +314,14 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .stat-card .s.delta.up { color: var(--win, #34e6b0); } .stat-card .s.delta.down { color: var(--loss, #ff5d6c); }
 .donuts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; padding: 14px 4px; }
 @media (max-width: 760px) { .donuts { grid-template-columns: repeat(3, 1fr); } }
+.pill-row { display: flex; gap: 4px; margin-bottom: 14px; }
+.mpill { background: var(--panel); border: 1px solid var(--border); color: var(--fg-2); border-radius: 7px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.mpill.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.trendgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.tcard { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.tc-top { display: flex; justify-content: space-between; align-items: baseline; }
+.tc-l { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.tc-d { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tc-d.up { color: var(--win, #34e6b0); } .tc-d.down { color: var(--loss, #ff5d6c); }
+.tc-v { font-size: 22px; font-weight: 800; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
 </style>
