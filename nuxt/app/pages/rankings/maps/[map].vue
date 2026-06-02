@@ -63,6 +63,9 @@ useHead({ title: () => `${mapName.value} ${mode.value} rankings · DeepFrag` })
       <NuxtLink to="/" class="back">← All rankings</NuxtLink>
       <h1>{{ mapName }} <span class="mode-chip" :class="'chip-' + mode">{{ mode }}</span></h1>
       <p class="sub">Per-map ratings on <strong>{{ mapName }}</strong>. Sorted by conservative (μ − 3σ).</p>
+      <NuxtLink v-if="mode === '1on1'" :to="`/training/first-spawn/${encodeURIComponent(mapName)}`" class="fs-link">
+        🎯 First-spawn training — replay how the top 5 open from each spawn →
+      </NuxtLink>
     </div>
 
     <div class="controls">
@@ -149,6 +152,8 @@ useHead({ title: () => `${mapName.value} ${mode.value} rankings · DeepFrag` })
 .head h1 .chip-4on4 { background: rgba(34,197,94,0.12); color: var(--win); }
 .head h1 .chip-2on2 { background: rgba(245,158,11,0.12); color: var(--draw); }
 .head .sub { color: var(--fg-2); margin: 0; font-size: 13px; }
+.head .fs-link { display: inline-block; margin-top: 10px; color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 600; padding: 6px 12px; border: 1px solid rgba(20,230,192,0.3); border-radius: 8px; background: rgba(20,230,192,0.06); }
+.head .fs-link:hover { background: rgba(20,230,192,0.14); }
 
 .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 24px; }
 .controls .label { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }

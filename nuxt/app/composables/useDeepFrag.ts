@@ -85,6 +85,28 @@ export function useDeepFrag() {
       return useApi
         ? `${base}/api/h2h?p1=${encodeURIComponent(p1)}&p2=${encodeURIComponent(p2)}&mode=${mode}`
         : null
+    },
+
+    // First-spawn optimization: training data per map. API-only.
+    spawnRunPlayersUrl(map: string): string | null {
+      return useApi ? `${base}/api/maps/${encodeURIComponent(map)}/spawn-runs` : null
+    },
+
+    spawnRunsUrl(map: string, player: string, perSpawn = 4): string | null {
+      return useApi
+        ? `${base}/api/maps/${encodeURIComponent(map)}/spawn-runs/${encodeURIComponent(player)}?per_spawn=${perSpawn}`
+        : null
+    },
+
+    spawnRunPathUrl(map: string, player: string, gameId: number | string): string | null {
+      return useApi
+        ? `${base}/api/maps/${encodeURIComponent(map)}/spawn-runs/${encodeURIComponent(player)}/${gameId}/path`
+        : null
+    },
+
+    mapAnnotationsUrl(map: string): string | null {
+      // geometry (loc tri-meshes) + spawns/teles — for the first-spawn map render.
+      return useApi ? `${base}/api/maps/${encodeURIComponent(map)}/annotations` : null
     }
   }
 }

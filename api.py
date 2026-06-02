@@ -1775,6 +1775,22 @@ def admin_seed_map_entities(authorization: str | None = Header(default=None)):
     }
 
 
+@app.post("/api/admin/maps/{map_name}/extract-spawn-runs")
+def admin_extract_spawn_runs(map_name: str, authorization: str | None = Header(default=None)):
+    """Idempotent: build/refresh the first-spawn training runs for ONE map (top-5
+    players, coverage-driven). Per-map so it fits Cloud Run's 60-min cap — the
+    full 9-map build is run map-by-map (or locally). Pulls windowed 13ms buckets
+    + frags from mvd-api, snaps spawns, classifies outcome, stores paths in
+    spawn_runs. ~5-12 min/map depending on coverage."""
+    _check_admin_auth(authorization)
+    return {
+        "step": "extract_spawn_runs",
+        "map": map_name,
+        **_run_script("extract_spawn_runs.py", "--map", map_name, timeout=3000),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # ── Map annotations (spawn points + teleports) ──────────────────────────────────
 # Backs the spawn/tele annotator. Geometry (loc triangle meshes) is cached in
 # map_annotations.geometry by seed_map_geometry.py; spawns/teles are authored
@@ -1869,6 +1885,135 @@ def set_map_lock(
             raise HTTPException(404, f"no annotations for map '{map_name}'")
         conn.commit()
     return {"map": map_name, "locked": locked}
+
+
+# ── First-spawn runs (training data for the spawn-optimization dashboard) ────────
+# spawn_runs holds, per (map, top-5 player, game), the opening-life path off their
+# first spawn plus a 2-dim outcome label (items secured × opening result). Built
+# by extract_spawn_runs.py. The dashboard picks a player + map and replays 3-4
+# example runs per spawn point, filterable by the enemy's spawn. Where the chosen
+# player lacks ≥3 examples for a spawn, we PAD from the other top-5 players on that
+# map (attributed via `player`/`padded`) so every spawn has enough material.
+
+SPAWN_TARGET_PER_SPAWN = 3
+
+
+def _spawn_labels(spawns_json) -> list:
+    """Spawn loc labels for a map, with index fallbacks (S1..Sn) for unlabeled
+    spawns — matches extract_spawn_runs.label_spawns so frontend pills line up
+    with stored own_spawn values even on un-annotated maps (e.g. metron)."""
+    out = []
+    for i, s in enumerate(spawns_json or []):
+        out.append(s.get("loc") or f"S{i + 1}")
+    return out
+
+
+@app.get("/api/maps/{map_name}/spawn-runs")
+def list_map_spawn_run_players(map_name: str, response: Response):
+    """Which players have first-spawn training data on this map, with run counts.
+    Powers the dashboard's player picker. Public, cacheable."""
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT sr.player,
+                   COALESCE(pc.display_name, sr.player) AS display,
+                   MIN(sr.rank_on_map) AS rank_on_map,
+                   COUNT(*) AS runs,
+                   COUNT(DISTINCT sr.own_spawn) AS spawns_covered
+            FROM spawn_runs sr
+            LEFT JOIN players_canonical pc ON pc.canonical_id = sr.player
+            WHERE sr.map = %s
+            GROUP BY sr.player, pc.display_name
+            ORDER BY rank_on_map NULLS LAST, runs DESC
+        """, (map_name,))
+        players = cur.fetchall()
+        cur.execute("SELECT entities->'spawns' AS s FROM map_annotations WHERE map = %s", (map_name,))
+        row = cur.fetchone()
+    if not players:
+        raise HTTPException(404, f"no spawn runs for map '{map_name}'")
+    spawns = _spawn_labels(row["s"] if row else None)
+    return {"map": map_name, "spawns": spawns, "players": players}
+
+
+@app.get("/api/maps/{map_name}/spawn-runs/{player}")
+def get_player_spawn_runs(
+    map_name: str, player: str, response: Response,
+    per_spawn: int = Query(4, ge=1, le=12, description="max examples returned per spawn point"),
+):
+    """The selected player's first-spawn runs on this map, grouped by own spawn.
+    Each spawn returns up to `per_spawn` example runs (the player's own first,
+    then PADDED from other top-5 players on the map when the player has <target),
+    newest first. Run rows are light (no path arrays) — fetch a path on demand via
+    the /path endpoint. Client filters by enemy_spawn. Public, cacheable."""
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
+    cols = ("game_id, own_spawn, enemy_spawn, items_outcome, opening_result, "
+            "first_kill_ms, first_death_ms, duration_s, player, rank_on_map, match_date, "
+            "(enemy_path IS NOT NULL) AS has_enemy_path")
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT entities->'spawns' AS s FROM map_annotations WHERE map = %s", (map_name,))
+        row = cur.fetchone()
+        spawns = _spawn_labels(row["s"] if row else None)
+        # The player's own runs.
+        cur.execute(f"""SELECT {cols} FROM spawn_runs
+                        WHERE map=%s AND player=%s ORDER BY own_spawn, match_date DESC NULLS LAST""",
+                    (map_name, player))
+        own = cur.fetchall()
+        # Pool from the other top-5 players, for padding sparse spawns.
+        cur.execute(f"""SELECT {cols} FROM spawn_runs
+                        WHERE map=%s AND player<>%s ORDER BY own_spawn, rank_on_map, match_date DESC NULLS LAST""",
+                    (map_name, player))
+        pool = cur.fetchall()
+    if not own and not pool:
+        raise HTTPException(404, f"no spawn runs for '{player}' on '{map_name}'")
+
+    own_by_spawn: dict = {}
+    for r in own:
+        r["padded"] = False
+        own_by_spawn.setdefault(r["own_spawn"], []).append(r)
+    pool_by_spawn: dict = {}
+    for r in pool:
+        r["padded"] = True
+        pool_by_spawn.setdefault(r["own_spawn"], []).append(r)
+
+    spawn_keys = spawns or sorted(set(own_by_spawn) | set(pool_by_spawn))
+    groups = []
+    for sp in spawn_keys:
+        runs = list(own_by_spawn.get(sp, []))
+        own_n = len(runs)
+        if own_n < SPAWN_TARGET_PER_SPAWN:
+            runs += pool_by_spawn.get(sp, [])[: per_spawn - own_n]
+        runs = runs[:per_spawn]
+        if not runs:
+            continue
+        groups.append({
+            "spawn": sp,
+            "own_count": own_n,
+            "padded_count": sum(1 for r in runs if r["padded"]),
+            "runs": runs,
+        })
+    return {"map": map_name, "player": player, "spawns": spawn_keys, "groups": groups}
+
+
+@app.get("/api/maps/{map_name}/spawn-runs/{player}/{game_id}/path")
+def get_spawn_run_path(map_name: str, player: str, game_id: int, response: Response):
+    """Full replay payload for one run: the player's path (and enemy path, when
+    captured) as [[x,y,z],...] per 13ms bucket, plus spawn + outcome metadata.
+    The `player` here is the run's actual player (which may be a padding player),
+    so padded runs resolve correctly. Public, cacheable (immutable training row)."""
+    response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=604800"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""SELECT map, player, rank_on_map, game_id, own_spawn, enemy_spawn,
+                              items_outcome, opening_result, first_kill_ms, first_death_ms,
+                              duration_s, path, enemy_path
+                       FROM spawn_runs WHERE map=%s AND player=%s AND game_id=%s""",
+                    (map_name, player, game_id))
+        row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, f"no spawn run {game_id} for '{player}' on '{map_name}'")
+    return row
 
 
 # ── Search ─────────────────────────────────────────────────────────────────────
