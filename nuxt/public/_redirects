@@ -5,6 +5,7 @@
 
 /rankings/maps/*  /rankings/maps/  200
 /p/*/maps         /p/:splat/       200
+/p/*/recent       /p/:splat/       200
 # First-spawn per-map pages are SPA — fall back to the prerendered landing index
 # (returns 200 + boots the app); Vue Router then loads /training/first-spawn/{map}.
 /training/first-spawn/*  /training/first-spawn/  200

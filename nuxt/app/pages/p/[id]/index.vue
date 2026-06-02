@@ -4,7 +4,9 @@ const id = computed(() => String(route.params.id))
 
 const profile = ref(null)
 const pending = ref(true)
-const view = ref('nav')   // 'nav' (Mock 5 launchpad) | 'metrics' (Mock 3 grid)
+const view = ref('nav')   // 'nav' (launchpad) | 'metrics' (grid) | 'coach' (AI Coach)
+// Honor ?view=coach so the Coach tab works when linked from deep-dive pages.
+watch(() => route.query.view, v => { if (v === 'coach') view.value = 'coach' }, { immediate: true })
 const windowKey = ref('90')
 const df = useDeepFrag()
 
@@ -459,7 +461,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/maps`">Maps</NuxtLink>
           <a class="ptab" :href="deepHref('servers')">Servers</a>
           <a class="ptab" :href="deepHref('opponents')">Rivals</a>
-          <a class="ptab" :href="deepHref('recent')">Recent</a>
+          <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/recent`">Recent</NuxtLink>
         </div>
         <select v-model="windowKey" class="window-select">
           <option value="7">Last 7d</option>
