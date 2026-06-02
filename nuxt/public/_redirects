@@ -5,6 +5,9 @@
 
 /rankings/maps/*  /rankings/maps/  200
 /p/*/maps         /p/:splat/       200
+# First-spawn per-map pages are SPA — fall back to the prerendered landing index
+# (returns 200 + boots the app); Vue Router then loads /training/first-spawn/{map}.
+/training/first-spawn/*  /training/first-spawn/  200
 # NOTE: do NOT add a `/p/*  /p/_fallback/  200` rule here. On Cloudflare Pages,
 # `_redirects` rules take PRECEDENCE over static files, so a `/p/*` wildcard
 # shadows every prerendered /p/{id}/index.html and serves the bare 2KB shell

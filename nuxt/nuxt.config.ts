@@ -57,8 +57,9 @@ export default defineNuxtConfig({
     // (the _redirects file falls back to /rankings/maps for any /rankings/maps/*).
     '/rankings/maps': { prerender: true },
     '/rankings/maps/**': { prerender: false, ssr: false },
-    // First-spawn training: per-map replay tool, SPA-only (hydrates from the API
-    // client-side; Nitro's catch-all SPA fallback serves the shell on CF Pages).
+    // First-spawn training: prerender the landing/index (it's the SPA shell that
+    // /training/first-spawn/* falls back to), per-map replay pages are SPA-only.
+    '/training/first-spawn': { prerender: true },
     '/training/first-spawn/**': { prerender: false, ssr: false },
     '/servers': { prerender: true },
     '/stats': { prerender: true },
