@@ -1727,7 +1727,8 @@ def coaching_report(
         "game_id": mr["game_id"], "map": mr["map"],
         "result": "W" if (mr["mf"] or 0) > (mr["of"] or 0) else "L",
         "my_frags": mr["mf"], "opp_frags": mr["of"], "opponent": mr["opp_name"],
-        "date": mr["date"].isoformat() if mr["date"] else None,
+        # match_date is stored as a string in this DB; isoformat() only on datetimes.
+        "date": (mr["date"].isoformat() if hasattr(mr["date"], "isoformat") else mr["date"]),
     } for mr in matches]
 
     return {
