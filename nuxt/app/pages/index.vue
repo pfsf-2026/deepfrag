@@ -36,6 +36,16 @@ async function load() {
 // Only refetch on an actual toggle — the initial (1on1/global) view is baked in.
 watch([mode, region], load)
 
+// Silent background refresh AFTER the instant baked paint: the baked standings
+// are up to ~2h old (until the next scheduled rebuild), so quietly pull current
+// data from the CDN-cached API and swap it in. No spinner — the baked data stays
+// on screen until this resolves, so the page is instant AND self-freshening.
+onMounted(() => {
+  $fetch(df.rankingsUrl(mode.value, region.value))
+    .then((d) => { rankings.value = d })
+    .catch(() => { /* keep baked data on any failure */ })
+})
+
 // API returns { players: [...] }; static returns { modes: { 1on1: [...] } }.
 const current = computed(() => df.useApi
   ? (rankings.value?.players || [])
