@@ -541,7 +541,9 @@ def build_window(cur, canonical_id, days):
         "by_map_4on4": _per_map_python(rows, "4on4"),
         "head_to_head_1on1": _h2h_python(rows),
         "by_dmm": _by_dmm_python(rows),
-        "by_server_all": _by_server_python(cur, rows),
+        # by_server_all temporarily removed during the 2026-06-03 DB-pool incident
+        # (its extra match_id->host lookup added per-request DB load on db-f1-micro).
+        # Re-add via a CDN-cached path or after a tier bump.
         "trend_weekly_by_mode": {
             "1on1": _trend_weekly_python(rows, "1on1"),
             "2on2": _trend_weekly_python(rows, "2on2"),
