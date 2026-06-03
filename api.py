@@ -2919,6 +2919,22 @@ def admin_sync(authorization: str | None = Header(default=None),
     if not skip_rate:
         summary["steps"].append({"step": "rate", **_run_script("rate.py", "--mode", "1on1", "--incremental", timeout=600)})
 
+    # Step 5b — trigger the CF Pages rebuild so the prerendered homepage re-bakes
+    # with the fresh standings (proactive global cache refresh after recompute).
+    # Hook URL is a Cloud Run env secret (CF_DEPLOY_HOOK), never committed.
+    if not skip_rate:
+        import urllib.request as _u
+        hook = os.environ.get("CF_DEPLOY_HOOK")
+        if hook:
+            try:
+                with _u.urlopen(_u.Request(hook, method="POST", data=b"{}",
+                                           headers={"content-type": "application/json"}), timeout=20) as r:
+                    summary["steps"].append({"step": "cf_rebuild", "status": r.status})
+            except Exception as e:
+                summary["steps"].append({"step": "cf_rebuild", "error": str(e)[:200]})
+        else:
+            summary["steps"].append({"step": "cf_rebuild", "skipped": "CF_DEPLOY_HOOK not set"})
+
     # Step 6 — DB invariants. Catches regressions like the matches_rated
     # inflation bug (2026-05-27) before users see them. Non-blocking: a
     # failure here doesn't roll back the sync, just surfaces in the response
