@@ -168,7 +168,10 @@ function fmtDelta(v) { return v == null ? '—' : (v > 0 ? '+' : '') + Number(v)
 function fmtDate(v) { return v == null ? '—' : new Date(v).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) }
 // Deep-link into the detailed profile.html with a specific tab pre-selected.
 // 90d window is the default there, so no need to pass window in URL.
-function deepHref(tab) { return `/profile.html?id=${encodeURIComponent(id.value)}#${tab}` }
+// All profile tabs are now native Nuxt routes (/p/[id]/[tab]); the legacy
+// profile.html SPA is retired. Kept the name so the launchpad nav-cards below
+// don't all need touching.
+function deepHref(tab) { return `/p/${encodeURIComponent(id.value)}/${tab}` }
 
 // Metric definitions for the Mock 3 metric grid. Each shows current value + delta vs
 // prior period + sparkline of the metric over the active window's weekly buckets.
@@ -457,9 +460,9 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/1on1`">1on1</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/4on4`">4on4</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/2on2`">2on2</NuxtLink>
-          <a class="ptab" :href="deepHref('dmm')">By DMM</a>
+          <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/dmm`">By DMM</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/maps`">Maps</NuxtLink>
-          <a class="ptab" :href="deepHref('servers')">Servers</a>
+          <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/servers`">Servers</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/opponents`">Rivals</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/recent`">Recent</NuxtLink>
         </div>

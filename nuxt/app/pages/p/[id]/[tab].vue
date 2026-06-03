@@ -11,7 +11,7 @@ const id = computed(() => String(route.params.id))
 const tab = computed(() => String(route.params.tab || ''))
 const windowKey = ref('90')
 
-const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2', 'trends', 'compare'])  // grows as tabs are migrated
+const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2', 'trends', 'compare', 'dmm', 'servers'])
 
 const profile = ref(null)
 const pending = ref(true)
@@ -191,6 +191,29 @@ const cmpView = computed(() => cmpSections.value.map(sec => ({
 })))
 const hasCmp = computed(() => Object.keys(cmpPrev.value).length > 0)
 
+// ── DMM + Servers (simple slice tables) ──
+const byDmm = computed(() => d.value.by_dmm || [])
+const byServer = computed(() => d.value.by_server_all || [])
+const dmmCols = [
+  { key: 'bucket', label: 'Mode', chip: true },
+  { key: 'matches', label: 'N', num: true, fmt: fmtNum },
+  { key: 'wins', label: 'W', num: true }, { key: 'losses', label: 'L', num: true },
+  { key: 'win_rate', label: 'Win%', num: true, bar: true, fmt: v => fmtPct(v) },
+  { key: 'avg_frags', label: 'Frags', num: true, fmt: v => dec(v, 1) },
+  { key: 'avg_frag_diff', label: '±', num: true, fmt: fmtDelta, cls: winLoss },
+  { key: 'lg_accuracy', label: 'LG%', num: true, fmt: v => fmtPct(v) },
+  { key: 'rl_accuracy', label: 'RL%', num: true, fmt: v => fmtPct(v) },
+  { key: 'avg_dmg_given', label: 'Dmg/m', num: true, fmt: v => v == null ? '—' : fmtNum(Math.round(v)) },
+]
+const serverCols = [
+  { key: 'bucket', label: 'Server' },
+  { key: 'matches', label: 'N', num: true, fmt: fmtNum },
+  { key: 'wins', label: 'W', num: true }, { key: 'losses', label: 'L', num: true },
+  { key: 'win_rate', label: 'Win%', num: true, bar: true, fmt: v => fmtPct(v) },
+  { key: 'avg_frags', label: 'Frags', num: true, fmt: v => dec(v, 1) },
+  { key: 'avg_frag_diff', label: '±', num: true, fmt: fmtDelta, cls: winLoss },
+]
+
 function enc(s) { return encodeURIComponent(s) }
 // Tabs already in Nuxt link internally; not-yet-ported tabs link straight to the
 // legacy SPA (avoids a broken hop / direct-load 404). PORTED grows per migration.
@@ -347,6 +370,18 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
         </template>
       </div>
       <div v-else class="placeholder">No comparison data for this window/mode. Try a different window (7d/30d/90d/1y).</div>
+    </template>
+
+    <!-- BY DMM -->
+    <template v-else-if="tab === 'dmm'">
+      <div class="section-h"><h2>By deathmatch mode</h2><span class="meta">DMM3 = duel default · DMM4 = fast item respawn</span></div>
+      <StatTable :rows="byDmm" :cols="dmmCols" sort-key="matches" sort-dir="desc" />
+    </template>
+
+    <!-- SERVERS -->
+    <template v-else-if="tab === 'servers'">
+      <div class="section-h"><h2>All servers</h2><span class="meta">{{ byServer.length }} servers</span></div>
+      <StatTable :rows="byServer" :cols="serverCols" sort-key="matches" sort-dir="desc" />
     </template>
 
     <div v-else class="placeholder">Redirecting…</div>

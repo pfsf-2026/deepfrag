@@ -411,6 +411,56 @@ def _per_map_python(rows, mode):
     return out
 
 
+def _slice_table(groups, label_key="bucket"):
+    """Shared slim aggregate (matches/wins/losses/win%/frags/±/acc) for a dict of
+    {bucket: rows}. Used by by_dmm + by_server."""
+    out = []
+    for bucket, rs in groups.items():
+        n = len(rs)
+        wins = sum(1 for r in rs if r["outcome"] == "win")
+        losses = sum(1 for r in rs if r["outcome"] == "loss")
+        out.append({
+            label_key: bucket, "matches": n, "wins": wins, "losses": losses,
+            "win_rate": _round(wins / n) if n else None,
+            "avg_frags": _round(_avg(rs, "player_frags")),
+            "avg_frag_diff": _round(_avg([{"v": (r["player_frags"] or 0) - (r["player_deaths"] or 0)} for r in rs], "v")),
+            "lg_accuracy": _round(_avg_ratio(rs, "player_lg_hits", "player_lg_attacks")),
+            "rl_accuracy": _round(_avg_ratio(rs, "player_rl_virtual", "player_rl_attacks")),
+            "avg_dmg_given": _round(_avg(rs, "player_damage_given")),
+        })
+    out.sort(key=lambda r: -r["matches"])
+    return out
+
+
+def _by_dmm_python(rows):
+    """Per-deathmatch-mode breakdown (DMM3 = duel default, DMM4 = fast respawn)."""
+    groups = {}
+    for r in rows:
+        dmm = r.get("match_dmm")
+        if dmm is None:
+            continue
+        groups.setdefault(f"DMM{dmm}", []).append(r)
+    return _slice_table(groups)
+
+
+def _by_server_python(cur, rows):
+    """Per-server breakdown. server_hostname isn't on match_outcomes, so map it
+    in via one cheap match_id->host lookup, then aggregate the already-fetched
+    rows (which carry the win/loss outcome)."""
+    if not rows:
+        return []
+    ids = list({r["match_id"] for r in rows})
+    cur.execute("SELECT match_id, server_hostname FROM matches WHERE match_id = ANY(%s)", (ids,))
+    host = {r["match_id"]: (r["server_hostname"] or "").split(":")[0] for r in cur.fetchall()}
+    groups = {}
+    for r in rows:
+        h = host.get(r["match_id"])
+        if not h:
+            continue
+        groups.setdefault(h, []).append(r)
+    return _slice_table(groups)
+
+
 def _h2h_python(rows):
     """1on1 head-to-head from rows, grouped by opponent_canonical_id (falls back to opponent_name)."""
     groups = {}
@@ -490,6 +540,8 @@ def build_window(cur, canonical_id, days):
         "by_map_2on2": _per_map_python(rows, "2on2"),
         "by_map_4on4": _per_map_python(rows, "4on4"),
         "head_to_head_1on1": _h2h_python(rows),
+        "by_dmm": _by_dmm_python(rows),
+        "by_server_all": _by_server_python(cur, rows),
         "trend_weekly_by_mode": {
             "1on1": _trend_weekly_python(rows, "1on1"),
             "2on2": _trend_weekly_python(rows, "2on2"),
