@@ -11,7 +11,7 @@ const id = computed(() => String(route.params.id))
 const tab = computed(() => String(route.params.tab || ''))
 const windowKey = ref('90')
 
-const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2', 'trends'])  // grows as tabs are migrated
+const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2', 'trends', 'compare'])  // grows as tabs are migrated
 
 const profile = ref(null)
 const pending = ref(true)
@@ -138,6 +138,58 @@ const trendCards = computed(() => {
     return { label: m.label, value: m.fmt(cur), series, deltaTxt, good, color: good === false ? '#ff5d6c' : '#34e6b0' }
   })
 })
+
+// ── Compare tab: current window vs prior / same-period-last-year (per mode) ──
+const cmpMode = ref('1on1')
+const cmpPeriod = ref('prior')   // 'prior' | 'year_ago'
+const cmpCur = computed(() => d.value.by_mode?.[cmpMode.value] || {})
+const cmpPrev = computed(() => d.value[cmpPeriod.value]?.by_mode?.[cmpMode.value] || {})
+const DEC1 = v => dec(v, 1), DEC2 = v => dec(v, 2), NUM = v => v == null ? '—' : fmtNum(Math.round(v))
+function cmpDelta(cv, pv, higher, pp) {
+  if (cv == null || pv == null) return { text: '—', good: null }
+  const diff = cv - pv
+  if (Math.abs(diff) < 1e-9) return { text: '±0', good: null }
+  const t = pp ? (diff > 0 ? '+' : '') + (diff * 100).toFixed(1) + 'pp'
+    : (diff > 0 ? '+' : '') + (Math.abs(diff) >= 100 ? Math.round(diff) : diff.toFixed(1))
+  return { text: t, good: higher ? diff > 0 : diff < 0 }
+}
+const cmpSections = computed(() => {
+  const team = cmpMode.value !== '1on1'
+  return [
+    { h: 'Volume', rows: [
+      { l: 'Matches', k: 'matches', f: fmtNum, higher: true }, { l: 'Wins', k: 'wins', f: fmtNum, higher: true },
+      { l: 'Losses', k: 'losses', f: fmtNum, higher: false }, { l: 'Win rate', k: 'win_rate', f: v => fmtPct(v), higher: true, pp: true } ] },
+    { h: 'Performance', rows: [
+      { l: 'Avg frags', k: 'avg_frags', f: DEC1, higher: true }, { l: 'Avg deaths', k: 'avg_deaths', f: DEC1, higher: false },
+      { l: 'Avg ±', k: 'avg_frag_diff', f: fmtDelta, higher: true }, { l: 'Spawn frags', k: 'avg_spawnfrags', f: DEC2, higher: true },
+      ...(team ? [{ l: 'Teamkills', k: 'avg_teamkills', f: DEC2, higher: false }] : []) ] },
+    { h: 'Damage', rows: [
+      { l: 'Dmg given', k: 'avg_dmg_given', f: NUM, higher: true }, { l: 'Dmg taken', k: 'avg_dmg_taken', f: NUM, higher: false },
+      { l: 'Dmg to die', k: 'avg_dmg_to_die', f: NUM, higher: true }, { l: 'Self damage', k: 'avg_dmg_self', f: NUM, higher: false },
+      ...(team ? [{ l: 'EWEP', k: 'avg_dmg_enemy_weapons', f: NUM, higher: true }, { l: 'Team damage', k: 'avg_dmg_team', f: NUM, higher: false }, { l: 'Team wpn dmg', k: 'avg_dmg_team_weapons', f: NUM, higher: false }] : []) ] },
+    { h: 'Weapon accuracy', rows: [
+      { l: 'LG %', k: 'lg_accuracy', f: v => fmtPct(v), higher: true, pp: true }, { l: 'RL %', k: 'rl_accuracy', f: v => fmtPct(v), higher: true, pp: true },
+      { l: 'SG %', k: 'sg_accuracy', f: v => fmtPct(v), higher: true, pp: true }, { l: 'SSG %', k: 'ssg_accuracy', f: v => fmtPct(v), higher: true, pp: true } ] },
+    { h: 'Weapon damage / match', rows: [
+      { l: 'LG damage', k: 'avg_lg_dmg', f: NUM, higher: true }, { l: 'RL damage', k: 'avg_rl_dmg', f: NUM, higher: true },
+      { l: 'RL kills', k: 'avg_rl_kills', f: DEC1, higher: true }, { l: 'LG kills', k: 'avg_lg_kills', f: DEC1, higher: true },
+      { l: 'RL dropped', k: 'avg_rl_dropped', f: DEC1, higher: false }, { l: 'LG dropped', k: 'avg_lg_dropped', f: DEC1, higher: false },
+      ...(team ? [{ l: 'RL transfers', k: 'avg_rl_transfer', f: DEC1, higher: true }, { l: 'LG transfers', k: 'avg_lg_transfer', f: DEC1, higher: true }] : []) ] },
+    { h: 'Item control / match', rows: [
+      { l: 'Red armor', k: 'avg_ra', f: DEC1, higher: true }, { l: 'Yellow armor', k: 'avg_ya', f: DEC1, higher: true },
+      { l: 'Mega health', k: 'avg_mh', f: DEC1, higher: true }, { l: 'RL pickups', k: 'avg_rl_taken', f: DEC1, higher: true },
+      { l: 'LG pickups', k: 'avg_lg_taken', f: DEC1, higher: true },
+      ...(team ? [{ l: 'Quads', k: 'avg_quads', f: DEC2, higher: true }, { l: 'Pents', k: 'avg_pents', f: DEC2, higher: true }] : []) ] },
+  ]
+})
+const cmpView = computed(() => cmpSections.value.map(sec => ({
+  h: sec.h,
+  rows: sec.rows.map(r => {
+    const cv = cmpCur.value[r.k], pv = cmpPrev.value[r.k]
+    return { l: r.l, cur: r.f(cv), prv: r.f(pv), delta: cmpDelta(cv, pv, r.higher, r.pp) }
+  }),
+})))
+const hasCmp = computed(() => Object.keys(cmpPrev.value).length > 0)
 
 function enc(s) { return encodeURIComponent(s) }
 // Tabs already in Nuxt link internally; not-yet-ported tabs link straight to the
@@ -273,6 +325,30 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
       <div v-else class="placeholder">No {{ trendsMode }} trend data in this window.</div>
     </template>
 
+    <!-- COMPARE (period over period) -->
+    <template v-else-if="tab === 'compare'">
+      <div class="pill-row">
+        <span class="ptlabel">Mode</span>
+        <button v-for="m in ['1on1', '4on4', '2on2']" :key="m" class="mpill" :class="{ on: cmpMode === m }" @click="cmpMode = m">{{ m }}</button>
+        <span class="ptlabel" style="margin-left:12px">Compare to</span>
+        <button class="mpill" :class="{ on: cmpPeriod === 'prior' }" @click="cmpPeriod = 'prior'">Prior period</button>
+        <button class="mpill" :class="{ on: cmpPeriod === 'year_ago' }" @click="cmpPeriod = 'year_ago'">Same period last year</button>
+      </div>
+      <div v-if="hasCmp" class="cmp-table">
+        <div class="cmp-row cmp-headrow"><div /><div class="cmp-val">Current</div><div /><div class="cmp-val">{{ cmpPeriod === 'year_ago' ? 'Last year' : 'Prior' }}</div></div>
+        <template v-for="sec in cmpView" :key="sec.h">
+          <div class="cmp-section-h">{{ sec.h }}</div>
+          <div v-for="r in sec.rows" :key="r.l" class="cmp-row">
+            <div class="cmp-label">{{ r.l }}</div>
+            <div class="cmp-val now">{{ r.cur }}</div>
+            <div class="cmp-diff" :class="r.delta.good === true ? 'up' : r.delta.good === false ? 'down' : ''">{{ r.delta.text }}</div>
+            <div class="cmp-val prv">{{ r.prv }}</div>
+          </div>
+        </template>
+      </div>
+      <div v-else class="placeholder">No comparison data for this window/mode. Try a different window (7d/30d/90d/1y).</div>
+    </template>
+
     <div v-else class="placeholder">Redirecting…</div>
   </div>
 </template>
@@ -324,4 +400,14 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .tc-d { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .tc-d.up { color: var(--win, #34e6b0); } .tc-d.down { color: var(--loss, #ff5d6c); }
 .tc-v { font-size: 22px; font-weight: 800; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
+.ptlabel { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+.cmp-table { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 6px 14px 14px; }
+.cmp-section-h { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); font-weight: 700; margin: 14px 0 4px; }
+.cmp-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.cmp-headrow { border-bottom: 1px solid var(--border); color: var(--fg-3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+.cmp-label { color: var(--fg-2); }
+.cmp-val { text-align: right; font-variant-numeric: tabular-nums; }
+.cmp-val.prv { color: var(--fg-3); }
+.cmp-diff { text-align: right; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cmp-diff.up { color: var(--win, #34e6b0); } .cmp-diff.down { color: var(--loss, #ff5d6c); }
 </style>
