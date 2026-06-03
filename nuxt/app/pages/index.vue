@@ -1,6 +1,6 @@
 <script setup>
 const rankings = ref(null)
-const pending = ref(true)
+const pending = ref(false)  // initial view is baked into the prerender; not pending
 const mode = ref('1on1')
 const search = ref('')
 const minMatches = ref(20)
@@ -10,19 +10,30 @@ const divFilter = ref('')      // '' = all divs; 'div0' / 'div1' / 'div2' / 'div
 
 const df = useDeepFrag()
 
+// SUPER-FAST first load: bake the default ranking (1on1, global) into the
+// prerendered static HTML at BUILD time via useAsyncData. The homepage then
+// paints instantly from the CDN edge with data already present — zero origin /
+// DB call on first load (critical: cold-cache visitors used to wait on the
+// origin DB, which locked up under post-deploy herds). Mode/region toggles
+// lazy-fetch client-side from the (CDN-cached) API.
+const { data: baked } = await useAsyncData(
+  'rankings-home',
+  () => $fetch(df.rankingsUrl('1on1', '')),
+  { default: () => null }
+)
+rankings.value = baked.value
+
 async function load() {
   pending.value = true
   try {
-    const url = df.rankingsUrl(mode.value, region.value)
-    const data = await $fetch(url)
-    rankings.value = data
+    rankings.value = await $fetch(df.rankingsUrl(mode.value, region.value))
   } catch (e) {
     console.error('[rankings] FAILED:', e)
   } finally {
     pending.value = false
   }
 }
-onMounted(load)
+// Only refetch on an actual toggle — the initial (1on1/global) view is baked in.
 watch([mode, region], load)
 
 // API returns { players: [...] }; static returns { modes: { 1on1: [...] } }.

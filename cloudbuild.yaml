@@ -54,11 +54,13 @@ steps:
       - --memory=512Mi
       - --cpu=1
       - --timeout=1800
-      # concurrency must stay <= the PG pool size (PG_POOL_MAX, default 10) so an
-      # instance never needs more DB connections than the pool holds; excess load
-      # scales out to more instances instead of 503-ing. pool 10 × maxScale 5 = 50
-      # connections, under Cloud SQL's ~95 usable. See pg() in api.py.
-      - --concurrency=10
+      # concurrency MUST equal the PG pool size (PG_POOL_MAX env = 3) so an
+      # instance never accepts more requests than it has DB connections — else
+      # excess requests starve on the pool, wait 10s, and 503 (2026-06-03 incident:
+      # this was 10 vs a pool of 3 → lockups). Excess load scales OUT to more
+      # instances. pool 3 × maxScale 5 = 15 connections, under db-f1-micro's ~25.
+      # If you raise PG_POOL_MAX or the SQL tier, raise this in lockstep.
+      - --concurrency=3
       - --min-instances=1
       - --max-instances=5
       - --cpu-boost
