@@ -113,9 +113,23 @@ async function runDeep(m) {
   deep.value = { ...deep.value, [m.game_id]: { loading: true } }
   try {
     const r = await fetch(url)
-    if (!r.ok) throw new Error(`analyze ${r.status}`)
+    if (!r.ok) throw new Error(r.status === 404
+      ? `That game isn't in ${report.value?.display || 'this player'}'s history — Coach reads this player's games.`
+      : `analyze failed (${r.status})`)
     deep.value = { ...deep.value, [m.game_id]: { data: await r.json() } }
   } catch (e) { deep.value = { ...deep.value, [m.game_id]: { error: String(e.message || e) } } }
+}
+
+// Analyze any game by ID or hub link. Accepts a raw number or a URL (grabs the
+// last 3+ digit run, e.g. hub.quakeworld.nu/games/208046). Must be a game this
+// player was in (the Coach analyzes their performance in it).
+const manualId = ref('')
+const parsedId = computed(() => {
+  const m = String(manualId.value).match(/\d{3,}/g)
+  return m ? m[m.length - 1] : ''
+})
+function runManual() {
+  if (parsedId.value) runDeep({ game_id: parsedId.value })
 }
 </script>
 
@@ -197,7 +211,27 @@ async function runDeep(m) {
       <!-- 4. DEEP ANALYZE -->
       <section v-if="report.recent_matches?.length" class="sec">
         <div class="sectitle">🔬 Deep Analyze a match <span class="muted">· full read of one game — movement, items, timings, spawn read</span></div>
-        <div v-for="m in report.recent_matches.slice(0, 10)" :key="m.game_id" class="match">
+
+        <!-- analyze any game by ID / hub link -->
+        <div class="manualrow">
+          <input v-model="manualId" class="manual-input" placeholder="Or paste a Game ID or hub link to analyze any game…" @keyup.enter="runManual">
+          <button class="btn-ghost" :disabled="!parsedId || deep[parsedId]?.loading" @click="runManual">
+            {{ deep[parsedId]?.loading ? 'Analyzing…' : '🔬 Analyze' }}
+          </button>
+        </div>
+        <div v-if="parsedId && deep[parsedId]" class="match manual-result">
+          <div v-if="deep[parsedId].loading" class="empty">Analyzing game {{ parsedId }}…</div>
+          <div v-else-if="deep[parsedId].error" class="empty err">{{ deep[parsedId].error }}</div>
+          <div v-else-if="deep[parsedId].data" class="deepout">
+            <div class="minfo" style="margin-bottom:6px"><b>{{ deep[parsedId].data.map }}</b> · game {{ parsedId }}
+              <span :class="deep[parsedId].data.result === 'W' ? 'win' : 'loss'"> · {{ deep[parsedId].data.result }}</span></div>
+            <div class="read" v-html="md(deep[parsedId].data.analysis)" />
+            <div class="foot">source: {{ deep[parsedId].data.source === 'llm' ? 'AI' : 'auto' }}<span v-if="deep[parsedId].data.cached"> · cached</span></div>
+          </div>
+        </div>
+
+        <div class="reclabel">Recent games</div>
+        <div v-for="m in report.recent_matches.slice(0, 5)" :key="m.game_id" class="match">
           <div class="mrow">
             <div class="minfo"><b>{{ m.map }}</b> vs {{ m.opponent || '?' }} ·
               <span :class="m.result === 'W' ? 'win' : 'loss'">{{ m.result }} {{ m.my_frags }}–{{ m.opp_frags }}</span>
@@ -219,6 +253,11 @@ async function runDeep(m) {
 
 <style scoped>
 .coach { --b: var(--border, #1f2a3a); --p2: var(--panel-2, #131c30); }
+.manualrow { display: flex; gap: 8px; margin-bottom: 10px; }
+.manual-input { flex: 1; background: var(--p2); border: 1px solid var(--b); color: var(--fg); border-radius: 7px; padding: 8px 12px; font-size: 13px; }
+.manual-input:focus { outline: none; border-color: var(--accent); }
+.manual-result { margin-bottom: 14px; }
+.reclabel { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-3); font-weight: 700; margin: 14px 0 8px; }
 .intro p, .empty { color: var(--fg-2); font-size: 13.5px; max-width: 720px; }
 .intro .btn { margin-top: 12px; }
 .empty { padding: 22px 0; } .empty.err { color: var(--loss); }
