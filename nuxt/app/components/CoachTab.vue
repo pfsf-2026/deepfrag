@@ -59,13 +59,26 @@ async function analyze(force = false) {
   } catch (e) { err.value = String(e.message || e) } finally { loading.value = false; clearInterval(stepTimer) }
 }
 
-// Restore the last analysis instantly when returning to the page (survives
-// navigating away + back within the session).
-onMounted(() => { restoreCache() })
+// Durably restore the last analysis on open: session cache first (instant), else
+// pull the last full report persisted server-side (survives across sessions /
+// cache clears — fixes "my last analysis isn't there").
+async function restore() {
+  if (restoreCache()) return
+  try {
+    const h = await fetch(df.coachingHistoryUrl(props.cid, '1on1')).then(r => r.ok ? r.json() : null)
+    if (h?.latest_report) {
+      report.value = h.latest_report
+      history.value = h
+      requested.value = true
+      saveCache()
+    }
+  } catch { /* fall through to the Analyze gate */ }
+}
+onMounted(restore)
 onBeforeUnmount(() => clearInterval(stepTimer))
 watch(() => props.cid, () => {
   report.value = null; history.value = null; requested.value = false; err.value = ''; deep.value = {}
-  restoreCache()
+  restore()
 })
 
 // ---- helpers ----

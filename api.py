@@ -1561,6 +1561,9 @@ def _ensure_coaching_tables(cur):
     """Idempotent: create coaching_runs + match_analysis if missing. Cheap; lets
     the feature self-provision in prod without a separate migration step."""
     cur.execute(_COACHING_DDL)
+    # report column added 2026-06-03 for durable cross-session restore of the
+    # last full coaching report (not just the metrics snapshot).
+    cur.execute("ALTER TABLE coaching_runs ADD COLUMN IF NOT EXISTS report JSONB")
 
 
 # ── Coaching (AI coach metric layer) ─────────────────────────────────────────
@@ -1694,6 +1697,29 @@ def coaching_report(
 
     # Persist a daily snapshot so the training journal + since-first-report trends
     # accrue automatically. Upsert per (player, mode, day). Best-effort.
+    recent_matches = [{
+        "game_id": mr["game_id"], "map": mr["map"],
+        "result": "W" if (mr["mf"] or 0) > (mr["of"] or 0) else "L",
+        "my_frags": mr["mf"], "opp_frags": mr["of"], "opponent": mr["opp_name"],
+        # match_date is stored as a string in this DB; isoformat() only on datetimes.
+        "date": (mr["date"].isoformat() if hasattr(mr["date"], "isoformat") else mr["date"]),
+    } for mr in matches]
+
+    result_payload = {
+        "canonical_id": canonical_id,
+        "display": display,
+        "mode": mode,
+        "parsed": len([m for m in per_match if m]),
+        "aggregate": agg,
+        "weakness": weakness,
+        "narration": narration,
+        "fso": fso,
+        "recent_matches": recent_matches,
+    }
+
+    # Persist a daily snapshot (journal/trends) AND the full report JSON, so the
+    # Coach tab can durably restore the last analysis on open — across sessions,
+    # not just the session-scoped client cache. Best-effort.
     try:
         ic = agg.get("item_control", {})
         wins, losses = agg.get("wins", 0), agg.get("losses", 0)
@@ -1710,39 +1736,21 @@ def coaching_report(
             _ensure_coaching_tables(cur)
             cur.execute("""
                 INSERT INTO coaching_runs (canonical_id, mode, run_date, matches_analyzed,
-                    wins, losses, metrics, levers, narration, narration_source)
-                VALUES (%s,%s,CURRENT_DATE,%s,%s,%s,%s,%s,%s,%s)
+                    wins, losses, metrics, levers, narration, narration_source, report)
+                VALUES (%s,%s,CURRENT_DATE,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (canonical_id, mode, run_date) DO UPDATE SET
                     matches_analyzed=EXCLUDED.matches_analyzed, wins=EXCLUDED.wins,
                     losses=EXCLUDED.losses, metrics=EXCLUDED.metrics, levers=EXCLUDED.levers,
                     narration=EXCLUDED.narration, narration_source=EXCLUDED.narration_source,
-                    created_at=now()
+                    report=EXCLUDED.report, created_at=now()
             """, (canonical_id, mode, agg.get("matches_analyzed", 0), wins, losses,
                   json.dumps(snap), json.dumps(weakness.get("levers", [])),
-                  narration.get("text"), narration.get("source")))
+                  narration.get("text"), narration.get("source"), json.dumps(result_payload)))
             conn.commit()
     except Exception:
         pass  # journal persistence is best-effort; never break the live report
 
-    recent_matches = [{
-        "game_id": mr["game_id"], "map": mr["map"],
-        "result": "W" if (mr["mf"] or 0) > (mr["of"] or 0) else "L",
-        "my_frags": mr["mf"], "opp_frags": mr["of"], "opponent": mr["opp_name"],
-        # match_date is stored as a string in this DB; isoformat() only on datetimes.
-        "date": (mr["date"].isoformat() if hasattr(mr["date"], "isoformat") else mr["date"]),
-    } for mr in matches]
-
-    return {
-        "canonical_id": canonical_id,
-        "display": display,
-        "mode": mode,
-        "parsed": len([m for m in per_match if m]),
-        "aggregate": agg,
-        "weakness": weakness,
-        "narration": narration,
-        "fso": fso,
-        "recent_matches": recent_matches,
-    }
+    return result_payload
 
 
 @app.get("/api/players/{canonical_id}/coaching/history")
@@ -1763,8 +1771,15 @@ def coaching_history(
             FROM coaching_runs WHERE canonical_id=%s AND mode=%s ORDER BY run_date ASC
         """, (canonical_id, mode))
         rows = cur.fetchall()
+        # The most recent FULL report, for durable cross-session restore on open.
+        cur.execute("""
+            SELECT report FROM coaching_runs
+            WHERE canonical_id=%s AND mode=%s AND report IS NOT NULL
+            ORDER BY run_date DESC LIMIT 1
+        """, (canonical_id, mode))
+        lr = cur.fetchone()
     if not rows:
-        return {"canonical_id": canonical_id, "mode": mode, "runs": [], "since_first": None}
+        return {"canonical_id": canonical_id, "mode": mode, "runs": [], "since_first": None, "latest_report": None}
     first, last = rows[0]["metrics"] or {}, rows[-1]["metrics"] or {}
     keys = ["ra_control", "stack_at_kill", "pct_stacked", "armor_first", "fso", "win_rate"]
     since_first = {k: {"from": first.get(k), "to": last.get(k)} for k in keys
@@ -1774,6 +1789,7 @@ def coaching_history(
         "runs": [dict(r, run_date=r["run_date"].isoformat()) for r in reversed(rows)],
         "first_report": rows[0]["run_date"].isoformat(),
         "since_first": since_first,
+        "latest_report": lr["report"] if lr else None,
     }
 
 
