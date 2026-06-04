@@ -2409,6 +2409,120 @@ def admin_ladder_add_team(ladder_id: int, authorization: str | None = Header(def
     return {"team_id": tid, "name": name}
 
 
+def _team_row(cur, ladder_id, team_id):
+    cur.execute("SELECT id, name, members, rung, active FROM ladder_teams WHERE id=%s AND ladder_id=%s",
+                (team_id, ladder_id))
+    return cur.fetchone()
+
+
+@app.post("/api/ladder/{ladder_id}/challenge")
+def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=None),
+                     challenger_id: int = Body(..., embed=True),
+                     challenged_id: int = Body(..., embed=True)):
+    """A captain (or admin) issues a challenge 1–2 rungs up. Sets a play-by
+    deadline from the ladder's forfeit window. Captains must be a member of the
+    challenger team (matched by their linked canonical_id)."""
+    import ladder as _ladder
+    user = _current_user(authorization, required=True)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT rules FROM ladders WHERE id=%s AND status='active'", (ladder_id,))
+        lad = cur.fetchone()
+        if not lad:
+            raise HTTPException(404, "ladder not found")
+        chr_t = _team_row(cur, ladder_id, challenger_id)
+        chd_t = _team_row(cur, ladder_id, challenged_id)
+        if not chr_t or not chd_t:
+            raise HTTPException(404, "team not found")
+        # Authorize: admin, or a member of the challenging team.
+        members = chr_t.get("members") or []
+        cid = user.get("canonical_id")
+        if not user.get("is_admin") and (not cid or cid not in members):
+            raise HTTPException(403, "you must be a member of the challenging team")
+        cr, hr = chr_t["rung"], chd_t["rung"]
+        if cr is None or hr is None:
+            raise HTTPException(409, "both teams must be placed on the ladder")
+        gap = cr - hr  # challenger is below (larger rung) by this many
+        if gap not in (1, 2):
+            raise HTTPException(409, "you can only challenge 1 or 2 rungs up")
+        # One open challenge per team at a time (either side).
+        cur.execute("""SELECT 1 FROM ladder_challenges
+                       WHERE ladder_id=%s AND status IN ('open','scheduled')
+                         AND (challenger_id IN (%s,%s) OR challenged_id IN (%s,%s))
+                       LIMIT 1""",
+                    (ladder_id, challenger_id, challenged_id, challenger_id, challenged_id))
+        if cur.fetchone():
+            raise HTTPException(409, "one of these teams already has an open challenge")
+        forfeit_days = (lad.get("rules") or {}).get("forfeit_days", 7)
+        deadline = datetime.now(timezone.utc) + timedelta(days=forfeit_days)
+        cur.execute("""INSERT INTO ladder_challenges (ladder_id, challenger_id, challenged_id, rungs_up, deadline)
+                       VALUES (%s,%s,%s,%s,%s) RETURNING id""",
+                    (ladder_id, challenger_id, challenged_id, gap, deadline))
+        chid = cur.fetchone()["id"]
+        conn.commit()
+    return {"challenge_id": chid, "deadline": deadline.isoformat(), "rungs_up": gap}
+
+
+@app.post("/api/admin/ladder/challenge/{challenge_id}/result")
+def admin_ladder_result(challenge_id: int, authorization: str | None = Header(default=None),
+                        winner_id: int = Body(..., embed=True),
+                        maps: list = Body(default=[], embed=True),
+                        score_a: int = Body(default=None, embed=True),
+                        score_b: int = Body(default=None, embed=True)):
+    """Admin records a played challenge: writes the match, applies ladder
+    movement (challenger win → climb; challenged win → no movement), and
+    resolves the challenge. hub_game_ids are pulled from the maps payload."""
+    import ladder as _ladder
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT * FROM ladder_challenges WHERE id=%s", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] in ("played", "forfeited"):
+            raise HTTPException(409, "challenge already resolved")
+        if winner_id not in (ch["challenger_id"], ch["challenged_id"]):
+            raise HTTPException(400, "winner must be one of the two teams")
+        hub_ids = [m.get("hub_game_id") for m in maps if m.get("hub_game_id")]
+        cur.execute("""INSERT INTO ladder_matches
+                       (ladder_id, challenge_id, team_a_id, team_b_id, maps, score_a, score_b, winner_id, hub_game_ids, played_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, now()) RETURNING id""",
+                    (ch["ladder_id"], challenge_id, ch["challenger_id"], ch["challenged_id"],
+                     json.dumps(maps), score_a, score_b, winner_id, json.dumps(hub_ids)))
+        match_id = cur.fetchone()["id"]
+        moves = {}
+        if winner_id == ch["challenger_id"]:
+            moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
+        # challenged win → ranks unchanged (challenger simply failed to climb)
+        cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now() WHERE id=%s", (challenge_id,))
+        conn.commit()
+    return {"match_id": match_id, "winner_id": winner_id, "moves": moves}
+
+
+@app.post("/api/admin/ladder/challenge/{challenge_id}/forfeit")
+def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(default=None)):
+    """Admin marks a challenge as forfeited (challenged team didn't play in
+    time): the challenged team drops one rung."""
+    import ladder as _ladder
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT * FROM ladder_challenges WHERE id=%s", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] in ("played", "forfeited"):
+            raise HTTPException(409, "challenge already resolved")
+        moves = _ladder.apply_forfeit(cur, ch["ladder_id"], ch["challenged_id"])
+        cur.execute("UPDATE ladder_challenges SET status='forfeited', resolved_at=now() WHERE id=%s", (challenge_id,))
+        conn.commit()
+    return {"forfeited": True, "moves": moves}
+
+
 # ── Search ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/search")
