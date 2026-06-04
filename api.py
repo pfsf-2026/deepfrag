@@ -18,12 +18,14 @@ Run local:
 
 import json
 import os
+import urllib.parse
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import psycopg2
 import psycopg2.extras
 from fastapi import Body, FastAPI, Header, HTTPException, Query, Response
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
@@ -128,6 +130,65 @@ def pg():
     finally:
         with _pool_lock:
             pool.putconn(conn)
+
+
+# ── Auth (Discord OAuth → JWT) ───────────────────────────────────────────────
+# Token-based: callback mints a JWT, frontend stores it + sends Bearer. The /api
+# proxy forwards Authorization verbatim and never caches authed requests.
+
+def _current_user(authorization: str | None, required: bool = True):
+    import auth as A
+    tok = (authorization or "")
+    tok = tok[7:].strip() if tok.lower().startswith("bearer ") else tok.strip()
+    payload = A.jwt_decode(tok) if tok else None
+    if not payload:
+        if required:
+            raise HTTPException(401, "not authenticated")
+        return None
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        cur.execute("""SELECT discord_id, username, global_name, avatar, canonical_id, is_admin
+                       FROM users WHERE discord_id=%s""", (payload.get("sub"),))
+        u = cur.fetchone()
+    if not u and required:
+        raise HTTPException(401, "unknown user")
+    return u
+
+
+@app.get("/api/auth/discord/login")
+def auth_login():
+    """Kick off Discord OAuth. State is a short-lived signed token (CSRF)."""
+    import auth as A
+    if not os.environ.get("DISCORD_CLIENT_ID"):
+        raise HTTPException(503, "Discord OAuth not configured")
+    return RedirectResponse(A.login_url(A.jwt_encode({"k": "state"}, ttl=600)))
+
+
+@app.get("/api/auth/discord/callback")
+def auth_callback(code: str = Query(...), state: str = Query(default="")):
+    """Discord redirects here with a code; exchange it, upsert the user, mint a
+    session JWT, and bounce to the frontend with the token."""
+    import auth as A
+    if not A.jwt_decode(state):
+        raise HTTPException(400, "invalid or expired state")
+    du = A.exchange_code(code)
+    if not du or not du.get("id"):
+        raise HTTPException(400, "Discord authentication failed")
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        u = A.upsert_user(cur, du)
+        conn.commit()
+    token = A.jwt_encode({"sub": u["discord_id"], "name": u.get("global_name") or u.get("username")})
+    front = os.environ.get("FRONTEND_URL", "https://deepfrag.pages.dev")
+    return RedirectResponse(f"{front}/auth?token={urllib.parse.quote(token)}")
+
+
+@app.get("/api/auth/me")
+def auth_me(authorization: str | None = Header(default=None)):
+    """Current logged-in user (from the Bearer JWT)."""
+    return _current_user(authorization, required=True)
 
 
 @app.get("/api/health")

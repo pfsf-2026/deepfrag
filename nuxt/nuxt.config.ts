@@ -61,6 +61,8 @@ export default defineNuxtConfig({
     // /training/first-spawn/* falls back to), per-map replay pages are SPA-only.
     '/training/first-spawn': { prerender: true },
     '/training/first-spawn/**': { prerender: false, ssr: false },
+    // Auth callback (client-only: reads ?token); prerender the shell so /auth serves.
+    '/auth': { prerender: true },
     '/servers': { prerender: true },
     '/stats': { prerender: true },
     '/h2h': { prerender: true },
