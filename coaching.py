@@ -192,6 +192,9 @@ def match_metrics(game_id: int, player: str, item_locs: list | None = None) -> d
 
     avg_armor = sum(arm[i] for i in alive_idx) / len(alive_idx)
     pct_stacked = sum(1 for i in alive_idx if arm[i] >= STACK_ARMOR) / len(alive_idx)
+    # Average STACK (armor+health) over alive time — a top-line discriminator
+    # (good players simply live at a higher stack). 2026-06-03 v2 metric.
+    avg_stack = sum(arm[i] + (hp[i] if i < len(hp) else 0) for i in alive_idx) / len(alive_idx)
 
     en_avg_armor = en_pct_stacked = 0.0
     if en:
@@ -264,6 +267,7 @@ def match_metrics(game_id: int, player: str, item_locs: list | None = None) -> d
         "n_buckets": n,
         "first_item": intent,
         "avg_armor": round(avg_armor),
+        "avg_stack": round(avg_stack),
         "pct_stacked": round(pct_stacked, 3),
         "enemy_avg_armor": round(en_avg_armor),
         "enemy_pct_stacked": round(en_pct_stacked, 3),
@@ -320,9 +324,11 @@ def aggregate(per_match: list, results: list) -> dict:
         "pct_stacked": split("pct_stacked"),
         "enemy_pct_stacked": split("enemy_pct_stacked"),
         "stack_at_kill": split("stack_at_kill"),
+        "enemy_stack_at_my_kill": split("enemy_stack_at_my_kill"),
         "stack_at_death": split("stack_at_death"),
         "enemy_stack_at_my_death": split("enemy_stack_at_my_death"),
         "avg_armor": split("avg_armor"),
+        "avg_stack": split("avg_stack"),
         "restack_avg_sec": split("restack_avg_sec"),
         "armor_first_rate": {"win": armor_first_rate(W), "loss": armor_first_rate(L),
                              "all": armor_first_rate([m for m, _ in rows])},

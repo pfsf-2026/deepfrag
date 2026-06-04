@@ -26,11 +26,20 @@ BENCHMARKS_1ON1 = {
     "pct_stacked":    {"label": "% time stacked", "elite": 0.76, "higher_better": True, "fmt": "pct"},
     "restack_sec":    {"label": "Restack time after death", "elite": 8.0, "higher_better": False, "fmt": "sec"},
     "enemy_stack_at_my_death": {"label": "Enemy stack when you die", "elite": 120, "higher_better": False, "fmt": "num"},
-    # First-item intent off the spawn. elite 0.75 is PROVISIONAL pending an
-    # elite-cohort calibration; the win/loss self-split is the trustworthy
-    # signal until then. From BSP item locations + spawn paths.
-    "armor_first":    {"label": "Armor-first off spawn", "elite": 0.75, "higher_better": True, "fmt": "pct"},
+    # Average stack (armor+health) over the game — elites live at ~180 (mined from
+    # close top-5 games 2026-06-03). Top-line "how stacked do you stay" signal.
+    "avg_stack":      {"label": "Average stack held", "elite": 180, "higher_better": True, "fmt": "num"},
+    # NOTE: armor-first-off-spawn lever REMOVED 2026-06-03 — it was provisional,
+    # computed across all spawns (not first-spawn), and meaningless on maps where
+    # armor isn't adjacent to spawns. Replaced by stack_discipline (mined from the
+    # elite corpus, see detect()). The new lead lever.
 }
+
+# Elite stack-discipline benchmark (mined from close top-5 games, 13ms, 2026-06-03):
+# they enter KILLS at ~+82 stack vs the enemy and only DIE at ~−68. The ~150pt
+# swing between fighting up-stack and dying down-stack is THE separator.
+ELITE_KILL_LEAD = 82
+ELITE_DEATH_DEFICIT = -68
 
 # Map a benchmark key -> how to pull win/loss/all from the aggregate.
 def _extract(agg: dict):
@@ -41,7 +50,7 @@ def _extract(agg: dict):
         "pct_stacked":  agg.get("pct_stacked", {}),
         "restack_sec":  agg.get("restack_avg_sec", {}),
         "enemy_stack_at_my_death": agg.get("enemy_stack_at_my_death", {}),
-        "armor_first":  agg.get("armor_first_rate", {}),
+        "avg_stack":    agg.get("avg_stack", {}),
     }
 
 
@@ -111,6 +120,32 @@ def detect(agg: dict, mode: str = "1on1") -> dict:
             "self_gap": round(self_gap, 3) if self_gap is not None else None,
             "below_benchmark": (bench_gap is not None and bench_gap > 0),
             "priority": round(priority, 3),
+        })
+
+    # ── Stack discipline (the lead lever, mined from elite play) ──
+    # Do you fight from ahead (out-stacked at your kills) and die only when
+    # behind — or do you contest even/under-stacked fights? Computed from the
+    # stack gap at your kills vs your deaths.
+    sk = (agg.get("stack_at_kill") or {}).get("all")
+    esk = (agg.get("enemy_stack_at_my_kill") or {}).get("all")
+    sd = (agg.get("stack_at_death") or {}).get("all")
+    esd = (agg.get("enemy_stack_at_my_death") or {}).get("all")
+    if sk is not None and esk is not None:
+        kill_lead = round(sk - esk)
+        death_def = round(sd - esd) if (sd is not None and esd is not None) else None
+        gap = max(ELITE_KILL_LEAD - kill_lead, 0) / ELITE_KILL_LEAD
+        sgn = lambda v: ("+" if v is not None and v >= 0 else "") + (str(v) if v is not None else "—")
+        levers.append({
+            "key": "stack_discipline",
+            "label": "Stack discipline — fight from ahead",
+            "fmt": "num", "win": None, "loss": None,
+            "you": sgn(kill_lead), "elite": "+" + str(ELITE_KILL_LEAD),
+            "detail": (f"You win fights at {sgn(kill_lead)} stack vs the enemy and die at "
+                       f"{sgn(death_def)}. Elites win at +{ELITE_KILL_LEAD} and only die at "
+                       f"{ELITE_DEATH_DEFICIT} — they pick fights from ahead and disengage when behind."),
+            "self_gap": None, "below_benchmark": kill_lead < ELITE_KILL_LEAD,
+            # weight ×2 so the strongest separator leads the read
+            "priority": round(gap * 2.0, 3),
         })
 
     levers.sort(key=lambda x: x["priority"], reverse=True)
