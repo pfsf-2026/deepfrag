@@ -156,6 +156,50 @@ def _first_item_intent(me: dict, n: int, items: list) -> dict | None:
     }
 
 
+def _mh_timing(me: dict, en: dict | None) -> dict | None:
+    """MegaHealth respawn-timing (Peter's mechanic): MH respawns 20s after the
+    holder drops <100h, or 25s from pickup if lost within 4s. Only MH pushes
+    h>100, so a player holds MH while h>100. Reconstruct both players'
+    possessions (single-MH stream), compute each respawn-available time, and
+    attribute the next grab + latency. control ~0.5 in even games → LATENCY
+    (how soon after it pops you're on it) is the skill signal. dm2 dual-MH is a
+    known refinement (treated as one stream here).
+    """
+    def poss(p):
+        H = p.get("h", []) if p else []
+        out, s = [], None
+        for i, h in enumerate(H):
+            if h > 100 and s is None:
+                s = i
+            elif h <= 100 and s is not None:
+                out.append((s, i)); s = None
+        if s is not None:
+            out.append((s, len(H)))
+        return out
+    tl = [(s, e, "me") for s, e in poss(me)] + ([(s, e, "en") for s, e in poss(en)] if en else [])
+    tl.sort(key=lambda x: x[0])
+    if len(tl) < 2:
+        return None
+    gm = ge = 0
+    lat = []
+    for k in range(1, len(tl)):
+        ps, pe, _ = tl[k - 1]
+        cs, _, cw = tl[k]
+        held = (pe - ps) * BUCKET_MS / 1000
+        avail = (ps * BUCKET_MS / 1000 + 25.0) if held < 4.0 else (pe * BUCKET_MS / 1000 + 20.0)
+        if cw == "me":
+            gm += 1
+            lat.append(max(cs * BUCKET_MS / 1000 - avail, 0))
+        else:
+            ge += 1
+    tot = gm + ge
+    return {
+        "mh_control": round(gm / tot, 3) if tot else None,
+        "mh_latency": round(sorted(lat)[len(lat) // 2], 1) if lat else None,  # median s after respawn
+        "mh_respawns": tot,
+    }
+
+
 def match_metrics(game_id: int, player: str, item_locs: list | None = None) -> dict | None:
     """Compute coaching primitives for one player in one match.
 
@@ -260,6 +304,7 @@ def match_metrics(game_id: int, player: str, item_locs: list | None = None) -> d
     # First-item intent (armor-first vs weapon-first) needs the BSP item
     # locations passed in via item_locs; skipped when not provided.
     intent = _first_item_intent(me, n, item_locs) if item_locs else None
+    mh = _mh_timing(me, en)
 
     return {
         "game_id": game_id,
@@ -268,6 +313,8 @@ def match_metrics(game_id: int, player: str, item_locs: list | None = None) -> d
         "first_item": intent,
         "avg_armor": round(avg_armor),
         "avg_stack": round(avg_stack),
+        "mh_control": (mh or {}).get("mh_control"),
+        "mh_latency": (mh or {}).get("mh_latency"),
         "pct_stacked": round(pct_stacked, 3),
         "enemy_avg_armor": round(en_avg_armor),
         "enemy_pct_stacked": round(en_pct_stacked, 3),
@@ -329,6 +376,8 @@ def aggregate(per_match: list, results: list) -> dict:
         "enemy_stack_at_my_death": split("enemy_stack_at_my_death"),
         "avg_armor": split("avg_armor"),
         "avg_stack": split("avg_stack"),
+        "mh_control": split("mh_control"),
+        "mh_latency": split("mh_latency"),
         "restack_avg_sec": split("restack_avg_sec"),
         "armor_first_rate": {"win": armor_first_rate(W), "loss": armor_first_rate(L),
                              "all": armor_first_rate([m for m, _ in rows])},
