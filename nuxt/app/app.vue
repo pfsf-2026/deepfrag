@@ -1,4 +1,7 @@
 <script setup>
+const { user, loggedIn, ready, fetchMe, login, logout } = useAuth()
+onMounted(() => { fetchMe() })
+
 useHead({
   meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
   link: [
@@ -31,9 +34,22 @@ useSeoMeta({
         <NuxtLink to="/servers">Servers</NuxtLink>
         <NuxtLink to="/stats">Stats</NuxtLink>
         <NuxtLink to="/h2h">H2H</NuxtLink>
+        <NuxtLink to="/ladder">Ladder</NuxtLink>
       </nav>
       <span class="spacer" />
-      <span class="meta">Beta</span>
+      <ClientOnly>
+        <div v-if="ready" class="auth">
+          <div v-if="loggedIn" class="who">
+            <img v-if="user?.avatar" :src="`https://cdn.discordapp.com/avatars/${user.discord_id}/${user.avatar}.png?size=32`" class="avatar" alt="">
+            <span class="name">{{ user?.global_name || user?.username }}</span>
+            <button class="link" @click="logout">Sign out</button>
+          </div>
+          <button v-else class="discord-btn" @click="login">
+            <svg width="16" height="16" viewBox="0 0 127 96" fill="currentColor"><path d="M107.7 8.1A105 105 0 0 0 81.5 0c-1.2 2-2.5 4.8-3.4 7a97.5 97.5 0 0 0-29.2 0c-1-2.2-2.3-5-3.5-7a105 105 0 0 0-26.2 8.1C2.6 33 .3 57.1 1.4 80.9A106 106 0 0 0 33.7 96c2.6-3.5 4.9-7.3 6.9-11.2-3.8-1.4-7.4-3.2-10.8-5.3.9-.7 1.8-1.4 2.6-2.1a75.6 75.6 0 0 0 64.6 0c.9.8 1.8 1.5 2.6 2.1-3.4 2-7 3.9-10.8 5.3 2 4 4.3 7.7 6.9 11.2a106 106 0 0 0 32.3-15.1c1.4-27.6-2.3-51.5-19.9-72.8ZM42.5 66.3c-6.3 0-11.5-5.8-11.5-13 0-7.1 5.1-13 11.5-13s11.6 5.9 11.5 13c0 7.2-5.1 13-11.5 13Zm42.5 0c-6.3 0-11.5-5.8-11.5-13 0-7.1 5-13 11.5-13s11.6 5.9 11.5 13c0 7.2-5.1 13-11.5 13Z"/></svg>
+            <span>Sign in</span>
+          </button>
+        </div>
+      </ClientOnly>
     </header>
     <NuxtPage />
   </UApp>
@@ -93,4 +109,17 @@ body {
 .topbar .meta {
   color: var(--fg-3); font-size: 12px; font-family: 'JetBrains Mono', monospace;
 }
+.topbar .auth { display: flex; align-items: center; }
+.topbar .who { display: flex; align-items: center; gap: 10px; }
+.topbar .who .avatar { width: 24px; height: 24px; border-radius: 50%; }
+.topbar .who .name { font-size: 13px; font-weight: 600; color: var(--fg); }
+.topbar .who .link { background: none; border: none; color: var(--fg-3); font-size: 12px; cursor: pointer; padding: 0; }
+.topbar .who .link:hover { color: var(--fg); }
+.topbar .discord-btn {
+  display: flex; align-items: center; gap: 7px;
+  background: #5865f2; color: #fff; border: none;
+  padding: 7px 14px; border-radius: 7px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background 0.15s;
+}
+.topbar .discord-btn:hover { background: #4752c4; }
 </style>

@@ -63,6 +63,9 @@ export default defineNuxtConfig({
     '/training/first-spawn/**': { prerender: false, ssr: false },
     // Auth callback (client-only: reads ?token); prerender the shell so /auth serves.
     '/auth': { prerender: true },
+    // Ladder: prerender the shell; standings hydrate client-side from /api/ladder
+    // (live data, captain-auth gated actions) so it's never stale at the edge.
+    '/ladder': { prerender: true, ssr: false },
     '/servers': { prerender: true },
     '/stats': { prerender: true },
     '/h2h': { prerender: true },

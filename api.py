@@ -2289,6 +2289,126 @@ def get_spawn_run_path(map_name: str, player: str, game_id: int, response: Respo
     return row
 
 
+# ── Speakeasy 2v2 ladder ─────────────────────────────────────────────────────
+# Standings + movement engine in ladder.py. Reads are public; writes (create
+# ladder, seed teams) are admin for now — captain self-serve challenge/report
+# (Discord-auth gated) lands next.
+
+def _enrich_members(cur, teams):
+    """Replace member canonical_ids with {id, display} for the UI."""
+    ids = sorted({m for t in teams for m in (t.get("members") or [])})
+    names = {}
+    if ids:
+        cur.execute("SELECT canonical_id, display_name FROM players_canonical WHERE canonical_id = ANY(%s)", (ids,))
+        names = {r["canonical_id"]: r["display_name"] for r in cur.fetchall()}
+    for t in teams:
+        t["members"] = [{"id": m, "display": names.get(m, m)} for m in (t.get("members") or [])]
+    return teams
+
+
+@app.get("/api/ladder")
+def ladder_list():
+    """Active ladders (summary). Public."""
+    import ladder as _ladder
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT id, name, season, team_size, map_pool, rules, status FROM ladders WHERE status='active' ORDER BY id")
+        return {"ladders": cur.fetchall()}
+
+
+@app.get("/api/ladder/{ladder_id}")
+def ladder_detail(ladder_id: int, response: Response):
+    """Full ladder: ranked teams, King of the Hill (+ weeks held), open challenges.
+    Short cache — it moves on writes but reads should stay snappy."""
+    import ladder as _ladder
+    response.headers["Cache-Control"] = "public, max-age=30, stale-while-revalidate=300"
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT id, name, season, team_size, map_pool, rules, status FROM ladders WHERE id=%s", (ladder_id,))
+        lad = cur.fetchone()
+        if not lad:
+            raise HTTPException(404, "ladder not found")
+        teams = _enrich_members(cur, _ladder.standings(cur, ladder_id))
+        # King of the Hill: current rung-1 team + how long they've held it.
+        koth = None
+        top = next((t for t in teams if t.get("rung") == 1), None)
+        if top:
+            cur.execute("""SELECT at FROM ladder_movements WHERE ladder_id=%s AND team_id=%s AND to_rung=1
+                           ORDER BY at DESC LIMIT 1""", (ladder_id, top["id"]))
+            mv = cur.fetchone()
+            since = mv["at"] if mv else None
+            weeks = None
+            if since:
+                weeks = max(0, int((datetime.now(timezone.utc) - since).days // 7))
+            koth = {"team_id": top["id"], "name": top["name"],
+                    "since": since.isoformat() if since else None, "weeks": weeks}
+        cur.execute("""
+            SELECT c.id, c.challenger_id, c.challenged_id, c.rungs_up, c.status, c.deadline, c.created_at,
+                   ca.name AS challenger, cd.name AS challenged
+            FROM ladder_challenges c
+            JOIN ladder_teams ca ON ca.id=c.challenger_id
+            JOIN ladder_teams cd ON cd.id=c.challenged_id
+            WHERE c.ladder_id=%s AND c.status IN ('open','scheduled')
+            ORDER BY c.created_at DESC
+        """, (ladder_id,))
+        challenges = [dict(r, deadline=r["deadline"].isoformat() if r["deadline"] else None,
+                           created_at=r["created_at"].isoformat() if r["created_at"] else None)
+                      for r in cur.fetchall()]
+    return {"ladder": lad, "teams": teams, "koth": koth, "challenges": challenges}
+
+
+@app.post("/api/admin/ladder/create")
+def admin_ladder_create(authorization: str | None = Header(default=None),
+                        name: str = Body(..., embed=True),
+                        map_pool: list = Body(default=[], embed=True),
+                        rules: dict = Body(default={}, embed=True),
+                        team_size: int = Body(default=2, embed=True),
+                        season: str | None = Body(default=None, embed=True)):
+    """Create a ladder (admin). Idempotent on name."""
+    import ladder as _ladder
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""INSERT INTO ladders (name, season, team_size, map_pool, rules)
+                       VALUES (%s,%s,%s,%s,%s)
+                       ON CONFLICT DO NOTHING RETURNING id""",
+                    (name, season, team_size, json.dumps(map_pool), json.dumps(rules)))
+        row = cur.fetchone()
+        if not row:
+            cur.execute("SELECT id FROM ladders WHERE name=%s", (name,))
+            row = cur.fetchone()
+        conn.commit()
+    return {"ladder_id": row["id"], "name": name}
+
+
+@app.post("/api/admin/ladder/{ladder_id}/teams")
+def admin_ladder_add_team(ladder_id: int, authorization: str | None = Header(default=None),
+                         name: str = Body(..., embed=True),
+                         members: list = Body(default=[], embed=True),
+                         rung: int | None = Body(default=None, embed=True)):
+    """Add/seed a team (admin). rung=N seeds at that rung; omit → bottom."""
+    import ladder as _ladder
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""INSERT INTO ladder_teams (ladder_id, name, members, rung)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (ladder_id, name) DO UPDATE SET members=EXCLUDED.members
+                       RETURNING id""", (ladder_id, name, json.dumps(members), rung))
+        tid = cur.fetchone()["id"]
+        if rung is not None:
+            cur.execute("""INSERT INTO ladder_movements (ladder_id, team_id, to_rung, reason)
+                           VALUES (%s,%s,%s,'seed')""", (ladder_id, tid, rung))
+        else:
+            _ladder.place_new_team(cur, ladder_id, tid)
+        conn.commit()
+    return {"team_id": tid, "name": name}
+
+
 # ── Search ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/search")
