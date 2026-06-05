@@ -154,18 +154,43 @@ def unescape_qw_name(s: str) -> str:
 DECORATIVE_BOUNDARY = re.compile(r'^[\s\[\]\(\)\{\}<>|\\\/*+\-_=~`!@#$%^&.,;:?"\']+|[\s\[\]\(\)\{\}<>|\\\/*+\-_=~`!@#$%^&.,;:?"\']+$')
 
 
+_DECO_CHARS = set(' \t\n\r[](){}<>|\\/*+-_=~`!@#$%^&.,;:?"\'')
+_CLOSE_TO_OPEN = {')': '(', ']': '[', '}': '{', '>': '<'}
+_OPEN_TO_CLOSE = {v: k for k, v in _CLOSE_TO_OPEN.items()}
+
+
+def _trim_boundary_keep_brackets(s: str) -> str:
+    """Trim leading/trailing decorative chars, but DON'T break a balanced bracket
+    pair — so a clan tag like 'BLooD_DoG(D_P)' keeps its closing ')', and
+    '(D_P)BLooD_DoG' keeps its leading '('. (Plain DECORATIVE_BOUNDARY strips the
+    boundary bracket and leaves an unbalanced 'BLooD_DoG(D_P'.)"""
+    while s and s[-1] in _DECO_CHARS:        # trailing
+        c = s[-1]
+        if c in _CLOSE_TO_OPEN and _CLOSE_TO_OPEN[c] in s[:-1]:
+            break  # closing bracket whose opener is inside → keep it
+        s = s[:-1]
+    while s and s[0] in _DECO_CHARS:         # leading
+        c = s[0]
+        if c in _OPEN_TO_CLOSE and _OPEN_TO_CLOSE[c] in s[1:]:
+            break  # opening bracket whose closer is inside → keep it
+        s = s[1:]
+    return s
+
+
 def clean_for_display(name: str) -> str:
     """Produce a human-readable display version of a raw name.
 
     Like normalize() but preserves case and inner punctuation — only strips QW
     escape sequences ('\\5o' → 'o') and raw high-bit color bytes (0xef → 'o').
-    Used by canonicalize.py when picking the canonical's display_name.
+    Boundary decoration is trimmed but balanced bracket pairs survive, so clan
+    tags like '(D_P)' keep both parens. Used by canonicalize.py when picking the
+    canonical's display_name.
     """
     s = unescape_qw_name(name)
     s = strip_color_codes(s)
-    s = DECORATIVE_BOUNDARY.sub('', s)
     s = re.sub(r'\s+', ' ', s).strip()
-    return s
+    s = _trim_boundary_keep_brackets(s)
+    return s.strip()
 
 
 # Known regional/clan prefixes that players prepend to their names (especially

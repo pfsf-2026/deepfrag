@@ -90,3 +90,12 @@ war:
     - whodat
     - george
     - notgeorge
+
+blood_dog_d_p:
+  # (D_P) clan tag; the closing ')' was being trimmed and the prefix-tag spelling
+  # split into a stray canonical. Fixed display + merged here 2026-06-05.
+  display: BLooD_DoG(D_P)
+  login: BLooD_DoG
+  variants:
+    - "blood_dog(d_p"      # BLooD_DoG(D_P)  — tag as suffix (normalized)
+    - "d_p)blood_dog"      # (D_P)BLooD_DoG  — tag as prefix (normalized)
