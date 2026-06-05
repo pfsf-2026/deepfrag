@@ -49,13 +49,27 @@ export async function onRequest(context) {
   }
 
   // Forward request to Cloud Run. Copy method/headers/body verbatim.
+  // redirect:'manual' is critical for the OAuth flow: the backend's
+  // /api/auth/discord/login returns a 307 to discord.com. Without 'manual'
+  // the Worker's fetch FOLLOWS that redirect and fetches discord.com itself
+  // (returning Discord's page to the browser as a blank/200), so the browser
+  // never navigates. 'manual' hands the 307 straight back to the browser.
   const originResp = await fetch(originUrl, {
     method: request.method,
     headers: request.headers,
     body: request.method === 'GET' || request.method === 'HEAD' ? null : request.body,
+    redirect: 'manual',
   });
 
   if (!cacheable || !originResp.ok) {
+    // Pass 3xx redirects (OAuth) and everything else through untouched. A
+    // 'manual' redirect response is immutable, so rebuild it to be safe.
+    if (originResp.status >= 300 && originResp.status < 400) {
+      return new Response(null, {
+        status: originResp.status,
+        headers: { Location: originResp.headers.get('Location') || '' },
+      });
+    }
     return originResp;
   }
 
