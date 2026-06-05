@@ -19,6 +19,7 @@ import hmac
 import json
 import os
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -75,7 +76,9 @@ def login_url(state: str) -> str:
 
 
 def exchange_code(code: str) -> dict | None:
-    """Exchange the OAuth code for a Discord user profile {id, username, ...}."""
+    """Exchange the OAuth code for a Discord user profile {id, username, ...}.
+    Raises RuntimeError with Discord's actual error body so the caller can
+    surface *why* it failed (mismatch vs bad secret vs expired code)."""
     data = urllib.parse.urlencode({
         "client_id": os.environ.get("DISCORD_CLIENT_ID", ""),
         "client_secret": os.environ.get("DISCORD_CLIENT_SECRET", ""),
@@ -83,18 +86,19 @@ def exchange_code(code: str) -> dict | None:
         "code": code,
         "redirect_uri": os.environ.get("DISCORD_REDIRECT_URI", ""),
     }).encode()
+    req = urllib.request.Request(TOKEN_URL, data=data,
+                                 headers={"content-type": "application/x-www-form-urlencoded"})
     try:
-        req = urllib.request.Request(TOKEN_URL, data=data,
-                                     headers={"content-type": "application/x-www-form-urlencoded"})
         with urllib.request.urlopen(req, timeout=15) as r:
             tok = json.loads(r.read()).get("access_token")
-        if not tok:
-            return None
-        ureq = urllib.request.Request(USER_URL, headers={"authorization": f"Bearer {tok}"})
-        with urllib.request.urlopen(ureq, timeout=15) as r:
-            return json.loads(r.read())
-    except Exception:
-        return None
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")[:300]
+        raise RuntimeError(f"token endpoint {e.code}: {body}")
+    if not tok:
+        raise RuntimeError("no access_token in Discord response")
+    ureq = urllib.request.Request(USER_URL, headers={"authorization": f"Bearer {tok}"})
+    with urllib.request.urlopen(ureq, timeout=15) as r:
+        return json.loads(r.read())
 
 
 USERS_DDL = """

@@ -172,9 +172,12 @@ def auth_callback(code: str = Query(...), state: str = Query(default="")):
     import auth as A
     if not A.jwt_decode(state):
         raise HTTPException(400, "invalid or expired state")
-    du = A.exchange_code(code)
+    try:
+        du = A.exchange_code(code)
+    except Exception as e:
+        raise HTTPException(400, f"Discord auth failed: {e}")
     if not du or not du.get("id"):
-        raise HTTPException(400, "Discord authentication failed")
+        raise HTTPException(400, "Discord authentication failed (no user id)")
     with pg() as conn:
         cur = conn.cursor()
         A.ensure_users(cur)
