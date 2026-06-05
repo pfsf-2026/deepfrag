@@ -2565,6 +2565,57 @@ def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(d
     return {"forfeited": True, "moves": moves}
 
 
+@app.get("/api/admin/users")
+def admin_users(authorization: str | None = Header(default=None)):
+    """List Discord-authed users (admin token). Used to grant admin + link players."""
+    import auth as A
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        cur.execute("""SELECT discord_id, username, global_name, canonical_id, is_admin, created_at
+                       FROM users ORDER BY created_at DESC""")
+        return {"users": [dict(r, created_at=r["created_at"].isoformat() if r["created_at"] else None)
+                          for r in cur.fetchall()]}
+
+
+@app.post("/api/admin/users/{discord_id}/admin")
+def admin_set_admin(discord_id: str, authorization: str | None = Header(default=None),
+                    is_admin: bool = Body(True, embed=True)):
+    """Grant/revoke admin on a user (admin token)."""
+    import auth as A
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        cur.execute("UPDATE users SET is_admin=%s WHERE discord_id=%s RETURNING discord_id, username, is_admin",
+                    (is_admin, discord_id))
+        row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(404, "user not found")
+    return row
+
+
+@app.post("/api/admin/users/{discord_id}/link")
+def admin_link_player(discord_id: str, authorization: str | None = Header(default=None),
+                      canonical_id: str = Body(..., embed=True)):
+    """Link a Discord user to a canonical player (admin token). This is what lets
+    a captain act on behalf of a team they're a roster member of."""
+    import auth as A
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        cur.execute("UPDATE users SET canonical_id=%s WHERE discord_id=%s RETURNING discord_id, canonical_id",
+                    (canonical_id, discord_id))
+        row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(404, "user not found")
+    return row
+
+
 # ── Search ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/search")
