@@ -145,6 +145,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS user_claims_one_pending
 def ensure_users(cur):
     cur.execute(USERS_DDL)
     cur.execute(CLAIMS_DDL)
+    # Self-claims link a profile IMMEDIATELY (no approval gate); `verified` is an
+    # admin's later background check, not a precondition for anything.
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE")
 
 
 def upsert_user(cur, du: dict) -> dict:

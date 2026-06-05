@@ -452,6 +452,18 @@ async function resolveClaim(c, approve) {
   }
 }
 
+async function verifyUser(u) {
+  try {
+    await $fetch(`${apiBase}/api/admin/users/${u.discord_id}/verify`, {
+      method: 'POST', headers: adminHeaders(), body: { verified: !u.verified }
+    })
+    pushEvent('ok', 'USERS', `${u.global_name || u.username} verified → ${!u.verified}`)
+    await loadUsers()
+  } catch (e) {
+    pushEvent('err', 'USERS', e?.data?.detail || e?.message || 'failed')
+  }
+}
+
 async function toggleAdmin(u) {
   try {
     await $fetch(`${apiBase}/api/admin/users/${u.discord_id}/admin`, {
@@ -1218,29 +1230,16 @@ function shortStatus(s) {
             </div>
           </div>
 
-          <!-- Pending claims first — the action queue -->
-          <div v-if="claims.length" class="card" style="margin-bottom: 14px; border-color: var(--accent);">
-            <h3>Pending profile claims <span class="meta">{{ claims.length }} awaiting review</span></h3>
-            <div v-for="c in claims" :key="c.id" class="claim-row">
-              <img v-if="c.avatar" :src="`https://cdn.discordapp.com/avatars/${c.discord_id}/${c.avatar}.png?size=32`" class="av" alt="">
-              <span class="who">{{ c.global_name || c.username }}</span>
-              <span class="arrow">claims</span>
-              <span class="prof">{{ c.profile_display || c.canonical_id }}</span>
-              <span class="muted small">{{ c.profile_matches }} matches</span>
-              <a :href="`/p/${encodeURIComponent(c.canonical_id)}`" target="_blank" class="link small">view →</a>
-              <span class="spacer" />
-              <button class="btn sm" @click="resolveClaim(c, true)">Approve</button>
-              <button class="btn sm ghost" @click="resolveClaim(c, false)">Reject</button>
-            </div>
+          <div class="muted small" style="margin-bottom: 14px;">
+            Players link their own profile on sign-in (instant). Confirm each with <strong>Verify</strong> — unverified accounts are listed first.
           </div>
-          <div v-else-if="!claimsLoading" class="muted small" style="margin-bottom: 14px;">No pending claims.</div>
 
           <div class="card" style="padding: 0;">
             <table class="deploy-table">
               <thead>
                 <tr>
                   <th>Account</th><th>Discord ID</th><th>Linked profile</th>
-                  <th>Admin</th><th>Last login</th><th>Link to profile</th>
+                  <th>Verified</th><th>Admin</th><th>Link / re-link</th>
                 </tr>
               </thead>
               <tbody>
@@ -1253,15 +1252,20 @@ function shortStatus(s) {
                   </td>
                   <td class="muted small mono">{{ u.discord_id }}</td>
                   <td>
-                    <span v-if="u.canonical_id" class="badge ok">{{ u.profile_display || u.canonical_id }}</span>
+                    <a v-if="u.canonical_id" :href="`/p/${encodeURIComponent(u.canonical_id)}`" target="_blank" class="badge ok" style="text-decoration:none;">{{ u.profile_display || u.canonical_id }}</a>
                     <span v-else class="muted small">— unlinked</span>
+                  </td>
+                  <td>
+                    <button v-if="u.canonical_id" class="pill" :class="u.verified ? 'on' : 'off'" @click="verifyUser(u)">
+                      {{ u.verified ? '✓ verified' : 'verify' }}
+                    </button>
+                    <span v-else class="muted small">—</span>
                   </td>
                   <td>
                     <button class="pill" :class="u.is_admin ? 'on' : 'off'" @click="toggleAdmin(u)">
                       {{ u.is_admin ? 'admin' : 'no' }}
                     </button>
                   </td>
-                  <td class="muted small">{{ u.last_login ? fmtDate(u.last_login) : '—' }}</td>
                   <td>
                     <div style="display:flex; gap:6px;">
                       <input v-model="linkInput[u.discord_id]" placeholder="canonical_id" class="dd" style="width:140px;" @keyup.enter="linkUser(u)">

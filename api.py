@@ -149,7 +149,7 @@ def _current_user(authorization: str | None, required: bool = True):
     with pg() as conn:
         cur = conn.cursor()
         A.ensure_users(cur)
-        cur.execute("""SELECT discord_id, username, global_name, avatar, canonical_id, is_admin
+        cur.execute("""SELECT discord_id, username, global_name, avatar, canonical_id, is_admin, verified
                        FROM users WHERE discord_id=%s""", (payload.get("sub"),))
         u = cur.fetchone()
     if not u and required:
@@ -291,8 +291,10 @@ def auth_claim_suggestions(authorization: str | None = Header(default=None)):
 @app.post("/api/auth/claim")
 def auth_claim(authorization: str | None = Header(default=None),
                canonical_id: str = Body(..., embed=True)):
-    """User claims a profile is theirs. Creates a PENDING claim for admin
-    approval (never auto-links). Replaces any prior pending claim."""
+    """User picks their profile → linked IMMEDIATELY (no approval gate) so they
+    can register a team in the same session. Marked verified=false for an admin's
+    later background check. Records the pick in user_claims (status='self') for
+    the audit trail."""
     import auth as A
     u = _current_user(authorization, required=True)
     with pg() as conn:
@@ -301,12 +303,16 @@ def auth_claim(authorization: str | None = Header(default=None),
         cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id=%s", (canonical_id,))
         if not cur.fetchone():
             raise HTTPException(404, "no such player")
-        cur.execute("DELETE FROM user_claims WHERE discord_id=%s AND status='pending'", (u["discord_id"],))
-        cur.execute("""INSERT INTO user_claims (discord_id, canonical_id) VALUES (%s,%s) RETURNING id""",
+        cur.execute("UPDATE users SET canonical_id=%s, verified=FALSE WHERE discord_id=%s",
+                    (canonical_id, u["discord_id"]))
+        cur.execute("DELETE FROM user_claims WHERE discord_id=%s AND status IN ('pending','self')",
+                    (u["discord_id"],))
+        cur.execute("""INSERT INTO user_claims (discord_id, canonical_id, status, resolved_at, resolved_by)
+                       VALUES (%s,%s,'self', now(), 'self') RETURNING id""",
                     (u["discord_id"], canonical_id))
         cid = cur.fetchone()["id"]
         conn.commit()
-    return {"claim_id": cid, "canonical_id": canonical_id, "status": "pending"}
+    return {"claim_id": cid, "canonical_id": canonical_id, "status": "linked", "verified": False}
 
 
 @app.get("/api/admin/claims")
@@ -3019,11 +3025,11 @@ def admin_users(authorization: str | None = Header(default=None)):
         cur = conn.cursor()
         A.ensure_users(cur)
         cur.execute("""SELECT u.discord_id, u.username, u.global_name, u.avatar,
-                              u.canonical_id, u.is_admin, u.created_at, u.last_login,
+                              u.canonical_id, u.is_admin, u.verified, u.created_at, u.last_login,
                               pc.display_name AS profile_display
                        FROM users u
                        LEFT JOIN players_canonical pc ON pc.canonical_id = u.canonical_id
-                       ORDER BY u.created_at DESC""")
+                       ORDER BY u.verified ASC, u.created_at DESC""")
         return {"users": [dict(r,
                                created_at=r["created_at"].isoformat() if r["created_at"] else None,
                                last_login=r["last_login"].isoformat() if r["last_login"] else None)
@@ -3060,6 +3066,25 @@ def admin_link_player(discord_id: str, authorization: str | None = Header(defaul
         A.ensure_users(cur)
         cur.execute("UPDATE users SET canonical_id=%s WHERE discord_id=%s RETURNING discord_id, canonical_id",
                     (canonical_id, discord_id))
+        row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(404, "user not found")
+    return row
+
+
+@app.post("/api/admin/users/{discord_id}/verify")
+def admin_verify_user(discord_id: str, authorization: str | None = Header(default=None),
+                      verified: bool = Body(True, embed=True)):
+    """Mark a self-linked account as verified (admin's background check). Linking
+    is immediate at claim time; this just records that you've confirmed it."""
+    import auth as A
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        cur.execute("UPDATE users SET verified=%s WHERE discord_id=%s RETURNING discord_id, verified",
+                    (verified, discord_id))
         row = cur.fetchone()
         conn.commit()
     if not row:

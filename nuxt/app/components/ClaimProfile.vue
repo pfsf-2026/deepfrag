@@ -64,8 +64,8 @@ async function claim(p) {
     <div v-if="done" class="claim-done">
       <div class="check">✓</div>
       <div>
-        <h3>Claim submitted</h3>
-        <p>You asked to link to <strong>{{ picked.display }}</strong>. An admin will approve it shortly — you'll be connected to your stats once they do.</p>
+        <h3>You're linked to {{ picked.display }}</h3>
+        <p>Your stats are connected. Go ahead and add your team — an admin will verify your profile later.</p>
       </div>
     </div>
 
