@@ -27,6 +27,10 @@ AUTHORIZE = "https://discord.com/oauth2/authorize"
 TOKEN_URL = "https://discord.com/api/oauth2/token"
 USER_URL = "https://discord.com/api/users/@me"
 JWT_TTL = 30 * 24 * 3600  # 30 days
+# Discord's API (behind Cloudflare) blocks the default Python-urllib UA with a
+# 403 "error code: 1010". Their docs require a descriptive User-Agent on every
+# request — send one or the token exchange never gets through.
+USER_AGENT = "DeepFrag (https://deepfrag.pages.dev, 1.0)"
 
 
 def _secret() -> str:
@@ -86,8 +90,11 @@ def exchange_code(code: str) -> dict | None:
         "code": code,
         "redirect_uri": os.environ.get("DISCORD_REDIRECT_URI", ""),
     }).encode()
-    req = urllib.request.Request(TOKEN_URL, data=data,
-                                 headers={"content-type": "application/x-www-form-urlencoded"})
+    req = urllib.request.Request(TOKEN_URL, data=data, headers={
+        "content-type": "application/x-www-form-urlencoded",
+        "user-agent": USER_AGENT,
+        "accept": "application/json",
+    })
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             tok = json.loads(r.read()).get("access_token")
@@ -96,7 +103,11 @@ def exchange_code(code: str) -> dict | None:
         raise RuntimeError(f"token endpoint {e.code}: {body}")
     if not tok:
         raise RuntimeError("no access_token in Discord response")
-    ureq = urllib.request.Request(USER_URL, headers={"authorization": f"Bearer {tok}"})
+    ureq = urllib.request.Request(USER_URL, headers={
+        "authorization": f"Bearer {tok}",
+        "user-agent": USER_AGENT,
+        "accept": "application/json",
+    })
     with urllib.request.urlopen(ureq, timeout=15) as r:
         return json.loads(r.read())
 
