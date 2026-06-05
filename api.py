@@ -217,22 +217,6 @@ def _token_handoff_html(token: str) -> HTMLResponse:
     return resp
 
 
-@app.get("/api/auth/_selftest")
-def auth_selftest():
-    """DIAGNOSTIC (temporary): returns the exact HTML token-handoff transport with
-    a fake token, so the proxy path can be curl-tested end-to-end without a real
-    Discord code. Remove after login is confirmed."""
-    return _token_handoff_html("SELFTEST_TOKEN_12345")
-
-
-@app.get("/api/auth/_redirtest")
-def auth_redirtest():
-    """DIAGNOSTIC (temporary): old-style redirect with query+fragment to a
-    same-zone URL, to prove whether the CF proxy strips them. Remove after."""
-    front = os.environ.get("FRONTEND_URL", "https://deepfrag.pages.dev")
-    return RedirectResponse(f"{front}/auth/?token=REDIRQUERY123#token=REDIRFRAG123")
-
-
 @app.get("/api/auth/me")
 def auth_me(authorization: str | None = Header(default=None), response: Response = None):
     """Current logged-in user (from the Bearer JWT), plus linked-profile display

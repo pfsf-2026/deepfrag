@@ -57,6 +57,9 @@ const sections = [
     { id: 'costs', label: 'Costs' },
     { id: 'deploys', label: 'Deploy log' }
   ]},
+  { group: 'Ladder', items: [
+    { id: 'ladder', label: 'Speakeasy 2v2' }
+  ]},
   { group: 'Federation', items: [
     { id: 'users', label: 'Users' },
     { id: 'oauth', label: 'OAuth providers' },
@@ -226,7 +229,112 @@ watch(activeSection, (s) => {
   if (s === 'matches') loadMatches()
   if (s === 'users') { loadUsers(); loadClaims() }
   if (s === 'oauth') { loadOAuth(); loadClaims() }
+  if (s === 'ladder') loadLadder()
 })
+
+// ─── Ladder admin: create ladder + seed teams + report results ─────────────
+const ladders = ref([])
+const ladderId = ref(null)
+const ladderDetail = ref(null)
+const ladderLoading = ref(false)
+const newLadder = ref({ name: 'Speakeasy 2v2', season: 'Xmas 2026', team_size: 2 })
+const DEFAULT_MAPS = ['aerowalk', 'ztndm3', 'dm2', 'dm4', 'bravado', 'nova', 'shifter']
+const newTeam = ref({ name: '', members: '', rung: '' })
+const reportFor = ref(null)        // challenge being reported
+const reportForm = ref({ winner_id: null, score_a: null, score_b: null, hub: '' })
+
+async function loadLadder() {
+  ladderLoading.value = true
+  try {
+    const r = await $fetch(`${apiBase}/api/ladder`)
+    ladders.value = r.ladders || []
+    if (!ladderId.value && ladders.value.length) ladderId.value = ladders.value[0].id
+    if (ladderId.value) ladderDetail.value = await $fetch(`${apiBase}/api/ladder/${ladderId.value}`)
+  } catch (e) {
+    pushEvent('err', 'LADDER', e?.data?.detail || e?.message || 'load failed')
+  } finally {
+    ladderLoading.value = false
+  }
+}
+
+async function createLadder() {
+  if (!newLadder.value.name) return
+  try {
+    const r = await $fetch(`${apiBase}/api/admin/ladder/create`, {
+      method: 'POST', headers: adminHeaders(),
+      body: {
+        name: newLadder.value.name,
+        season: newLadder.value.season,
+        team_size: Number(newLadder.value.team_size) || 2,
+        map_pool: DEFAULT_MAPS,
+        rules: { rung_jump: 2, forfeit_days: 7, best_of: 3 }
+      }
+    })
+    pushEvent('ok', 'LADDER', `created "${r.name}" (id ${r.ladder_id})`)
+    ladderId.value = r.ladder_id
+    await loadLadder()
+  } catch (e) {
+    pushEvent('err', 'LADDER', e?.data?.detail || e?.message || 'create failed')
+  }
+}
+
+async function addTeam() {
+  if (!newTeam.value.name) return
+  const members = newTeam.value.members.split(',').map(s => s.trim()).filter(Boolean)
+  try {
+    await $fetch(`${apiBase}/api/admin/ladder/${ladderId.value}/teams`, {
+      method: 'POST', headers: adminHeaders(),
+      body: {
+        name: newTeam.value.name,
+        members,
+        rung: newTeam.value.rung === '' ? null : Number(newTeam.value.rung)
+      }
+    })
+    pushEvent('ok', 'LADDER', `added team ${newTeam.value.name}`)
+    newTeam.value = { name: '', members: '', rung: '' }
+    await loadLadder()
+  } catch (e) {
+    pushEvent('err', 'LADDER', e?.data?.detail || e?.message || 'add failed')
+  }
+}
+
+function startReport(c) {
+  reportFor.value = c
+  reportForm.value = { winner_id: c.challenger_id, score_a: 2, score_b: 0, hub: '' }
+}
+async function submitReport() {
+  const c = reportFor.value
+  const maps = reportForm.value.hub
+    ? reportForm.value.hub.split(',').map(h => ({ hub_game_id: h.trim() })).filter(m => m.hub_game_id)
+    : []
+  try {
+    await $fetch(`${apiBase}/api/admin/ladder/challenge/${c.id}/result`, {
+      method: 'POST', headers: adminHeaders(),
+      body: {
+        winner_id: Number(reportForm.value.winner_id),
+        score_a: Number(reportForm.value.score_a),
+        score_b: Number(reportForm.value.score_b),
+        maps
+      }
+    })
+    pushEvent('ok', 'LADDER', `result recorded for challenge ${c.id}`)
+    reportFor.value = null
+    await loadLadder()
+  } catch (e) {
+    pushEvent('err', 'LADDER', e?.data?.detail || e?.message || 'report failed')
+  }
+}
+async function forfeitChallenge(c) {
+  try {
+    await $fetch(`${apiBase}/api/admin/ladder/challenge/${c.id}/forfeit`, {
+      method: 'POST', headers: adminHeaders()
+    })
+    pushEvent('ok', 'LADDER', `forfeit recorded for challenge ${c.id}`)
+    await loadLadder()
+  } catch (e) {
+    pushEvent('err', 'LADDER', e?.data?.detail || e?.message || 'forfeit failed')
+  }
+}
 
 // ─── Federation: users, OAuth providers, account-claims ────────────────────
 const users = ref([])
@@ -889,6 +997,108 @@ function shortStatus(s) {
           </div>
         </template>
 
+        <!-- LADDER · Speakeasy 2v2 -->
+        <template v-else-if="activeSection === 'ladder'">
+          <div class="pane-head">
+            <div>
+              <h2>Speakeasy 2v2 Ladder</h2>
+              <div class="scope">create the ladder · seed teams · report results</div>
+            </div>
+            <div class="actions">
+              <a href="/ladder" target="_blank" class="btn ghost">Open public board →</a>
+              <button class="btn ghost" @click="loadLadder" :disabled="ladderLoading">⟳ Refresh</button>
+            </div>
+          </div>
+
+          <!-- No ladder yet → create form -->
+          <div v-if="!ladderLoading && !ladders.length" class="card" style="max-width: 520px;">
+            <h3>Create the ladder</h3>
+            <div class="form-grid">
+              <label>Name<input v-model="newLadder.name"></label>
+              <label>Season<input v-model="newLadder.season"></label>
+              <label>Team size<input v-model="newLadder.team_size" type="number"></label>
+            </div>
+            <p class="muted small" style="margin:10px 0;">Maps: {{ DEFAULT_MAPS.join(' · ') }} · Bo3 · 1–2 rung challenges · 7-day forfeit window.</p>
+            <button class="btn" @click="createLadder">Create ladder</button>
+          </div>
+
+          <template v-else-if="ladderDetail">
+            <!-- KotH + add team -->
+            <div class="ladder-grid">
+              <div>
+                <div v-if="ladderDetail.koth" class="card" style="margin-bottom:12px;">
+                  <h3>👑 King of the Hill</h3>
+                  <div style="font-size:18px; font-weight:800;">{{ ladderDetail.koth.name }}</div>
+                  <div class="muted small" v-if="ladderDetail.koth.weeks != null">{{ ladderDetail.koth.weeks }} week(s) held</div>
+                </div>
+
+                <div class="card" style="padding:0;">
+                  <table class="deploy-table">
+                    <thead><tr><th>#</th><th>Team</th><th>Players</th><th>Status</th></tr></thead>
+                    <tbody>
+                      <tr v-for="t in ladderDetail.teams" :key="t.id" :class="{ active: t.rung === 1 }">
+                        <td class="mono">{{ t.rung }}</td>
+                        <td><strong>{{ t.name }}</strong></td>
+                        <td class="muted small">{{ (t.members || []).map(m => m.display).join(', ') || '—' }}</td>
+                        <td><span class="muted small">{{ t.id }}</span></td>
+                      </tr>
+                      <tr v-if="!ladderDetail.teams.length"><td colspan="4" class="muted center" style="padding:20px;">No teams yet — add the first below.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="card" style="height:fit-content;">
+                <h3>Add / seed team</h3>
+                <div class="form-grid">
+                  <label>Team name<input v-model="newTeam.name" placeholder="e.g. Bootleggers"></label>
+                  <label>Members (canonical_ids, comma-sep)<input v-model="newTeam.members" placeholder="cronus, nin"></label>
+                  <label>Rung (blank = bottom)<input v-model="newTeam.rung" type="number" placeholder="auto"></label>
+                </div>
+                <button class="btn" style="margin-top:10px;" @click="addTeam">Add team</button>
+                <p class="muted small" style="margin-top:10px;">Seed in ranked order (rung 1 = top), or leave rung blank to drop each new team at the bottom.</p>
+              </div>
+            </div>
+
+            <!-- Open challenges to report -->
+            <div v-if="ladderDetail.challenges.length" class="card" style="margin-top:14px;">
+              <h3>Open challenges <span class="meta">{{ ladderDetail.challenges.length }}</span></h3>
+              <div v-for="c in ladderDetail.challenges" :key="c.id" class="claim-row">
+                <strong>{{ ladderDetail.teams.find(t => t.id === c.challenger_id)?.name || ('#'+c.challenger_id) }}</strong>
+                <span class="arrow">vs</span>
+                <strong>{{ ladderDetail.teams.find(t => t.id === c.challenged_id)?.name || ('#'+c.challenged_id) }}</strong>
+                <span class="muted small">{{ c.rungs_up }} rung(s) up</span>
+                <span class="spacer" />
+                <button class="btn sm" @click="startReport(c)">Report result</button>
+                <button class="btn sm ghost" @click="forfeitChallenge(c)">Forfeit</button>
+              </div>
+            </div>
+          </template>
+          <div v-else-if="ladderLoading" class="placeholder">Loading ladder…</div>
+
+          <!-- Report modal -->
+          <div v-if="reportFor" class="modal-bg" @click.self="reportFor = null">
+            <div class="modal">
+              <h3>Report result</h3>
+              <div class="form-grid">
+                <label>Winner
+                  <select v-model="reportForm.winner_id" class="dd">
+                    <option :value="reportFor.challenger_id">{{ ladderDetail.teams.find(t => t.id === reportFor.challenger_id)?.name }}</option>
+                    <option :value="reportFor.challenged_id">{{ ladderDetail.teams.find(t => t.id === reportFor.challenged_id)?.name }}</option>
+                  </select>
+                </label>
+                <label>Score (challenger)<input v-model="reportForm.score_a" type="number"></label>
+                <label>Score (challenged)<input v-model="reportForm.score_b" type="number"></label>
+                <label>Hub game IDs (comma-sep, optional)<input v-model="reportForm.hub" placeholder="12345, 12346"></label>
+              </div>
+              <div class="modal-actions">
+                <button class="btn ghost" @click="reportFor = null">Cancel</button>
+                <button class="btn" @click="submitReport">Save result</button>
+              </div>
+            </div>
+          </div>
+        </template>
+
         <!-- FEDERATION · USERS -->
         <template v-else-if="activeSection === 'users'">
           <div class="pane-head">
@@ -1286,4 +1496,11 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .pill.off { background: var(--panel-2); color: var(--fg-3); border-color: var(--border); }
 .pill:hover { filter: brightness(1.2); }
 .mono { font-family: 'JetBrains Mono', monospace; }
+
+/* Ladder admin */
+.ladder-grid { display: grid; grid-template-columns: 1fr 320px; gap: 12px; align-items: start; }
+.form-grid { display: flex; flex-direction: column; gap: 10px; }
+.form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+.form-grid input, .form-grid select { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 8px 12px; border-radius: 6px; font-family: inherit; font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.form-grid input:focus, .form-grid select:focus { outline: none; border-color: var(--accent); }
 </style>
