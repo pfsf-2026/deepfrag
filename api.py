@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg2
 import psycopg2.extras
 from fastapi import Body, FastAPI, Header, HTTPException, Query, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
@@ -184,17 +184,53 @@ def auth_callback(code: str = Query(...), state: str = Query(default="")):
         u = A.upsert_user(cur, du)
         conn.commit()
     token = A.jwt_encode({"sub": u["discord_id"], "name": u.get("global_name") or u.get("username")})
+    print(f"[auth.callback] user={u['discord_id']} token_len={len(token)} -> HTML token handoff", flush=True)
+    return _token_handoff_html(token)
+
+
+def _token_handoff_html(token: str) -> HTMLResponse:
+    """Deliver the session token to the SPA via an HTML BODY, not a redirect.
+
+    Every redirect-based attempt (?token= query, #token= fragment) lost the token
+    because the CF Pages /api proxy's fetch() normalizes the Location header and
+    drops the query/fragment on the same-zone hop back to /auth. An HTML body
+    can't be normalized — the proxy passes 200 bodies through verbatim — so we
+    embed the token in a tiny page that stores it (same-origin localStorage) and
+    navigates to the ladder. Bulletproof against the proxy + path canonicalizer.
+    """
+    payload = json.dumps(token)  # safe JS string literal (token is JWT-charset anyway)
+    html = (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<title>Signing in… · DeepFrag</title>"
+        "<meta name='robots' content='noindex'>"
+        "<style>body{background:#0a0d12;color:#94a3b8;font-family:system-ui,sans-serif;"
+        "display:flex;align-items:center;justify-content:center;height:100vh;margin:0}"
+        ".s{width:28px;height:28px;border:3px solid #2b3445;border-top-color:#14e6c0;"
+        "border-radius:50%;animation:spin .8s linear infinite;margin-right:12px}"
+        "@keyframes spin{to{transform:rotate(360deg)}}</style></head>"
+        "<body><div class='s'></div><span>Signing you in…</span>"
+        "<script>try{localStorage.setItem('df_token'," + payload + ");}catch(e){}"
+        "location.replace('/ladder');</script></body></html>"
+    )
+    resp = HTMLResponse(content=html)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.get("/api/auth/_selftest")
+def auth_selftest():
+    """DIAGNOSTIC (temporary): returns the exact HTML token-handoff transport with
+    a fake token, so the proxy path can be curl-tested end-to-end without a real
+    Discord code. Remove after login is confirmed."""
+    return _token_handoff_html("SELFTEST_TOKEN_12345")
+
+
+@app.get("/api/auth/_redirtest")
+def auth_redirtest():
+    """DIAGNOSTIC (temporary): old-style redirect with query+fragment to a
+    same-zone URL, to prove whether the CF proxy strips them. Remove after."""
     front = os.environ.get("FRONTEND_URL", "https://deepfrag.pages.dev")
-    # Hand the token back in the URL *fragment*, not the query string, and target
-    # the canonical trailing-slash path so no 308 fires. Fragments are reattached
-    # client-side across redirects and never reach the server/CF normalizer — so
-    # they survive the proxy + Pages path-canonicalization that strips query
-    # strings on same-zone redirects (the bug that lost ?token=). Standard OAuth
-    # implicit-flow convention. Short-TTL hand-off token, read once then stored.
-    target = f"{front}/auth/#token={urllib.parse.quote(token)}"
-    print(f"[auth.callback] user={u['discord_id']} token_len={len(token)} "
-          f"redirect={front}/auth/#token=<{len(token)}-char-jwt>", flush=True)
-    return RedirectResponse(target)
+    return RedirectResponse(f"{front}/auth/?token=REDIRQUERY123#token=REDIRFRAG123")
 
 
 @app.get("/api/auth/me")
