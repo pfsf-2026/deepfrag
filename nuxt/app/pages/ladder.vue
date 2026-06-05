@@ -4,7 +4,10 @@
 // open challenges. Captain self-serve (challenge/report) is Discord-gated and
 // lands on top of this once OAuth is live.
 const df = useDeepFrag()
-const { loggedIn, login } = useAuth()
+const { user, loggedIn, login } = useAuth()
+// Show the claim flow when signed in but not yet linked to a profile (and no
+// pending claim already in flight).
+const needsClaim = computed(() => loggedIn.value && user.value && !user.value.canonical_id && !user.value.pending_claim)
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 
@@ -68,6 +71,13 @@ useHead({ title: 'Speakeasy Ladder · DeepFrag' })
       </div>
       <button v-if="!loggedIn" class="cta" @click="login">Sign in with Discord to play</button>
     </header>
+
+    <ClientOnly>
+      <ClaimProfile v-if="needsClaim" />
+      <div v-else-if="user?.pending_claim" class="pending-note">
+        ⏳ Profile claim for <strong>{{ user.pending_claim.display }}</strong> is awaiting admin approval.
+      </div>
+    </ClientOnly>
 
     <div v-if="loading" class="muted pad">Loading the board…</div>
     <div v-else-if="err" class="muted pad">{{ err }}</div>
@@ -161,6 +171,7 @@ useHead({ title: 'Speakeasy Ladder · DeepFrag' })
 .cta:hover { background: #4752c4; }
 .muted { color: var(--fg-2); }
 .pad { padding: 40px 0; text-align: center; }
+.pending-note { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; color: var(--fg-2); font-size: 14px; }
 
 .empty { text-align: center; padding: 60px 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
 .empty h2 { margin: 0 0 8px; }

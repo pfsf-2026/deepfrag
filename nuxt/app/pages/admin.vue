@@ -224,7 +224,88 @@ watch(activeSection, (s) => {
   if (s === 'players') loadPlayers()
   if (s === 'deploys') loadDeploys()
   if (s === 'matches') loadMatches()
+  if (s === 'users') { loadUsers(); loadClaims() }
+  if (s === 'oauth') { loadOAuth(); loadClaims() }
 })
+
+// ─── Federation: users, OAuth providers, account-claims ────────────────────
+const users = ref([])
+const usersLoading = ref(false)
+const oauth = ref(null)
+const claims = ref([])
+const claimsLoading = ref(false)
+const linkInput = ref({})            // discord_id -> canonical_id being typed
+
+async function loadUsers() {
+  usersLoading.value = true
+  try {
+    const r = await $fetch(`${apiBase}/api/admin/users`, { headers: adminHeaders() })
+    users.value = r.users || []
+  } catch (e) {
+    pushEvent('err', 'USERS', e?.data?.detail || e?.message || 'load failed')
+  } finally {
+    usersLoading.value = false
+  }
+}
+
+async function loadOAuth() {
+  try {
+    oauth.value = await $fetch(`${apiBase}/api/admin/oauth/status`, { headers: adminHeaders() })
+  } catch (e) {
+    pushEvent('err', 'OAUTH', e?.data?.detail || e?.message || 'load failed')
+  }
+}
+
+async function loadClaims() {
+  claimsLoading.value = true
+  try {
+    const r = await $fetch(`${apiBase}/api/admin/claims?status=pending`, { headers: adminHeaders() })
+    claims.value = r.claims || []
+  } catch (e) {
+    pushEvent('err', 'CLAIMS', e?.data?.detail || e?.message || 'load failed')
+  } finally {
+    claimsLoading.value = false
+  }
+}
+
+async function resolveClaim(c, approve) {
+  try {
+    await $fetch(`${apiBase}/api/admin/claims/${c.id}/resolve`, {
+      method: 'POST', headers: adminHeaders(), body: { approve }
+    })
+    pushEvent('ok', 'CLAIMS', `${approve ? 'approved' : 'rejected'} ${c.global_name || c.username} → ${c.profile_display || c.canonical_id}`)
+    await Promise.all([loadClaims(), loadUsers(), loadOAuth()])
+  } catch (e) {
+    pushEvent('err', 'CLAIMS', e?.data?.detail || e?.message || 'resolve failed')
+  }
+}
+
+async function toggleAdmin(u) {
+  try {
+    await $fetch(`${apiBase}/api/admin/users/${u.discord_id}/admin`, {
+      method: 'POST', headers: adminHeaders(), body: { is_admin: !u.is_admin }
+    })
+    pushEvent('ok', 'USERS', `${u.global_name || u.username} admin → ${!u.is_admin}`)
+    await loadUsers()
+  } catch (e) {
+    pushEvent('err', 'USERS', e?.data?.detail || e?.message || 'failed')
+  }
+}
+
+async function linkUser(u) {
+  const cid = (linkInput.value[u.discord_id] || '').trim()
+  if (!cid) return
+  try {
+    await $fetch(`${apiBase}/api/admin/users/${u.discord_id}/link`, {
+      method: 'POST', headers: adminHeaders(), body: { canonical_id: cid }
+    })
+    pushEvent('ok', 'USERS', `linked ${u.global_name || u.username} → ${cid}`)
+    linkInput.value[u.discord_id] = ''
+    await loadUsers()
+  } catch (e) {
+    pushEvent('err', 'USERS', e?.data?.detail || e?.message || 'link failed')
+  }
+}
 
 // ─── Matches tab: Region Switcher ─────────────────────────────────────────
 const matchesData = ref(null)
@@ -808,6 +889,131 @@ function shortStatus(s) {
           </div>
         </template>
 
+        <!-- FEDERATION · USERS -->
+        <template v-else-if="activeSection === 'users'">
+          <div class="pane-head">
+            <div>
+              <h2>Users</h2>
+              <div class="scope">Discord-authed accounts · link them to QW player profiles</div>
+            </div>
+            <div class="actions">
+              <button class="btn ghost" @click="loadUsers" :disabled="usersLoading">⟳ Refresh</button>
+            </div>
+          </div>
+
+          <!-- Pending claims first — the action queue -->
+          <div v-if="claims.length" class="card" style="margin-bottom: 14px; border-color: var(--accent);">
+            <h3>Pending profile claims <span class="meta">{{ claims.length }} awaiting review</span></h3>
+            <div v-for="c in claims" :key="c.id" class="claim-row">
+              <img v-if="c.avatar" :src="`https://cdn.discordapp.com/avatars/${c.discord_id}/${c.avatar}.png?size=32`" class="av" alt="">
+              <span class="who">{{ c.global_name || c.username }}</span>
+              <span class="arrow">claims</span>
+              <span class="prof">{{ c.profile_display || c.canonical_id }}</span>
+              <span class="muted small">{{ c.profile_matches }} matches</span>
+              <a :href="`/p/${encodeURIComponent(c.canonical_id)}`" target="_blank" class="link small">view →</a>
+              <span class="spacer" />
+              <button class="btn sm" @click="resolveClaim(c, true)">Approve</button>
+              <button class="btn sm ghost" @click="resolveClaim(c, false)">Reject</button>
+            </div>
+          </div>
+          <div v-else-if="!claimsLoading" class="muted small" style="margin-bottom: 14px;">No pending claims.</div>
+
+          <div class="card" style="padding: 0;">
+            <table class="deploy-table">
+              <thead>
+                <tr>
+                  <th>Account</th><th>Discord ID</th><th>Linked profile</th>
+                  <th>Admin</th><th>Last login</th><th>Link to profile</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="u in users" :key="u.discord_id">
+                  <td>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <img v-if="u.avatar" :src="`https://cdn.discordapp.com/avatars/${u.discord_id}/${u.avatar}.png?size=32`" class="av" alt="">
+                      <span>{{ u.global_name || u.username }}</span>
+                    </div>
+                  </td>
+                  <td class="muted small mono">{{ u.discord_id }}</td>
+                  <td>
+                    <span v-if="u.canonical_id" class="badge ok">{{ u.profile_display || u.canonical_id }}</span>
+                    <span v-else class="muted small">— unlinked</span>
+                  </td>
+                  <td>
+                    <button class="pill" :class="u.is_admin ? 'on' : 'off'" @click="toggleAdmin(u)">
+                      {{ u.is_admin ? 'admin' : 'no' }}
+                    </button>
+                  </td>
+                  <td class="muted small">{{ u.last_login ? fmtDate(u.last_login) : '—' }}</td>
+                  <td>
+                    <div style="display:flex; gap:6px;">
+                      <input v-model="linkInput[u.discord_id]" placeholder="canonical_id" class="dd" style="width:140px;" @keyup.enter="linkUser(u)">
+                      <button class="btn sm ghost" @click="linkUser(u)">Link</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="!users.length && !usersLoading"><td colspan="6" class="muted center" style="padding:24px;">No users have signed in with Discord yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
+        <!-- FEDERATION · OAUTH PROVIDERS -->
+        <template v-else-if="activeSection === 'oauth'">
+          <div class="pane-head">
+            <div>
+              <h2>OAuth providers</h2>
+              <div class="scope">Identity federation · login + account linking</div>
+            </div>
+            <div class="actions">
+              <button class="btn ghost" @click="loadOAuth" :disabled="!oauth">⟳ Refresh</button>
+            </div>
+          </div>
+
+          <template v-if="oauth">
+            <div class="num-strip" style="grid-template-columns: repeat(4,1fr);">
+              <div class="nt"><div class="l">Users</div><div class="v">{{ oauth.counts.users }}</div></div>
+              <div class="nt"><div class="l">Linked</div><div class="v brand">{{ oauth.counts.linked }}</div></div>
+              <div class="nt"><div class="l">Admins</div><div class="v">{{ oauth.counts.admins }}</div></div>
+              <div class="nt"><div class="l">Pending claims</div><div class="v">{{ oauth.counts.pending_claims }}</div></div>
+            </div>
+
+            <div class="card" style="margin-top:14px;">
+              <h3>
+                <span style="display:flex; align-items:center; gap:8px;">
+                  <svg width="16" height="16" viewBox="0 0 127 96" fill="#5865f2"><path d="M107.7 8.1A105 105 0 0 0 81.5 0c-1.2 2-2.5 4.8-3.4 7a97.5 97.5 0 0 0-29.2 0c-1-2.2-2.3-5-3.5-7a105 105 0 0 0-26.2 8.1C2.6 33 .3 57.1 1.4 80.9A106 106 0 0 0 33.7 96c2.6-3.5 4.9-7.3 6.9-11.2-3.8-1.4-7.4-3.2-10.8-5.3.9-.7 1.8-1.4 2.6-2.1a75.6 75.6 0 0 0 64.6 0c.9.8 1.8 1.5 2.6 2.1-3.4 2-7 3.9-10.8 5.3 2 4 4.3 7.7 6.9 11.2a106 106 0 0 0 32.3-15.1c1.4-27.6-2.3-51.5-19.9-72.8ZM42.5 66.3c-6.3 0-11.5-5.8-11.5-13 0-7.1 5.1-13 11.5-13s11.6 5.9 11.5 13c0 7.2-5.1 13-11.5 13Zm42.5 0c-6.3 0-11.5-5.8-11.5-13 0-7.1 5-13 11.5-13s11.6 5.9 11.5 13c0 7.2-5.1 13-11.5 13Z"/></svg>
+                  Discord
+                </span>
+                <span class="badge" :class="oauth.discord.configured ? 'ok' : 'err'">
+                  {{ oauth.discord.configured ? 'configured' : 'not configured' }}
+                </span>
+              </h3>
+              <div class="kv">
+                <span class="k">client id</span><span class="v">{{ oauth.discord.client_id || '—' }}</span>
+                <span class="k">client secret</span><span class="v">{{ oauth.discord.client_secret || '— missing' }}</span>
+                <span class="k">redirect uri</span><span class="v small">{{ oauth.discord.redirect_uri || '—' }}</span>
+                <span class="k">frontend url</span><span class="v small">{{ oauth.discord.frontend_url || '—' }}</span>
+                <span class="k">scopes</span><span class="v">{{ oauth.discord.scopes.join(', ') }}</span>
+                <span class="k">jwt secret</span><span class="v">{{ oauth.discord.jwt_secret }}</span>
+                <span class="k">webhook</span><span class="v">{{ oauth.discord.webhook_configured ? 'configured' : '— not set' }}</span>
+              </div>
+            </div>
+
+            <div v-if="claims.length" class="card" style="margin-top:14px;">
+              <h3>Pending claims <span class="meta">{{ claims.length }}</span></h3>
+              <div v-for="c in claims" :key="c.id" class="claim-row">
+                <span class="who">{{ c.global_name || c.username }}</span>
+                <span class="arrow">→</span>
+                <span class="prof">{{ c.profile_display || c.canonical_id }}</span>
+                <span class="spacer" />
+                <button class="btn sm" @click="resolveClaim(c, true)">Approve</button>
+                <button class="btn sm ghost" @click="resolveClaim(c, false)">Reject</button>
+              </div>
+            </div>
+          </template>
+          <div v-else class="placeholder">Loading OAuth status…</div>
+        </template>
+
         <!-- Placeholders for other sections -->
         <template v-else>
           <div class="pane-head">
@@ -1062,4 +1268,22 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .alias-name { color: var(--fg); }
 .alias-uses { color: var(--fg-3); }
 .small { font-size: 11px; }
+
+/* Federation */
+.av { width: 24px; height: 24px; border-radius: 50%; }
+.claim-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--panel-2); font-size: 13px; }
+.claim-row:last-child { border-bottom: 0; }
+.claim-row .who { font-weight: 700; }
+.claim-row .arrow { color: var(--fg-3); font-size: 11px; }
+.claim-row .prof { color: var(--accent); font-weight: 600; }
+.claim-row .spacer { flex: 1; }
+.claim-row .link { color: var(--accent); text-decoration: none; }
+.deploy-table .badge.ok { background: rgba(34,197,94,0.15); color: var(--win); }
+.deploy-table .av { display: inline-block; }
+.btn.sm { padding: 4px 10px; font-size: 11px; }
+.pill { border: 1px solid; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.pill.on { background: rgba(20,230,192,0.12); color: var(--accent); border-color: rgba(20,230,192,0.4); }
+.pill.off { background: var(--panel-2); color: var(--fg-3); border-color: var(--border); }
+.pill:hover { filter: brightness(1.2); }
+.mono { font-family: 'JetBrains Mono', monospace; }
 </style>
