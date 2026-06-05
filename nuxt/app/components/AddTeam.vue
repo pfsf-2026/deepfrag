@@ -1,20 +1,28 @@
 <script setup>
-// Self-serve team registration (onboarding step 2, after profile claim).
-// Captain picks a teammate (live fuzzy canonical search), names the team, and
-// optionally uploads a logo (resized client-side to keep it small). Submits as a
-// PENDING team for admin approval — never auto-placed on the board.
-const props = defineProps({ ladderId: { type: Number, required: true } })
+// Team registration AND editing (Team Settings). In create mode it's the
+// onboarding step after profile-claim; in edit mode (editTeam prop) it pre-fills
+// the captain's existing team. Fields: team name, team tag (2–4 char QW clan
+// tag), teammate (live fuzzy canonical search), logo (resized client-side).
+// Create → pending for admin approval. Edit → applies immediately (captain or
+// admin), team keeps its current ladder position.
+const props = defineProps({
+  ladderId: { type: Number, required: true },
+  editTeam: { type: Object, default: null }   // {id, name, tag, members:[{id,display}], has_logo}
+})
 const emit = defineEmits(['done', 'close'])
 const { authHeader } = useAuth()
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
+const editing = computed(() => !!props.editTeam)
 
-const teamName = ref('')
-const mateQuery = ref('')
-const mate = ref(null)            // chosen teammate {canonical_id, display}
+const teamName = ref(props.editTeam?.name || '')
+const teamTag = ref(props.editTeam?.tag || '')
+const mateQuery = ref(props.editTeam?.members?.[1]?.display || '')
+const mate = ref(props.editTeam?.members?.[1] ? { canonical_id: props.editTeam.members[1].id, display: props.editTeam.members[1].display } : null)
 const results = ref([])
 const searching = ref(false)
-const logoData = ref('')          // data URI
+const logoData = ref('')          // new logo data URI
+const removeLogo = ref(false)
 const logoErr = ref('')
 const submitting = ref(false)
 const err = ref('')
@@ -40,9 +48,8 @@ async function onLogo(e) {
   const file = e.target.files?.[0]
   if (!file) return
   if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) { logoErr.value = 'PNG/JPEG/WebP/GIF only'; return }
-  try {
-    logoData.value = await resizeToDataUri(file, 400)
-  } catch { logoErr.value = 'Could not read that image' }
+  try { logoData.value = await resizeToDataUri(file, 400); removeLogo.value = false }
+  catch { logoErr.value = 'Could not read that image' }
 }
 function resizeToDataUri(file, max) {
   return new Promise((resolve, reject) => {
@@ -60,22 +67,42 @@ function resizeToDataUri(file, max) {
   })
 }
 
+const currentLogo = computed(() => {
+  if (logoData.value) return logoData.value
+  if (props.editTeam?.has_logo && !removeLogo.value) return `${base}/api/ladder/team/${props.editTeam.id}/logo`
+  return ''
+})
+
 async function submit() {
   err.value = ''
   if (!teamName.value.trim()) { err.value = 'Give your team a name'; return }
   submitting.value = true
   try {
-    await $fetch(`${base}/api/ladder/${props.ladderId}/team/signup`, {
-      method: 'POST', headers: authHeader(),
-      body: {
-        name: teamName.value.trim(),
-        teammate_canonical_id: mate.value?.canonical_id || null,
-        logo: logoData.value || null
-      }
-    })
+    if (editing.value) {
+      await $fetch(`${base}/api/ladder/team/${props.editTeam.id}/edit`, {
+        method: 'POST', headers: authHeader(),
+        body: {
+          name: teamName.value.trim(),
+          tag: teamTag.value.trim(),
+          teammate_canonical_id: mate.value?.canonical_id ?? null,
+          logo: logoData.value || null,
+          remove_logo: removeLogo.value
+        }
+      })
+    } else {
+      await $fetch(`${base}/api/ladder/${props.ladderId}/team/signup`, {
+        method: 'POST', headers: authHeader(),
+        body: {
+          name: teamName.value.trim(),
+          tag: teamTag.value.trim(),
+          teammate_canonical_id: mate.value?.canonical_id || null,
+          logo: logoData.value || null
+        }
+      })
+    }
     emit('done', teamName.value.trim())
   } catch (e) {
-    err.value = e?.data?.detail || e?.message || 'Could not register team'
+    err.value = e?.data?.detail || e?.message || 'Could not save team'
   } finally {
     submitting.value = false
   }
@@ -86,15 +113,26 @@ async function submit() {
   <div class="modal-bg" @click.self="emit('close')">
     <div class="modal">
       <div class="m-head">
-        <h3>Add your team</h3>
+        <h3>{{ editing ? 'Team settings' : 'Add your team' }}</h3>
         <button class="x" @click="emit('close')">✕</button>
       </div>
-      <p class="lede">Register for the KOTH ladder. An admin approves it, then you're on the board and can start challenging.</p>
+      <p class="lede">
+        {{ editing
+          ? 'Update your team name, tag, teammate, or logo. Changes apply right away.'
+          : "Register for the KOTH ladder. An admin approves it, then you're on the board." }}
+      </p>
 
-      <label class="fld">
-        <span>Team name</span>
-        <input v-model="teamName" placeholder="e.g. Bootleggers" maxlength="40">
-      </label>
+      <div class="row2">
+        <label class="fld grow">
+          <span>Team name</span>
+          <input v-model="teamName" placeholder="e.g. Team Scat" maxlength="40">
+        </label>
+        <label class="fld">
+          <span>Tag</span>
+          <input v-model="teamTag" placeholder="SCAT" maxlength="6" style="text-transform:uppercase; width:90px;">
+        </label>
+      </div>
+      <p class="hint">Tag = the 2–4 char clan tag you wear in QW (e.g. <strong>SCAT</strong>).</p>
 
       <label class="fld">
         <span>Teammate nickname</span>
@@ -107,19 +145,24 @@ async function submit() {
         </button>
       </div>
       <div v-if="mate" class="picked">✓ Teammate: <strong>{{ mate.display }}</strong></div>
-      <div v-else-if="mateQuery && !results.length && !searching" class="hint">No match — you can still submit and an admin will sort it.</div>
+      <div v-else-if="mateQuery && !results.length && !searching" class="hint">No exact match — submit anyway, an admin can fix it.</div>
 
       <label class="fld">
-        <span>Team logo <span class="muted">(optional, PNG/JPEG)</span></span>
+        <span>Team logo <span class="muted">(optional)</span></span>
         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="onLogo">
       </label>
       <div v-if="logoErr" class="err">{{ logoErr }}</div>
-      <div v-if="logoData" class="logo-prev"><img :src="logoData" alt="logo preview"></div>
+      <div v-if="currentLogo" class="logo-prev">
+        <img :src="currentLogo" alt="logo preview">
+        <button v-if="editing" class="rm" @click="logoData=''; removeLogo=true">remove logo</button>
+      </div>
 
       <p v-if="err" class="err">{{ err }}</p>
       <div class="m-actions">
         <button class="btn ghost" @click="emit('close')">Cancel</button>
-        <button class="btn" :disabled="submitting" @click="submit">{{ submitting ? 'Submitting…' : 'Submit for approval' }}</button>
+        <button class="btn" :disabled="submitting" @click="submit">
+          {{ submitting ? 'Saving…' : (editing ? 'Save changes' : 'Submit for approval') }}
+        </button>
       </div>
     </div>
   </div>
@@ -127,25 +170,29 @@ async function submit() {
 
 <style scoped>
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
-.modal { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 24px 26px; width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto; }
+.modal { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 24px 26px; width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto; }
 .m-head { display: flex; justify-content: space-between; align-items: center; }
 .m-head h3 { margin: 0; font-size: 20px; font-weight: 800; }
 .x { background: none; border: 0; color: var(--fg-3); font-size: 18px; cursor: pointer; }
 .x:hover { color: var(--fg); }
 .lede { color: var(--fg-2); font-size: 13px; margin: 6px 0 18px; }
+.row2 { display: flex; gap: 12px; }
 .fld { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.fld.grow { flex: 1; }
 .fld > span { font-size: 12px; color: var(--fg-3); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
 .fld input[type=text], .fld input:not([type]) { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 10px 12px; border-radius: 8px; font-family: inherit; font-size: 14px; }
 .fld input:focus { outline: none; border-color: var(--accent); }
 .fld input[type=file] { font-size: 12px; color: var(--fg-2); }
 .muted { color: var(--fg-3); font-weight: 400; }
 .hint { color: var(--fg-3); font-size: 12px; margin: -8px 0 12px; }
+.hint strong { color: var(--fg-2); }
 .res { display: flex; flex-direction: column; gap: 4px; margin: -6px 0 12px; max-height: 200px; overflow-y: auto; }
 .res-row { display: flex; justify-content: space-between; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 13px; color: var(--fg); }
 .res-row:hover { border-color: var(--accent); }
 .picked { background: rgba(34,197,94,0.12); color: #86efac; border-radius: 8px; padding: 8px 12px; font-size: 13px; margin: -6px 0 12px; }
-.logo-prev { margin: -4px 0 12px; }
-.logo-prev img { max-width: 96px; max-height: 96px; border-radius: 10px; border: 1px solid var(--border); }
+.logo-prev { display: flex; align-items: center; gap: 12px; margin: -4px 0 12px; }
+.logo-prev img { max-width: 80px; max-height: 80px; border-radius: 10px; border: 1px solid var(--border); }
+.logo-prev .rm { background: none; border: 0; color: var(--loss); font-size: 12px; cursor: pointer; }
 .m-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .btn { background: var(--accent); color: var(--bg); border: 0; padding: 10px 16px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; }
 .btn.ghost { background: transparent; color: var(--fg-2); border: 1px solid var(--border); }

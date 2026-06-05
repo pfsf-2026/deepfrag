@@ -1,6 +1,8 @@
 <script setup>
 const { user, loggedIn, ready, fetchMe, login, logout } = useAuth()
+const menuOpen = ref(false)
 onMounted(() => { fetchMe() })
+function closeMenu() { menuOpen.value = false }
 
 useHead({
   meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
@@ -39,10 +41,17 @@ useSeoMeta({
       <span class="spacer" />
       <ClientOnly>
         <div v-if="ready" class="auth">
-          <div v-if="loggedIn" class="who">
+          <div v-if="loggedIn" class="who" @click.stop="menuOpen = !menuOpen">
             <img v-if="user?.avatar" :src="`https://cdn.discordapp.com/avatars/${user.discord_id}/${user.avatar}.png?size=32`" class="avatar" alt="">
             <span class="name">{{ user?.global_name || user?.username }}</span>
-            <button class="link" @click="logout">Sign out</button>
+            <span class="caret">▾</span>
+            <div v-if="menuOpen" class="menu" @click.stop>
+              <NuxtLink v-if="user?.canonical_id" :to="`/p/${user.canonical_id}`" class="mi" @click="closeMenu">My profile</NuxtLink>
+              <NuxtLink v-if="user?.team" to="/ladder?settings=1" class="mi" @click="closeMenu">Team settings</NuxtLink>
+              <NuxtLink v-else to="/ladder" class="mi" @click="closeMenu">Join the ladder</NuxtLink>
+              <NuxtLink v-if="user?.is_admin" to="/ladder/admin" class="mi" @click="closeMenu">Ladder admin</NuxtLink>
+              <button class="mi danger" @click="logout(); closeMenu()">Sign out</button>
+            </div>
           </div>
           <button v-else class="discord-btn" @click="login">
             <svg width="16" height="16" viewBox="0 0 127 96" fill="currentColor"><path d="M107.7 8.1A105 105 0 0 0 81.5 0c-1.2 2-2.5 4.8-3.4 7a97.5 97.5 0 0 0-29.2 0c-1-2.2-2.3-5-3.5-7a105 105 0 0 0-26.2 8.1C2.6 33 .3 57.1 1.4 80.9A106 106 0 0 0 33.7 96c2.6-3.5 4.9-7.3 6.9-11.2-3.8-1.4-7.4-3.2-10.8-5.3.9-.7 1.8-1.4 2.6-2.1a75.6 75.6 0 0 0 64.6 0c.9.8 1.8 1.5 2.6 2.1-3.4 2-7 3.9-10.8 5.3 2 4 4.3 7.7 6.9 11.2a106 106 0 0 0 32.3-15.1c1.4-27.6-2.3-51.5-19.9-72.8ZM42.5 66.3c-6.3 0-11.5-5.8-11.5-13 0-7.1 5.1-13 11.5-13s11.6 5.9 11.5 13c0 7.2-5.1 13-11.5 13Zm42.5 0c-6.3 0-11.5-5.8-11.5-13 0-7.1 5-13 11.5-13s11.6 5.9 11.5 13c0 7.2-5.1 13-11.5 13Z"/></svg>
@@ -50,6 +59,7 @@ useSeoMeta({
           </button>
         </div>
       </ClientOnly>
+      <div v-if="menuOpen" class="menu-backdrop" @click="closeMenu" />
     </header>
     <NuxtPage />
   </UApp>
@@ -110,11 +120,17 @@ body {
   color: var(--fg-3); font-size: 12px; font-family: 'JetBrains Mono', monospace;
 }
 .topbar .auth { display: flex; align-items: center; }
-.topbar .who { display: flex; align-items: center; gap: 10px; }
+.topbar .who { display: flex; align-items: center; gap: 8px; cursor: pointer; position: relative; padding: 4px 6px; border-radius: 8px; }
+.topbar .who:hover { background: var(--panel-2); }
 .topbar .who .avatar { width: 24px; height: 24px; border-radius: 50%; }
 .topbar .who .name { font-size: 13px; font-weight: 600; color: var(--fg); }
-.topbar .who .link { background: none; border: none; color: var(--fg-3); font-size: 12px; cursor: pointer; padding: 0; }
-.topbar .who .link:hover { color: var(--fg); }
+.topbar .who .caret { color: var(--fg-3); font-size: 10px; }
+.topbar .menu { position: absolute; top: calc(100% + 8px); right: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px; min-width: 180px; box-shadow: 0 12px 32px rgba(0,0,0,0.5); z-index: 60; display: flex; flex-direction: column; }
+.topbar .menu .mi { display: block; text-align: left; background: none; border: 0; color: var(--fg-2); font-size: 13px; font-weight: 500; padding: 9px 12px; border-radius: 7px; cursor: pointer; text-decoration: none; font-family: inherit; }
+.topbar .menu .mi:hover { background: var(--panel-2); color: var(--fg); }
+.topbar .menu .mi.danger { color: var(--fg-3); border-top: 1px solid var(--border); margin-top: 4px; padding-top: 11px; }
+.topbar .menu .mi.danger:hover { color: var(--loss); }
+.menu-backdrop { position: fixed; inset: 0; z-index: 55; }
 .topbar .discord-btn {
   display: flex; align-items: center; gap: 7px;
   background: #5865f2; color: #fff; border: none;

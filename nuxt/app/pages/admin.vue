@@ -243,18 +243,32 @@ const newTeam = ref({ name: '', members: '', rung: '' })
 const reportFor = ref(null)        // challenge being reported
 const reportForm = ref({ winner_id: null, score_a: null, score_b: null, hub: '' })
 
+const ladderPending = ref([])
 async function loadLadder() {
   ladderLoading.value = true
   try {
     const r = await $fetch(`${apiBase}/api/ladder`)
     ladders.value = r.ladders || []
     if (!ladderId.value && ladders.value.length) ladderId.value = ladders.value[0].id
-    if (ladderId.value) ladderDetail.value = await $fetch(`${apiBase}/api/ladder/${ladderId.value}`)
+    if (ladderId.value) {
+      ladderDetail.value = await $fetch(`${apiBase}/api/ladder/${ladderId.value}`)
+      const p = await $fetch(`${apiBase}/api/admin/ladder/${ladderId.value}/teams/pending`, { headers: adminHeaders() })
+      ladderPending.value = p.pending || []
+    }
   } catch (e) {
     pushEvent('err', 'LADDER', e?.data?.detail || e?.message || 'load failed')
   } finally {
     ladderLoading.value = false
   }
+}
+
+async function approveTeam(t) {
+  try { await $fetch(`${apiBase}/api/admin/ladder/team/${t.id}/approve`, { method: 'POST', headers: adminHeaders() }); pushEvent('ok', 'LADDER', `approved ${t.name}`); await loadLadder() }
+  catch (e) { pushEvent('err', 'LADDER', e?.data?.detail || 'approve failed') }
+}
+async function rejectTeam(t) {
+  try { await $fetch(`${apiBase}/api/admin/ladder/team/${t.id}/reject`, { method: 'POST', headers: adminHeaders() }); pushEvent('ok', 'LADDER', `rejected ${t.name}`); await loadLadder() }
+  catch (e) { pushEvent('err', 'LADDER', e?.data?.detail || 'reject failed') }
 }
 
 async function createLadder() {
@@ -1023,6 +1037,19 @@ function shortStatus(s) {
           </div>
 
           <template v-else-if="ladderDetail">
+            <!-- Pending team signups -->
+            <div v-if="ladderPending.length" class="card" style="margin-bottom:12px; border-color: var(--accent);">
+              <h3>Pending team signups <span class="meta">{{ ladderPending.length }}</span></h3>
+              <div v-for="t in ladderPending" :key="t.id" class="claim-row">
+                <img v-if="t.has_logo" :src="`${apiBase}/api/ladder/team/${t.id}/logo`" class="av" alt="">
+                <strong>{{ t.name }}</strong>
+                <span class="muted small">{{ (t.members || []).map(m => m.display).join(' · ') || '—' }}</span>
+                <span class="spacer" />
+                <button class="btn sm" @click="approveTeam(t)">Approve</button>
+                <button class="btn sm ghost" @click="rejectTeam(t)">Reject</button>
+              </div>
+            </div>
+
             <!-- KotH + add team -->
             <div class="ladder-grid">
               <div>

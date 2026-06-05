@@ -9,6 +9,7 @@ const { user, loggedIn, login } = useAuth()
 // pending claim already in flight).
 const needsClaim = computed(() => loggedIn.value && user.value && !user.value.canonical_id && !user.value.pending_claim)
 const showAddTeam = ref(false)
+const editingTeam = ref(null)        // team object being edited (Team Settings)
 const teamSubmitted = ref('')
 // Already rostered on an active team? (pending teams aren't in standings.)
 const onTeam = computed(() => {
@@ -17,7 +18,17 @@ const onTeam = computed(() => {
 })
 // Linked player, not yet on a team, ladder is open → can register a team.
 const canAddTeam = computed(() => loggedIn.value && user.value?.canonical_id && ladder.value && !onTeam.value)
-function onTeamAdded(name) { showAddTeam.value = false; teamSubmitted.value = name }
+function isMyTeam(t) {
+  const cid = user.value?.canonical_id
+  return (!!cid && (t.members || []).some(m => m.id === cid)) || !!user.value?.is_admin
+}
+function editTeam(t) { editingTeam.value = t }
+async function onTeamAdded(name) {
+  showAddTeam.value = false
+  editingTeam.value = null
+  teamSubmitted.value = name
+  await load()
+}
 function logoUrl(id) { return `${base}/api/ladder/team/${id}/logo` }
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
@@ -53,6 +64,16 @@ async function load() {
   }
 }
 onMounted(load)
+
+// Topbar "Team settings" links here with ?settings=1 — open the edit modal for
+// the user's team (works for pending teams too, fetched fresh + enriched).
+const route = useRoute()
+async function maybeOpenSettings() {
+  if (route.query.settings !== '1' || !user.value?.team || editingTeam.value) return
+  try { editingTeam.value = await $fetch(`${base}/api/ladder/team/${user.value.team.id}`) }
+  catch { /* ignore */ }
+}
+watch(() => [user.value, route.query.settings], maybeOpenSettings, { immediate: true })
 
 // challenged_id -> list of incoming challenger names (to badge rows)
 const incoming = computed(() => {
@@ -99,6 +120,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
       </div>
 
       <AddTeam v-if="showAddTeam && ladder" :ladder-id="ladder.id" @done="onTeamAdded" @close="showAddTeam = false" />
+      <AddTeam v-if="editingTeam && ladder" :ladder-id="ladder.id" :edit-team="editingTeam" @done="onTeamAdded" @close="editingTeam = null" />
     </ClientOnly>
 
     <div v-if="loading" class="muted pad">Loading the board…</div>
@@ -139,9 +161,16 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
           <span class="c-rung">{{ t.rung }}</span>
           <span class="c-team">
             <img v-if="t.has_logo" :src="logoUrl(t.id)" class="tlogo" alt="">
+            <span v-if="t.tag" class="ttag">{{ t.tag }}</span>
             <span class="tname">{{ t.name }}</span>
+            <button v-if="isMyTeam(t)" class="edit" title="Team settings" @click="editTeam(t)">✎</button>
           </span>
-          <span class="c-members">{{ membersLabel(t) || '—' }}</span>
+          <span class="c-members">
+            <template v-for="(m, i) in (t.members || [])" :key="m.id">
+              <NuxtLink :to="`/p/${m.id}`" class="plink">{{ m.display }}</NuxtLink><span v-if="i < t.members.length - 1" class="dot"> · </span>
+            </template>
+            <span v-if="!(t.members || []).length">—</span>
+          </span>
           <span class="c-status">
             <span v-if="incoming[t.id]?.length" class="badge challenged">
               ⚔ Challenged by {{ incoming[t.id].map(c => teamName(c.challenger_id)).join(', ') }}
@@ -226,8 +255,14 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .row.top { background: rgba(245,158,11,0.07); }
 .row.top .c-rung { color: var(--draw); }
 .row.top .tname::before { content: '👑 '; }
-.c-team { display: flex; align-items: center; }
+.c-team { display: flex; align-items: center; gap: 8px; }
+.ttag { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(20,230,192,0.12); border: 1px solid rgba(20,230,192,0.3); border-radius: 5px; padding: 1px 6px; letter-spacing: 0.04em; }
 .tname { font-weight: 700; }
+.edit { background: none; border: 0; color: var(--fg-3); cursor: pointer; font-size: 13px; padding: 2px 4px; opacity: 0.7; }
+.edit:hover { color: var(--accent); opacity: 1; }
+.plink { color: var(--fg-2); text-decoration: none; }
+.plink:hover { color: var(--accent); text-decoration: underline; }
+.c-members .dot { color: var(--fg-3); }
 .c-members { color: var(--fg-2); font-size: 13px; }
 .badge { font-size: 12px; padding: 3px 9px; border-radius: 999px; font-weight: 600; }
 .badge.open { background: var(--panel-2); color: var(--fg-3); }

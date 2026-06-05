@@ -93,11 +93,12 @@ def ensure_schema(cur):
         ALTER TABLE ladder_teams ADD COLUMN IF NOT EXISTS logo BYTEA;
         ALTER TABLE ladder_teams ADD COLUMN IF NOT EXISTS logo_type TEXT;
         ALTER TABLE ladder_teams ADD COLUMN IF NOT EXISTS created_by TEXT;
+        ALTER TABLE ladder_teams ADD COLUMN IF NOT EXISTS tag TEXT;
     """)
 
 
 def standings(cur, ladder_id):
-    cur.execute("""SELECT id, name, members, rung, active, (logo IS NOT NULL) AS has_logo
+    cur.execute("""SELECT id, name, tag, members, rung, active, (logo IS NOT NULL) AS has_logo
                    FROM ladder_teams
                    WHERE ladder_id=%s AND active ORDER BY rung NULLS LAST, id""", (ladder_id,))
     return cur.fetchall()

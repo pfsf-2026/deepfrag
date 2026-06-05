@@ -241,6 +241,25 @@ def auth_me(authorization: str | None = Header(default=None), response: Response
             pr = cur.fetchone()
             u["pending_claim"] = {"canonical_id": c["canonical_id"],
                                   "display": pr["display_name"] if pr else c["canonical_id"]}
+        # The user's ladder team (membership via linked canonical_id, or created
+        # by them) — lets the topbar/board show "Team Settings" for captains.
+        u["team"] = None
+        try:
+            import ladder as _ladder
+            _ladder.ensure_schema(cur)
+            params, where = [], []
+            if u.get("canonical_id"):
+                where.append("members @> %s::jsonb"); params.append(json.dumps([u["canonical_id"]]))
+            where.append("created_by=%s"); params.append(u["discord_id"])
+            cur.execute(f"""SELECT id, ladder_id, name, tag, status, rung
+                            FROM ladder_teams
+                            WHERE status IN ('pending','active') AND ({' OR '.join(where)})
+                            ORDER BY (status='active') DESC, id LIMIT 1""", params)
+            tm = cur.fetchone()
+            if tm:
+                u["team"] = dict(tm)
+        except Exception:
+            pass
     return u
 
 
@@ -2558,9 +2577,19 @@ def admin_ladder_add_team(ladder_id: int, authorization: str | None = Header(def
     return {"team_id": tid, "name": name}
 
 
+def _norm_tag(tag: str | None) -> str | None:
+    """QW clan tag: trimmed, max 6 chars (Peter said 2–4, allow a little slack).
+    Empty → None."""
+    if not tag:
+        return None
+    t = tag.strip()[:6]
+    return t or None
+
+
 @app.post("/api/ladder/{ladder_id}/team/signup")
 def ladder_team_signup(ladder_id: int, authorization: str | None = Header(default=None),
                        name: str = Body(..., embed=True),
+                       tag: str | None = Body(default=None, embed=True),
                        teammate_canonical_id: str | None = Body(default=None, embed=True),
                        logo: str | None = Body(default=None, embed=True)):
     """A captain registers a team: themselves + a teammate (by canonical_id),
@@ -2575,6 +2604,7 @@ def ladder_team_signup(ladder_id: int, authorization: str | None = Header(defaul
     if teammate_canonical_id and teammate_canonical_id != cid:
         members.append(teammate_canonical_id)
     logo_bytes, logo_type = _parse_logo_data_uri(logo)
+    tag = _norm_tag(tag)
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
@@ -2588,9 +2618,9 @@ def ladder_team_signup(ladder_id: int, authorization: str | None = Header(defaul
                 raise HTTPException(404, "teammate player not found")
         try:
             cur.execute("""INSERT INTO ladder_teams
-                           (ladder_id, name, members, rung, active, status, created_by, logo, logo_type)
-                           VALUES (%s,%s,%s,NULL,FALSE,'pending',%s,%s,%s) RETURNING id""",
-                        (ladder_id, name, json.dumps(members), user["discord_id"],
+                           (ladder_id, name, tag, members, rung, active, status, created_by, logo, logo_type)
+                           VALUES (%s,%s,%s,%s,NULL,FALSE,'pending',%s,%s,%s) RETURNING id""",
+                        (ladder_id, name, tag, json.dumps(members), user["discord_id"],
                          psycopg2.Binary(logo_bytes) if logo_bytes else None, logo_type))
         except psycopg2.errors.UniqueViolation:
             conn.rollback()
@@ -2605,6 +2635,62 @@ def ladder_team_signup(ladder_id: int, authorization: str | None = Header(defaul
     except Exception:
         pass
     return {"team_id": tid, "name": name, "status": "pending"}
+
+
+@app.post("/api/ladder/team/{team_id}/edit")
+def ladder_team_edit(team_id: int, authorization: str | None = Header(default=None),
+                     name: str | None = Body(default=None, embed=True),
+                     tag: str | None = Body(default=None, embed=True),
+                     teammate_canonical_id: str | None = Body(default=None, embed=True),
+                     logo: str | None = Body(default=None, embed=True),
+                     remove_logo: bool = Body(default=False, embed=True)):
+    """Edit a team's name/tag/teammate/logo. Allowed for a roster member of the
+    team (captain self-serve) OR any ladder admin. Only provided fields change."""
+    import ladder as _ladder
+    user = _current_user(authorization, required=True)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT id, ladder_id, members, created_by FROM ladder_teams WHERE id=%s", (team_id,))
+        t = cur.fetchone()
+        if not t:
+            raise HTTPException(404, "team not found")
+        cid = user.get("canonical_id")
+        members = list(t["members"] or [])
+        allowed = user.get("is_admin") or user["discord_id"] == t["created_by"] or (cid and cid in members)
+        if not allowed:
+            raise HTTPException(403, "you can only edit your own team")
+        sets, vals = [], []
+        if name is not None and name.strip():
+            sets.append("name=%s"); vals.append(name.strip())
+        if tag is not None:
+            sets.append("tag=%s"); vals.append(_norm_tag(tag))
+        if teammate_canonical_id is not None:
+            # keep the captain (first member), set the teammate slot
+            cap = members[0] if members else cid
+            new_members = [cap]
+            if teammate_canonical_id and teammate_canonical_id != cap:
+                cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id=%s", (teammate_canonical_id,))
+                if not cur.fetchone():
+                    raise HTTPException(404, "teammate player not found")
+                new_members.append(teammate_canonical_id)
+            sets.append("members=%s"); vals.append(json.dumps(new_members))
+        if remove_logo:
+            sets.append("logo=NULL"); sets.append("logo_type=NULL")
+        elif logo:
+            lb, lt = _parse_logo_data_uri(logo)
+            sets.append("logo=%s"); vals.append(psycopg2.Binary(lb))
+            sets.append("logo_type=%s"); vals.append(lt)
+        if not sets:
+            raise HTTPException(400, "nothing to update")
+        vals.append(team_id)
+        try:
+            cur.execute(f"UPDATE ladder_teams SET {', '.join(sets)} WHERE id=%s", vals)
+        except psycopg2.errors.UniqueViolation:
+            conn.rollback()
+            raise HTTPException(409, "that team name is already taken")
+        conn.commit()
+    return {"team_id": team_id, "updated": True}
 
 
 @app.get("/api/admin/ladder/{ladder_id}/teams/pending")
@@ -2668,6 +2754,24 @@ def admin_ladder_team_reject(team_id: int, authorization: str | None = Header(de
     if not row:
         raise HTTPException(404, "no pending team with that id")
     return {"team_id": team_id, "status": "rejected"}
+
+
+@app.get("/api/ladder/team/{team_id}")
+def ladder_team_get(team_id: int):
+    """Single team (enriched members + tag + has_logo + status). Public — used to
+    open Team Settings (works for pending teams not yet on the board)."""
+    import ladder as _ladder
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT id, ladder_id, name, tag, members, rung, status,
+                              (logo IS NOT NULL) AS has_logo
+                       FROM ladder_teams WHERE id=%s""", (team_id,))
+        t = cur.fetchone()
+        if not t:
+            raise HTTPException(404, "team not found")
+        t = _enrich_members(cur, [dict(t)])[0]
+    return t
 
 
 @app.get("/api/ladder/team/{team_id}/logo")
