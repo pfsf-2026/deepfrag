@@ -1,15 +1,18 @@
 <script setup>
 // OAuth landing: the Discord callback redirects here with ?token=<jwt>. Capture
 // it, store the session, then bounce to the ladder.
-const route = useRoute()
+// NOTE: read the token from window.location, NOT useRoute().query. This page is
+// prerendered with ssr:false, so it was baked at /auth with NO query string; on
+// a real ?token= load the client router reconciles the URL a tick AFTER mount,
+// so route.query.token is empty in onMounted. window.location is always current.
 const router = useRouter()
 const { setToken, fetchMe } = useAuth()
 const msg = ref('Signing you in…')
 
 onMounted(async () => {
-  const t = route.query.token
+  const t = new URLSearchParams(window.location.search).get('token')
   if (!t) { msg.value = 'No sign-in token — try again.'; setTimeout(() => router.replace('/'), 1500); return }
-  setToken(String(t))
+  setToken(t)
   await fetchMe()
   router.replace('/ladder')  // ladder is the destination; falls back fine if not yet built
 })

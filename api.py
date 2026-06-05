@@ -185,7 +185,10 @@ def auth_callback(code: str = Query(...), state: str = Query(default="")):
         conn.commit()
     token = A.jwt_encode({"sub": u["discord_id"], "name": u.get("global_name") or u.get("username")})
     front = os.environ.get("FRONTEND_URL", "https://deepfrag.pages.dev")
-    return RedirectResponse(f"{front}/auth?token={urllib.parse.quote(token)}")
+    target = f"{front}/auth?token={urllib.parse.quote(token)}"
+    print(f"[auth.callback] user={u['discord_id']} token_len={len(token)} "
+          f"redirect={front}/auth?token=<{len(token)}-char-jwt>", flush=True)
+    return RedirectResponse(target)
 
 
 @app.get("/api/auth/me")
