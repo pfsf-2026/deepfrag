@@ -1,16 +1,20 @@
 <script setup>
 // OAuth landing: the Discord callback redirects here with ?token=<jwt>. Capture
 // it, store the session, then bounce to the ladder.
-// NOTE: read the token from window.location, NOT useRoute().query. This page is
-// prerendered with ssr:false, so it was baked at /auth with NO query string; on
-// a real ?token= load the client router reconciles the URL a tick AFTER mount,
-// so route.query.token is empty in onMounted. window.location is always current.
+// The token arrives in the URL *fragment* (#token=<jwt>), not the query string.
+// Why: the callback redirect is same-zone (deepfrag.pages.dev), and Cloudflare
+// Pages' path normalization (trailing-slash 308) strips query strings on that
+// hop — but URL fragments are reattached client-side across redirects and never
+// touch the server/normalizer, so they survive intact. (Standard OAuth
+// implicit-flow convention.) Fall back to ?token= for safety.
 const router = useRouter()
 const { setToken, fetchMe } = useAuth()
 const msg = ref('Signing you in…')
 
 onMounted(async () => {
-  const t = new URLSearchParams(window.location.search).get('token')
+  const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash
+  const t = new URLSearchParams(hash).get('token')
+        || new URLSearchParams(window.location.search).get('token')
   if (!t) { msg.value = 'No sign-in token — try again.'; setTimeout(() => router.replace('/'), 1500); return }
   setToken(t)
   await fetchMe()

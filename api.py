@@ -185,9 +185,15 @@ def auth_callback(code: str = Query(...), state: str = Query(default="")):
         conn.commit()
     token = A.jwt_encode({"sub": u["discord_id"], "name": u.get("global_name") or u.get("username")})
     front = os.environ.get("FRONTEND_URL", "https://deepfrag.pages.dev")
-    target = f"{front}/auth?token={urllib.parse.quote(token)}"
+    # Hand the token back in the URL *fragment*, not the query string, and target
+    # the canonical trailing-slash path so no 308 fires. Fragments are reattached
+    # client-side across redirects and never reach the server/CF normalizer — so
+    # they survive the proxy + Pages path-canonicalization that strips query
+    # strings on same-zone redirects (the bug that lost ?token=). Standard OAuth
+    # implicit-flow convention. Short-TTL hand-off token, read once then stored.
+    target = f"{front}/auth/#token={urllib.parse.quote(token)}"
     print(f"[auth.callback] user={u['discord_id']} token_len={len(token)} "
-          f"redirect={front}/auth?token=<{len(token)}-char-jwt>", flush=True)
+          f"redirect={front}/auth/#token=<{len(token)}-char-jwt>", flush=True)
     return RedirectResponse(target)
 
 
@@ -2687,6 +2693,47 @@ def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(d
     return {"forfeited": True, "moves": moves}
 
 
+@app.get("/api/admin/oauth/status")
+def admin_oauth_status(authorization: str | None = Header(default=None)):
+    """OAuth/federation config snapshot for the admin panel (admin token).
+    Secrets are reported only as configured-or-not + a masked tail, never raw."""
+    _check_admin_auth(authorization)
+
+    def _mask(v):
+        if not v:
+            return None
+        return f"…{v[-4:]}" if len(v) > 4 else "set"
+
+    cid = os.environ.get("DISCORD_CLIENT_ID")
+    counts = {}
+    with pg() as conn:
+        cur = conn.cursor()
+        import auth as A
+        A.ensure_users(cur)
+        cur.execute("SELECT COUNT(*) n FROM users")
+        counts["users"] = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) n FROM users WHERE canonical_id IS NOT NULL")
+        counts["linked"] = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) n FROM users WHERE is_admin")
+        counts["admins"] = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) n FROM user_claims WHERE status='pending'")
+        counts["pending_claims"] = cur.fetchone()["n"]
+    return {
+        "discord": {
+            "provider": "Discord",
+            "configured": bool(cid and os.environ.get("DISCORD_CLIENT_SECRET")),
+            "client_id": cid,
+            "client_secret": _mask(os.environ.get("DISCORD_CLIENT_SECRET")),
+            "redirect_uri": os.environ.get("DISCORD_REDIRECT_URI"),
+            "frontend_url": os.environ.get("FRONTEND_URL"),
+            "scopes": ["identify"],
+            "jwt_secret": "set" if os.environ.get("JWT_SECRET") else "fallback(SYNC_SECRET)",
+            "webhook_configured": bool(os.environ.get("DISCORD_WEBHOOK_URL")),
+        },
+        "counts": counts,
+    }
+
+
 @app.get("/api/admin/users")
 def admin_users(authorization: str | None = Header(default=None)):
     """List Discord-authed users (admin token). Used to grant admin + link players."""
@@ -2695,9 +2742,15 @@ def admin_users(authorization: str | None = Header(default=None)):
     with pg() as conn:
         cur = conn.cursor()
         A.ensure_users(cur)
-        cur.execute("""SELECT discord_id, username, global_name, canonical_id, is_admin, created_at
-                       FROM users ORDER BY created_at DESC""")
-        return {"users": [dict(r, created_at=r["created_at"].isoformat() if r["created_at"] else None)
+        cur.execute("""SELECT u.discord_id, u.username, u.global_name, u.avatar,
+                              u.canonical_id, u.is_admin, u.created_at, u.last_login,
+                              pc.display_name AS profile_display
+                       FROM users u
+                       LEFT JOIN players_canonical pc ON pc.canonical_id = u.canonical_id
+                       ORDER BY u.created_at DESC""")
+        return {"users": [dict(r,
+                               created_at=r["created_at"].isoformat() if r["created_at"] else None,
+                               last_login=r["last_login"].isoformat() if r["last_login"] else None)
                           for r in cur.fetchall()]}
 
 
