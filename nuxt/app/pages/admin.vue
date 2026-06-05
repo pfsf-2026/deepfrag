@@ -256,7 +256,64 @@ watch(activeSection, (s) => {
   if (s === 'users') { loadUsers(); loadClaims() }
   if (s === 'oauth') { loadOAuth(); loadClaims() }
   if (s === 'ladder') loadLadder()
+  if (s === 'canon') loadCanon()
 })
+
+// ─── Canonicalize queue: clean up orphan/junk profiles ─────────────────────
+const canonList = ref([])
+const canonLoading = ref(false)
+const canonMin = ref(20)
+const canonMax = ref(100)
+const canonOnlyIsolated = ref(true)
+const canonLink = ref({})   // canonical_id -> {q, results, picked}
+
+async function loadCanon() {
+  canonLoading.value = true
+  try {
+    const p = new URLSearchParams({
+      min_matches: String(canonMin.value), max_matches: String(canonMax.value),
+      only_isolated: String(canonOnlyIsolated.value)
+    })
+    const r = await $fetch(`${apiBase}/api/admin/canon/review?${p}`, { headers: adminHeaders() })
+    canonList.value = r.profiles || []
+  } catch (e) {
+    pushEvent('err', 'CANON', e?.data?.detail || e?.message || 'load failed')
+  } finally {
+    canonLoading.value = false
+  }
+}
+
+let canonTimer = {}
+function canonSearch(cid) {
+  const st = canonLink.value[cid] || (canonLink.value[cid] = { q: '', results: [], picked: null })
+  clearTimeout(canonTimer[cid])
+  st.picked = null
+  if (!st.q || st.q.length < 2) { st.results = []; return }
+  canonTimer[cid] = setTimeout(async () => {
+    try {
+      const r = await $fetch(`${apiBase}/api/search?q=${encodeURIComponent(st.q)}&limit=8`)
+      st.results = (r.results || []).filter(x => x.canonical_id !== cid)
+    } catch { st.results = [] }
+  }, 220)
+}
+function canonPick(cid, p) {
+  const st = canonLink.value[cid]
+  st.picked = { id: p.canonical_id, display: p.display }
+  st.q = p.display; st.results = []
+}
+async function canonAction(row, action) {
+  const target = action === 'merge' ? canonLink.value[row.canonical_id]?.picked?.id : null
+  if (action === 'merge' && !target) { pushEvent('err', 'CANON', 'pick a profile to link into first'); return }
+  try {
+    await $fetch(`${apiBase}/api/admin/canon/${encodeURIComponent(row.canonical_id)}/review`, {
+      method: 'POST', headers: adminHeaders(), body: { action, target }
+    })
+    pushEvent('ok', 'CANON', `${action} ${row.display}${target ? ' → ' + target : ''}`)
+    canonList.value = canonList.value.filter(x => x.canonical_id !== row.canonical_id)
+  } catch (e) {
+    pushEvent('err', 'CANON', e?.data?.detail || e?.message || `${action} failed`)
+  }
+}
 
 // ─── Ladder admin: create ladder + seed teams + report results ─────────────
 const ladders = ref([])
@@ -1369,6 +1426,49 @@ function shortStatus(s) {
           <div v-else class="placeholder">Loading OAuth status…</div>
         </template>
 
+        <!-- CANONICALIZE QUEUE — profile cleanup -->
+        <template v-else-if="activeSection === 'canon'">
+          <div class="pane-head">
+            <div>
+              <h2>Canonicalize queue</h2>
+              <div class="scope">isolated profiles by match count · delete junk, link alts, or keep</div>
+            </div>
+            <div class="actions">
+              <label class="muted small">min <input v-model.number="canonMin" type="number" class="dd" style="width:64px;"></label>
+              <label class="muted small">max <input v-model.number="canonMax" type="number" class="dd" style="width:64px;"></label>
+              <label class="muted small" style="display:flex;align-items:center;gap:4px;"><input v-model="canonOnlyIsolated" type="checkbox"> isolated only</label>
+              <button class="btn ghost" @click="loadCanon" :disabled="canonLoading">⟳ Load</button>
+            </div>
+          </div>
+
+          <div v-if="canonLoading" class="placeholder">Loading profiles…</div>
+          <div v-else-if="!canonList.length" class="placeholder">No profiles in this range. 🎉</div>
+          <div v-else class="muted small" style="margin-bottom:10px;">{{ canonList.length }} profiles · {{ canonMin }}–{{ canonMax }} games{{ canonOnlyIsolated ? ' · single-variant (no connections)' : '' }}</div>
+
+          <div v-for="row in canonList" :key="row.canonical_id" class="canon-row">
+            <div class="canon-info">
+              <a :href="`/p/${encodeURIComponent(row.canonical_id)}`" target="_blank" class="canon-name">{{ row.display || row.canonical_id }}</a>
+              <span class="muted small">{{ row.matches }} games · {{ row.variants }} variant{{ row.variants === 1 ? '' : 's' }}<span v-if="row.region"> · {{ row.region }}</span><span v-if="row.last_seen"> · last {{ String(row.last_seen).slice(0,10) }}</span></span>
+            </div>
+            <div class="canon-link">
+              <input :value="canonLink[row.canonical_id]?.q || ''"
+                     @input="(e) => { (canonLink[row.canonical_id] || (canonLink[row.canonical_id]={q:'',results:[],picked:null})).q = e.target.value; canonSearch(row.canonical_id) }"
+                     placeholder="link into…" class="dd" style="width:160px;">
+              <div v-if="canonLink[row.canonical_id]?.results?.length" class="canon-res">
+                <button v-for="p in canonLink[row.canonical_id].results" :key="p.canonical_id" @click="canonPick(row.canonical_id, p)">
+                  {{ p.display }} <span class="muted">{{ p.matches }}</span>
+                </button>
+              </div>
+              <span v-if="canonLink[row.canonical_id]?.picked" class="picked-tag">→ {{ canonLink[row.canonical_id].picked.display }}</span>
+            </div>
+            <div class="canon-actions">
+              <button class="btn sm" :disabled="!canonLink[row.canonical_id]?.picked" @click="canonAction(row, 'merge')">Link</button>
+              <button class="btn sm ghost" @click="canonAction(row, 'keep')">Keep</button>
+              <button class="btn sm danger" @click="canonAction(row, 'delete')">Delete</button>
+            </div>
+          </div>
+        </template>
+
         <!-- Placeholders for other sections -->
         <template v-else>
           <div class="pane-head">
@@ -1655,4 +1755,19 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .slot-res button { text-align: left; background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
 .slot-res button:hover { border-color: var(--accent); }
 .slot-res .muted { color: var(--fg-3); }
+
+/* Canonicalize queue */
+.canon-row { display: grid; grid-template-columns: 1fr 220px auto; gap: 14px; align-items: center; padding: 10px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; }
+.canon-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.canon-name { font-weight: 700; color: var(--fg); text-decoration: none; }
+.canon-name:hover { color: var(--accent); }
+.canon-link { position: relative; }
+.canon-res { position: absolute; top: 100%; left: 0; right: 0; z-index: 5; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; max-height: 220px; overflow-y: auto; }
+.canon-res button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--fg); padding: 7px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.canon-res button:hover { background: var(--panel-3); }
+.canon-res .muted { color: var(--fg-3); }
+.picked-tag { display: inline-block; margin-top: 4px; font-size: 11px; color: var(--accent); }
+.canon-actions { display: flex; gap: 6px; }
+.btn.danger { background: rgba(239,68,68,0.15); color: var(--loss); }
+.btn.danger:hover { background: rgba(239,68,68,0.28); }
 </style>

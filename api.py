@@ -54,6 +54,21 @@ PG_URL = os.environ.get("DEEPFRAG_PG_URL", "postgresql:///deepfrag")
 
 app = FastAPI(title="DeepFrag API", version="0.2")
 
+
+@app.on_event("startup")
+def _startup_migrations():
+    """Idempotent column adds the public read paths depend on (e.g. profile
+    soft-delete `hidden`). Best-effort: never block startup."""
+    try:
+        with pg() as conn:
+            cur = conn.cursor()
+            cur.execute("ALTER TABLE players_canonical ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("ALTER TABLE players_canonical ADD COLUMN IF NOT EXISTS reviewed BOOLEAN NOT NULL DEFAULT FALSE")
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] migration warn: {e}", flush=True)
+
+
 # Compress rankings (240KB → ~30KB) and any future large payloads.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
@@ -433,6 +448,7 @@ def rankings(
             LEFT JOIN last_match_by_cid lm ON lm.canonical_id = r.canonical_id
             LEFT JOIN recent_by_cid re ON re.canonical_id = r.canonical_id
             WHERE r.mode = %(mode)s AND r.map = '' AND r.matches_rated >= %(min)s
+              AND NOT COALESCE(pc.hidden, FALSE)
         """, {"mode": mode, "min": min_matches, "recent": recent_cutoff})
         rows = cur.fetchall()
         cutoffs = _get_tier_cutoffs(cur, mode)
@@ -3103,7 +3119,8 @@ def search(q: str = Query(..., min_length=1, max_length=64), limit: int = Query(
             SELECT pc.canonical_id, pc.display_name AS display,
                    (SELECT COUNT(*) FROM players p WHERE p.canonical_id = pc.canonical_id) AS matches
             FROM players_canonical pc
-            WHERE LOWER(pc.display_name) LIKE %s OR pc.canonical_id LIKE %s
+            WHERE (LOWER(pc.display_name) LIKE %s OR pc.canonical_id LIKE %s)
+              AND NOT COALESCE(pc.hidden, FALSE)
             ORDER BY matches DESC
             LIMIT %s
         """, (pattern, pattern, limit))
@@ -3843,13 +3860,111 @@ def admin_sync(authorization: str | None = Header(default=None),
     return summary
 
 
+def _ensure_canon_review_schema(cur):
+    """Soft-delete + review flags on profiles, and a persistent merge table that
+    canonicalize.py honors so manual links survive re-runs."""
+    cur.execute("ALTER TABLE players_canonical ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE")
+    cur.execute("ALTER TABLE players_canonical ADD COLUMN IF NOT EXISTS reviewed BOOLEAN NOT NULL DEFAULT FALSE")
+    cur.execute("""CREATE TABLE IF NOT EXISTS canon_merges (
+        source_canonical_id TEXT PRIMARY KEY,
+        target_canonical_id TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT now()
+    )""")
+
+
+@app.get("/api/admin/canon/review")
+def admin_canon_review(authorization: str | None = Header(default=None),
+                       min_matches: int = Query(20, ge=0),
+                       max_matches: int = Query(100, ge=1),
+                       only_isolated: bool = Query(True)):
+    """Profiles in the [min,max] match range for cleanup review (ladder-admin).
+    `only_isolated` = just those with a single name-variant (don't connect to any
+    other profile) — the alts/junk most likely to need delete/link."""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_canon_review_schema(cur)
+        cur.execute("""
+            WITH mc AS (
+                SELECT canonical_id, COUNT(*) AS matches
+                FROM players GROUP BY canonical_id
+            ),
+            vc AS (
+                SELECT canonical_id, COUNT(*) AS variants
+                FROM player_name_map GROUP BY canonical_id
+            )
+            SELECT pc.canonical_id, pc.display_name AS display, pc.region,
+                   mc.matches, COALESCE(vc.variants, 0) AS variants,
+                   (SELECT MAX(m.match_date) FROM players p JOIN matches m ON m.id = p.match_id
+                      WHERE p.canonical_id = pc.canonical_id) AS last_seen
+            FROM players_canonical pc
+            JOIN mc ON mc.canonical_id = pc.canonical_id
+            LEFT JOIN vc ON vc.canonical_id = pc.canonical_id
+            WHERE NOT pc.hidden AND NOT pc.reviewed
+              AND mc.matches BETWEEN %s AND %s
+              AND (%s = FALSE OR COALESCE(vc.variants,0) <= 1)
+            ORDER BY mc.matches DESC, pc.display_name
+        """, (min_matches, max_matches, only_isolated))
+        rows = cur.fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        ls = d.get("last_seen")
+        d["last_seen"] = ls.isoformat() if hasattr(ls, "isoformat") else ls
+        out.append(d)
+    return {"profiles": out, "count": len(out)}
+
+
+@app.post("/api/admin/canon/{canonical_id}/review")
+def admin_canon_review_action(canonical_id: str, authorization: str | None = Header(default=None),
+                             action: str = Body(..., embed=True),
+                             target: str | None = Body(default=None, embed=True)):
+    """Resolve one profile from the cleanup queue (ladder-admin):
+      action='keep'   → mark reviewed, leave as-is
+      action='delete' → hide everywhere (soft; match data untouched, reversible)
+      action='merge'  → re-point this profile's matches+names into `target`,
+                        hide the source, and record it so canonicalize keeps it."""
+    _check_ladder_admin(authorization)
+    if action not in ("keep", "delete", "merge"):
+        raise HTTPException(400, "action must be keep|delete|merge")
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_canon_review_schema(cur)
+        cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id=%s", (canonical_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "profile not found")
+        if action == "keep":
+            cur.execute("UPDATE players_canonical SET reviewed=TRUE WHERE canonical_id=%s", (canonical_id,))
+        elif action == "delete":
+            cur.execute("UPDATE players_canonical SET hidden=TRUE, reviewed=TRUE WHERE canonical_id=%s", (canonical_id,))
+        else:  # merge
+            if not target or target == canonical_id:
+                raise HTTPException(400, "merge needs a different target profile")
+            cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id=%s", (target,))
+            if not cur.fetchone():
+                raise HTTPException(404, "target profile not found")
+            cur.execute("UPDATE players SET canonical_id=%s WHERE canonical_id=%s", (target, canonical_id))
+            cur.execute("UPDATE player_name_map SET canonical_id=%s WHERE canonical_id=%s", (target, canonical_id))
+            cur.execute("""INSERT INTO canon_merges (source_canonical_id, target_canonical_id)
+                           VALUES (%s,%s) ON CONFLICT (source_canonical_id)
+                           DO UPDATE SET target_canonical_id=EXCLUDED.target_canonical_id""",
+                        (canonical_id, target))
+            cur.execute("UPDATE players_canonical SET hidden=TRUE, reviewed=TRUE WHERE canonical_id=%s", (canonical_id,))
+        conn.commit()
+    return {"canonical_id": canonical_id, "action": action, "target": target}
+
+
 @app.post("/api/admin/recanonicalize")
 def admin_recanonicalize(authorization: str | None = Header(default=None)):
     """Run ONLY the name-canonicalization pass (apply aliases.yaml + name fixes)
     without the heavy match-pull/rating. Fast way to apply display/merge fixes.
     Returns canonicalize.py's full output so errors are visible. Ladder-admin."""
     _check_ladder_admin(authorization)
-    return _run_script("canonicalize.py", timeout=600)
+    r = _run_script("canonicalize.py", timeout=600)
+    # Also log to Cloud Run stdout so the error is greppable server-side.
+    print(f"[recanon] rc={r.get('returncode')}\nSTDOUT_TAIL:\n{r.get('stdout_tail','')}\n"
+          f"STDERR_TAIL:\n{r.get('stderr_tail','')}", flush=True)
+    return r
 
 
 @app.post("/api/admin/maps/seed-geometry")
