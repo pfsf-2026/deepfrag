@@ -2642,12 +2642,24 @@ def ladder_team_edit(team_id: int, authorization: str | None = Header(default=No
                      name: str | None = Body(default=None, embed=True),
                      tag: str | None = Body(default=None, embed=True),
                      teammate_canonical_id: str | None = Body(default=None, embed=True),
+                     members: list | None = Body(default=None, embed=True),
                      logo: str | None = Body(default=None, embed=True),
                      remove_logo: bool = Body(default=False, embed=True)):
-    """Edit a team's name/tag/teammate/logo. Allowed for a roster member of the
-    team (captain self-serve) OR any ladder admin. Only provided fields change."""
+    """Edit a team's name/tag/roster/logo. Allowed for a roster member of the
+    team (captain self-serve) OR any ladder admin (SYNC_SECRET or is_admin).
+    Admins may pass `members` to set the full roster (assign player profiles
+    after registration); captains use `teammate_canonical_id`. Only provided
+    fields change."""
     import ladder as _ladder
-    user = _current_user(authorization, required=True)
+    # Admins authenticate via SYNC_SECRET (god panel) or Discord is_admin;
+    # captains via their Discord JWT (must be on the roster).
+    expected = os.environ.get("SYNC_SECRET")
+    is_admin, user = False, None
+    if expected and authorization == f"Bearer {expected}":
+        is_admin = True
+    else:
+        user = _current_user(authorization, required=True)
+        is_admin = bool(user.get("is_admin"))
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
@@ -2655,25 +2667,38 @@ def ladder_team_edit(team_id: int, authorization: str | None = Header(default=No
         t = cur.fetchone()
         if not t:
             raise HTTPException(404, "team not found")
-        cid = user.get("canonical_id")
-        members = list(t["members"] or [])
-        allowed = user.get("is_admin") or user["discord_id"] == t["created_by"] or (cid and cid in members)
-        if not allowed:
-            raise HTTPException(403, "you can only edit your own team")
+        existing = list(t["members"] or [])
+        if not is_admin:
+            cid = user.get("canonical_id")
+            if not (user["discord_id"] == t["created_by"] or (cid and cid in existing)):
+                raise HTTPException(403, "you can only edit your own team")
         sets, vals = [], []
         if name is not None and name.strip():
             sets.append("name=%s"); vals.append(name.strip())
         if tag is not None:
             sets.append("tag=%s"); vals.append(_norm_tag(tag))
-        if teammate_canonical_id is not None:
-            # keep the captain (first member), set the teammate slot
-            cap = members[0] if members else cid
-            new_members = [cap]
+        # Admin path: set the whole roster verbatim. Captain path: replace the
+        # teammate slot, keeping the captain (first member).
+        new_members = None
+        if members is not None and is_admin:
+            new_members = []
+            for m in members:
+                m = (m or "").strip()
+                if not m or m in new_members:
+                    continue
+                cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id=%s", (m,))
+                if not cur.fetchone():
+                    raise HTTPException(404, f"player not found: {m}")
+                new_members.append(m)
+        elif teammate_canonical_id is not None:
+            cap = existing[0] if existing else (user.get("canonical_id") if user else None)
+            new_members = [cap] if cap else []
             if teammate_canonical_id and teammate_canonical_id != cap:
                 cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id=%s", (teammate_canonical_id,))
                 if not cur.fetchone():
                     raise HTTPException(404, "teammate player not found")
                 new_members.append(teammate_canonical_id)
+        if new_members is not None:
             sets.append("members=%s"); vals.append(json.dumps(new_members))
         if remove_logo:
             sets.append("logo=NULL"); sets.append("logo_type=NULL")

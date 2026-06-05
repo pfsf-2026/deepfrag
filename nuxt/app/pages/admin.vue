@@ -271,6 +271,56 @@ async function rejectTeam(t) {
   catch (e) { pushEvent('err', 'LADDER', e?.data?.detail || 'reject failed') }
 }
 
+// Admin team editor — set name/tag and assign player profiles (the roster).
+const teamEdit = ref(null)               // team being edited
+const teamEditForm = ref({ name: '', tag: '', slots: [] })  // slots: [{id, display}|null]
+const slotQ = ref(['', ''])
+const slotRes = ref([[], []])
+function openTeamEdit(t) {
+  teamEdit.value = t
+  const m = t.members || []
+  teamEditForm.value = {
+    name: t.name || '',
+    tag: t.tag || '',
+    slots: [m[0] ? { id: m[0].id, display: m[0].display } : null,
+            m[1] ? { id: m[1].id, display: m[1].display } : null]
+  }
+  slotQ.value = ['', '']
+  slotRes.value = [[], []]
+}
+let slotTimer = [null, null]
+function onSlotInput(i) {
+  clearTimeout(slotTimer[i])
+  teamEditForm.value.slots[i] = null
+  const q = slotQ.value[i]
+  if (!q || q.length < 2) { slotRes.value[i] = []; return }
+  slotTimer[i] = setTimeout(async () => {
+    try {
+      const r = await $fetch(`${apiBase}/api/search?q=${encodeURIComponent(q)}&limit=8`)
+      slotRes.value[i] = r.results || []
+    } catch { slotRes.value[i] = [] }
+  }, 220)
+}
+function pickSlot(i, p) {
+  teamEditForm.value.slots[i] = { id: p.canonical_id, display: p.display }
+  slotQ.value[i] = ''
+  slotRes.value[i] = []
+}
+function clearSlot(i) { teamEditForm.value.slots[i] = null }
+async function saveTeamEdit() {
+  const t = teamEdit.value
+  const members = teamEditForm.value.slots.filter(Boolean).map(s => s.id)
+  try {
+    await $fetch(`${apiBase}/api/ladder/team/${t.id}/edit`, {
+      method: 'POST', headers: adminHeaders(),
+      body: { name: teamEditForm.value.name, tag: teamEditForm.value.tag, members }
+    })
+    pushEvent('ok', 'LADDER', `updated ${teamEditForm.value.name}`)
+    teamEdit.value = null
+    await loadLadder()
+  } catch (e) { pushEvent('err', 'LADDER', e?.data?.detail || 'edit failed') }
+}
+
 async function createLadder() {
   if (!newLadder.value.name) return
   try {
@@ -1045,6 +1095,7 @@ function shortStatus(s) {
                 <strong>{{ t.name }}</strong>
                 <span class="muted small">{{ (t.members || []).map(m => m.display).join(' · ') || '—' }}</span>
                 <span class="spacer" />
+                <button class="btn sm ghost" @click="openTeamEdit(t)">Edit</button>
                 <button class="btn sm" @click="approveTeam(t)">Approve</button>
                 <button class="btn sm ghost" @click="rejectTeam(t)">Reject</button>
               </div>
@@ -1061,13 +1112,13 @@ function shortStatus(s) {
 
                 <div class="card" style="padding:0;">
                   <table class="deploy-table">
-                    <thead><tr><th>#</th><th>Team</th><th>Players</th><th>Status</th></tr></thead>
+                    <thead><tr><th>#</th><th>Team</th><th>Players</th><th></th></tr></thead>
                     <tbody>
                       <tr v-for="t in ladderDetail.teams" :key="t.id" :class="{ active: t.rung === 1 }">
                         <td class="mono">{{ t.rung }}</td>
-                        <td><strong>{{ t.name }}</strong></td>
+                        <td><span v-if="t.tag" class="badge info">{{ t.tag }}</span> <strong>{{ t.name }}</strong></td>
                         <td class="muted small">{{ (t.members || []).map(m => m.display).join(', ') || '—' }}</td>
-                        <td><span class="muted small">{{ t.id }}</span></td>
+                        <td><button class="btn sm ghost" @click="openTeamEdit(t)">Edit</button></td>
                       </tr>
                       <tr v-if="!ladderDetail.teams.length"><td colspan="4" class="muted center" style="padding:20px;">No teams yet — add the first below.</td></tr>
                     </tbody>
@@ -1121,6 +1172,35 @@ function shortStatus(s) {
               <div class="modal-actions">
                 <button class="btn ghost" @click="reportFor = null">Cancel</button>
                 <button class="btn" @click="submitReport">Save result</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Team roster editor -->
+          <div v-if="teamEdit" class="modal-bg" @click.self="teamEdit = null">
+            <div class="modal">
+              <h3>Edit team — assign profiles</h3>
+              <div class="form-grid">
+                <label>Team name<input v-model="teamEditForm.name"></label>
+                <label>Tag<input v-model="teamEditForm.tag" maxlength="6" style="text-transform:uppercase;"></label>
+                <div v-for="(slot, i) in teamEditForm.slots" :key="i" class="slot">
+                  <label>Player {{ i + 1 }}
+                    <div v-if="slot" class="slot-picked">
+                      <span>{{ slot.display }}</span>
+                      <button class="x" @click="clearSlot(i)">✕</button>
+                    </div>
+                    <input v-else v-model="slotQ[i]" placeholder="search QW name…" @input="onSlotInput(i)">
+                  </label>
+                  <div v-if="slotRes[i].length" class="slot-res">
+                    <button v-for="p in slotRes[i]" :key="p.canonical_id" @click="pickSlot(i, p)">
+                      {{ p.display }} <span class="muted">{{ p.matches }}m</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-actions">
+                <button class="btn ghost" @click="teamEdit = null">Cancel</button>
+                <button class="btn" @click="saveTeamEdit">Save team</button>
               </div>
             </div>
           </div>
@@ -1530,4 +1610,11 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
 .form-grid input, .form-grid select { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 8px 12px; border-radius: 6px; font-family: inherit; font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: 0; }
 .form-grid input:focus, .form-grid select:focus { outline: none; border-color: var(--accent); }
+.slot { display: flex; flex-direction: column; gap: 4px; }
+.slot-picked { display: flex; align-items: center; justify-content: space-between; background: rgba(20,230,192,0.1); border: 1px solid rgba(20,230,192,0.3); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+.slot-picked .x { background: none; border: 0; color: var(--fg-3); cursor: pointer; }
+.slot-res { display: flex; flex-direction: column; gap: 3px; }
+.slot-res button { text-align: left; background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.slot-res button:hover { border-color: var(--accent); }
+.slot-res .muted { color: var(--fg-3); }
 </style>
