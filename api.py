@@ -2461,6 +2461,11 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
                     (ladder_id, challenger_id, challenged_id, gap, deadline))
         chid = cur.fetchone()["id"]
         conn.commit()
+    try:
+        import notify
+        notify.challenge_issued(chr_t["name"], chd_t["name"], gap, deadline.isoformat())
+    except Exception:
+        pass
     return {"challenge_id": chid, "deadline": deadline.isoformat(), "rungs_up": gap}
 
 
@@ -2498,7 +2503,27 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
             moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
         # challenged win → ranks unchanged (challenger simply failed to climb)
         cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now() WHERE id=%s", (challenge_id,))
+        # Names for the notification (winner/loser).
+        loser_id = ch["challenged_id"] if winner_id == ch["challenger_id"] else ch["challenger_id"]
+        cur.execute("SELECT id, name FROM ladder_teams WHERE id IN (%s,%s)", (winner_id, loser_id))
+        names = {r["id"]: r["name"] for r in cur.fetchall()}
+        # KotH change = a team newly at rung 1 (only the climbing challenger can be).
+        new_koth = next((tid for tid, r in moves.items() if r == 1), None)
+        koth_name = names.get(new_koth)
+        if new_koth and not koth_name:
+            cur.execute("SELECT name FROM ladder_teams WHERE id=%s", (new_koth,))
+            row = cur.fetchone()
+            koth_name = row["name"] if row else None
         conn.commit()
+    try:
+        import notify
+        score = f"{score_a}-{score_b}" if score_a is not None and score_b is not None else None
+        notify.result_posted(names.get(winner_id, f"#{winner_id}"), names.get(loser_id, f"#{loser_id}"),
+                             score, climbed=bool(moves))
+        if koth_name:
+            notify.koth_changed(koth_name)
+    except Exception:
+        pass
     return {"match_id": match_id, "winner_id": winner_id, "moves": moves}
 
 
@@ -2519,7 +2544,24 @@ def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(d
             raise HTTPException(409, "challenge already resolved")
         moves = _ladder.apply_forfeit(cur, ch["ladder_id"], ch["challenged_id"])
         cur.execute("UPDATE ladder_challenges SET status='forfeited', resolved_at=now() WHERE id=%s", (challenge_id,))
+        cur.execute("SELECT name FROM ladder_teams WHERE id=%s", (ch["challenged_id"],))
+        row = cur.fetchone()
+        chd_name = row["name"] if row else f"#{ch['challenged_id']}"
+        # A forfeit can promote the team below into rung 1.
+        new_koth = next((tid for tid, r in moves.items() if r == 1 and tid != ch["challenged_id"]), None)
+        koth_name = None
+        if new_koth:
+            cur.execute("SELECT name FROM ladder_teams WHERE id=%s", (new_koth,))
+            r = cur.fetchone()
+            koth_name = r["name"] if r else None
         conn.commit()
+    try:
+        import notify
+        notify.forfeit_posted(chd_name)
+        if koth_name:
+            notify.koth_changed(koth_name)
+    except Exception:
+        pass
     return {"forfeited": True, "moves": moves}
 
 

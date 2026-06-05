@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Discord webhook notifications for the Speakeasy ladder.
+
+Best-effort: every send is wrapped so a webhook outage NEVER breaks the API
+call that triggered it. Posts to DISCORD_WEBHOOK_URL (a channel webhook, not the
+bot/OAuth app). Set it in Cloud Run env to enable; unset = silently no-op.
+
+Events: challenge issued, result reported (with movement), forfeit, KotH change.
+"""
+from __future__ import annotations
+
+import json
+import os
+import urllib.request
+
+# DeepFrag teal, matches the site accent.
+COLOR = 0x14E6C0
+COLOR_WIN = 0x22C55E
+COLOR_WARN = 0xF59E0B
+COLOR_CHALLENGE = 0xEF4444
+LADDER_URL = "https://deepfrag.pages.dev/ladder"
+
+
+def _url() -> str | None:
+    return os.environ.get("DISCORD_WEBHOOK_URL")
+
+
+def send(content: str | None = None, embed: dict | None = None) -> bool:
+    """Post to the configured webhook. Returns True on 2xx, False otherwise (or
+    if no webhook configured). Never raises."""
+    url = _url()
+    if not url:
+        return False
+    payload: dict = {}
+    if content:
+        payload["content"] = content
+    if embed:
+        payload["embeds"] = [embed]
+    if not payload:
+        return False
+    try:
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return 200 <= r.status < 300
+    except Exception:
+        return False
+
+
+def _embed(title: str, description: str, color: int) -> dict:
+    return {"title": title, "description": description, "color": color,
+            "url": LADDER_URL}
+
+
+# ── event builders ───────────────────────────────────────────────────────────
+
+def challenge_issued(challenger: str, challenged: str, rungs_up: int, deadline_iso: str | None):
+    by = f"in by **{deadline_iso[:10]}**" if deadline_iso else "soon"
+    return send(embed=_embed(
+        "⚔️ New challenge",
+        f"**{challenger}** challenged **{challenged}** "
+        f"({rungs_up} rung{'s' if rungs_up != 1 else ''} up).\nPlay {by}.",
+        COLOR_CHALLENGE))
+
+
+def result_posted(winner: str, loser: str, score: str | None, climbed: bool):
+    line = f"**{winner}** beat **{loser}**"
+    if score:
+        line += f" ({score})"
+    line += "\n" + ("📈 climbs the ladder." if climbed
+                    else "Ranks hold — challenger couldn't break through.")
+    return send(embed=_embed("🏆 Result", line, COLOR_WIN))
+
+
+def forfeit_posted(challenged: str):
+    return send(embed=_embed(
+        "⏳ Forfeit",
+        f"**{challenged}** didn't play in time and drops a rung.",
+        COLOR_WARN))
+
+
+def koth_changed(team: str):
+    return send(embed=_embed(
+        "👑 New King of the Hill",
+        f"**{team}** takes the top of the ladder!",
+        COLOR))
