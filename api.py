@@ -16,6 +16,7 @@ Run local:
   uvicorn api:app --reload --port 8000
 """
 
+import base64
 import json
 import os
 import urllib.parse
@@ -2514,9 +2515,9 @@ def admin_ladder_create(authorization: str | None = Header(default=None),
                         rules: dict = Body(default={}, embed=True),
                         team_size: int = Body(default=2, embed=True),
                         season: str | None = Body(default=None, embed=True)):
-    """Create a ladder (admin). Idempotent on name."""
+    """Create a ladder (ladder-admin). Idempotent on name."""
     import ladder as _ladder
-    _check_admin_auth(authorization)
+    _check_ladder_admin(authorization)
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
@@ -2537,9 +2538,9 @@ def admin_ladder_add_team(ladder_id: int, authorization: str | None = Header(def
                          name: str = Body(..., embed=True),
                          members: list = Body(default=[], embed=True),
                          rung: int | None = Body(default=None, embed=True)):
-    """Add/seed a team (admin). rung=N seeds at that rung; omit → bottom."""
+    """Add/seed a team (ladder-admin). rung=N seeds at that rung; omit → bottom."""
     import ladder as _ladder
-    _check_admin_auth(authorization)
+    _check_ladder_admin(authorization)
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
@@ -2555,6 +2556,132 @@ def admin_ladder_add_team(ladder_id: int, authorization: str | None = Header(def
             _ladder.place_new_team(cur, ladder_id, tid)
         conn.commit()
     return {"team_id": tid, "name": name}
+
+
+@app.post("/api/ladder/{ladder_id}/team/signup")
+def ladder_team_signup(ladder_id: int, authorization: str | None = Header(default=None),
+                       name: str = Body(..., embed=True),
+                       teammate_canonical_id: str | None = Body(default=None, embed=True),
+                       logo: str | None = Body(default=None, embed=True)):
+    """A captain registers a team: themselves + a teammate (by canonical_id),
+    a team name, and an optional logo (data URI). Lands as PENDING for admin
+    approval — never auto-placed. Requires a linked player profile."""
+    import ladder as _ladder
+    user = _current_user(authorization, required=True)
+    cid = user.get("canonical_id")
+    if not cid:
+        raise HTTPException(403, "link your player profile first")
+    members = [cid]
+    if teammate_canonical_id and teammate_canonical_id != cid:
+        members.append(teammate_canonical_id)
+    logo_bytes, logo_type = _parse_logo_data_uri(logo)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT 1 FROM ladders WHERE id=%s AND status='active'", (ladder_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "ladder not found")
+        # validate teammate exists
+        if teammate_canonical_id:
+            cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id=%s", (teammate_canonical_id,))
+            if not cur.fetchone():
+                raise HTTPException(404, "teammate player not found")
+        try:
+            cur.execute("""INSERT INTO ladder_teams
+                           (ladder_id, name, members, rung, active, status, created_by, logo, logo_type)
+                           VALUES (%s,%s,%s,NULL,FALSE,'pending',%s,%s,%s) RETURNING id""",
+                        (ladder_id, name, json.dumps(members), user["discord_id"],
+                         psycopg2.Binary(logo_bytes) if logo_bytes else None, logo_type))
+        except psycopg2.errors.UniqueViolation:
+            conn.rollback()
+            raise HTTPException(409, "that team name is already taken")
+        tid = cur.fetchone()["id"]
+        conn.commit()
+    try:
+        import notify
+        notify.send(embed={"title": "🆕 Team signup (pending)",
+                           "description": f"**{name}** registered — awaiting admin approval.",
+                           "color": 0x14E6C0})
+    except Exception:
+        pass
+    return {"team_id": tid, "name": name, "status": "pending"}
+
+
+@app.get("/api/admin/ladder/{ladder_id}/teams/pending")
+def admin_ladder_pending(ladder_id: int, authorization: str | None = Header(default=None)):
+    """Pending team signups awaiting approval (ladder-admin)."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT id, name, members, created_by, created_at,
+                              (logo IS NOT NULL) AS has_logo
+                       FROM ladder_teams
+                       WHERE ladder_id=%s AND status='pending'
+                       ORDER BY created_at""", (ladder_id,))
+        teams = [dict(r, created_at=r["created_at"].isoformat() if r["created_at"] else None)
+                 for r in cur.fetchall()]
+        teams = _enrich_members(cur, teams)
+    return {"pending": teams}
+
+
+@app.post("/api/admin/ladder/team/{team_id}/approve")
+def admin_ladder_team_approve(team_id: int, authorization: str | None = Header(default=None)):
+    """Approve a pending team → activate it + place at the bottom rung (ladder-admin)."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT id, ladder_id, name, status FROM ladder_teams WHERE id=%s", (team_id,))
+        t = cur.fetchone()
+        if not t:
+            raise HTTPException(404, "team not found")
+        if t["status"] != "pending":
+            raise HTTPException(409, "team is not pending")
+        cur.execute("UPDATE ladder_teams SET status='active', active=TRUE WHERE id=%s", (team_id,))
+        rung = _ladder.place_new_team(cur, t["ladder_id"], team_id)
+        conn.commit()
+    try:
+        import notify
+        notify.send(embed={"title": "✅ Team approved",
+                           "description": f"**{t['name']}** joins the ladder at rung {rung}.",
+                           "color": 0x22C55E})
+    except Exception:
+        pass
+    return {"team_id": team_id, "status": "active", "rung": rung}
+
+
+@app.post("/api/admin/ladder/team/{team_id}/reject")
+def admin_ladder_team_reject(team_id: int, authorization: str | None = Header(default=None)):
+    """Reject a pending team signup (ladder-admin)."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("UPDATE ladder_teams SET status='rejected', active=FALSE WHERE id=%s AND status='pending' RETURNING name",
+                    (team_id,))
+        row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(404, "no pending team with that id")
+    return {"team_id": team_id, "status": "rejected"}
+
+
+@app.get("/api/ladder/team/{team_id}/logo")
+def ladder_team_logo(team_id: int):
+    """Serve a team's logo image (public). Long browser cache — logos rarely change."""
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT logo, logo_type FROM ladder_teams WHERE id=%s", (team_id,))
+        row = cur.fetchone()
+    if not row or not row["logo"]:
+        raise HTTPException(404, "no logo")
+    data = bytes(row["logo"])
+    return Response(content=data, media_type=row["logo_type"] or "image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 def _team_row(cur, ladder_id, team_id):
@@ -2627,7 +2754,7 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
     movement (challenger win → climb; challenged win → no movement), and
     resolves the challenge. hub_game_ids are pulled from the maps payload."""
     import ladder as _ladder
-    _check_admin_auth(authorization)
+    _check_ladder_admin(authorization)
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
@@ -2680,7 +2807,7 @@ def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(d
     """Admin marks a challenge as forfeited (challenged team didn't play in
     time): the challenged team drops one rung."""
     import ladder as _ladder
-    _check_admin_auth(authorization)
+    _check_ladder_admin(authorization)
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
@@ -2864,6 +2991,40 @@ def _check_admin_auth(authorization: str | None):
         raise HTTPException(503, "SYNC_SECRET not configured on the server")
     if authorization != f"Bearer {expected}":
         raise HTTPException(401, "missing or invalid bearer token")
+
+
+def _check_ladder_admin(authorization: str | None):
+    """Ladder management auth: EITHER Peter's SYNC_SECRET (god key, used by the
+    /admin panel) OR any Discord-authed user with is_admin (Nin/Bance/Cronus via
+    plain login on /ladder/admin). Lets co-admins run the ladder without the god
+    key, while the rest of /admin stays SYNC_SECRET-only."""
+    expected = os.environ.get("SYNC_SECRET")
+    if expected and authorization == f"Bearer {expected}":
+        return {"via": "sync_secret", "is_admin": True, "discord_id": None}
+    u = _current_user(authorization, required=False)
+    if u and u.get("is_admin"):
+        return u
+    raise HTTPException(403, "ladder admin access required")
+
+
+def _parse_logo_data_uri(s: str):
+    """Decode a 'data:image/...;base64,...' string to (bytes, mime). Capped so a
+    team logo can't bloat the DB. Returns (None, None) for empty input."""
+    if not s:
+        return None, None
+    if not s.startswith("data:") or "," not in s:
+        raise HTTPException(400, "logo must be a data URI")
+    head, b64 = s.split(",", 1)
+    mime = head[5:].split(";")[0] or "image/png"
+    if mime not in ("image/png", "image/jpeg", "image/webp", "image/gif"):
+        raise HTTPException(400, "logo must be PNG/JPEG/WebP/GIF")
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        raise HTTPException(400, "invalid logo encoding")
+    if len(raw) > 600_000:
+        raise HTTPException(413, "logo too large (max ~500KB — resize first)")
+    return raw, mime
 
 
 @app.get("/api/admin/status")

@@ -8,6 +8,17 @@ const { user, loggedIn, login } = useAuth()
 // Show the claim flow when signed in but not yet linked to a profile (and no
 // pending claim already in flight).
 const needsClaim = computed(() => loggedIn.value && user.value && !user.value.canonical_id && !user.value.pending_claim)
+const showAddTeam = ref(false)
+const teamSubmitted = ref('')
+// Already rostered on an active team? (pending teams aren't in standings.)
+const onTeam = computed(() => {
+  const cid = user.value?.canonical_id
+  return !!cid && teams.value.some(t => (t.members || []).some(m => m.id === cid))
+})
+// Linked player, not yet on a team, ladder is open → can register a team.
+const canAddTeam = computed(() => loggedIn.value && user.value?.canonical_id && ladder.value && !onTeam.value)
+function onTeamAdded(name) { showAddTeam.value = false; teamSubmitted.value = name }
+function logoUrl(id) { return `${base}/api/ladder/team/${id}/logo` }
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 
@@ -75,6 +86,19 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
       <div v-else-if="user?.pending_claim" class="pending-note">
         ⏳ Profile claim for <strong>{{ user.pending_claim.display }}</strong> is awaiting admin approval.
       </div>
+
+      <div v-if="teamSubmitted" class="pending-note">
+        ✅ Team <strong>{{ teamSubmitted }}</strong> submitted — an admin will approve it and you'll appear on the board.
+      </div>
+      <div v-else-if="canAddTeam" class="add-team-bar">
+        <div>
+          <strong>You're not on a team yet.</strong>
+          <span class="muted"> Register yourself + a teammate to join the ladder.</span>
+        </div>
+        <button class="cta" @click="showAddTeam = true">+ Add Your Team</button>
+      </div>
+
+      <AddTeam v-if="showAddTeam && ladder" :ladder-id="ladder.id" @done="onTeamAdded" @close="showAddTeam = false" />
     </ClientOnly>
 
     <div v-if="loading" class="muted pad">Loading the board…</div>
@@ -114,6 +138,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
         >
           <span class="c-rung">{{ t.rung }}</span>
           <span class="c-team">
+            <img v-if="t.has_logo" :src="logoUrl(t.id)" class="tlogo" alt="">
             <span class="tname">{{ t.name }}</span>
           </span>
           <span class="c-members">{{ membersLabel(t) || '—' }}</span>
@@ -170,6 +195,9 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .muted { color: var(--fg-2); }
 .pad { padding: 40px 0; text-align: center; }
 .pending-note { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; color: var(--fg-2); font-size: 14px; }
+.add-team-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; }
+.add-team-bar .muted { color: var(--fg-3); }
+.tlogo { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; margin-right: 8px; vertical-align: middle; }
 
 .empty { text-align: center; padding: 60px 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
 .empty h2 { margin: 0 0 8px; }
@@ -198,6 +226,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .row.top { background: rgba(245,158,11,0.07); }
 .row.top .c-rung { color: var(--draw); }
 .row.top .tname::before { content: '👑 '; }
+.c-team { display: flex; align-items: center; }
 .tname { font-weight: 700; }
 .c-members { color: var(--fg-2); font-size: 13px; }
 .badge { font-size: 12px; padding: 3px 9px; border-radius: 999px; font-weight: 600; }

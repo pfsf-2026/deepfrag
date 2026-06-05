@@ -85,10 +85,20 @@ CREATE INDEX IF NOT EXISTS ladder_movements_koth ON ladder_movements (ladder_id,
 
 def ensure_schema(cur):
     cur.execute(DDL)
+    # Self-serve team signup additions (idempotent). Teams created by captains
+    # start status='pending' + active=false (hidden from the board) until an
+    # admin approves; logo stored in-DB (small ladder, no bucket needed).
+    cur.execute("""
+        ALTER TABLE ladder_teams ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+        ALTER TABLE ladder_teams ADD COLUMN IF NOT EXISTS logo BYTEA;
+        ALTER TABLE ladder_teams ADD COLUMN IF NOT EXISTS logo_type TEXT;
+        ALTER TABLE ladder_teams ADD COLUMN IF NOT EXISTS created_by TEXT;
+    """)
 
 
 def standings(cur, ladder_id):
-    cur.execute("""SELECT id, name, members, rung, active FROM ladder_teams
+    cur.execute("""SELECT id, name, members, rung, active, (logo IS NOT NULL) AS has_logo
+                   FROM ladder_teams
                    WHERE ladder_id=%s AND active ORDER BY rung NULLS LAST, id""", (ladder_id,))
     return cur.fetchall()
 
