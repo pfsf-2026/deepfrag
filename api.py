@@ -192,9 +192,125 @@ def auth_callback(code: str = Query(...), state: str = Query(default="")):
 
 
 @app.get("/api/auth/me")
-def auth_me(authorization: str | None = Header(default=None)):
-    """Current logged-in user (from the Bearer JWT)."""
-    return _current_user(authorization, required=True)
+def auth_me(authorization: str | None = Header(default=None), response: Response = None):
+    """Current logged-in user (from the Bearer JWT), plus linked-profile display
+    and any pending claim — the frontend uses these to decide whether to show
+    the 'claim your profile' flow."""
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store"
+    u = dict(_current_user(authorization, required=True))
+    with pg() as conn:
+        cur = conn.cursor()
+        if u.get("canonical_id"):
+            cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id=%s", (u["canonical_id"],))
+            row = cur.fetchone()
+            u["profile_display"] = row["display_name"] if row else None
+        cur.execute("""SELECT canonical_id, status, created_at FROM user_claims
+                       WHERE discord_id=%s AND status='pending' ORDER BY created_at DESC LIMIT 1""",
+                    (u["discord_id"],))
+        c = cur.fetchone()
+        if c:
+            cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id=%s", (c["canonical_id"],))
+            pr = cur.fetchone()
+            u["pending_claim"] = {"canonical_id": c["canonical_id"],
+                                  "display": pr["display_name"] if pr else c["canonical_id"]}
+    return u
+
+
+@app.get("/api/auth/claim/suggestions")
+def auth_claim_suggestions(authorization: str | None = Header(default=None)):
+    """Fuzzy-match the user's Discord name(s) against player nicks → candidate
+    profiles to pick from (option C). Falls back to the Player Search box if none
+    look right (option B)."""
+    u = _current_user(authorization, required=True)
+    names = [n for n in {u.get("global_name"), u.get("username")} if n]
+    seen, out = set(), []
+    with pg() as conn:
+        cur = conn.cursor()
+        for n in names:
+            cur.execute("""
+                SELECT pc.canonical_id, pc.display_name AS display,
+                       (SELECT COUNT(*) FROM players p WHERE p.canonical_id = pc.canonical_id) AS matches
+                FROM players_canonical pc
+                WHERE LOWER(pc.display_name) LIKE %s
+                ORDER BY matches DESC LIMIT 8
+            """, (f"%{n.lower()}%",))
+            for r in cur.fetchall():
+                if r["canonical_id"] not in seen:
+                    seen.add(r["canonical_id"])
+                    out.append(r)
+    return {"names_tried": names, "suggestions": out[:8]}
+
+
+@app.post("/api/auth/claim")
+def auth_claim(authorization: str | None = Header(default=None),
+               canonical_id: str = Body(..., embed=True)):
+    """User claims a profile is theirs. Creates a PENDING claim for admin
+    approval (never auto-links). Replaces any prior pending claim."""
+    import auth as A
+    u = _current_user(authorization, required=True)
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id=%s", (canonical_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "no such player")
+        cur.execute("DELETE FROM user_claims WHERE discord_id=%s AND status='pending'", (u["discord_id"],))
+        cur.execute("""INSERT INTO user_claims (discord_id, canonical_id) VALUES (%s,%s) RETURNING id""",
+                    (u["discord_id"], canonical_id))
+        cid = cur.fetchone()["id"]
+        conn.commit()
+    return {"claim_id": cid, "canonical_id": canonical_id, "status": "pending"}
+
+
+@app.get("/api/admin/claims")
+def admin_claims(authorization: str | None = Header(default=None),
+                 status: str = Query("pending")):
+    """List account→profile claims for admin review (admin token)."""
+    import auth as A
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        cur.execute("""
+            SELECT c.id, c.discord_id, c.canonical_id, c.status, c.created_at,
+                   u.username, u.global_name, u.avatar,
+                   pc.display_name AS profile_display,
+                   (SELECT COUNT(*) FROM players p WHERE p.canonical_id = c.canonical_id) AS profile_matches
+            FROM user_claims c
+            JOIN users u ON u.discord_id = c.discord_id
+            LEFT JOIN players_canonical pc ON pc.canonical_id = c.canonical_id
+            WHERE c.status = %s
+            ORDER BY c.created_at DESC
+        """, (status,))
+        return {"claims": [dict(r, created_at=r["created_at"].isoformat() if r["created_at"] else None)
+                           for r in cur.fetchall()]}
+
+
+@app.post("/api/admin/claims/{claim_id}/resolve")
+def admin_resolve_claim(claim_id: int, authorization: str | None = Header(default=None),
+                        approve: bool = Body(..., embed=True)):
+    """Approve (link the Discord account to the player) or reject a claim."""
+    import auth as A
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        cur.execute("SELECT * FROM user_claims WHERE id=%s", (claim_id,))
+        c = cur.fetchone()
+        if not c:
+            raise HTTPException(404, "claim not found")
+        if c["status"] != "pending":
+            raise HTTPException(409, "claim already resolved")
+        new_status = "approved" if approve else "rejected"
+        if approve:
+            cur.execute("UPDATE users SET canonical_id=%s WHERE discord_id=%s",
+                        (c["canonical_id"], c["discord_id"]))
+        cur.execute("""UPDATE user_claims SET status=%s, resolved_at=now(), resolved_by='token'
+                       WHERE id=%s""", (new_status, claim_id))
+        conn.commit()
+    return {"claim_id": claim_id, "status": new_status,
+            "linked": c["canonical_id"] if approve else None}
 
 
 @app.get("/api/health")

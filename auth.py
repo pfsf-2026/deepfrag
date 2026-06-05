@@ -126,8 +126,25 @@ CREATE TABLE IF NOT EXISTS users (
 """
 
 
+CLAIMS_DDL = """
+CREATE TABLE IF NOT EXISTS user_claims (
+  id           BIGSERIAL PRIMARY KEY,
+  discord_id   TEXT NOT NULL REFERENCES users(discord_id),
+  canonical_id TEXT NOT NULL,                 -- the QW player they say is them
+  status       TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected
+  created_at   TIMESTAMPTZ DEFAULT now(),
+  resolved_at  TIMESTAMPTZ,
+  resolved_by  TEXT                            -- admin discord_id (or 'token')
+);
+-- One live (pending) claim per user; re-claiming replaces it.
+CREATE UNIQUE INDEX IF NOT EXISTS user_claims_one_pending
+  ON user_claims (discord_id) WHERE status = 'pending';
+"""
+
+
 def ensure_users(cur):
     cur.execute(USERS_DDL)
+    cur.execute(CLAIMS_DDL)
 
 
 def upsert_user(cur, du: dict) -> dict:

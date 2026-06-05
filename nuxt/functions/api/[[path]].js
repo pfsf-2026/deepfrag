@@ -27,6 +27,9 @@ function isCacheable(pathname, request) {
   if (request.method !== 'GET') return false;
   // Admin paths never
   if (pathname.startsWith('/api/admin')) return false;
+  // Auth/OAuth paths NEVER — the callback returns a one-time token in its
+  // redirect; caching it would leak user A's session to user B.
+  if (pathname.startsWith('/api/auth')) return false;
   return CACHEABLE_PREFIXES.some(p => pathname.startsWith(p));
 }
 
@@ -67,7 +70,10 @@ export async function onRequest(context) {
     if (originResp.status >= 300 && originResp.status < 400) {
       return new Response(null, {
         status: originResp.status,
-        headers: { Location: originResp.headers.get('Location') || '' },
+        headers: {
+          Location: originResp.headers.get('Location') || '',
+          'Cache-Control': 'no-store',
+        },
       });
     }
     return originResp;
