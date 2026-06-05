@@ -3843,6 +3843,15 @@ def admin_sync(authorization: str | None = Header(default=None),
     return summary
 
 
+@app.post("/api/admin/recanonicalize")
+def admin_recanonicalize(authorization: str | None = Header(default=None)):
+    """Run ONLY the name-canonicalization pass (apply aliases.yaml + name fixes)
+    without the heavy match-pull/rating. Fast way to apply display/merge fixes.
+    Returns canonicalize.py's full output so errors are visible. Ladder-admin."""
+    _check_ladder_admin(authorization)
+    return _run_script("canonicalize.py", timeout=600)
+
+
 @app.post("/api/admin/maps/seed-geometry")
 def admin_seed_map_geometry(authorization: str | None = Header(default=None)):
     """One-shot (re-runnable) setup for the map annotator:

@@ -184,6 +184,32 @@ async function triggerSync() {
   }
 }
 
+// ─── Recanonicalize names (fast name pass; surfaces errors) ───────────────
+const recanonRunning = ref(false)
+async function recanon() {
+  recanonRunning.value = true
+  pushEvent('info', 'CANON', 'recanonicalize started…')
+  try {
+    const r = await $fetch(`${apiBase}/api/admin/recanonicalize`, {
+      method: 'POST', headers: adminHeaders(), timeout: 620000
+    })
+    if (r.returncode === 0) {
+      pushEvent('ok', 'CANON', `done · ${(r.stdout_tail || '').split('\n').filter(Boolean).slice(-1)[0] || 'ok'}`)
+    } else {
+      pushEvent('err', 'CANON', `rc=${r.returncode} · ${(r.stderr_tail || '').slice(-400)}`)
+    }
+    // Always surface the tails so we can read them
+    console.log('[recanon] stdout:', r.stdout_tail)
+    console.log('[recanon] stderr:', r.stderr_tail)
+    recanonResult.value = r
+  } catch (e) {
+    pushEvent('err', 'CANON', e?.data?.detail || e?.message || 'failed')
+  } finally {
+    recanonRunning.value = false
+  }
+}
+const recanonResult = ref(null)
+
 // ─── Full re-rate ────────────────────────────────────────────────────────
 function startRerate() {
   rerateState.value = 'confirming'
@@ -657,8 +683,16 @@ function shortStatus(s) {
             <div class="actions">
               <button class="btn" @click="loadStatus" :disabled="statusLoading">⟳ Refresh</button>
               <button class="btn ghost" @click="triggerSync">Trigger sync</button>
+              <button class="btn ghost" @click="recanon" :disabled="recanonRunning">{{ recanonRunning ? 'Recanonicalizing…' : 'Recanonicalize names' }}</button>
               <button class="btn warn" @click="startRerate">Full re-rate</button>
             </div>
+          </div>
+
+          <div v-if="recanonResult" class="card" style="margin-bottom:14px;">
+            <h3>Recanonicalize output
+              <span class="meta">rc={{ recanonResult.returncode }} <a class="link" @click="recanonResult=null">dismiss</a></span>
+            </h3>
+            <pre style="background:var(--bg); border:1px solid var(--border); padding:12px; border-radius:6px; font-size:11px; max-height:260px; overflow:auto; white-space:pre-wrap;">{{ recanonResult.stderr_tail || recanonResult.stdout_tail || '(no output)' }}</pre>
           </div>
 
           <div v-if="statusError" class="placeholder err">{{ statusError }}</div>
