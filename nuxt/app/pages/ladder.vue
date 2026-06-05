@@ -1,5 +1,5 @@
 <script setup>
-// Speakeasy 2v2 ladder — public standings board. Reads /api/ladder (active
+// King of the Hill (KOTH) 2v2 ladder — public standings board. Reads /api/ladder (active
 // ladders) then /api/ladder/{id} for the ranked rungs, King of the Hill, and
 // open challenges. Captain self-serve (challenge/report) is Discord-gated and
 // lands on top of this once OAuth is live.
@@ -59,16 +59,14 @@ function membersLabel(t) {
   return (t.members || []).map(m => m.display).join(' · ')
 }
 
-useHead({ title: 'Speakeasy Ladder · DeepFrag' })
+useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 </script>
 
 <template>
   <div class="wrap">
     <header class="head">
-      <div>
-        <h1>Speakeasy <span class="accent">2v2</span> Ladder</h1>
-        <p class="sub">Challenge up. Win to climb. King of the Hill runs to Christmas.</p>
-      </div>
+      <img src="/koth-ladder.jpg" alt="KOTH — 2v2 Ladder" class="koth-logo">
+      <p class="sub">Challenge up. Win to climb. Hold the hill till Christmas.</p>
       <button v-if="!loggedIn" class="cta" @click="login">Sign in with Discord to play</button>
     </header>
 
@@ -160,10 +158,10 @@ useHead({ title: 'Speakeasy Ladder · DeepFrag' })
 
 <style scoped>
 .wrap { max-width: 880px; margin: 0 auto; padding: 32px 24px 80px; }
-.head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
-.head h1 { font-size: 28px; font-weight: 900; letter-spacing: -0.02em; margin: 0; }
-.head .accent { color: var(--accent); }
-.head .sub { color: var(--fg-2); margin: 6px 0 0; font-size: 14px; }
+.head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; margin-bottom: 28px; }
+.head .koth-logo { width: 100%; max-width: 520px; height: auto; display: block; filter: drop-shadow(0 6px 24px rgba(0,0,0,0.5)); }
+.head .sub { color: var(--fg-2); margin: 2px 0 0; font-size: 15px; }
+.head .cta { margin-top: 6px; }
 .cta {
   background: #5865f2; color: #fff; border: none; white-space: nowrap;
   padding: 10px 18px; border-radius: 9px; font-size: 14px; font-weight: 700; cursor: pointer;

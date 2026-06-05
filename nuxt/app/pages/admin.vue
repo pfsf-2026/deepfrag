@@ -58,7 +58,7 @@ const sections = [
     { id: 'deploys', label: 'Deploy log' }
   ]},
   { group: 'Ladder', items: [
-    { id: 'ladder', label: 'Speakeasy 2v2' }
+    { id: 'ladder', label: 'King of the Hill' }
   ]},
   { group: 'Federation', items: [
     { id: 'users', label: 'Users' },
@@ -237,7 +237,7 @@ const ladders = ref([])
 const ladderId = ref(null)
 const ladderDetail = ref(null)
 const ladderLoading = ref(false)
-const newLadder = ref({ name: 'Speakeasy 2v2', season: 'Xmas 2026', team_size: 2 })
+const newLadder = ref({ name: 'King of the Hill 2v2', season: 'Xmas 2026', team_size: 2 })
 const DEFAULT_MAPS = ['aerowalk', 'ztndm3', 'dm2', 'dm4', 'bravado', 'nova', 'shifter']
 const newTeam = ref({ name: '', members: '', rung: '' })
 const reportFor = ref(null)        // challenge being reported
@@ -997,11 +997,11 @@ function shortStatus(s) {
           </div>
         </template>
 
-        <!-- LADDER · Speakeasy 2v2 -->
+        <!-- LADDER · King of the Hill (KOTH) -->
         <template v-else-if="activeSection === 'ladder'">
           <div class="pane-head">
             <div>
-              <h2>Speakeasy 2v2 Ladder</h2>
+              <h2>King of the Hill (KOTH) Ladder</h2>
               <div class="scope">create the ladder · seed teams · report results</div>
             </div>
             <div class="actions">
