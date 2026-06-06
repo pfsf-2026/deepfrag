@@ -232,7 +232,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
 
     <!-- Scheduler (admin can fill availability OR pick a time for either side) -->
     <Scheduler v-if="schedulerC" :challenge="schedulerC" :user-team-id="null"
-               @done="schedulerC = null; load()" @close="schedulerC = null" />
+               @done="schedulerC = null; load()" @saved="load" @close="schedulerC = null" />
 
     <!-- Report modal -->
     <div v-if="report" class="modal-bg" @click.self="report = null">

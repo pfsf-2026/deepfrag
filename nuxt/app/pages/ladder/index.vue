@@ -186,7 +186,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 
       <AddTeam v-if="showAddTeam && ladder" :ladder-id="ladder.id" @done="onTeamAdded" @close="showAddTeam = false" />
       <AddTeam v-if="editingTeam && ladder" :ladder-id="ladder.id" :edit-team="editingTeam" @done="onTeamAdded" @close="editingTeam = null" />
-      <Scheduler v-if="schedulerChallenge" :challenge="schedulerChallenge" :user-team-id="myTeam?.id" @done="onScheduled" @close="schedulerChallenge = null" />
+      <Scheduler v-if="schedulerChallenge" :challenge="schedulerChallenge" :user-team-id="myTeam?.id" @done="onScheduled" @saved="load" @close="schedulerChallenge = null" />
       <div v-if="challengeErr" class="pending-note" style="border-color: var(--loss); color: #fca5a5;">{{ challengeErr }}</div>
     </ClientOnly>
 

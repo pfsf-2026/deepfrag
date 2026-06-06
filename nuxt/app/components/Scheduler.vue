@@ -19,6 +19,7 @@ const scheduled = computed(() => !!c.agreed_at)
 
 // ── availability grid (challenger) ──────────────────────────────────────────
 const HOURS = [17, 18, 19, 20, 21, 22, 23]   // local evening prime-time
+const proposedLocal = ref([...(c.proposed || [])])   // updates in-place after save
 const selected = ref(new Set(c.proposed || []))
 const days = computed(() => {
   const out = []
@@ -44,7 +45,11 @@ async function saveAvailability() {
     await $fetch(`${base}/api/ladder/challenge/${c.id}/availability`, {
       method: 'POST', headers: authHeader(), body: { slots: [...selected.value] }
     })
-    emit('done')
+    // Advance in-place instead of closing: admins (or the challenged team) drop
+    // straight into 'Pick a time'; a plain challenger sees 'waiting for opponent'.
+    proposedLocal.value = [...selected.value]
+    emit('saved')                 // background board refresh, keep modal open
+    if (view.value === 'pick') loadSuggestions()
   } catch (e) { err.value = e?.data?.detail || e?.message || 'Could not save' } finally { saving.value = false }
 }
 
@@ -80,11 +85,11 @@ async function confirmSlot() {
 // challenged-picks (proposed exist) > waiting.
 const view = computed(() => {
   if (scheduled.value) return 'done'
-  const hasProposed = (c.proposed || []).length > 0
-  if (isChallenged.value && hasProposed) return 'pick'
-  if (isChallenger.value) return 'fill'
-  if (hasProposed) return 'waiting-pick'
-  return 'waiting-fill'
+  const hasProposed = proposedLocal.value.length > 0
+  if (isChallenged.value && hasProposed) return 'pick'       // your turn: pick a time
+  if (isChallenger.value && !hasProposed) return 'fill'      // your turn: post availability
+  if (hasProposed) return 'waiting-pick'                     // posted, waiting on opponent
+  return 'waiting-fill'                                      // waiting on challenger to post
 })
 
 onMounted(() => { if (view.value === 'pick') loadSuggestions() })
@@ -129,7 +134,7 @@ onMounted(() => { if (view.value === 'pick') loadSuggestions() })
       <template v-else-if="view === 'pick'">
         <p class="lede"><strong>{{ c.challenger }}</strong> is available at these times — pick one (your local zone):</p>
         <div class="picklist">
-          <label v-for="iso in c.proposed" :key="iso" class="pickrow" :class="{ on: pick === iso }">
+          <label v-for="iso in proposedLocal" :key="iso" class="pickrow" :class="{ on: pick === iso }">
             <input type="radio" :value="iso" v-model="pick"> {{ fmtLocal(iso) }}
           </label>
         </div>
