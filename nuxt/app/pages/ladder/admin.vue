@@ -38,6 +38,8 @@ async function load() {
     if (ladder.value) {
       const d = await $fetch(`${base}/api/ladder/${ladder.value.id}`)
       teams.value = d.teams || []
+      order.value = [...teams.value]
+      orderDirty.value = false
       challenges.value = d.challenges || []
       const p = await $fetch(`${base}/api/admin/ladder/${ladder.value.id}/teams/pending`, { headers: authHeader() })
       pending.value = p.pending || []
@@ -47,6 +49,29 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+// Drag-and-drop reorder of the standings.
+const order = ref([])
+const orderDirty = ref(false)
+const dragIdx = ref(null)
+function onDragStart(i) { dragIdx.value = i }
+function onDrop(i) {
+  if (dragIdx.value === null || dragIdx.value === i) return
+  const arr = [...order.value]
+  const [m] = arr.splice(dragIdx.value, 1)
+  arr.splice(i, 0, m)
+  order.value = arr
+  dragIdx.value = null
+  orderDirty.value = true
+}
+async function saveOrder() {
+  try {
+    await $fetch(`${base}/api/admin/ladder/${ladder.value.id}/reorder`, {
+      method: 'POST', headers: authHeader(), body: { order: order.value.map(t => t.id) }
+    })
+    note('ladder reordered'); await load()
+  } catch (e) { err.value = e?.data?.detail || 'reorder failed' }
 }
 
 async function approve(t) {
@@ -69,6 +94,17 @@ async function addTeam() {
   } catch (e) { err.value = e?.data?.detail || 'add failed' }
 }
 function teamName(id) { return teams.value.find(t => t.id === id)?.name || `#${id}` }
+const newChal = ref({ challenger: null, challenged: null })
+async function createChallenge() {
+  if (!newChal.value.challenger || !newChal.value.challenged) return
+  try {
+    await $fetch(`${base}/api/ladder/${ladder.value.id}/challenge`, {
+      method: 'POST', headers: authHeader(),
+      body: { challenger_id: Number(newChal.value.challenger), challenged_id: Number(newChal.value.challenged) }
+    })
+    note('challenge created'); newChal.value = { challenger: null, challenged: null }; await load()
+  } catch (e) { err.value = e?.data?.detail || 'create challenge failed' }
+}
 function startReport(c) { report.value = c; reportForm.value = { winner_id: c.challenger_id, score_a: 2, score_b: 0, hub: '' } }
 async function submitReport() {
   const c = report.value
@@ -125,16 +161,20 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
             </div>
           </section>
 
-          <!-- Standings -->
+          <!-- Standings (drag to reorder) -->
           <section class="card">
-            <h2>Standings</h2>
-            <div v-for="t in teams" :key="t.id" class="srow" :class="{ top: t.rung === 1 }">
-              <span class="rung">{{ t.rung }}</span>
+            <h2>Standings <span class="muted small">— drag rows to reorder</span>
+              <button v-if="orderDirty" class="btn sm" style="margin-left:auto;" @click="saveOrder">Save order</button>
+            </h2>
+            <div v-for="(t, i) in order" :key="t.id" class="srow drag" :class="{ top: i === 0, dragging: dragIdx === i }"
+                 draggable="true" @dragstart="onDragStart(i)" @dragover.prevent @drop="onDrop(i)">
+              <span class="grip">⠿</span>
+              <span class="rung">{{ i + 1 }}</span>
               <img v-if="t.has_logo" :src="`${base}/api/ladder/team/${t.id}/logo`" class="tlogo" alt="">
               <strong>{{ t.name }}</strong>
               <span class="muted small">{{ (t.members || []).map(m => m.display).join(' · ') }}</span>
             </div>
-            <div v-if="!teams.length" class="muted small">No teams placed yet.</div>
+            <div v-if="!order.length" class="muted small">No teams placed yet.</div>
           </section>
 
           <!-- Open challenges -->
@@ -149,6 +189,24 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               <button class="btn sm" @click="startReport(c)">Report</button>
               <button class="btn sm ghost" @click="forfeit(c)">Forfeit</button>
             </div>
+          </section>
+
+          <!-- Create challenge (admin-arranged matchup) -->
+          <section class="card">
+            <h2>Create challenge</h2>
+            <div class="form">
+              <select v-model="newChal.challenger">
+                <option :value="null">Challenger…</option>
+                <option v-for="t in teams" :key="t.id" :value="t.id">#{{ t.rung }} {{ t.name }}</option>
+              </select>
+              <span class="muted">vs</span>
+              <select v-model="newChal.challenged">
+                <option :value="null">Challenged…</option>
+                <option v-for="t in teams" :key="t.id" :value="t.id">#{{ t.rung }} {{ t.name }}</option>
+              </select>
+              <button class="btn" @click="createChallenge">Create</button>
+            </div>
+            <p class="muted small" style="margin-top:6px;">Challenger must be 1–2 rungs below the challenged team. As admin you can arrange any valid matchup, then schedule it below / on the board.</p>
           </section>
 
           <!-- Manual add/seed team -->
@@ -208,6 +266,11 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .prow .spacer { flex: 1; }
 .pinfo { display: flex; flex-direction: column; }
 .srow .rung { font-family: 'JetBrains Mono', monospace; color: var(--fg-3); width: 24px; }
+.srow.drag { cursor: grab; }
+.srow.drag:hover { background: var(--panel-2); }
+.srow.dragging { opacity: 0.4; }
+.srow .grip { color: var(--fg-3); cursor: grab; font-size: 14px; }
+.card h2 { display: flex; align-items: center; gap: 8px; }
 .srow.top { color: var(--draw); }
 .tlogo { width: 26px; height: 26px; border-radius: 6px; object-fit: cover; }
 .btn { background: var(--accent); color: var(--bg); border: 0; padding: 8px 14px; border-radius: 7px; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; }

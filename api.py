@@ -2792,6 +2792,31 @@ def admin_ladder_pending(ladder_id: int, authorization: str | None = Header(defa
     return {"pending": teams}
 
 
+@app.post("/api/admin/ladder/{ladder_id}/reorder")
+def admin_ladder_reorder(ladder_id: int, authorization: str | None = Header(default=None),
+                         order: list = Body(..., embed=True)):
+    """Set the rung order directly (admin drag-and-drop). `order` is the list of
+    team_ids top-to-bottom → rungs 1..N. Ladder-admin."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        # validate the ids belong to this ladder + are active
+        cur.execute("SELECT id, rung FROM ladder_teams WHERE ladder_id=%s AND active", (ladder_id,))
+        valid = {r["id"]: r["rung"] for r in cur.fetchall()}
+        ids = [int(t) for t in order if int(t) in valid]
+        if set(ids) != set(valid):
+            raise HTTPException(400, "order must include exactly the active teams")
+        for i, tid in enumerate(ids, 1):
+            if valid[tid] != i:
+                cur.execute("UPDATE ladder_teams SET rung=%s WHERE id=%s", (i, tid))
+                cur.execute("""INSERT INTO ladder_movements (ladder_id, team_id, from_rung, to_rung, reason)
+                               VALUES (%s,%s,%s,%s,'admin')""", (ladder_id, tid, valid[tid], i))
+        conn.commit()
+    return {"ladder_id": ladder_id, "order": ids}
+
+
 @app.post("/api/admin/ladder/team/{team_id}/approve")
 def admin_ladder_team_approve(team_id: int, authorization: str | None = Header(default=None)):
     """Approve a pending team → activate it + place at the bottom rung (ladder-admin)."""
