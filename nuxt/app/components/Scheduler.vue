@@ -33,11 +33,6 @@ const proposerName = computed(() => proposedByLocal.value ? teamName(proposedByL
 // to the next ET calendar day). Slots stored as UTC ISO; labelled in ET.
 const HOURS_ET = [19, 20, 21, 22, 23, 0, 1, 2]
 const ET = 'America/New_York'
-function etHourLabel(h) {
-  if (h === 0) return '12a'
-  if (h === 12) return '12p'
-  return h < 12 ? `${h}a` : `${h - 12}p`
-}
 // UTC instant for wall-clock h:00 ET on (y, mo, d), DST-correct.
 function etToUtcISO(y, mo, d, h) {
   const asUTC = Date.UTC(y, mo, d, h, 0, 0)
@@ -54,11 +49,14 @@ const days = computed(() => {
     const base = new Date(nowET); base.setDate(nowET.getDate() + off)
     const y = base.getFullYear(), mo = base.getMonth(), d = base.getDate()
     const slots = HOURS_ET.map((h) => {
-      const dd = h < 7 ? d + 1 : d   // 12/1/2am roll to next ET day
+      const dd = h < 7 ? d + 1 : d   // 12/1/2am ET roll to next ET day
       const iso = etToUtcISO(y, mo, dd, h)
-      return { iso, label: etHourLabel(h), past: new Date(iso).getTime() < Date.now() }
+      // Anchored to ET, but LABELLED in the viewer's local zone (7pm ET shows as
+      // 4pm for a Pacific player, etc).
+      return { iso, label: new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric' }), past: new Date(iso).getTime() < Date.now() }
     })
-    out.push({ label: base.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }), slots })
+    // Row date = local date of that evening's first (7pm ET) slot.
+    out.push({ label: new Date(slots[0].iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }), slots })
   }
   return out
 })
@@ -99,8 +97,8 @@ async function loadSuggestions() {
   } catch { suggestions.value = [] } finally { sugLoading.value = false }
 }
 function fmtLocal(iso) {
-  // Show in ET (the ladder's reference zone) so it matches the ET-anchored slots.
-  return new Date(iso).toLocaleString('en-US', { timeZone: ET, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET'
+  // Viewer's own zone (with the zone abbreviation so it's unambiguous).
+  return new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
 }
 async function confirmSlot() {
   if (!pick.value) { err.value = 'Pick a time'; return }
@@ -144,8 +142,9 @@ onMounted(() => { if (view.value === 'act') loadSuggestions() })
       <!-- propose / counter-propose availability -->
       <template v-else-if="view === 'fill'">
         <p class="lede">
-          Check every slot <strong>your team</strong> can play over the next 7 days — the other team picks one (or suggests different times). Times in your local zone.
+          Check every slot <strong>your team</strong> can play over the next 7 days — the other team picks one (or suggests different times).
         </p>
+        <div class="tz-note">🕒 All times shown in <strong>your time zone</strong> (prime time is 7pm–2am ET).</div>
         <button v-if="countering" class="link-btn" @click="countering = false">← back to {{ proposerName }}'s times</button>
         <div class="grid">
           <div v-for="day in days" :key="day.label" class="day">
@@ -166,7 +165,8 @@ onMounted(() => { if (view.value === 'act') loadSuggestions() })
 
       <!-- pick a slot (or counter with different times) -->
       <template v-else-if="view === 'act'">
-        <p class="lede"><strong>{{ proposerName }}</strong> proposed these times — pick one, or suggest different times. (Your local zone.)</p>
+        <p class="lede"><strong>{{ proposerName }}</strong> proposed these times — pick one, or suggest different times.</p>
+        <div class="tz-note">🕒 All times in <strong>your time zone</strong>.</div>
         <div class="picklist">
           <label v-for="iso in proposedLocal" :key="iso" class="pickrow" :class="{ on: pick === iso }">
             <input type="radio" :value="iso" v-model="pick"> {{ fmtLocal(iso) }}
@@ -252,6 +252,8 @@ onMounted(() => { if (view.value === 'act') loadSuggestions() })
 .btn.ghost { background: transparent; color: var(--fg-2); border: 1px solid var(--border); }
 .btn:disabled { opacity: 0.6; cursor: wait; }
 .err { color: var(--loss); font-size: 13px; margin: 4px 0 8px; }
+.tz-note { font-size: 12px; color: var(--fg-3); margin: -8px 0 12px; }
+.tz-note strong { color: var(--fg-2); }
 .link-btn { background: none; border: 0; color: var(--accent); font-size: 12px; cursor: pointer; padding: 4px 0 10px; font-family: inherit; }
 .link-btn:hover { text-decoration: underline; }
 </style>
