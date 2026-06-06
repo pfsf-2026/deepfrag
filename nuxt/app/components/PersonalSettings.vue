@@ -29,6 +29,7 @@ const state = ref(user.value?.state || '')
 const city = ref(user.value?.city || '')
 const country = ref(user.value?.country || '')
 const favServer = ref(user.value?.favorite_server || '')
+const timezone = ref(user.value?.timezone || '')
 const saving = ref(false)
 const saved = ref(false)
 const err = ref('')
@@ -53,7 +54,7 @@ async function save() {
   try {
     await $fetch(`${base}/api/auth/location`, {
       method: 'POST', headers: authHeader(),
-      body: { state: state.value, city: city.value, country: country.value, favorite_server: favServer.value }
+      body: { state: state.value, city: city.value, country: country.value, favorite_server: favServer.value, timezone: timezone.value }
     })
     await fetchMe()
     saved.value = true
@@ -89,6 +90,14 @@ async function save() {
       <label class="fld">
         <span>Country <span class="muted">(optional)</span></span>
         <input v-model="country" placeholder="e.g. US, BR" maxlength="2" style="text-transform:uppercase; max-width:120px;">
+      </label>
+
+      <label class="fld">
+        <span>Preferred time zone <span class="muted">(optional — overrides location)</span></span>
+        <select v-model="timezone">
+          <option value="">Auto (from my state, else Eastern)</option>
+          <option v-for="[zone, label] in TZ_OPTIONS" :key="zone" :value="zone">{{ label }}</option>
+        </select>
       </label>
 
       <label class="fld">

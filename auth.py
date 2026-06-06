@@ -155,6 +155,7 @@ def ensure_users(cur):
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT")  # US state / CA province / INTL
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS favorite_server TEXT")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone TEXT")  # IANA, optional override
 
 
 def upsert_user(cur, du: dict) -> dict:

@@ -157,7 +157,7 @@ def _current_user(authorization: str | None, required: bool = True):
         cur = conn.cursor()
         A.ensure_users(cur)
         cur.execute("""SELECT discord_id, username, global_name, avatar, canonical_id, is_admin, verified,
-                              region, country, city, state, favorite_server
+                              region, country, city, state, favorite_server, timezone
                        FROM users WHERE discord_id=%s""", (payload.get("sub"),))
         u = cur.fetchone()
     if not u and required:
@@ -276,10 +276,11 @@ def auth_set_location(authorization: str | None = Header(default=None),
                       state: str | None = Body(default=None, embed=True),
                       city: str | None = Body(default=None, embed=True),
                       country: str | None = Body(default=None, embed=True),
-                      favorite_server: str | None = Body(default=None, embed=True)):
-    """Save the user's location for match-server suggestion. `state` is required
-    (US state / CA province / 'INTL'); city/country/favorite_server optional.
-    region is derived (NA for US/CA states, else null)."""
+                      favorite_server: str | None = Body(default=None, embed=True),
+                      timezone: str | None = Body(default=None, embed=True)):
+    """Save the user's location/timezone (all optional). state = US state / CA
+    province / 'INTL'; timezone = IANA name (overrides location-derived tz).
+    region derived (NA for US/CA states, else null)."""
     import auth as A
     u = _current_user(authorization, required=True)
     st = (state or "").strip().upper() or None
@@ -287,13 +288,15 @@ def auth_set_location(authorization: str | None = Header(default=None),
     with pg() as conn:
         cur = conn.cursor()
         A.ensure_users(cur)
-        cur.execute("""UPDATE users SET state=%s, city=%s, country=%s, favorite_server=%s, region=%s
-                       WHERE discord_id=%s""",
+        cur.execute("""UPDATE users SET state=%s, city=%s, country=%s, favorite_server=%s,
+                              region=%s, timezone=%s WHERE discord_id=%s""",
                     (st, (city or "").strip()[:60] or None,
                      (country or "").strip().upper()[:2] or None,
-                     (favorite_server or "").strip()[:120] or None, region, u["discord_id"]))
+                     (favorite_server or "").strip()[:120] or None, region,
+                     (timezone or "").strip()[:64] or None, u["discord_id"]))
         conn.commit()
-    return {"state": st, "city": city, "country": country, "favorite_server": favorite_server, "region": region}
+    return {"state": st, "city": city, "country": country, "favorite_server": favorite_server,
+            "region": region, "timezone": timezone}
 
 
 @app.get("/api/auth/claim/suggestions")

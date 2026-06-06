@@ -9,8 +9,13 @@ const props = defineProps({
 })
 const emit = defineEmits(['done', 'saved', 'close'])
 const { user, authHeader } = useAuth()
+const showSettings = useState('show-settings', () => false)
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
+
+// Display zone: preferred tz → state-derived → ET fallback (with a nudge link).
+const tz = computed(() => resolveTz(user.value))
+const tzIsGuess = computed(() => !tzKnown(user.value))
 
 const c = props.challenge
 const scheduled = computed(() => !!c.agreed_at)
@@ -51,12 +56,12 @@ const days = computed(() => {
     const slots = HOURS_ET.map((h) => {
       const dd = h < 7 ? d + 1 : d   // 12/1/2am ET roll to next ET day
       const iso = etToUtcISO(y, mo, dd, h)
-      // Anchored to ET, but LABELLED in the viewer's local zone (7pm ET shows as
-      // 4pm for a Pacific player, etc).
-      return { iso, label: new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric' }), past: new Date(iso).getTime() < Date.now() }
+      // Anchored to ET, but LABELLED in the viewer's resolved zone (7pm ET shows
+      // as 4pm for a Pacific player, etc).
+      return { iso, label: new Date(iso).toLocaleTimeString('en-US', { timeZone: tz.value, hour: 'numeric' }), past: new Date(iso).getTime() < Date.now() }
     })
-    // Row date = local date of that evening's first (7pm ET) slot.
-    out.push({ label: new Date(slots[0].iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }), slots })
+    // Row date = that evening's first (7pm ET) slot, in the viewer's zone.
+    out.push({ label: new Date(slots[0].iso).toLocaleDateString('en-US', { timeZone: tz.value, weekday: 'short', month: 'short', day: 'numeric' }), slots })
   }
   return out
 })
@@ -97,8 +102,8 @@ async function loadSuggestions() {
   } catch { suggestions.value = [] } finally { sugLoading.value = false }
 }
 function fmtLocal(iso) {
-  // Viewer's own zone (with the zone abbreviation so it's unambiguous).
-  return new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+  // Viewer's resolved zone (with the zone abbreviation so it's unambiguous).
+  return new Date(iso).toLocaleString('en-US', { timeZone: tz.value, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
 }
 async function confirmSlot() {
   if (!pick.value) { err.value = 'Pick a time'; return }
@@ -144,7 +149,10 @@ onMounted(() => { if (view.value === 'act') loadSuggestions() })
         <p class="lede">
           Check every slot <strong>your team</strong> can play over the next 7 days — the other team picks one (or suggests different times).
         </p>
-        <div class="tz-note">🕒 All times shown in <strong>your time zone</strong> (prime time is 7pm–2am ET).</div>
+        <div class="tz-note">
+          🕒 Times shown in <strong>{{ tz }}</strong>. Prime time is 7pm–2am ET.
+          <a v-if="tzIsGuess" class="tz-link" @click="showSettings = true">Showing Eastern — set your time zone →</a>
+        </div>
         <button v-if="countering" class="link-btn" @click="countering = false">← back to {{ proposerName }}'s times</button>
         <div class="grid">
           <div v-for="day in days" :key="day.label" class="day">
@@ -166,7 +174,10 @@ onMounted(() => { if (view.value === 'act') loadSuggestions() })
       <!-- pick a slot (or counter with different times) -->
       <template v-else-if="view === 'act'">
         <p class="lede"><strong>{{ proposerName }}</strong> proposed these times — pick one, or suggest different times.</p>
-        <div class="tz-note">🕒 All times in <strong>your time zone</strong>.</div>
+        <div class="tz-note">
+          🕒 Times in <strong>{{ tz }}</strong>.
+          <a v-if="tzIsGuess" class="tz-link" @click="showSettings = true">Showing Eastern — set your time zone →</a>
+        </div>
         <div class="picklist">
           <label v-for="iso in proposedLocal" :key="iso" class="pickrow" :class="{ on: pick === iso }">
             <input type="radio" :value="iso" v-model="pick"> {{ fmtLocal(iso) }}
@@ -254,6 +265,8 @@ onMounted(() => { if (view.value === 'act') loadSuggestions() })
 .err { color: var(--loss); font-size: 13px; margin: 4px 0 8px; }
 .tz-note { font-size: 12px; color: var(--fg-3); margin: -8px 0 12px; }
 .tz-note strong { color: var(--fg-2); }
+.tz-link { color: var(--accent); cursor: pointer; margin-left: 6px; }
+.tz-link:hover { text-decoration: underline; }
 .link-btn { background: none; border: 0; color: var(--accent); font-size: 12px; cursor: pointer; padding: 4px 0 10px; font-family: inherit; }
 .link-btn:hover { text-decoration: underline; }
 </style>
