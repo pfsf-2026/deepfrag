@@ -41,7 +41,12 @@ def send(content: str | None = None, embed: dict | None = None) -> bool:
     try:
         req = urllib.request.Request(
             url, data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"}, method="POST")
+            # Discord webhooks sit behind Cloudflare, which 403s the default
+            # python-urllib User-Agent with "error code: 1010". Send a real UA
+            # (same gotcha as the OAuth token call) or the post silently fails.
+            headers={"Content-Type": "application/json",
+                     "User-Agent": "DeepFrag-KOTH/1.0 (+https://deepfrag.pages.dev)"},
+            method="POST")
         with urllib.request.urlopen(req, timeout=5) as r:
             return 200 <= r.status < 300
     except Exception:
