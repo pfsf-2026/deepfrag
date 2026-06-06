@@ -64,13 +64,41 @@ def challenge_issued(challenger: str, challenged: str, rungs_up: int, deadline_i
         COLOR_CHALLENGE))
 
 
-def result_posted(winner: str, loser: str, score: str | None, climbed: bool):
-    line = f"**{winner}** beat **{loser}**"
-    if score:
-        line += f" ({score})"
-    line += "\n" + ("📈 climbs the ladder." if climbed
-                    else "Ranks hold — challenger couldn't break through.")
-    return send(embed=_embed("🏆 Result", line, COLOR_WIN))
+def ladder_signup(player: str):
+    """A player linked their profile / joined the ladder pool."""
+    return send(embed=_embed("🎮 New ladder signup",
+                             f"**{player}** signed up for the KOTH ladder.", COLOR))
+
+
+def team_signup(name: str, tag: str | None, players: list, pending: bool = True):
+    """A captain registered a team (players, name, tag)."""
+    title = f"[{tag}] {name}" if tag else name
+    roster = ", ".join(players) if players else "—"
+    desc = f"**{title}**\nRoster: {roster}"
+    if pending:
+        desc += "\n_Awaiting admin approval._"
+    return send(embed=_embed("🆕 New team signup", desc, COLOR))
+
+
+def game_scheduled(team_a: str, team_b: str, when: str | None, server: str | None):
+    """A match was scheduled (built alongside the scheduler infra)."""
+    bits = [f"**{team_a}** vs **{team_b}**"]
+    if when:
+        bits.append(f"🗓️ {when}")
+    if server:
+        bits.append(f"🖥️ {server}")
+    return send(embed=_embed("📅 Game scheduled", "\n".join(bits), COLOR_CHALLENGE))
+
+
+def result_posted(winner: str, loser: str, maps_line: str | None = None,
+                  movement: str | None = None, score: str | None = None):
+    """Bo3 result: per-map scoreline + the ladder movement it caused."""
+    head = f"**{winner}** def. **{loser}**" + (f" — {score}" if score else "")
+    parts = [head]
+    if maps_line:
+        parts.append(maps_line)
+    parts.append(movement or "Ranks unchanged.")
+    return send(embed=_embed("🏆 Game result", "\n".join(parts), COLOR_WIN))
 
 
 def forfeit_posted(challenged: str):

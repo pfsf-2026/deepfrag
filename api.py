@@ -326,7 +326,14 @@ def auth_claim(authorization: str | None = Header(default=None),
                        VALUES (%s,%s,'self', now(), 'self') RETURNING id""",
                     (u["discord_id"], canonical_id))
         cid = cur.fetchone()["id"]
+        cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id=%s", (canonical_id,))
+        pr = cur.fetchone()
         conn.commit()
+    try:
+        import notify
+        notify.ladder_signup(pr["display_name"] if pr and pr["display_name"] else canonical_id)
+    except Exception:
+        pass
     return {"claim_id": cid, "canonical_id": canonical_id, "status": "linked", "verified": False}
 
 
@@ -2648,12 +2655,16 @@ def ladder_team_signup(ladder_id: int, authorization: str | None = Header(defaul
             conn.rollback()
             raise HTTPException(409, "that team name is already taken")
         tid = cur.fetchone()["id"]
+        # resolve member display names for the notification
+        names = []
+        if members:
+            cur.execute("SELECT canonical_id, display_name FROM players_canonical WHERE canonical_id = ANY(%s)", (members,))
+            dn = {r["canonical_id"]: r["display_name"] for r in cur.fetchall()}
+            names = [dn.get(m, m) for m in members]
         conn.commit()
     try:
         import notify
-        notify.send(embed={"title": "🆕 Team signup (pending)",
-                           "description": f"**{name}** registered — awaiting admin approval.",
-                           "color": 0x14E6C0})
+        notify.team_signup(name, tag, names, pending=True)
     except Exception:
         pass
     return {"team_id": tid, "name": name, "status": "pending"}
@@ -2929,23 +2940,37 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
             moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
         # challenged win → ranks unchanged (challenger simply failed to climb)
         cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now() WHERE id=%s", (challenge_id,))
-        # Names for the notification (winner/loser).
+        # Names for every team touched (winner/loser + any shifted by a 2-rung jump).
         loser_id = ch["challenged_id"] if winner_id == ch["challenger_id"] else ch["challenger_id"]
-        cur.execute("SELECT id, name FROM ladder_teams WHERE id IN (%s,%s)", (winner_id, loser_id))
+        all_ids = list({winner_id, loser_id, *moves.keys()})
+        cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)", (all_ids,))
         names = {r["id"]: r["name"] for r in cur.fetchall()}
         # KotH change = a team newly at rung 1 (only the climbing challenger can be).
         new_koth = next((tid for tid, r in moves.items() if r == 1), None)
         koth_name = names.get(new_koth)
-        if new_koth and not koth_name:
-            cur.execute("SELECT name FROM ladder_teams WHERE id=%s", (new_koth,))
-            row = cur.fetchone()
-            koth_name = row["name"] if row else None
+        # Per-map scoreline + human movement summary for the notification.
+        def _ms(m):
+            mp, a, b = m.get("map", "?"), m.get("a_frags"), m.get("b_frags")
+            return f"{mp} {a}-{b}" if a is not None and b is not None else mp
+        maps_line = " · ".join(_ms(m) for m in maps) if maps else None
+        movement = None
+        if moves:
+            wr = moves.get(winner_id)
+            parts = []
+            if wr is not None:
+                parts.append(f"📈 **{names.get(winner_id, winner_id)}** moved up to #{wr} on the KOTH ladder")
+            for tid, rk in moves.items():
+                if tid == winner_id:
+                    continue
+                arrow = "⬇️" if tid == loser_id else "↘️"
+                parts.append(f"{arrow} **{names.get(tid, tid)}** → #{rk}")
+            movement = "\n".join(parts)
         conn.commit()
     try:
         import notify
         score = f"{score_a}-{score_b}" if score_a is not None and score_b is not None else None
         notify.result_posted(names.get(winner_id, f"#{winner_id}"), names.get(loser_id, f"#{loser_id}"),
-                             score, climbed=bool(moves))
+                             maps_line=maps_line, movement=movement, score=score)
         if koth_name:
             notify.koth_changed(koth_name)
     except Exception:
