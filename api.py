@@ -54,20 +54,12 @@ PG_URL = os.environ.get("DEEPFRAG_PG_URL", "postgresql:///deepfrag")
 
 app = FastAPI(title="DeepFrag API", version="0.2")
 
-
-@app.on_event("startup")
-def _startup_migrations():
-    """Idempotent column adds the public read paths depend on (e.g. profile
-    soft-delete `hidden`). Best-effort: never block startup."""
-    try:
-        with pg() as conn:
-            cur = conn.cursor()
-            cur.execute("ALTER TABLE players_canonical ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT FALSE")
-            cur.execute("ALTER TABLE players_canonical ADD COLUMN IF NOT EXISTS reviewed BOOLEAN NOT NULL DEFAULT FALSE")
-            conn.commit()
-    except Exception as e:
-        print(f"[startup] migration warn: {e}", flush=True)
-
+# NOTE: do NOT run DB migrations in a startup event. An ALTER TABLE on boot makes
+# every cold-starting instance contend for an ACCESS EXCLUSIVE lock; under any
+# parallelism they serialize past the startup probe deadline → no instance
+# becomes ready → full outage (2026-06-06). Columns are ensured lazily by the
+# endpoints that need them (_ensure_canon_review_schema) and already exist in
+# prod. Schema changes go through a one-shot admin endpoint, never on startup.
 
 # Compress rankings (240KB → ~30KB) and any future large payloads.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
