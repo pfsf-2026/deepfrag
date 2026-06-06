@@ -49,7 +49,6 @@ function onFavInput() {
 function pickServer(s) { favServer.value = s; srvResults.value = [] }
 
 async function save() {
-  if (!state.value) { err.value = 'State is required'; return }
   saving.value = true; err.value = ''
   try {
     await $fetch(`${base}/api/auth/location`, {
@@ -72,7 +71,7 @@ async function save() {
         <h3>Personal settings</h3>
         <button class="x" @click="emit('close')">✕</button>
       </div>
-      <p class="lede">Your location lets DeepFrag pick the fairest NA server for your matches. State is required; the rest is optional.</p>
+      <p class="lede">All optional. DeepFrag already infers the fairest server from your match ping history — adding your location just helps when you don't have much history yet.</p>
 
       <div class="row2">
         <label class="fld grow">
@@ -80,7 +79,7 @@ async function save() {
           <input v-model="city" placeholder="e.g. Denver" maxlength="60">
         </label>
         <label class="fld grow">
-          <span>State *</span>
+          <span>State <span class="muted">(optional)</span></span>
           <select v-model="state">
             <option value="">Select…</option>
             <option v-for="[code, label] in STATES" :key="code" :value="code">{{ label }}</option>

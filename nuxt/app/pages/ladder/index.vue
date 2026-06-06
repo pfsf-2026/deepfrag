@@ -46,7 +46,6 @@ const challengeErr = ref('')
 const schedulerChallenge = ref(null)
 async function doChallenge(t) {
   challengeErr.value = ''
-  if (!user.value?.state) { showSettings.value = true; return }  // gate: need a location first
   try {
     await $fetch(`${base}/api/ladder/${ladder.value.id}/challenge`, {
       method: 'POST', headers: useAuth().authHeader(),
@@ -152,7 +151,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 
     <ClientOnly>
       <div v-if="needsLocation" class="loc-prompt" @click="showSettings = true">
-        📍 <strong>Set your approximate location</strong> for match-server scheduling — click here (or your name → Personal settings).
+        📍 <strong>Optional:</strong> add your location to sharpen server suggestions before you've built up ping history — click here (or your name → Personal settings).
       </div>
       <ClaimProfile v-if="needsClaim" />
       <div v-else-if="user?.pending_claim" class="pending-note">

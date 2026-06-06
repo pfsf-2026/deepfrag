@@ -51,6 +51,17 @@ async function saveAvailability() {
 // ── pick a slot (challenged) ────────────────────────────────────────────────
 const pick = ref('')
 const server = ref(c.server || user.value?.favorite_server || '')
+// Server suggestions from both teams' real ping history.
+const suggestions = ref([])
+const sugLoading = ref(false)
+async function loadSuggestions() {
+  sugLoading.value = true
+  try {
+    const r = await $fetch(`${base}/api/ladder/challenge/${c.id}/server-suggestion`)
+    suggestions.value = r.suggestions || []
+    if (!server.value && suggestions.value[0]) server.value = suggestions.value[0].host
+  } catch { suggestions.value = [] } finally { sugLoading.value = false }
+}
 function fmtLocal(iso) {
   return new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
@@ -75,6 +86,8 @@ const view = computed(() => {
   if (hasProposed) return 'waiting-pick'
   return 'waiting-fill'
 })
+
+onMounted(() => { if (view.value === 'pick') loadSuggestions() })
 </script>
 
 <template>
@@ -120,10 +133,28 @@ const view = computed(() => {
             <input type="radio" :value="iso" v-model="pick"> {{ fmtLocal(iso) }}
           </label>
         </div>
-        <label class="fld">
-          <span>Server <span class="muted">(suggested from locations soon)</span></span>
-          <input v-model="server" placeholder="e.g. chicago.quake.world">
-        </label>
+        <div class="fld">
+          <span>Server <span class="muted">— suggested from both teams' ping history</span></span>
+          <div v-if="sugLoading" class="muted small">Crunching pings…</div>
+          <div v-else-if="suggestions.length" class="sug-list">
+            <button v-for="(s, i) in suggestions" :key="s.host" class="sug" :class="{ on: server === s.host }" @click="server = s.host">
+              <div class="sug-head">
+                <span v-if="i === 0" class="best">BEST</span>
+                <strong>{{ s.host }}</strong>
+                <span class="muted">{{ s.city || s.country || 'NA' }}</span>
+                <span class="sug-ping">worst {{ s.max_ping }}ms · avg {{ s.avg_ping }}ms</span>
+              </div>
+              <div class="sug-pings">
+                <span v-for="p in s.pings" :key="p.player" :class="{ est: p.est, none: p.ping == null }">
+                  {{ p.name }}: {{ p.ping == null ? '—' : p.ping + (p.est ? '*' : '') }}
+                </span>
+              </div>
+            </button>
+            <div class="muted small">* estimated from location (no ping history yet)</div>
+          </div>
+          <div v-else class="muted small">No ping history yet — enter a server manually.</div>
+          <input v-model="server" placeholder="server hostname" style="margin-top:8px;">
+        </div>
         <p v-if="err" class="err">{{ err }}</p>
         <div class="m-actions">
           <button class="btn ghost" @click="emit('close')">Cancel</button>
@@ -163,6 +194,16 @@ const view = computed(() => {
 .muted { color: var(--fg-3); font-weight: 400; text-transform: none; }
 .fld input { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 10px 12px; border-radius: 8px; font-family: inherit; font-size: 14px; }
 .fld input:focus { outline: none; border-color: var(--accent); }
+.sug-list { display: flex; flex-direction: column; gap: 6px; }
+.sug { text-align: left; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; cursor: pointer; font-family: inherit; }
+.sug.on { border-color: var(--accent); background: rgba(20,230,192,0.08); }
+.sug-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg); flex-wrap: wrap; }
+.sug-head .best { background: var(--accent); color: var(--bg); font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 4px; }
+.sug-head .sug-ping { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-2); }
+.sug-pings { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; font-size: 11px; color: var(--fg-3); font-family: 'JetBrains Mono', monospace; }
+.sug-pings .est { color: var(--draw); }
+.sug-pings .none { opacity: 0.5; }
+.small { font-size: 11px; }
 .done { text-align: center; padding: 20px 0; }
 .done .big { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
 .small { font-size: 12px; }

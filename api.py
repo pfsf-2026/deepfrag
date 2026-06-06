@@ -283,9 +283,7 @@ def auth_set_location(authorization: str | None = Header(default=None),
     import auth as A
     u = _current_user(authorization, required=True)
     st = (state or "").strip().upper() or None
-    if not st:
-        raise HTTPException(400, "state is required")
-    region = "NA" if st != "INTL" else None
+    region = ("NA" if st != "INTL" else None) if st else None
     with pg() as conn:
         cur = conn.cursor()
         A.ensure_users(cur)
@@ -2941,6 +2939,45 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
     except Exception:
         pass
     return {"challenge_id": chid, "deadline": deadline.isoformat(), "rungs_up": gap}
+
+
+@app.get("/api/ladder/challenge/{challenge_id}/server-suggestion")
+def ladder_server_suggestion(challenge_id: int, response: Response):
+    """Recommend the fairest NA server for a challenge, from both teams' players'
+    real ping history (fallback: self-reported state distance). Public."""
+    import ladder as _ladder
+    import ping_suggest as PS
+    import auth as A
+    response.headers["Cache-Control"] = "public, max-age=120"
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT ca.members AS a, cd.members AS b
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id
+                       WHERE c.id=%s""", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        player_ids = list({*(ch["a"] or []), *(ch["b"] or [])})
+        # self-reported states for the distance fallback
+        states = {}
+        if player_ids:
+            A.ensure_users(cur)
+            cur.execute("SELECT canonical_id, state FROM users WHERE canonical_id = ANY(%s) AND state IS NOT NULL",
+                        (player_ids,))
+            states = {r["canonical_id"]: r["state"] for r in cur.fetchall()}
+        suggestions = PS.suggest_servers(cur, player_ids, states=states, top=3)
+        # display names for the ping matrix
+        names = {}
+        if player_ids:
+            cur.execute("SELECT canonical_id, display_name FROM players_canonical WHERE canonical_id = ANY(%s)", (player_ids,))
+            names = {r["canonical_id"]: r["display_name"] for r in cur.fetchall()}
+    for s in suggestions:
+        for p in s["pings"]:
+            p["name"] = names.get(p["player"], p["player"])
+    return {"suggestions": suggestions}
 
 
 def _user_on_team(cur, user, team_id):
