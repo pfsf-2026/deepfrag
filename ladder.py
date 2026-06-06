@@ -95,6 +95,9 @@ def ensure_schema(cur):
         ALTER TABLE ladder_teams ADD COLUMN IF NOT EXISTS created_by TEXT;
         ALTER TABLE ladder_teams ADD COLUMN IF NOT EXISTS tag TEXT;
     """)
+    # Scheduler: challenger proposes availability slots (proposed JSONB), the
+    # challenged team picks one (agreed_at), and we record the chosen server.
+    cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS server TEXT")
 
 
 def standings(cur, ladder_id):

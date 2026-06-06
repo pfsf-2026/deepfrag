@@ -2563,6 +2563,7 @@ def ladder_detail(ladder_id: int, response: Response):
                     "since": since.isoformat() if since else None, "weeks": weeks}
         cur.execute("""
             SELECT c.id, c.challenger_id, c.challenged_id, c.rungs_up, c.status, c.deadline, c.created_at,
+                   c.proposed, c.agreed_at, c.server,
                    ca.name AS challenger, cd.name AS challenged
             FROM ladder_challenges c
             JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -2570,8 +2571,11 @@ def ladder_detail(ladder_id: int, response: Response):
             WHERE c.ladder_id=%s AND c.status IN ('open','scheduled')
             ORDER BY c.created_at DESC
         """, (ladder_id,))
-        challenges = [dict(r, deadline=r["deadline"].isoformat() if r["deadline"] else None,
-                           created_at=r["created_at"].isoformat() if r["created_at"] else None)
+        challenges = [dict(r,
+                           deadline=r["deadline"].isoformat() if r["deadline"] else None,
+                           created_at=r["created_at"].isoformat() if r["created_at"] else None,
+                           agreed_at=r["agreed_at"].isoformat() if r["agreed_at"] else None,
+                           proposed=r["proposed"] or [])
                       for r in cur.fetchall()]
     return {"ladder": lad, "teams": teams, "koth": koth, "challenges": challenges}
 
@@ -2937,6 +2941,80 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
     except Exception:
         pass
     return {"challenge_id": chid, "deadline": deadline.isoformat(), "rungs_up": gap}
+
+
+def _user_on_team(cur, user, team_id):
+    """True if the user (or admin) is on the given team's roster."""
+    if user.get("is_admin"):
+        return True
+    cid = user.get("canonical_id")
+    if not cid:
+        return False
+    cur.execute("SELECT members FROM ladder_teams WHERE id=%s", (team_id,))
+    row = cur.fetchone()
+    return bool(row and cid in (row["members"] or []))
+
+
+@app.post("/api/ladder/challenge/{challenge_id}/availability")
+def ladder_challenge_availability(challenge_id: int, authorization: str | None = Header(default=None),
+                                  slots: list = Body(..., embed=True)):
+    """Challenger sets the time slots their team is available (ISO-8601 UTC
+    strings). Captain (a member of the CHALLENGER team) only."""
+    import ladder as _ladder
+    user = _current_user(authorization, required=True)
+    clean = [str(s) for s in (slots or []) if s][:200]
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT challenger_id, status FROM ladder_challenges WHERE id=%s", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] not in ("open", "scheduled"):
+            raise HTTPException(409, "challenge is already resolved")
+        if not _user_on_team(cur, user, ch["challenger_id"]):
+            raise HTTPException(403, "only the challenging team can set availability")
+        cur.execute("UPDATE ladder_challenges SET proposed=%s WHERE id=%s", (json.dumps(clean), challenge_id))
+        conn.commit()
+    return {"challenge_id": challenge_id, "slots": clean}
+
+
+@app.post("/api/ladder/challenge/{challenge_id}/schedule")
+def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Header(default=None),
+                              slot: str = Body(..., embed=True),
+                              server: str | None = Body(default=None, embed=True)):
+    """Challenged team picks one of the proposed slots (+ server) → the match is
+    scheduled. Captain (a member of the CHALLENGED team) only."""
+    import ladder as _ladder
+    user = _current_user(authorization, required=True)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.proposed, c.status,
+                              ca.name AS challenger, cd.name AS challenged
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id
+                       WHERE c.id=%s""", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] not in ("open", "scheduled"):
+            raise HTTPException(409, "challenge is already resolved")
+        if not _user_on_team(cur, user, ch["challenged_id"]):
+            raise HTTPException(403, "only the challenged team can pick the time")
+        if slot not in (ch["proposed"] or []):
+            raise HTTPException(400, "pick one of the proposed slots")
+        cur.execute("""UPDATE ladder_challenges
+                       SET agreed_at=%s, server=%s, status='scheduled' WHERE id=%s""",
+                    (slot, (server or "").strip() or None, challenge_id))
+        conn.commit()
+    try:
+        import notify
+        notify.game_scheduled(ch["challenger"], ch["challenged"], slot, (server or "").strip() or None)
+    except Exception:
+        pass
+    return {"challenge_id": challenge_id, "agreed_at": slot, "server": server, "status": "scheduled"}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/result")

@@ -26,6 +26,48 @@ function isMyTeam(t) {
   const cid = user.value?.canonical_id
   return (!!cid && (t.members || []).some(m => m.id === cid)) || !!user.value?.is_admin
 }
+// The current user's own active team (for challenge eligibility).
+const myTeam = computed(() => {
+  const cid = user.value?.canonical_id
+  if (!cid) return null
+  return teams.value.find(t => (t.members || []).some(m => m.id === cid)) || null
+})
+const myOpenChallenge = computed(() => {
+  if (!myTeam.value) return null
+  return challenges.value.find(c => c.challenger_id === myTeam.value.id || c.challenged_id === myTeam.value.id) || null
+})
+// Can I challenge team t? Must be 1-2 rungs ABOVE me, and I have no open challenge.
+function canChallenge(t) {
+  if (!myTeam.value || !myTeam.value.rung || !t.rung || myOpenChallenge.value) return false
+  const gap = myTeam.value.rung - t.rung
+  return gap === 1 || gap === 2
+}
+const challengeErr = ref('')
+const schedulerChallenge = ref(null)
+async function doChallenge(t) {
+  challengeErr.value = ''
+  if (!user.value?.state) { showSettings.value = true; return }  // gate: need a location first
+  try {
+    await $fetch(`${base}/api/ladder/${ladder.value.id}/challenge`, {
+      method: 'POST', headers: useAuth().authHeader(),
+      body: { challenger_id: myTeam.value.id, challenged_id: t.id }
+    })
+    await load()
+    const nc = challenges.value.find(c => c.challenger_id === myTeam.value.id && c.challenged_id === t.id)
+    if (nc) schedulerChallenge.value = nc
+  } catch (e) {
+    challengeErr.value = e?.data?.detail || e?.message || 'Could not create challenge'
+  }
+}
+function challengeStatus(c) {
+  if (c.agreed_at) return `📅 ${new Date(c.agreed_at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${c.server ? ' · ' + c.server : ''}`
+  if ((c.proposed || []).length) return 'Awaiting time pick'
+  return 'Awaiting availability'
+}
+function involvesMe(c) {
+  return myTeam.value && (c.challenger_id === myTeam.value.id || c.challenged_id === myTeam.value.id)
+}
+async function onScheduled() { schedulerChallenge.value = null; await load() }
 function editTeam(t) { editingTeam.value = t }
 async function onTeamAdded(name) {
   showAddTeam.value = false
@@ -130,6 +172,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 
       <AddTeam v-if="showAddTeam && ladder" :ladder-id="ladder.id" @done="onTeamAdded" @close="showAddTeam = false" />
       <AddTeam v-if="editingTeam && ladder" :ladder-id="ladder.id" :edit-team="editingTeam" @done="onTeamAdded" @close="editingTeam = null" />
+      <Scheduler v-if="schedulerChallenge" :challenge="schedulerChallenge" :user-team-id="myTeam?.id" @done="onScheduled" @close="schedulerChallenge = null" />
+      <div v-if="challengeErr" class="pending-note" style="border-color: var(--loss); color: #fca5a5;">{{ challengeErr }}</div>
     </ClientOnly>
 
     <div v-if="loading" class="muted pad">Loading the board…</div>
@@ -181,7 +225,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <span v-if="!(t.members || []).length">—</span>
           </span>
           <span class="c-status">
-            <span v-if="incoming[t.id]?.length" class="badge challenged">
+            <button v-if="canChallenge(t)" class="chal-btn" @click="doChallenge(t)">⚔ Challenge</button>
+            <span v-else-if="incoming[t.id]?.length" class="badge challenged">
               ⚔ Challenged by {{ incoming[t.id].map(c => teamName(c.challenger_id)).join(', ') }}
             </span>
             <span v-else class="badge open">Open</span>
@@ -198,7 +243,12 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <span class="arrow">→</span>
             <strong>{{ teamName(c.challenged_id) }}</strong>
             <span class="meta">({{ c.rungs_up }} rung{{ c.rungs_up === 1 ? '' : 's' }} up)</span>
-            <span v-if="c.deadline" class="deadline">play by {{ new Date(c.deadline).toLocaleDateString() }}</span>
+            <span class="cstatus">{{ challengeStatus(c) }}</span>
+            <span class="spacer" />
+            <button v-if="involvesMe(c)" class="sched-btn" @click="schedulerChallenge = c">
+              {{ c.agreed_at ? 'View' : 'Schedule' }}
+            </button>
+            <span v-else-if="c.deadline && !c.agreed_at" class="deadline">by {{ new Date(c.deadline).toLocaleDateString() }}</span>
           </li>
         </ul>
       </section>
@@ -300,7 +350,13 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .challenges li:first-child { border-top: none; }
 .challenges .arrow { color: var(--accent); }
 .challenges .meta { color: var(--fg-3); font-size: 13px; }
-.challenges .deadline { margin-left: auto; color: var(--draw); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+.challenges .deadline { color: var(--draw); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+.challenges .cstatus { color: var(--fg-2); font-size: 12px; }
+.challenges .spacer { flex: 1; }
+.chal-btn { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.chal-btn:hover { background: rgba(239,68,68,0.28); }
+.sched-btn { background: var(--accent); color: var(--bg); border: 0; border-radius: 6px; padding: 4px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.sched-btn:hover { filter: brightness(1.1); }
 .rules li { padding: 6px 0; color: var(--fg-2); padding-left: 20px; position: relative; }
 .rules li::before { content: '▸'; position: absolute; left: 0; color: var(--accent); }
 .rules strong { color: var(--fg); }
