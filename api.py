@@ -157,7 +157,7 @@ def _current_user(authorization: str | None, required: bool = True):
         cur = conn.cursor()
         A.ensure_users(cur)
         cur.execute("""SELECT discord_id, username, global_name, avatar, canonical_id, is_admin, verified,
-                              region, country, city
+                              region, country, city, state, favorite_server
                        FROM users WHERE discord_id=%s""", (payload.get("sub"),))
         u = cur.fetchone()
     if not u and required:
@@ -273,23 +273,29 @@ def auth_me(authorization: str | None = Header(default=None), response: Response
 
 @app.post("/api/auth/location")
 def auth_set_location(authorization: str | None = Header(default=None),
-                      region: str | None = Body(default=None, embed=True),
+                      state: str | None = Body(default=None, embed=True),
+                      city: str | None = Body(default=None, embed=True),
                       country: str | None = Body(default=None, embed=True),
-                      city: str | None = Body(default=None, embed=True)):
-    """Save the user's approximate location (for match-server suggestion).
-    region = continent code; country = ISO2; city = free label. All optional."""
+                      favorite_server: str | None = Body(default=None, embed=True)):
+    """Save the user's location for match-server suggestion. `state` is required
+    (US state / CA province / 'INTL'); city/country/favorite_server optional.
+    region is derived (NA for US/CA states, else null)."""
     import auth as A
     u = _current_user(authorization, required=True)
-    reg = (region or "").strip().upper() or None
-    if reg and reg not in ("EU", "NA", "SA", "OC", "AS", "AF"):
-        raise HTTPException(400, "region must be EU/NA/SA/OC/AS/AF")
+    st = (state or "").strip().upper() or None
+    if not st:
+        raise HTTPException(400, "state is required")
+    region = "NA" if st != "INTL" else None
     with pg() as conn:
         cur = conn.cursor()
         A.ensure_users(cur)
-        cur.execute("UPDATE users SET region=%s, country=%s, city=%s WHERE discord_id=%s",
-                    (reg, (country or "").strip().upper()[:2] or None, (city or "").strip()[:60] or None, u["discord_id"]))
+        cur.execute("""UPDATE users SET state=%s, city=%s, country=%s, favorite_server=%s, region=%s
+                       WHERE discord_id=%s""",
+                    (st, (city or "").strip()[:60] or None,
+                     (country or "").strip().upper()[:2] or None,
+                     (favorite_server or "").strip()[:120] or None, region, u["discord_id"]))
         conn.commit()
-    return {"region": reg, "country": country, "city": city}
+    return {"state": st, "city": city, "country": country, "favorite_server": favorite_server, "region": region}
 
 
 @app.get("/api/auth/claim/suggestions")

@@ -6,8 +6,9 @@
 const df = useDeepFrag()
 const { user, loggedIn, login } = useAuth()
 const showSettings = useState('show-settings', () => false)
-// Prompt linked players who haven't set a location (for server scheduling).
-const needsLocation = computed(() => loggedIn.value && user.value?.canonical_id && !user.value?.region)
+const openTeamSettings = useState('open-team-settings', () => false)
+// Prompt linked players who haven't set a location (state is the required field).
+const needsLocation = computed(() => loggedIn.value && user.value?.canonical_id && !user.value?.state)
 // Show the claim flow when signed in but not yet linked to a profile (and no
 // pending claim already in flight).
 const needsClaim = computed(() => loggedIn.value && user.value && !user.value.canonical_id && !user.value.pending_claim)
@@ -68,15 +69,17 @@ async function load() {
 }
 onMounted(load)
 
-// Topbar "Team settings" links here with ?settings=1 — open the edit modal for
-// the user's team (works for pending teams too, fetched fresh + enriched).
-const route = useRoute()
-async function maybeOpenSettings() {
-  if (route.query.settings !== '1' || !user.value?.team || editingTeam.value) return
+// Topbar "Team settings" flips a shared flag — open the edit modal for the
+// user's team (works for pending teams too, fetched fresh + enriched). Using a
+// flag (not a query param) so repeat clicks always reopen it.
+async function openMyTeamSettings() {
+  if (!user.value?.team) { openTeamSettings.value = false; return }
   try { editingTeam.value = await $fetch(`${base}/api/ladder/team/${user.value.team.id}`) }
   catch { /* ignore */ }
+  finally { openTeamSettings.value = false }
 }
-watch(() => [user.value, route.query.settings], maybeOpenSettings, { immediate: true })
+watch(openTeamSettings, (v) => { if (v) openMyTeamSettings() })
+onMounted(() => { if (openTeamSettings.value) openMyTeamSettings() })
 
 // challenged_id -> list of incoming challenger names (to badge rows)
 const incoming = computed(() => {
@@ -220,7 +223,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
         <ul>
           <li><strong>NA servers only.</strong> This is a North American tournament.</li>
           <li><strong>No ping-ups.</strong> We just get average ping as close as possible between both teams on a single NA server.</li>
-          <li>Non-NA teams play the <strong>closest-proximity NA server</strong> (e.g. Brazilian teams on Miami, ~45–70ms).</li>
+          <li>Non-NA teams play the <strong>closest-proximity NA server</strong> (e.g. Brazilian teams on Miami, ~100–130ms; most US players sit ~45–70ms).</li>
           <li><strong>DeepFrag suggests the server automatically</strong> from both teams' player locations — no guesswork. Set yours under your name → <em>Personal settings</em>.</li>
           <li>Server pool: Denver · Miami · Chicago · Dallas · New York · LA · Iowa · Washington.</li>
         </ul>
