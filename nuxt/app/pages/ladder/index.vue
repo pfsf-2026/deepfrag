@@ -208,8 +208,21 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
           <li><strong>Win a 1-rung challenge</strong> → swap places.</li>
           <li><strong>Win a 2-rung challenge</strong> → jump up 2; the teams you passed each drop one.</li>
           <li><strong>Forfeit</strong> (no game within a week) → the challenged team drops a rung.</li>
-          <li>Best of 3. Winners may re-challenge immediately; losers wait a week.</li>
+          <li>Best of 3. Winners may re-challenge immediately.</li>
+          <li><strong>After a loss</strong> you can't re-challenge the same team for a week — but you can challenge a <em>different</em> team (up to 2 rungs up) right away.</li>
           <li>Maps: Aerowalk · ztndm3 · DM2 · DM4 · Bravado · Nova · Shifter.</li>
+        </ul>
+      </section>
+
+      <!-- Servers & ping -->
+      <section class="rules">
+        <h2>Servers &amp; ping</h2>
+        <ul>
+          <li><strong>NA servers only.</strong> This is a North American tournament.</li>
+          <li><strong>No ping-ups.</strong> We just get average ping as close as possible between both teams on a single NA server.</li>
+          <li>Non-NA teams play the <strong>closest-proximity NA server</strong> (e.g. Brazilian teams on Miami, ~45–70ms).</li>
+          <li><strong>DeepFrag suggests the server automatically</strong> from both teams' player locations — no guesswork. Set yours under your name → <em>Personal settings</em>.</li>
+          <li>Server pool: Denver · Miami · Chicago · Dallas · New York · LA · Iowa · Washington.</li>
         </ul>
       </section>
     </template>

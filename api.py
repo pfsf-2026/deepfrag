@@ -2905,6 +2905,19 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
                     (ladder_id, challenger_id, challenged_id, challenger_id, challenged_id))
         if cur.fetchone():
             raise HTTPException(409, "one of these teams already has an open challenge")
+        # Same-opponent cooldown: after losing to a team you can't re-challenge
+        # THAT team for a week (you may still challenge other teams up to 2 rungs).
+        cooldown_days = (lad.get("rules") or {}).get("rematch_cooldown_days", 7)
+        cur.execute("""SELECT 1 FROM ladder_matches
+                       WHERE ladder_id=%s AND winner_id=%s
+                         AND played_at > now() - (%s || ' days')::interval
+                         AND ((team_a_id=%s AND team_b_id=%s) OR (team_a_id=%s AND team_b_id=%s))
+                       LIMIT 1""",
+                    (ladder_id, challenged_id, str(cooldown_days),
+                     challenger_id, challenged_id, challenged_id, challenger_id))
+        if cur.fetchone():
+            raise HTTPException(409, f"you lost to this team recently — wait {cooldown_days} days "
+                                     "to rematch them (you can challenge a different team now)")
         forfeit_days = (lad.get("rules") or {}).get("forfeit_days", 7)
         deadline = datetime.now(timezone.utc) + timedelta(days=forfeit_days)
         cur.execute("""INSERT INTO ladder_challenges (ladder_id, challenger_id, challenged_id, rungs_up, deadline)
