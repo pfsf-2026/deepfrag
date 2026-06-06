@@ -99,3 +99,20 @@ blood_dog_d_p:
   variants:
     - "blood_dog(d_p"      # BLooD_DoG(D_P)  — tag as suffix (normalized)
     - "d_p)blood_dog"      # (D_P)BLooD_DoG  — tag as prefix (normalized)
+
+tiba:
+  # Merged 2026-06-06 (Cronus): sr.tiba + (1) variants are the same player.
+  display: tiba
+  variants:
+    - tiba
+    - sr.tiba
+    - "1)tiba"
+    - "1)sr.tiba"
+
+nin:
+  # Merged 2026-06-06 (Cronus): nintendo + nin7endo gimmick = nin.
+  display: nin
+  variants:
+    - nin
+    - nintendo
+    - nin7endo

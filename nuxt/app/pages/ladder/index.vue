@@ -134,6 +134,19 @@ const incoming = computed(() => {
 function teamName(id) {
   return teams.value.find(t => t.id === id)?.name || `#${id}`
 }
+// Scheduled (agreed) matches for the right-rail list.
+const scheduledMatches = computed(() => challenges.value.filter(c => c.agreed_at)
+  .sort((a, b) => new Date(a.agreed_at) - new Date(b.agreed_at)))
+function fmtMatchTime(iso) {
+  return new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+// The action label for the user's own challenge in the rail.
+function myChallengeAction(c) {
+  if (c.agreed_at) return 'View match'
+  const amChallenger = myTeam.value && c.challenger_id === myTeam.value.id
+  if (amChallenger) return (c.proposed || []).length ? 'Edit availability' : 'Set availability'
+  return (c.proposed || []).length ? 'Pick a time' : 'Waiting on opponent'
+}
 function membersLabel(t) {
   return (t.members || []).map(m => m.display).join(' · ')
 }
@@ -184,6 +197,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
     </div>
 
     <template v-else>
+     <div class="cols">
+      <div class="main">
       <!-- King of the Hill -->
       <section v-if="koth" class="koth">
         <div class="crown">👑</div>
@@ -277,12 +292,62 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
           <li>Server pool: Denver · Miami · Chicago · Dallas · New York · LA · Iowa · Washington.</li>
         </ul>
       </section>
+      </div><!-- /main -->
+
+      <!-- Schedule rail -->
+      <aside class="rail">
+        <ClientOnly>
+          <div class="rail-card">
+            <h3>📅 Your match</h3>
+            <template v-if="myOpenChallenge">
+              <div class="ym-teams">
+                <strong>{{ teamName(myOpenChallenge.challenger_id) }}</strong>
+                <span class="vs">vs</span>
+                <strong>{{ teamName(myOpenChallenge.challenged_id) }}</strong>
+              </div>
+              <div class="ym-status">{{ challengeStatus(myOpenChallenge) }}</div>
+              <button class="rail-btn" @click="schedulerChallenge = myOpenChallenge">{{ myChallengeAction(myOpenChallenge) }}</button>
+            </template>
+            <p v-else-if="myTeam" class="muted small">No active match. Hit <strong>⚔ Challenge</strong> on a team 1–2 rungs above you to start one.</p>
+            <p v-else-if="loggedIn && user?.canonical_id" class="muted small">Join or create a team to start scheduling matches.</p>
+            <p v-else class="muted small">Sign in and join a team to schedule matches.</p>
+          </div>
+
+          <div class="rail-card">
+            <h3>Scheduled matches</h3>
+            <div v-if="!scheduledMatches.length" class="muted small">Nothing scheduled yet.</div>
+            <div v-for="c in scheduledMatches" :key="c.id" class="sm-row">
+              <div class="sm-teams">{{ teamName(c.challenger_id) }} vs {{ teamName(c.challenged_id) }}</div>
+              <div class="sm-when">📅 {{ fmtMatchTime(c.agreed_at) }}</div>
+              <div v-if="c.server" class="sm-srv">🖥️ {{ c.server }}</div>
+            </div>
+          </div>
+        </ClientOnly>
+      </aside>
+     </div><!-- /cols -->
     </template>
   </div>
 </template>
 
 <style scoped>
-.wrap { max-width: 880px; margin: 0 auto; padding: 32px 24px 80px; }
+.wrap { max-width: 1140px; margin: 0 auto; padding: 32px 24px 80px; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 22px; align-items: start; }
+.main { min-width: 0; }
+.rail { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 84px; }
+.rail-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; }
+.rail-card h3 { margin: 0 0 12px; font-size: 14px; font-weight: 800; }
+.rail-card .small { font-size: 12px; }
+.ym-teams { display: flex; align-items: center; gap: 8px; font-size: 15px; flex-wrap: wrap; }
+.ym-teams .vs { color: var(--fg-3); font-size: 12px; }
+.ym-status { color: var(--fg-2); font-size: 13px; margin: 8px 0 12px; }
+.rail-btn { width: 100%; background: var(--accent); color: var(--bg); border: 0; padding: 9px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; }
+.rail-btn:hover { filter: brightness(1.1); }
+.sm-row { padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.sm-row:first-of-type { border-top: 0; }
+.sm-teams { font-weight: 600; }
+.sm-when { color: var(--accent); font-size: 12px; margin-top: 2px; }
+.sm-srv { color: var(--fg-3); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
+@media (max-width: 860px) { .cols { grid-template-columns: 1fr; } .rail { position: static; } }
 .head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; margin-bottom: 28px; }
 .head .koth-logo { width: 100%; max-width: 520px; height: auto; display: block; filter: drop-shadow(0 6px 24px rgba(0,0,0,0.5)); }
 .head .sub { color: var(--fg-2); margin: 2px 0 0; font-size: 15px; }
