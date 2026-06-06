@@ -82,9 +82,10 @@ def _embed(title: str, description: str, color: int) -> dict:
 
 # ── event builders ───────────────────────────────────────────────────────────
 
-def challenge_issued(challenger: str, challenged: str, rungs_up: int, deadline_iso: str | None):
+def challenge_issued(challenger: str, challenged: str, rungs_up: int, deadline_iso: str | None,
+                     mention: str | None = None):
     by = f"in by **{deadline_iso[:10]}**" if deadline_iso else "soon"
-    return send(embed=_embed(
+    return send(content=mention or None, embed=_embed(
         "⚔️ New challenge",
         f"**{challenger}** challenged **{challenged}** "
         f"({rungs_up} rung{'s' if rungs_up != 1 else ''} up).\nPlay {by}.",
@@ -107,32 +108,33 @@ def team_signup(name: str, tag: str | None, players: list, pending: bool = True)
     return send(embed=_embed("🆕 New team signup", desc, COLOR))
 
 
-def availability_posted(challenger: str, challenged: str, n_slots: int):
+def availability_posted(challenger: str, challenged: str, n_slots: int, mention: str | None = None):
     """Challenger posted availability — nudge the challenged team to pick a time."""
-    return send(embed=_embed(
+    return send(content=mention or None, embed=_embed(
         "🗓️ Availability posted",
         f"**{challenger}** posted {n_slots} time slot{'s' if n_slots != 1 else ''} vs "
         f"**{challenged}**.\n**{challenged}** — pick a time on the ladder.",
         COLOR_CHALLENGE))
 
 
-def game_scheduled(team_a: str, team_b: str, when: str | None, server: str | None):
+def game_scheduled(team_a: str, team_b: str, when: str | None, server: str | None,
+                   mention: str | None = None):
     """A match was scheduled. Time shown in US Eastern (NA ladder)."""
     bits = [f"**{team_a}** vs **{team_b}**", f"🗓️ {fmt_et(when)}"]
     if server:
         bits.append(f"🖥️ {server}")
-    return send(embed=_embed("📅 Game scheduled", "\n".join(bits), COLOR_CHALLENGE))
+    return send(content=mention or None, embed=_embed("📅 Game scheduled", "\n".join(bits), COLOR_CHALLENGE))
 
 
 def result_posted(winner: str, loser: str, maps_line: str | None = None,
-                  movement: str | None = None, score: str | None = None):
+                  movement: str | None = None, score: str | None = None, mention: str | None = None):
     """Bo3 result: per-map scoreline + the ladder movement it caused."""
     head = f"**{winner}** def. **{loser}**" + (f" — {score}" if score else "")
     parts = [head]
     if maps_line:
         parts.append(maps_line)
     parts.append(movement or "Ranks unchanged.")
-    return send(embed=_embed("🏆 Game result", "\n".join(parts), COLOR_WIN))
+    return send(content=mention or None, embed=_embed("🏆 Game result", "\n".join(parts), COLOR_WIN))
 
 
 def forfeit_posted(challenged: str):

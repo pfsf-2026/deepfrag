@@ -28,20 +28,37 @@ const turnTeamId = computed(() => {
 const isMyTurn = computed(() => isAdmin.value || props.userTeamId === turnTeamId.value)
 const proposerName = computed(() => proposedByLocal.value ? teamName(proposedByLocal.value) : c.challenger)
 
-// ── availability grid (challenger) ──────────────────────────────────────────
-const HOURS = [17, 18, 19, 20, 21, 22, 23]   // local evening prime-time
+// ── availability grid — ET-anchored prime time (NA ladder) ─────────────────
+// 7pm → 2am ET, hourly. The 12/1/2am slots belong to the SAME evening (they roll
+// to the next ET calendar day). Slots stored as UTC ISO; labelled in ET.
+const HOURS_ET = [19, 20, 21, 22, 23, 0, 1, 2]
+const ET = 'America/New_York'
+function etHourLabel(h) {
+  if (h === 0) return '12a'
+  if (h === 12) return '12p'
+  return h < 12 ? `${h}a` : `${h - 12}p`
+}
+// UTC instant for wall-clock h:00 ET on (y, mo, d), DST-correct.
+function etToUtcISO(y, mo, d, h) {
+  const asUTC = Date.UTC(y, mo, d, h, 0, 0)
+  const tz = new Date(new Date(asUTC).toLocaleString('en-US', { timeZone: ET }))
+  return new Date(asUTC + (asUTC - tz.getTime())).toISOString()
+}
 const proposedLocal = ref([...(c.proposed || [])])   // updates in-place after save
 const selected = ref(new Set(c.proposed || []))
 const days = computed(() => {
   const out = []
-  const base0 = new Date(); base0.setHours(0, 0, 0, 0)
-  for (let d = 0; d < 7; d++) {
-    const day = new Date(base0); day.setDate(base0.getDate() + d)
-    const slots = HOURS.map((h) => {
-      const dt = new Date(day); dt.setHours(h, 0, 0, 0)
-      return { iso: dt.toISOString(), label: `${h}:00`, past: dt.getTime() < Date.now() }
+  // "today" in ET
+  const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: ET }))
+  for (let off = 0; off < 7; off++) {
+    const base = new Date(nowET); base.setDate(nowET.getDate() + off)
+    const y = base.getFullYear(), mo = base.getMonth(), d = base.getDate()
+    const slots = HOURS_ET.map((h) => {
+      const dd = h < 7 ? d + 1 : d   // 12/1/2am roll to next ET day
+      const iso = etToUtcISO(y, mo, dd, h)
+      return { iso, label: etHourLabel(h), past: new Date(iso).getTime() < Date.now() }
     })
-    out.push({ label: day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }), slots })
+    out.push({ label: base.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }), slots })
   }
   return out
 })
@@ -82,7 +99,8 @@ async function loadSuggestions() {
   } catch { suggestions.value = [] } finally { sugLoading.value = false }
 }
 function fmtLocal(iso) {
-  return new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  // Show in ET (the ladder's reference zone) so it matches the ET-anchored slots.
+  return new Date(iso).toLocaleString('en-US', { timeZone: ET, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET'
 }
 async function confirmSlot() {
   if (!pick.value) { err.value = 'Pick a time'; return }

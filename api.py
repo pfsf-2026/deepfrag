@@ -2957,10 +2957,11 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
                        VALUES (%s,%s,%s,%s,%s) RETURNING id""",
                     (ladder_id, challenger_id, challenged_id, gap, deadline))
         chid = cur.fetchone()["id"]
+        mention = _mentions(cur, challenger_id, challenged_id)
         conn.commit()
     try:
         import notify
-        notify.challenge_issued(chr_t["name"], chd_t["name"], gap, deadline.isoformat())
+        notify.challenge_issued(chr_t["name"], chd_t["name"], gap, deadline.isoformat(), mention=mention)
     except Exception:
         pass
     return {"challenge_id": chid, "deadline": deadline.isoformat(), "rungs_up": gap}
@@ -3026,6 +3027,23 @@ def _user_on_team(cur, user, team_id):
     return bool(row and cid in (row["members"] or []))
 
 
+def _mentions(cur, *team_ids):
+    """Build a Discord @-mention string for the linked players on the given
+    team(s). Members are canonical_ids → users.discord_id. Empty if none linked."""
+    ids = [t for t in team_ids if t]
+    if not ids:
+        return ""
+    cur.execute("SELECT members FROM ladder_teams WHERE id = ANY(%s)", (ids,))
+    cids = []
+    for r in cur.fetchall():
+        cids.extend(r["members"] or [])
+    if not cids:
+        return ""
+    cur.execute("SELECT discord_id FROM users WHERE canonical_id = ANY(%s) AND discord_id IS NOT NULL",
+                (list(set(cids)),))
+    return " ".join(f"<@{r['discord_id']}>" for r in cur.fetchall())
+
+
 def _turn_team(ch):
     """Whose turn it is to act. No slots on the table → the challenger proposes
     first. Otherwise the team that did NOT post the current slots picks (or
@@ -3063,13 +3081,14 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
             raise HTTPException(403, "it's not your team's turn to suggest times")
         cur.execute("UPDATE ladder_challenges SET proposed=%s, proposed_by=%s WHERE id=%s",
                     (json.dumps(clean), turn, challenge_id))
+        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
         conn.commit()
     proposer = ch["challenger"] if turn == ch["challenger_id"] else ch["challenged"]
     other = ch["challenged"] if turn == ch["challenger_id"] else ch["challenger"]
     try:
         import notify
         if clean:
-            notify.availability_posted(proposer, other, len(clean))
+            notify.availability_posted(proposer, other, len(clean), mention=mention)
     except Exception:
         pass
     return {"challenge_id": challenge_id, "slots": clean, "proposed_by": turn}
@@ -3107,10 +3126,11 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
         cur.execute("""UPDATE ladder_challenges
                        SET agreed_at=%s, server=%s, status='scheduled' WHERE id=%s""",
                     (slot, (server or "").strip() or None, challenge_id))
+        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
         conn.commit()
     try:
         import notify
-        notify.game_scheduled(ch["challenger"], ch["challenged"], slot, (server or "").strip() or None)
+        notify.game_scheduled(ch["challenger"], ch["challenged"], slot, (server or "").strip() or None, mention=mention)
     except Exception:
         pass
     return {"challenge_id": challenge_id, "agreed_at": slot, "server": server, "status": "scheduled"}
@@ -3175,12 +3195,13 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
                 arrow = "⬇️" if tid == loser_id else "↘️"
                 parts.append(f"{arrow} **{names.get(tid, tid)}** → #{rk}")
             movement = "\n".join(parts)
+        mention = _mentions(cur, winner_id, loser_id)
         conn.commit()
     try:
         import notify
         score = f"{score_a}-{score_b}" if score_a is not None and score_b is not None else None
         notify.result_posted(names.get(winner_id, f"#{winner_id}"), names.get(loser_id, f"#{loser_id}"),
-                             maps_line=maps_line, movement=movement, score=score)
+                             maps_line=maps_line, movement=movement, score=score, mention=mention)
         if koth_name:
             notify.koth_changed(koth_name)
     except Exception:
