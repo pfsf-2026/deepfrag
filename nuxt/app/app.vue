@@ -1,8 +1,11 @@
 <script setup>
 const { user, loggedIn, ready, fetchMe, login, logout } = useAuth()
 const menuOpen = ref(false)
+// Shared so the KOTH "set your location" prompt can open the same modal.
+const showSettings = useState('show-settings', () => false)
 onMounted(() => { fetchMe() })
 function closeMenu() { menuOpen.value = false }
+function openSettings() { menuOpen.value = false; showSettings.value = true }
 
 useHead({
   meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
@@ -49,6 +52,7 @@ useSeoMeta({
               <NuxtLink v-if="user?.canonical_id" :to="`/p/${user.canonical_id}`" class="mi" @click="closeMenu">My profile</NuxtLink>
               <NuxtLink v-if="user?.team" to="/ladder?settings=1" class="mi" @click="closeMenu">Team settings</NuxtLink>
               <NuxtLink v-else to="/ladder" class="mi" @click="closeMenu">Join the ladder</NuxtLink>
+              <button class="mi" @click="openSettings">Personal settings</button>
               <NuxtLink v-if="user?.is_admin" to="/ladder/admin" class="mi" @click="closeMenu">Ladder admin</NuxtLink>
               <button class="mi danger" @click="logout(); closeMenu()">Sign out</button>
             </div>
@@ -62,6 +66,9 @@ useSeoMeta({
       <div v-if="menuOpen" class="menu-backdrop" @click="closeMenu" />
     </header>
     <NuxtPage />
+    <ClientOnly>
+      <PersonalSettings v-if="showSettings" @close="showSettings = false" />
+    </ClientOnly>
   </UApp>
 </template>
 

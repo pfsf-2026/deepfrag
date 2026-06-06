@@ -148,6 +148,11 @@ def ensure_users(cur):
     # Self-claims link a profile IMMEDIATELY (no approval gate); `verified` is an
     # admin's later background check, not a precondition for anything.
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT FALSE")
+    # Self-reported approximate location for match-server suggestion. region =
+    # continent code (EU/NA/SA/OC/AS/AF); country = ISO2; city = free label.
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS region TEXT")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS country TEXT")
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT")
 
 
 def upsert_user(cur, du: dict) -> dict:

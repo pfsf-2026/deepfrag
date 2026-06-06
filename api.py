@@ -156,7 +156,8 @@ def _current_user(authorization: str | None, required: bool = True):
     with pg() as conn:
         cur = conn.cursor()
         A.ensure_users(cur)
-        cur.execute("""SELECT discord_id, username, global_name, avatar, canonical_id, is_admin, verified
+        cur.execute("""SELECT discord_id, username, global_name, avatar, canonical_id, is_admin, verified,
+                              region, country, city
                        FROM users WHERE discord_id=%s""", (payload.get("sub"),))
         u = cur.fetchone()
     if not u and required:
@@ -268,6 +269,27 @@ def auth_me(authorization: str | None = Header(default=None), response: Response
         except Exception:
             pass
     return u
+
+
+@app.post("/api/auth/location")
+def auth_set_location(authorization: str | None = Header(default=None),
+                      region: str | None = Body(default=None, embed=True),
+                      country: str | None = Body(default=None, embed=True),
+                      city: str | None = Body(default=None, embed=True)):
+    """Save the user's approximate location (for match-server suggestion).
+    region = continent code; country = ISO2; city = free label. All optional."""
+    import auth as A
+    u = _current_user(authorization, required=True)
+    reg = (region or "").strip().upper() or None
+    if reg and reg not in ("EU", "NA", "SA", "OC", "AS", "AF"):
+        raise HTTPException(400, "region must be EU/NA/SA/OC/AS/AF")
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        cur.execute("UPDATE users SET region=%s, country=%s, city=%s WHERE discord_id=%s",
+                    (reg, (country or "").strip().upper()[:2] or None, (city or "").strip()[:60] or None, u["discord_id"]))
+        conn.commit()
+    return {"region": reg, "country": country, "city": city}
 
 
 @app.get("/api/auth/claim/suggestions")

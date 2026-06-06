@@ -5,6 +5,9 @@
 // lands on top of this once OAuth is live.
 const df = useDeepFrag()
 const { user, loggedIn, login } = useAuth()
+const showSettings = useState('show-settings', () => false)
+// Prompt linked players who haven't set a location (for server scheduling).
+const needsLocation = computed(() => loggedIn.value && user.value?.canonical_id && !user.value?.region)
 // Show the claim flow when signed in but not yet linked to a profile (and no
 // pending claim already in flight).
 const needsClaim = computed(() => loggedIn.value && user.value && !user.value.canonical_id && !user.value.pending_claim)
@@ -103,6 +106,9 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
     </header>
 
     <ClientOnly>
+      <div v-if="needsLocation" class="loc-prompt" @click="showSettings = true">
+        📍 <strong>Set your approximate location</strong> for match-server scheduling — click here (or your name → Personal settings).
+      </div>
       <ClaimProfile v-if="needsClaim" />
       <div v-else-if="user?.pending_claim" class="pending-note">
         ⏳ Profile claim for <strong>{{ user.pending_claim.display }}</strong> is awaiting admin approval.
@@ -224,6 +230,9 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .muted { color: var(--fg-2); }
 .pad { padding: 40px 0; text-align: center; }
 .pending-note { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; color: var(--fg-2); font-size: 14px; }
+.loc-prompt { background: rgba(20,230,192,0.08); border: 1px solid rgba(20,230,192,0.3); border-radius: 12px; padding: 12px 18px; margin-bottom: 16px; color: var(--fg-2); font-size: 14px; cursor: pointer; }
+.loc-prompt:hover { background: rgba(20,230,192,0.14); }
+.loc-prompt strong { color: var(--fg); }
 .add-team-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; }
 .add-team-bar .muted { color: var(--fg-3); }
 .tlogo { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; margin-right: 8px; vertical-align: middle; }
