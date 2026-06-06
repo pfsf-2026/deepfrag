@@ -12,6 +12,28 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
+from datetime import datetime, timezone
+
+
+def fmt_et(iso: str | None) -> str:
+    """Format an ISO-8601 UTC timestamp as US Eastern (this is an NA ladder).
+    Falls back gracefully if tz data is unavailable or the input is odd."""
+    if not iso:
+        return "TBD"
+    try:
+        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        try:
+            from zoneinfo import ZoneInfo
+            et = dt.astimezone(ZoneInfo("America/New_York"))
+            tag = et.tzname() or "ET"   # EST / EDT
+        except Exception:
+            et, tag = dt, "UTC"
+        # e.g. "Mon Jun 9, 9:00 PM EDT" (strip leading zeros, portable enough on Linux)
+        return et.strftime("%a %b %-d, %-I:%M %p ") + tag
+    except Exception:
+        return str(iso)
 
 # DeepFrag teal, matches the site accent.
 COLOR = 0x14E6C0
@@ -95,10 +117,8 @@ def availability_posted(challenger: str, challenged: str, n_slots: int):
 
 
 def game_scheduled(team_a: str, team_b: str, when: str | None, server: str | None):
-    """A match was scheduled (built alongside the scheduler infra)."""
-    bits = [f"**{team_a}** vs **{team_b}**"]
-    if when:
-        bits.append(f"🗓️ {when}")
+    """A match was scheduled. Time shown in US Eastern (NA ladder)."""
+    bits = [f"**{team_a}** vs **{team_b}**", f"🗓️ {fmt_et(when)}"]
     if server:
         bits.append(f"🖥️ {server}")
     return send(embed=_embed("📅 Game scheduled", "\n".join(bits), COLOR_CHALLENGE))

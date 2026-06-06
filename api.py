@@ -2561,7 +2561,7 @@ def ladder_detail(ladder_id: int, response: Response):
                     "since": since.isoformat() if since else None, "weeks": weeks}
         cur.execute("""
             SELECT c.id, c.challenger_id, c.challenged_id, c.rungs_up, c.status, c.deadline, c.created_at,
-                   c.proposed, c.agreed_at, c.server,
+                   c.proposed, c.proposed_by, c.agreed_at, c.server,
                    ca.name AS challenger, cd.name AS challenged
             FROM ladder_challenges c
             JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -3026,52 +3026,67 @@ def _user_on_team(cur, user, team_id):
     return bool(row and cid in (row["members"] or []))
 
 
+def _turn_team(ch):
+    """Whose turn it is to act. No slots on the table → the challenger proposes
+    first. Otherwise the team that did NOT post the current slots picks (or
+    counter-proposes)."""
+    if not (ch.get("proposed") or []):
+        return ch["challenger_id"]
+    pb = ch.get("proposed_by")
+    return ch["challenged_id"] if pb == ch["challenger_id"] else ch["challenger_id"]
+
+
 @app.post("/api/ladder/challenge/{challenge_id}/availability")
 def ladder_challenge_availability(challenge_id: int, authorization: str | None = Header(default=None),
                                   slots: list = Body(..., embed=True)):
-    """Challenger sets the time slots their team is available (ISO-8601 UTC
-    strings). Captain (a member of the CHALLENGER team) only."""
+    """Propose (or counter-propose) availability slots. Whoever's turn it is may
+    post slots; this records them under that team and flips the turn to the other
+    team to pick or counter. Member of the turn team (or admin) only."""
     import ladder as _ladder
     user = _current_user(authorization, required=True)
     clean = [str(s) for s in (slots or []) if s][:200]
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("SELECT challenger_id, status FROM ladder_challenges WHERE id=%s", (challenge_id,))
+        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.proposed, c.proposed_by, c.status,
+                              ca.name AS challenger, cd.name AS challenged
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
         ch = cur.fetchone()
         if not ch:
             raise HTTPException(404, "challenge not found")
-        if ch["status"] not in ("open", "scheduled"):
-            raise HTTPException(409, "challenge is already resolved")
-        if not _user_on_team(cur, user, ch["challenger_id"]):
-            raise HTTPException(403, "only the challenging team can set availability")
-        cur.execute("UPDATE ladder_challenges SET proposed=%s WHERE id=%s", (json.dumps(clean), challenge_id))
-        cur.execute("""SELECT ca.name AS challenger, cd.name AS challenged
-                       FROM ladder_challenges c JOIN ladder_teams ca ON ca.id=c.challenger_id
-                       JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
-        nm = cur.fetchone()
+        if ch["status"] not in ("open",):
+            raise HTTPException(409, "challenge is already scheduled or resolved")
+        turn = _turn_team(ch)
+        if not _user_on_team(cur, user, turn):
+            raise HTTPException(403, "it's not your team's turn to suggest times")
+        cur.execute("UPDATE ladder_challenges SET proposed=%s, proposed_by=%s WHERE id=%s",
+                    (json.dumps(clean), turn, challenge_id))
         conn.commit()
+    proposer = ch["challenger"] if turn == ch["challenger_id"] else ch["challenged"]
+    other = ch["challenged"] if turn == ch["challenger_id"] else ch["challenger"]
     try:
         import notify
-        if clean and nm:
-            notify.availability_posted(nm["challenger"], nm["challenged"], len(clean))
+        if clean:
+            notify.availability_posted(proposer, other, len(clean))
     except Exception:
         pass
-    return {"challenge_id": challenge_id, "slots": clean}
+    return {"challenge_id": challenge_id, "slots": clean, "proposed_by": turn}
 
 
 @app.post("/api/ladder/challenge/{challenge_id}/schedule")
 def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Header(default=None),
                               slot: str = Body(..., embed=True),
                               server: str | None = Body(default=None, embed=True)):
-    """Challenged team picks one of the proposed slots (+ server) → the match is
-    scheduled. Captain (a member of the CHALLENGED team) only."""
+    """Pick one of the proposed slots (+ server) → match scheduled. Only the team
+    whose turn it is (i.e. NOT the team that posted the current slots) may pick."""
     import ladder as _ladder
     user = _current_user(authorization, required=True)
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.proposed, c.status,
+        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.proposed, c.proposed_by, c.status,
                               ca.name AS challenger, cd.name AS challenged
                        FROM ladder_challenges c
                        JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -3080,10 +3095,13 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
         ch = cur.fetchone()
         if not ch:
             raise HTTPException(404, "challenge not found")
-        if ch["status"] not in ("open", "scheduled"):
-            raise HTTPException(409, "challenge is already resolved")
-        if not _user_on_team(cur, user, ch["challenged_id"]):
-            raise HTTPException(403, "only the challenged team can pick the time")
+        if ch["status"] not in ("open",):
+            raise HTTPException(409, "challenge is already scheduled or resolved")
+        if not (ch["proposed"] or []):
+            raise HTTPException(400, "no times have been proposed yet")
+        turn = _turn_team(ch)
+        if not _user_on_team(cur, user, turn):
+            raise HTTPException(403, "it's not your team's turn to pick")
         if slot not in (ch["proposed"] or []):
             raise HTTPException(400, "pick one of the proposed slots")
         cur.execute("""UPDATE ladder_challenges

@@ -7,15 +7,26 @@ const props = defineProps({
   challenge: { type: Object, required: true },
   userTeamId: { type: Number, default: null }
 })
-const emit = defineEmits(['done', 'close'])
+const emit = defineEmits(['done', 'saved', 'close'])
 const { user, authHeader } = useAuth()
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 
 const c = props.challenge
-const isChallenger = computed(() => c.challenger_id === props.userTeamId || user.value?.is_admin)
-const isChallenged = computed(() => c.challenged_id === props.userTeamId || user.value?.is_admin)
 const scheduled = computed(() => !!c.agreed_at)
+const isAdmin = computed(() => !!user.value?.is_admin)
+const proposedByLocal = ref(c.proposed_by ?? null)
+const countering = ref(false)   // turn team chose "suggest different times"
+
+function teamName(id) { return id === c.challenger_id ? c.challenger : (id === c.challenged_id ? c.challenged : `#${id}`) }
+// Whose turn: no slots → challenger proposes first; else the team that did NOT
+// post the current slots picks/counters.
+const turnTeamId = computed(() => {
+  if (!proposedLocal.value.length) return c.challenger_id
+  return proposedByLocal.value === c.challenger_id ? c.challenged_id : c.challenger_id
+})
+const isMyTurn = computed(() => isAdmin.value || props.userTeamId === turnTeamId.value)
+const proposerName = computed(() => proposedByLocal.value ? teamName(proposedByLocal.value) : c.challenger)
 
 // ── availability grid (challenger) ──────────────────────────────────────────
 const HOURS = [17, 18, 19, 20, 21, 22, 23]   // local evening prime-time
@@ -45,11 +56,14 @@ async function saveAvailability() {
     await $fetch(`${base}/api/ladder/challenge/${c.id}/availability`, {
       method: 'POST', headers: authHeader(), body: { slots: [...selected.value] }
     })
-    // Advance in-place instead of closing: admins (or the challenged team) drop
-    // straight into 'Pick a time'; a plain challenger sees 'waiting for opponent'.
+    // Advance in-place instead of closing. The proposer is whoever's turn it was.
+    const justBy = turnTeamId.value
     proposedLocal.value = [...selected.value]
+    proposedByLocal.value = justBy
+    countering.value = false
+    pick.value = ''
     emit('saved')                 // background board refresh, keep modal open
-    if (view.value === 'pick') loadSuggestions()
+    if (view.value === 'act') loadSuggestions()
   } catch (e) { err.value = e?.data?.detail || e?.message || 'Could not save' } finally { saving.value = false }
 }
 
@@ -85,14 +99,13 @@ async function confirmSlot() {
 // challenged-picks (proposed exist) > waiting.
 const view = computed(() => {
   if (scheduled.value) return 'done'
-  const hasProposed = proposedLocal.value.length > 0
-  if (isChallenged.value && hasProposed) return 'pick'       // your turn: pick a time
-  if (isChallenger.value && !hasProposed) return 'fill'      // your turn: post availability
-  if (hasProposed) return 'waiting-pick'                     // posted, waiting on opponent
-  return 'waiting-fill'                                      // waiting on challenger to post
+  const has = proposedLocal.value.length > 0
+  if (!has) return isMyTurn.value ? 'fill' : 'waiting-fill'  // challenger proposes first
+  if (isMyTurn.value) return countering.value ? 'fill' : 'act'  // pick OR suggest different
+  return 'waiting-pick'                                       // I proposed; opponent's move
 })
 
-onMounted(() => { if (view.value === 'pick') loadSuggestions() })
+onMounted(() => { if (view.value === 'act') loadSuggestions() })
 </script>
 
 <template>
@@ -110,9 +123,12 @@ onMounted(() => { if (view.value === 'pick') loadSuggestions() })
         <div class="muted small" style="margin-top:8px;">Shown in your local time. Good luck!</div>
       </div>
 
-      <!-- challenger fills availability -->
+      <!-- propose / counter-propose availability -->
       <template v-else-if="view === 'fill'">
-        <p class="lede">Check every slot <strong>your team</strong> can play over the next 7 days. {{ c.challenged }} picks one. (Times in your local zone.)</p>
+        <p class="lede">
+          Check every slot <strong>your team</strong> can play over the next 7 days — the other team picks one (or suggests different times). Times in your local zone.
+        </p>
+        <button v-if="countering" class="link-btn" @click="countering = false">← back to {{ proposerName }}'s times</button>
         <div class="grid">
           <div v-for="day in days" :key="day.label" class="day">
             <div class="day-lbl">{{ day.label }}</div>
@@ -130,14 +146,15 @@ onMounted(() => { if (view.value === 'pick') loadSuggestions() })
         </div>
       </template>
 
-      <!-- challenged picks a slot -->
-      <template v-else-if="view === 'pick'">
-        <p class="lede"><strong>{{ c.challenger }}</strong> is available at these times — pick one (your local zone):</p>
+      <!-- pick a slot (or counter with different times) -->
+      <template v-else-if="view === 'act'">
+        <p class="lede"><strong>{{ proposerName }}</strong> proposed these times — pick one, or suggest different times. (Your local zone.)</p>
         <div class="picklist">
           <label v-for="iso in proposedLocal" :key="iso" class="pickrow" :class="{ on: pick === iso }">
             <input type="radio" :value="iso" v-model="pick"> {{ fmtLocal(iso) }}
           </label>
         </div>
+        <button class="link-btn" @click="countering = true">None of these work — suggest different times →</button>
         <div class="fld">
           <span>Server <span class="muted">— suggested from both teams' ping history</span></span>
           <div v-if="sugLoading" class="muted small">Crunching pings…</div>
@@ -169,7 +186,7 @@ onMounted(() => { if (view.value === 'pick') loadSuggestions() })
 
       <!-- waiting states -->
       <div v-else class="done">
-        <p v-if="view === 'waiting-pick'" class="muted">Waiting for <strong>{{ c.challenged }}</strong> to pick a time from {{ c.challenger }}'s availability.</p>
+        <p v-if="view === 'waiting-pick'" class="muted">✓ You proposed {{ proposedLocal.length }} time{{ proposedLocal.length === 1 ? '' : 's' }}. Waiting for <strong>{{ teamName(turnTeamId) }}</strong> to pick one or suggest different times.</p>
         <p v-else class="muted">Waiting for <strong>{{ c.challenger }}</strong> to post their availability.</p>
       </div>
     </div>
@@ -217,4 +234,6 @@ onMounted(() => { if (view.value === 'pick') loadSuggestions() })
 .btn.ghost { background: transparent; color: var(--fg-2); border: 1px solid var(--border); }
 .btn:disabled { opacity: 0.6; cursor: wait; }
 .err { color: var(--loss); font-size: 13px; margin: 4px 0 8px; }
+.link-btn { background: none; border: 0; color: var(--accent); font-size: 12px; cursor: pointer; padding: 4px 0 10px; font-family: inherit; }
+.link-btn:hover { text-decoration: underline; }
 </style>
