@@ -184,6 +184,23 @@ async function triggerSync() {
   }
 }
 
+// ─── Apply aliases (fast: explicit aliases.yaml only, no fuzzy) ───────────
+const aliasRunning = ref(false)
+async function applyAliases() {
+  aliasRunning.value = true
+  pushEvent('info', 'CANON', 'apply-aliases started…')
+  try {
+    const r = await $fetch(`${apiBase}/api/admin/apply-aliases`, {
+      method: 'POST', headers: adminHeaders(), timeout: 120000
+    })
+    pushEvent('ok', 'CANON', `aliases applied · ${r.rows_repointed} rows re-pointed · ${r.orphans_hidden} orphans hidden`)
+  } catch (e) {
+    pushEvent('err', 'CANON', e?.data?.detail || e?.message || 'failed')
+  } finally {
+    aliasRunning.value = false
+  }
+}
+
 // ─── Recanonicalize names (fast name pass; surfaces errors) ───────────────
 const recanonRunning = ref(false)
 async function recanon() {
@@ -740,6 +757,7 @@ function shortStatus(s) {
             <div class="actions">
               <button class="btn" @click="loadStatus" :disabled="statusLoading">⟳ Refresh</button>
               <button class="btn ghost" @click="triggerSync">Trigger sync</button>
+              <button class="btn ghost" @click="applyAliases" :disabled="aliasRunning">{{ aliasRunning ? 'Applying…' : 'Apply aliases (fast)' }}</button>
               <button class="btn ghost" @click="recanon" :disabled="recanonRunning">{{ recanonRunning ? 'Recanonicalizing…' : 'Recanonicalize names' }}</button>
               <button class="btn warn" @click="startRerate">Full re-rate</button>
             </div>

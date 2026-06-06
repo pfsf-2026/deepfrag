@@ -3821,7 +3821,7 @@ def admin_sync(authorization: str | None = Header(default=None),
 
     # Step 2 — canonicalize new player names (idempotent; can be slow on big
     # backlogs because it iterates every distinct player_name in the DB).
-    summary["steps"].append({"step": "canonicalize", **_run_script("canonicalize.py", timeout=600)})
+    summary["steps"].append({"step": "canonicalize", **_run_script("canonicalize.py", timeout=1500)})
 
     # Step 3 — re-assign player regions (idempotent, fast)
     summary["steps"].append({"step": "assign_regions", **_run_script("assign_player_regions.py", timeout=300)})
@@ -3954,13 +3954,72 @@ def admin_canon_review_action(canonical_id: str, authorization: str | None = Hea
     return {"canonical_id": canonical_id, "action": action, "target": target}
 
 
+@app.post("/api/admin/apply-aliases")
+def admin_apply_aliases(authorization: str | None = Header(default=None)):
+    """FAST path: apply ONLY the explicit aliases.yaml entries (display name +
+    re-point each variant/login to its canonical) — no fuzzy matching, so it
+    finishes in seconds even at 159k matches (the full canonicalize.py O(n²)
+    fuzzy pass times out at 600s). Use this to apply manual name fixes/merges.
+    Ladder-admin."""
+    _check_ladder_admin(authorization)
+    import name_canon as NC
+    import yaml as _yaml
+    aliases = _yaml.safe_load(open(NC.ALIASES_PATH)) or {}
+    var2cid, login2cid, displays = {}, {}, {}
+    for cid, payload in aliases.items():
+        payload = payload or {}
+        displays[cid] = (payload.get("display") or cid, payload.get("login") or "")
+        var2cid[cid.lower()] = cid
+        for v in payload.get("variants", []):
+            var2cid[str(v).lower()] = cid
+        if payload.get("login"):
+            login2cid[payload["login"]] = cid
+    now = datetime.now(timezone.utc).isoformat()
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_canon_review_schema(cur)
+        # 1. upsert display/login for each aliased canonical
+        for cid, (disp, login) in displays.items():
+            cur.execute("""INSERT INTO players_canonical (canonical_id, display_name, login, created_at, updated_at)
+                           VALUES (%s,%s,%s,%s,%s)
+                           ON CONFLICT(canonical_id) DO UPDATE SET
+                             display_name=EXCLUDED.display_name,
+                             login=COALESCE(NULLIF(EXCLUDED.login,''), players_canonical.login),
+                             updated_at=EXCLUDED.updated_at""",
+                        (cid, disp, login, now, now))
+        # 2. find raw names that map to an aliased canonical (login first, else normalized variant)
+        cur.execute("SELECT DISTINCT player_name, COALESCE(NULLIF(player_login,''),NULL) AS login FROM players")
+        repoint = []
+        for r in cur.fetchall():
+            raw, login = r["player_name"], r["login"]
+            target = login2cid.get(login) if login else None
+            if not target:
+                target = var2cid.get(NC.normalize(raw))
+            if target:
+                repoint.append((target, raw))
+        # 3. re-point players + name_map (bulk)
+        if repoint:
+            psycopg2.extras.execute_values(
+                cur, "UPDATE players SET canonical_id=data.cid FROM (VALUES %s) AS data(cid, raw) "
+                     "WHERE players.player_name = data.raw", repoint, page_size=2000)
+            psycopg2.extras.execute_values(
+                cur, "UPDATE player_name_map SET canonical_id=data.cid FROM (VALUES %s) AS data(cid, raw) "
+                     "WHERE player_name_map.raw_name = data.raw", repoint, page_size=2000)
+        # 4. hide canonicals orphaned by merges (0 player rows now)
+        cur.execute("""UPDATE players_canonical SET hidden=TRUE
+                       WHERE canonical_id NOT IN (SELECT DISTINCT canonical_id FROM players WHERE canonical_id IS NOT NULL)""")
+        orphaned = cur.rowcount
+        conn.commit()
+    return {"aliased_canonicals": len(displays), "rows_repointed": len(repoint), "orphans_hidden": orphaned}
+
+
 @app.post("/api/admin/recanonicalize")
 def admin_recanonicalize(authorization: str | None = Header(default=None)):
     """Run ONLY the name-canonicalization pass (apply aliases.yaml + name fixes)
     without the heavy match-pull/rating. Fast way to apply display/merge fixes.
     Returns canonicalize.py's full output so errors are visible. Ladder-admin."""
     _check_ladder_admin(authorization)
-    r = _run_script("canonicalize.py", timeout=600)
+    r = _run_script("canonicalize.py", timeout=1500)
     # Also log to Cloud Run stdout so the error is greppable server-side.
     print(f"[recanon] rc={r.get('returncode')}\nSTDOUT_TAIL:\n{r.get('stdout_tail','')}\n"
           f"STDERR_TAIL:\n{r.get('stderr_tail','')}", flush=True)
