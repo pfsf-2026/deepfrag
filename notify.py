@@ -85,6 +85,15 @@ def team_signup(name: str, tag: str | None, players: list, pending: bool = True)
     return send(embed=_embed("🆕 New team signup", desc, COLOR))
 
 
+def availability_posted(challenger: str, challenged: str, n_slots: int):
+    """Challenger posted availability — nudge the challenged team to pick a time."""
+    return send(embed=_embed(
+        "🗓️ Availability posted",
+        f"**{challenger}** posted {n_slots} time slot{'s' if n_slots != 1 else ''} vs "
+        f"**{challenged}**.\n**{challenged}** — pick a time on the ladder.",
+        COLOR_CHALLENGE))
+
+
 def game_scheduled(team_a: str, team_b: str, when: str | None, server: str | None):
     """A match was scheduled (built alongside the scheduler infra)."""
     bits = [f"**{team_a}** vs **{team_b}**"]

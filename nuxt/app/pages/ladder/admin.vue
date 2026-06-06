@@ -121,6 +121,10 @@ async function forfeit(c) {
   try { await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/forfeit`, { method: 'POST', headers: authHeader() }); note('forfeit recorded'); await load() }
   catch (e) { err.value = e?.data?.detail || 'forfeit failed' }
 }
+async function cancelChallenge(c) {
+  try { await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/cancel`, { method: 'POST', headers: authHeader() }); note('challenge cancelled'); await load() }
+  catch (e) { err.value = e?.data?.detail || 'cancel failed' }
+}
 
 useHead({ title: 'KOTH Admin · DeepFrag' })
 </script>
@@ -188,6 +192,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               <span class="spacer" />
               <button class="btn sm" @click="startReport(c)">Report</button>
               <button class="btn sm ghost" @click="forfeit(c)">Forfeit</button>
+              <button class="btn sm danger" @click="cancelChallenge(c)">Cancel</button>
             </div>
           </section>
 
@@ -276,6 +281,8 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .btn { background: var(--accent); color: var(--bg); border: 0; padding: 8px 14px; border-radius: 7px; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; }
 .btn.sm { padding: 5px 11px; font-size: 12px; }
 .btn.ghost { background: transparent; color: var(--fg-2); border: 1px solid var(--border); }
+.btn.danger { background: rgba(239,68,68,0.15); color: var(--loss); }
+.btn.danger:hover { background: rgba(239,68,68,0.28); }
 .form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .form.col { flex-direction: column; align-items: stretch; }
 .form input, .form select { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 8px 12px; border-radius: 7px; font-family: inherit; font-size: 13px; flex: 1; min-width: 120px; }

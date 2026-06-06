@@ -3037,7 +3037,17 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
         if not _user_on_team(cur, user, ch["challenger_id"]):
             raise HTTPException(403, "only the challenging team can set availability")
         cur.execute("UPDATE ladder_challenges SET proposed=%s WHERE id=%s", (json.dumps(clean), challenge_id))
+        cur.execute("""SELECT ca.name AS challenger, cd.name AS challenged
+                       FROM ladder_challenges c JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
+        nm = cur.fetchone()
         conn.commit()
+    try:
+        import notify
+        if clean and nm:
+            notify.availability_posted(nm["challenger"], nm["challenged"], len(clean))
+    except Exception:
+        pass
     return {"challenge_id": challenge_id, "slots": clean}
 
 
@@ -3149,6 +3159,24 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
     except Exception:
         pass
     return {"match_id": match_id, "winner_id": winner_id, "moves": moves}
+
+
+@app.post("/api/admin/ladder/challenge/{challenge_id}/cancel")
+def admin_ladder_cancel(challenge_id: int, authorization: str | None = Header(default=None)):
+    """Cancel a challenge (ladder-admin) — no ladder movement, just clears it so
+    the teams are free again. For mistakes / restarting a matchup."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("UPDATE ladder_challenges SET status='cancelled', resolved_at=now() "
+                    "WHERE id=%s AND status IN ('open','scheduled') RETURNING id", (challenge_id,))
+        row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(404, "no open challenge with that id")
+    return {"challenge_id": challenge_id, "status": "cancelled"}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/forfeit")
