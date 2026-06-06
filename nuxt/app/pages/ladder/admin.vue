@@ -20,6 +20,7 @@ const isAdmin = computed(() => loggedIn.value && user.value?.is_admin)
 
 const newTeam = ref({ name: '', members: '', rung: '' })
 const report = ref(null)  // challenge being reported
+const schedulerC = ref(null)  // challenge being scheduled (admin can act either side)
 const reportForm = ref({ winner_id: null, score_a: 2, score_b: 0, hub: '' })
 
 onMounted(async () => {
@@ -188,9 +189,10 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               <strong>{{ teamName(c.challenger_id) }}</strong>
               <span class="muted">vs</span>
               <strong>{{ teamName(c.challenged_id) }}</strong>
-              <span class="muted small">{{ c.rungs_up }} rung(s) up</span>
+              <span class="muted small">{{ c.agreed_at ? ('📅 ' + new Date(c.agreed_at).toLocaleString()) : ((c.proposed||[]).length ? 'awaiting pick' : 'awaiting availability') }}</span>
               <span class="spacer" />
-              <button class="btn sm" @click="startReport(c)">Report</button>
+              <button class="btn sm" @click="schedulerC = c">Schedule</button>
+              <button class="btn sm ghost" @click="startReport(c)">Report</button>
               <button class="btn sm ghost" @click="forfeit(c)">Forfeit</button>
               <button class="btn sm danger" @click="cancelChallenge(c)">Cancel</button>
             </div>
@@ -227,6 +229,10 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
         </template>
       </template>
     </ClientOnly>
+
+    <!-- Scheduler (admin can fill availability OR pick a time for either side) -->
+    <Scheduler v-if="schedulerC" :challenge="schedulerC" :user-team-id="null"
+               @done="schedulerC = null; load()" @close="schedulerC = null" />
 
     <!-- Report modal -->
     <div v-if="report" class="modal-bg" @click.self="report = null">

@@ -43,22 +43,26 @@ def _est_ping_from_distance(km: float) -> int:
     return int(round(20 + km * 0.025))
 
 
-def suggest_servers(cur, player_ids: list[str], states: dict | None = None, top: int = 3):
+def suggest_servers(cur, player_ids: list[str], states: dict | None = None, top: int = 3,
+                    allow_sa: bool = False):
     """player_ids: canonical_ids of all rostered players. states: {canonical_id:
-    state_code} for the distance fallback. Returns ranked NA server suggestions:
+    state_code} for the distance fallback. allow_sa=True (Brazil-vs-Brazil match)
+    also considers SA/BR servers. Returns ranked server suggestions:
       [{host, country, city, max_ping, avg_ping, n_real, pings:[{player,ping,est}]}]
     """
     states = states or {}
     if not player_ids:
         return []
 
-    # Median ping per (player, NA host) from match history.
-    cur.execute("""
+    region_where = ("region IN ('NA','SA') OR country IN ('US','CA','BR')" if allow_sa
+                    else "region='NA' OR country IN ('US','CA')")
+    # Median ping per (player, candidate host) from match history.
+    cur.execute(f"""
         WITH na AS (
             SELECT DISTINCT ON (split_part(hostname,':',1)) split_part(hostname,':',1) AS host,
                    country, city, lat, lon
             FROM servers
-            WHERE region='NA' OR country IN ('US','CA')
+            WHERE {region_where}
             ORDER BY split_part(hostname,':',1), is_live DESC NULLS LAST
         )
         SELECT p.canonical_id, split_part(m.server_hostname,':',1) AS host,

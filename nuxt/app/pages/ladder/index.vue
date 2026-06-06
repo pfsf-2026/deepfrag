@@ -287,9 +287,10 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
       <section class="rules">
         <h2>Servers &amp; ping</h2>
         <ul>
-          <li><strong>NA servers only.</strong> This is a North American tournament.</li>
-          <li><strong>No ping-ups.</strong> We just get average ping as close as possible between both teams on a single NA server.</li>
-          <li>Non-NA teams play the <strong>closest-proximity NA server</strong> (e.g. Brazilian teams on Miami, ~100–130ms; most US players sit ~45–70ms).</li>
+          <li><strong>NA servers</strong> for any match involving a North American team. This is a North American tournament.</li>
+          <li><strong>Exception — Brazil vs Brazil:</strong> two Brazilian teams may play on a Brazilian server (both are closer to it). DeepFrag picks a BR server automatically for those.</li>
+          <li><strong>No ping-ups.</strong> We just get average ping as close as possible between both teams on a single server.</li>
+          <li>A Brazilian team vs an NA team plays the <strong>closest-proximity NA server</strong> (e.g. Brazil on Miami, ~100–130ms; most US players sit ~45–70ms).</li>
           <li><strong>DeepFrag suggests the server automatically</strong> from both teams' player locations — no guesswork. Set yours under your name → <em>Personal settings</em>.</li>
           <li>Server pool: Denver · Miami · Chicago · Dallas · New York · LA · Iowa · Washington.</li>
         </ul>

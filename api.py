@@ -2985,15 +2985,24 @@ def ladder_server_suggestion(challenge_id: int, response: Response):
         ch = cur.fetchone()
         if not ch:
             raise HTTPException(404, "challenge not found")
-        player_ids = list({*(ch["a"] or []), *(ch["b"] or [])})
-        # self-reported states for the distance fallback
-        states = {}
+        team_a, team_b = list(ch["a"] or []), list(ch["b"] or [])
+        player_ids = list({*team_a, *team_b})
+        # self-reported location for the fallback + Brazil-vs-Brazil detection
+        states, locs = {}, {}
         if player_ids:
             A.ensure_users(cur)
-            cur.execute("SELECT canonical_id, state FROM users WHERE canonical_id = ANY(%s) AND state IS NOT NULL",
-                        (player_ids,))
-            states = {r["canonical_id"]: r["state"] for r in cur.fetchall()}
-        suggestions = PS.suggest_servers(cur, player_ids, states=states, top=3)
+            cur.execute("SELECT canonical_id, state, country FROM users WHERE canonical_id = ANY(%s)", (player_ids,))
+            for r in cur.fetchall():
+                if r["state"]:
+                    states[r["canonical_id"]] = r["state"]
+                locs[r["canonical_id"]] = (r["state"], r["country"])
+        # A team is "Brazilian" if it has located players and ALL of them are BR
+        # (country=BR or state=INTL). BR-vs-BR matches may use a BR server.
+        def _team_is_br(ids):
+            located = [locs[i] for i in ids if i in locs and (locs[i][0] or locs[i][1])]
+            return bool(located) and all((st == "INTL" or co == "BR") for st, co in located)
+        allow_sa = _team_is_br(team_a) and _team_is_br(team_b)
+        suggestions = PS.suggest_servers(cur, player_ids, states=states, top=3, allow_sa=allow_sa)
         # display names for the ping matrix
         names = {}
         if player_ids:
