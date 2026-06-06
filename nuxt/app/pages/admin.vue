@@ -576,8 +576,30 @@ async function toggleAdmin(u) {
   }
 }
 
+// Fuzzy autocomplete for the link field (type "aard" → aardappel).
+const linkResults = ref({})   // discord_id -> [{canonical_id, display, matches}]
+const linkPicked = ref({})    // discord_id -> canonical_id chosen
+let linkTimer = {}
+function userLinkSearch(discordId) {
+  clearTimeout(linkTimer[discordId])
+  linkPicked.value[discordId] = null
+  const q = (linkInput.value[discordId] || '').trim()
+  if (q.length < 2) { linkResults.value[discordId] = []; return }
+  linkTimer[discordId] = setTimeout(async () => {
+    try {
+      const r = await $fetch(`${apiBase}/api/search?q=${encodeURIComponent(q)}&limit=8`)
+      linkResults.value[discordId] = r.results || []
+    } catch { linkResults.value[discordId] = [] }
+  }, 220)
+}
+function pickLink(discordId, p) {
+  linkInput.value[discordId] = p.display
+  linkPicked.value[discordId] = p.canonical_id
+  linkResults.value[discordId] = []
+}
 async function linkUser(u) {
-  const cid = (linkInput.value[u.discord_id] || '').trim()
+  // prefer an explicitly-picked profile; else treat the typed text as a canonical_id
+  const cid = (linkPicked.value[u.discord_id] || linkInput.value[u.discord_id] || '').trim()
   if (!cid) return
   try {
     await $fetch(`${apiBase}/api/admin/users/${u.discord_id}/link`, {
@@ -585,6 +607,8 @@ async function linkUser(u) {
     })
     pushEvent('ok', 'USERS', `linked ${u.global_name || u.username} → ${cid}`)
     linkInput.value[u.discord_id] = ''
+    linkPicked.value[u.discord_id] = null
+    linkResults.value[u.discord_id] = []
     await loadUsers()
   } catch (e) {
     pushEvent('err', 'USERS', e?.data?.detail || e?.message || 'link failed')
@@ -1376,8 +1400,16 @@ function shortStatus(s) {
                     </button>
                   </td>
                   <td>
-                    <div style="display:flex; gap:6px;">
-                      <input v-model="linkInput[u.discord_id]" placeholder="canonical_id" class="dd" style="width:140px;" @keyup.enter="linkUser(u)">
+                    <div style="display:flex; gap:6px; position:relative;">
+                      <div style="position:relative;">
+                        <input v-model="linkInput[u.discord_id]" placeholder="type a name…" class="dd" style="width:160px;"
+                               autocomplete="off" @input="userLinkSearch(u.discord_id)" @keyup.enter="linkUser(u)">
+                        <div v-if="(linkResults[u.discord_id] || []).length" class="link-res">
+                          <button v-for="p in linkResults[u.discord_id]" :key="p.canonical_id" @click="pickLink(u.discord_id, p)">
+                            {{ p.display }} <span class="muted">{{ p.matches }}</span>
+                          </button>
+                        </div>
+                      </div>
                       <button class="btn sm ghost" @click="linkUser(u)">Link</button>
                     </div>
                   </td>
@@ -1786,6 +1818,10 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .canon-res .muted { color: var(--fg-3); }
 .picked-tag { display: inline-block; margin-top: 4px; font-size: 11px; color: var(--accent); }
 .canon-actions { display: flex; gap: 6px; }
+.link-res { position: absolute; top: 100%; left: 0; z-index: 20; min-width: 200px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; max-height: 240px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+.link-res button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--fg); padding: 7px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.link-res button:hover { background: var(--panel-3); }
+.link-res .muted { color: var(--fg-3); }
 .btn.danger { background: rgba(239,68,68,0.15); color: var(--loss); }
 .btn.danger:hover { background: rgba(239,68,68,0.28); }
 </style>
