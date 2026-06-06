@@ -33,10 +33,10 @@ async function load() {
   loading.value = true
   err.value = ''
   try {
-    const list = await $fetch(`${base}/api/ladder`)
+    const list = await $fetch(`${base}/api/ladder`, { query: { _: Date.now() } })
     ladder.value = (list.ladders || [])[0] || null
     if (ladder.value) {
-      const d = await $fetch(`${base}/api/ladder/${ladder.value.id}`)
+      const d = await $fetch(`${base}/api/ladder/${ladder.value.id}`, { query: { _: Date.now() } })
       teams.value = d.teams || []
       order.value = [...teams.value]
       orderDirty.value = false

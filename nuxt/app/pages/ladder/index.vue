@@ -86,7 +86,9 @@ const loading = ref(true)
 const err = ref(null)
 
 async function loadDetail(id) {
-  const d = await $fetch(`${base}/api/ladder/${id}`)
+  // cache-bust: the endpoint sends max-age=30, but right after a mutation
+  // (challenge/schedule/reorder) we need the fresh state, not the browser copy.
+  const d = await $fetch(`${base}/api/ladder/${id}`, { query: { _: Date.now() } })
   ladder.value = d.ladder
   teams.value = d.teams || []
   koth.value = d.koth
@@ -97,7 +99,7 @@ async function load() {
   loading.value = true
   err.value = null
   try {
-    const list = await $fetch(`${base}/api/ladder`)
+    const list = await $fetch(`${base}/api/ladder`, { query: { _: Date.now() } })
     const first = (list.ladders || [])[0]
     if (!first) { ladder.value = null; return }
     await loadDetail(first.id)
