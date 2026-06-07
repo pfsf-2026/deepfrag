@@ -122,6 +122,15 @@ async function forfeit(c) {
   try { await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/forfeit`, { method: 'POST', headers: authHeader() }); note('forfeit recorded'); await load() }
   catch (e) { err.value = e?.data?.detail || 'forfeit failed' }
 }
+const ladderOpen = computed(() => !!ladder.value?.rules?.open)
+async function toggleOpen() {
+  try {
+    await $fetch(`${base}/api/admin/ladder/${ladder.value.id}/open`, {
+      method: 'POST', headers: authHeader(), body: { open: !ladderOpen.value }
+    })
+    note(ladderOpen.value ? 'ladder closed' : 'ladder opened'); await load()
+  } catch (e) { err.value = e?.data?.detail || 'toggle failed' }
+}
 async function cancelChallenge(c) {
   try { await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/cancel`, { method: 'POST', headers: authHeader() }); note('challenge cancelled'); await load() }
   catch (e) { err.value = e?.data?.detail || 'cancel failed' }
@@ -150,6 +159,16 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
         <div v-if="!ladder" class="muted pad">No ladder yet — create it in the /admin panel.</div>
 
         <template v-else>
+          <!-- Ladder status / open toggle -->
+          <section class="card" :style="{ borderColor: ladderOpen ? 'rgba(34,197,94,0.4)' : 'rgba(245,158,11,0.4)' }">
+            <h2>
+              Ladder status: <span :style="{ color: ladderOpen ? 'var(--win)' : 'var(--draw)' }">{{ ladderOpen ? 'OPEN' : 'not open' }}</span>
+              <span class="muted small">· {{ teams.length }} teams seeded</span>
+              <button class="btn sm" style="margin-left:auto;" @click="toggleOpen">{{ ladderOpen ? 'Close ladder' : 'Open ladder' }}</button>
+            </h2>
+            <p class="muted small">Closed = pre-launch: players can't challenge (board shows a "not open yet" banner); you can still arrange challenges here for testing. Open it once ~10 teams are seeded.</p>
+          </section>
+
           <!-- Pending team approvals -->
           <section class="card">
             <h2>Pending teams <span class="count">{{ pending.length }}</span></h2>

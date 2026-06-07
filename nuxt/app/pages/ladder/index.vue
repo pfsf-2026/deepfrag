@@ -36,8 +36,12 @@ const myOpenChallenge = computed(() => {
   if (!myTeam.value) return null
   return challenges.value.find(c => c.challenger_id === myTeam.value.id || c.challenged_id === myTeam.value.id) || null
 })
-// Can I challenge team t? Must be 1-2 rungs ABOVE me, and I have no open challenge.
+// Pre-launch: challenging is off until an admin opens the ladder (rules.open).
+const ladderOpen = computed(() => !!ladder.value?.rules?.open)
+const TEAMS_TO_OPEN = 10
+// Can I challenge team t? Ladder must be open, t 1-2 rungs above me, no open challenge.
 function canChallenge(t) {
+  if (!ladderOpen.value) return false
   if (!myTeam.value || !myTeam.value.rung || !t.rung || myOpenChallenge.value) return false
   const gap = myTeam.value.rung - t.rung
   return gap === 1 || gap === 2
@@ -201,6 +205,15 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
     <template v-else>
      <div class="cols">
       <div class="main">
+      <!-- Pre-launch banner -->
+      <section v-if="!ladderOpen" class="notopen">
+        <div class="lock">🔒</div>
+        <div>
+          <div class="notopen-title">The ladder isn't open yet</div>
+          <div class="notopen-sub">It opens once we have {{ TEAMS_TO_OPEN }} teams seeded — <strong>{{ teams.length }}/{{ TEAMS_TO_OPEN }}</strong> so far. Challenging is disabled until then. Get your team in!</div>
+        </div>
+      </section>
+
       <!-- King of the Hill -->
       <section v-if="koth" class="koth">
         <div class="crown">👑</div>
@@ -365,6 +378,11 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .pending-note { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; color: var(--fg-2); font-size: 14px; }
 .loc-prompt { background: rgba(20,230,192,0.08); border: 1px solid rgba(20,230,192,0.3); border-radius: 12px; padding: 12px 18px; margin-bottom: 16px; color: var(--fg-2); font-size: 14px; cursor: pointer; }
 .loc-prompt:hover { background: rgba(20,230,192,0.14); }
+.notopen { display: flex; align-items: center; gap: 16px; background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(20,230,192,0.05)); border: 1px solid rgba(245,158,11,0.4); border-radius: 14px; padding: 16px 20px; margin-bottom: 18px; }
+.notopen .lock { font-size: 28px; }
+.notopen-title { font-size: 17px; font-weight: 800; }
+.notopen-sub { color: var(--fg-2); font-size: 14px; margin-top: 2px; }
+.notopen-sub strong { color: var(--fg); }
 .loc-prompt strong { color: var(--fg); }
 .add-team-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; }
 .add-team-bar .muted { color: var(--fg-3); }

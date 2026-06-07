@@ -2606,6 +2606,26 @@ def admin_ladder_create(authorization: str | None = Header(default=None),
     return {"ladder_id": row["id"], "name": name}
 
 
+@app.post("/api/admin/ladder/{ladder_id}/open")
+def admin_ladder_open(ladder_id: int, authorization: str | None = Header(default=None),
+                      open: bool = Body(..., embed=True)):
+    """Open/close the ladder for player challenging (ladder-admin). Stored in
+    rules.open. Closed = pre-launch: players can't challenge, board shows a
+    'not open yet' banner; admins can still arrange challenges for testing."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("UPDATE ladders SET rules = COALESCE(rules,'{}'::jsonb) || %s::jsonb WHERE id=%s RETURNING rules",
+                    (json.dumps({"open": bool(open)}), ladder_id))
+        row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(404, "ladder not found")
+    return {"ladder_id": ladder_id, "open": bool(open)}
+
+
 @app.post("/api/admin/ladder/{ladder_id}/teams")
 def admin_ladder_add_team(ladder_id: int, authorization: str | None = Header(default=None),
                          name: str = Body(..., embed=True),
@@ -2922,6 +2942,10 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
         chd_t = _team_row(cur, ladder_id, challenged_id)
         if not chr_t or not chd_t:
             raise HTTPException(404, "team not found")
+        # Pre-launch gate: challenging is off for players until the ladder is
+        # opened (rules.open). Admins can still challenge (for testing).
+        if not (lad.get("rules") or {}).get("open") and not user.get("is_admin"):
+            raise HTTPException(403, "the ladder isn't open yet")
         # Authorize: admin, or a member of the challenging team.
         members = chr_t.get("members") or []
         cid = user.get("canonical_id")
