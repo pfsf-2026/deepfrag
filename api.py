@@ -3248,13 +3248,9 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
                        VALUES (%s,%s,%s,%s,%s) RETURNING id""",
                     (ladder_id, challenger_id, challenged_id, gap, deadline))
         chid = cur.fetchone()["id"]
-        mention = _mentions(cur, challenger_id, challenged_id)
         conn.commit()
-    try:
-        import notify
-        notify.challenge_issued(chr_t["name"], chd_t["name"], gap, deadline.isoformat(), mention=mention)
-    except Exception:
-        pass
+    # No Discord ping yet — we hold the announcement until the challenger posts
+    # their proposed times, then send ONE combined message (challenge + times).
     return {"challenge_id": chid, "deadline": deadline.isoformat(), "rungs_up": gap}
 
 
@@ -3416,6 +3412,7 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
         cur.execute("""SELECT c.challenger_id, c.challenged_id, c.proposed, c.proposed_by, c.status,
+                              c.rungs_up, c.deadline,
                               ca.name AS challenger, cd.name AS challenged
                        FROM ladder_challenges c
                        JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -3425,9 +3422,13 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
             raise HTTPException(404, "challenge not found")
         if ch["status"] not in ("open",):
             raise HTTPException(409, "challenge is already scheduled or resolved")
+        # First time anyone posts slots = the challenger's opening proposal. That's
+        # when we fire the (held) challenge announcement, bundled with the times.
+        is_initial = not (ch.get("proposed") or [])
         turn = _turn_team(ch)
         if not _user_on_team(cur, user, turn):
             raise HTTPException(403, "it's not your team's turn to suggest times")
+        clean = sorted(clean)   # chronological in the Discord message + pick list
         cur.execute("UPDATE ladder_challenges SET proposed=%s, proposed_by=%s WHERE id=%s",
                     (json.dumps(clean), turn, challenge_id))
         mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
@@ -3437,7 +3438,12 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
     try:
         import notify
         if clean:
-            notify.availability_posted(proposer, other, len(clean), mention=mention)
+            notify.match_proposal(
+                proposer, other, clean, initial=is_initial,
+                challenger=ch["challenger"], challenged=ch["challenged"],
+                rungs_up=ch.get("rungs_up"),
+                deadline_iso=(ch["deadline"].isoformat() if ch.get("deadline") else None),
+                mention=mention)
     except Exception:
         pass
     return {"challenge_id": challenge_id, "slots": clean, "proposed_by": turn}

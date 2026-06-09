@@ -108,13 +108,33 @@ def team_signup(name: str, tag: str | None, players: list, pending: bool = True)
     return send(embed=_embed("🆕 New team signup", desc, COLOR))
 
 
-def availability_posted(challenger: str, challenged: str, n_slots: int, mention: str | None = None):
-    """Challenger posted availability — nudge the challenged team to pick a time."""
-    return send(content=mention or None, embed=_embed(
-        "🗓️ Availability posted",
-        f"**{challenger}** posted {n_slots} time slot{'s' if n_slots != 1 else ''} vs "
-        f"**{challenged}**.\n**{challenged}** — pick a time on the ladder.",
-        COLOR_CHALLENGE))
+def match_proposal(proposer: str, other: str, slots_iso: list, *, initial: bool,
+                   challenger: str, challenged: str, rungs_up: int | None = None,
+                   deadline_iso: str | None = None, mention: str | None = None):
+    """One combined message when a team posts times.
+
+    - initial (the challenger's opening proposal): announce the challenge AND list
+      the proposed times in a single post — we hold the challenge ping until now.
+    - otherwise (a counter-proposal): "new times suggested", nudge the other team.
+
+    All times shown in US Eastern (NA ladder).
+    """
+    shown = slots_iso[:12]
+    times = "\n".join(f"• {fmt_et(s)}" for s in shown)
+    if len(slots_iso) > len(shown):
+        times += f"\n…and {len(slots_iso) - len(shown)} more"
+    if initial:
+        ups = f" ({rungs_up} rung{'s' if rungs_up != 1 else ''} up)" if rungs_up else ""
+        by = f"\nPlay by **{deadline_iso[:10]}**." if deadline_iso else ""
+        title = "⚔️ New challenge"
+        desc = (f"**{challenger}** challenged **{challenged}**{ups}.{by}\n\n"
+                f"**{challenger}** can play:\n{times}\n\n"
+                f"**{challenged}** — pick a time (or suggest your own) on the ladder.")
+    else:
+        title = "🔄 New times suggested"
+        desc = (f"**{proposer}** suggested different times vs **{other}**:\n{times}\n\n"
+                f"**{other}** — pick one (or counter) on the ladder.")
+    return send(content=mention or None, embed=_embed(title, desc, COLOR_CHALLENGE))
 
 
 def game_scheduled(team_a: str, team_b: str, when: str | None, server: str | None,
