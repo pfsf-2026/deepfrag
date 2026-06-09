@@ -361,7 +361,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <ul>
               <li>unEzQuake must pass the ruleset check (shows <strong>CLEAR</strong>).</li>
               <li><strong>unEzQuake only</strong> — required commands: <code>scr_allowsnap 1</code>, <code>tp_triggers 0</code>, <code>allow_scripts 0</code>.</li>
-              <li>Banned: anything that changes gameplay or graphics vs standard ezQuake — jump automation, radar overlays, colored backpacks, smartspawn, etc.</li>
+              <li><strong>Allowed:</strong> the standard team HUD — <code>teamoverlay</code> / <code>show teaminfo</code> (teammate location, health, armor &amp; weapons). It's standard team-game info and fully permitted.</li>
+              <li>Banned: anything that changes gameplay or graphics vs standard ezQuake — jump automation, <em>enemy</em> radar/wallhack overlays, colored backpacks, smartspawn, etc. (This does <strong>not</strong> include the teammate overlay above.)</li>
               <li>unEzQuake must behave exactly like ezQuake — no visual or gameplay edge. No wallhacks, no homebuilt client features. Period.</li>
             </ul>
 
