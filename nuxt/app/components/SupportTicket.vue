@@ -15,9 +15,39 @@ const title = ref('')
 const area = ref('')
 const description = ref('')
 const email = ref('')
+const images = ref([])      // up to 3 resized data URIs
+const imgErr = ref('')
 const submitting = ref(false)
 const done = ref(null)   // ticket number on success
 const err = ref('')
+
+const MAX_IMAGES = 3
+async function onPickImages(e) {
+  imgErr.value = ''
+  const files = [...(e.target.files || [])]
+  e.target.value = ''   // allow re-picking the same file
+  for (const file of files) {
+    if (images.value.length >= MAX_IMAGES) { imgErr.value = `Up to ${MAX_IMAGES} screenshots.`; break }
+    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) { imgErr.value = 'PNG/JPEG/WebP/GIF only'; continue }
+    try { images.value.push(await resizeToWebp(file, 2000, 0.82)) }
+    catch { imgErr.value = 'Could not read that image' }
+  }
+}
+function resizeToWebp(file, max, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height))
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale)
+      const c = document.createElement('canvas'); c.width = w; c.height = h
+      c.getContext('2d').drawImage(img, 0, 0, w, h)
+      resolve(c.toDataURL('image/webp', quality))
+    }
+    img.onerror = reject
+    img.src = URL.createObjectURL(file)
+  })
+}
+function removeImage(i) { images.value.splice(i, 1) }
 
 async function submit() {
   if (!title.value.trim() || !description.value.trim()) { err.value = 'Add a short summary and a description.'; return }
@@ -28,8 +58,10 @@ async function submit() {
       headers: loggedIn.value ? authHeader() : {},
       body: {
         title: title.value, area: area.value, description: description.value,
-        email: email.value, page_url: isBrowser ? window.location.pathname : ''
-      }
+        email: email.value, page_url: isBrowser ? window.location.pathname : '',
+        images: images.value
+      },
+      retry: 1, retryDelay: 700, timeout: 30000
     })
     done.value = r.ticket
   } catch (e) {
@@ -80,6 +112,21 @@ async function submit() {
           <input v-model="email" type="email" placeholder="you@example.com">
         </label>
 
+        <div class="fld">
+          <span>Screenshots <span class="muted">(optional — up to {{ MAX_IMAGES }})</span></span>
+          <div class="shots">
+            <div v-for="(img, i) in images" :key="i" class="shot">
+              <img :src="img" alt="screenshot">
+              <button type="button" class="shot-x" @click="removeImage(i)">✕</button>
+            </div>
+            <label v-if="images.length < MAX_IMAGES" class="shot-add">
+              + Add
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden @change="onPickImages">
+            </label>
+          </div>
+          <p v-if="imgErr" class="err small">{{ imgErr }}</p>
+        </div>
+
         <p v-if="loggedIn" class="signedin">Signed in as <strong>{{ user?.global_name || user?.username }}</strong> — we'll attach your account to the ticket.</p>
 
         <p v-if="err" class="err">{{ err }}</p>
@@ -111,6 +158,13 @@ async function submit() {
 .btn.ghost { background: transparent; color: var(--fg-2); border: 1px solid var(--border); }
 .btn:disabled { opacity: 0.6; cursor: wait; }
 .err { color: var(--loss); font-size: 13px; margin: 4px 0 8px; }
+.err.small { font-size: 12px; }
+.shots { display: flex; flex-wrap: wrap; gap: 8px; }
+.shot { position: relative; }
+.shot img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); display: block; }
+.shot-x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border); background: var(--panel-2); color: var(--fg-2); font-size: 10px; cursor: pointer; line-height: 1; }
+.shot-add { width: 64px; height: 64px; border: 1px dashed var(--border); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--fg-3); cursor: pointer; }
+.shot-add:hover { border-color: var(--accent); color: var(--fg); }
 .done { display: flex; gap: 14px; align-items: center; padding: 12px 0; }
 .done .check { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 50%; background: rgba(34,197,94,0.15); color: var(--win); display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 800; }
 .done h4 { margin: 0 0 4px; }

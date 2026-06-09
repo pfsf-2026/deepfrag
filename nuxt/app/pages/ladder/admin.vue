@@ -24,6 +24,20 @@ const schedulerC = ref(null)  // challenge being scheduled (admin can act either
 const supportTickets = ref([])  // ladder-area tickets (read-only monitoring)
 const ticketOpen = ref(null)
 function fmtTicketDate(s) { return s ? new Date(s).toLocaleString() : '—' }
+// Screenshots are admin-gated → fetch as authed blobs and cache object URLs.
+const attBlobs = ref({})
+const lightbox = ref('')
+async function loadAttachment(id) {
+  if (attBlobs.value[id]) return
+  try {
+    const blob = await $fetch(`${base}/api/admin/support/attachment/${id}`, { headers: authHeader(), responseType: 'blob' })
+    attBlobs.value = { ...attBlobs.value, [id]: URL.createObjectURL(blob) }
+  } catch { /* skip */ }
+}
+watch(ticketOpen, (id) => {
+  const t = supportTickets.value.find(x => x.id === id)
+  ;(t?.attachments || []).forEach(loadAttachment)
+})
 const reportForm = ref({ winner_id: null, score_a: 2, score_b: 0, hub: '' })
 
 onMounted(async () => {
@@ -237,11 +251,15 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               <span class="badge" :class="t.status === 'resolved' ? 'ok' : t.status === 'in_progress' ? 'info' : 'warn'">{{ t.status }}</span>
               <div v-if="ticketOpen === t.id" style="flex-basis:100%; margin-top:8px; color:var(--fg-2); font-size:13px; white-space:pre-wrap;">
                 {{ t.description }}
+                <div v-if="t.attachments?.length" class="shots" @click.stop>
+                  <img v-for="aid in t.attachments" :key="aid" :src="attBlobs[aid]" class="shot-thumb" alt="screenshot" @click="lightbox = attBlobs[aid]">
+                </div>
                 <div v-if="t.resolution_summary" style="margin-top:8px; color:var(--win);">✓ {{ t.resolution_summary }}</div>
                 <div class="muted small" style="margin-top:6px;">opened {{ fmtTicketDate(t.created_at) }}<span v-if="t.resolved_at"> · resolved {{ fmtTicketDate(t.resolved_at) }}</span></div>
               </div>
             </div>
           </section>
+          <div v-if="lightbox" class="lightbox" @click="lightbox = ''"><img :src="lightbox" alt="screenshot"></div>
 
           <!-- Create challenge (admin-arranged matchup) -->
           <section class="card">
@@ -346,4 +364,9 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; width: 100%; max-width: 380px; }
 .modal h3 { margin: 0 0 14px; font-size: 18px; font-weight: 800; }
 .m-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.shots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.shot-thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; background: var(--bg); }
+.shot-thumb:hover { border-color: var(--accent); }
+.lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 200; cursor: zoom-out; padding: 30px; }
+.lightbox img { max-width: 95vw; max-height: 92vh; border-radius: 8px; }
 </style>

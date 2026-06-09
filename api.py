@@ -483,6 +483,35 @@ def _ensure_support_schema(cur):
     cur.execute("ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS resolution_summary TEXT")
     cur.execute("ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS resolution_detail TEXT")
     cur.execute("ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS email_status TEXT")  # null|pending|sent|failed
+    # Optional screenshots attached to a ticket (client-side resized to ≤2000px).
+    cur.execute("""CREATE TABLE IF NOT EXISTS support_attachments (
+        id          BIGSERIAL PRIMARY KEY,
+        ticket_id   BIGINT NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+        data        BYTEA NOT NULL,
+        mime        TEXT,
+        created_at  TIMESTAMPTZ DEFAULT now()
+    )""")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_support_att_ticket ON support_attachments(ticket_id)")
+
+
+def _parse_image_data_uri(s: str, cap: int = 2_600_000):
+    """Decode a 'data:image/...;base64,...' string to (bytes, mime), size-capped.
+    Returns (None, None) for empty. Raises 400/413 on bad input."""
+    if not s:
+        return None, None
+    if not s.startswith("data:") or "," not in s:
+        raise HTTPException(400, "image must be a data URI")
+    head, b64 = s.split(",", 1)
+    mime = head[5:].split(";")[0] or "image/png"
+    if mime not in ("image/png", "image/jpeg", "image/webp", "image/gif"):
+        raise HTTPException(400, "image must be PNG/JPEG/WebP/GIF")
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        raise HTTPException(400, "invalid image encoding")
+    if len(raw) > cap:
+        raise HTTPException(413, "image too large — resize first")
+    return raw, mime
 
 
 def _send_resolution_email(to: str, num: int, summary: str) -> str:
@@ -516,12 +545,15 @@ def support_create(authorization: str | None = Header(default=None),
                    area: str | None = Body(default=None, embed=True),
                    description: str = Body(..., embed=True),
                    email: str | None = Body(default=None, embed=True),
-                   page_url: str | None = Body(default=None, embed=True)):
+                   page_url: str | None = Body(default=None, embed=True),
+                   images: list | None = Body(default=None, embed=True)):
     """Submit a support ticket. No sign-in required; if signed in, the user's
-    Discord/profile is attached. Returns the sequential ticket number."""
+    Discord/profile is attached. Optional `images` = up to 3 data-URI screenshots
+    (resized client-side). Returns the sequential ticket number."""
     if not title.strip() or not description.strip():
         raise HTTPException(400, "title and description are required")
     u = _current_user(authorization, required=False)  # optional
+    shots = [s for s in (images or []) if s][:3]      # cap at 3
     with pg() as conn:
         cur = conn.cursor()
         _ensure_support_schema(cur)
@@ -535,6 +567,11 @@ def support_create(authorization: str | None = Header(default=None),
                      u.get("canonical_id") if u else None,
                      (page_url or "").strip()[:300] or None))
         num = cur.fetchone()["id"]
+        for s in shots:
+            raw, mime = _parse_image_data_uri(s)
+            if raw:
+                cur.execute("INSERT INTO support_attachments (ticket_id, data, mime) VALUES (%s,%s,%s)",
+                            (num, psycopg2.Binary(raw), mime))
         conn.commit()
     try:
         import notify
@@ -543,6 +580,34 @@ def support_create(authorization: str | None = Header(default=None),
     except Exception:
         pass
     return {"ticket": num, "status": "open"}
+
+
+def _attach_map(cur, ticket_ids):
+    """{ticket_id: [attachment_id, ...]} for the given tickets (ordered)."""
+    out = {}
+    if not ticket_ids:
+        return out
+    cur.execute("""SELECT id, ticket_id FROM support_attachments
+                   WHERE ticket_id = ANY(%s) ORDER BY id""", (list(ticket_ids),))
+    for r in cur.fetchall():
+        out.setdefault(r["ticket_id"], []).append(r["id"])
+    return out
+
+
+@app.get("/api/admin/support/attachment/{att_id}")
+def support_attachment(att_id: int, authorization: str | None = Header(default=None)):
+    """Serve a ticket screenshot. Visible to god admins (SYNC_SECRET) and ladder
+    admins (is_admin) — same gate as the read-only ladder support view."""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_support_schema(cur)
+        cur.execute("SELECT data, mime FROM support_attachments WHERE id=%s", (att_id,))
+        row = cur.fetchone()
+    if not row or not row["data"]:
+        raise HTTPException(404, "not found")
+    return Response(content=bytes(row["data"]), media_type=row["mime"] or "image/png",
+                    headers={"Cache-Control": "private, max-age=600"})
 
 
 @app.get("/api/admin/support/tickets")
@@ -564,6 +629,9 @@ def admin_support_list(authorization: str | None = Header(default=None),
                 if d.get(k) and hasattr(d[k], "isoformat"):
                     d[k] = d[k].isoformat()
             rows.append(d)
+        att = _attach_map(cur, [r["id"] for r in rows])
+        for d in rows:
+            d["attachments"] = att.get(d["id"], [])
     return {"tickets": rows}
 
 
@@ -587,6 +655,9 @@ def ladder_admin_support(authorization: str | None = Header(default=None)):
                 if d.get(k) and hasattr(d[k], "isoformat"):
                     d[k] = d[k].isoformat()
             rows.append(d)
+        att = _attach_map(cur, [r["id"] for r in rows])
+        for d in rows:
+            d["attachments"] = att.get(d["id"], [])
     return {"tickets": rows}
 
 

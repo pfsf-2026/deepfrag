@@ -329,10 +329,27 @@ async function resolveWithClaude(t) {
     '',
     'Diagnose the root cause in the codebase, fix it, and report what you changed.'
   ]
+  if (t.attachments?.length) lines.splice(9, 0, `Screenshots: ${t.attachments.length} attached (view in the Support panel).`, '')
   claudeBrief.value = { id: t.id, text: lines.join('\n') }
   try { await navigator.clipboard.writeText(claudeBrief.value.text) } catch { /* clipboard optional */ }
   if (t.status === 'open') await setTicketStatus(t, 'in_progress')
 }
+
+// Screenshots are admin-gated, so <img src> can't carry the bearer token — fetch
+// each as an authed blob once and cache an object URL.
+const attBlobs = ref({})    // attachment id -> object URL
+const lightbox = ref('')    // object URL for full-size view
+async function loadAttachment(id) {
+  if (attBlobs.value[id]) return
+  try {
+    const blob = await $fetch(`${apiBase}/api/admin/support/attachment/${id}`, { headers: adminHeaders(), responseType: 'blob' })
+    attBlobs.value = { ...attBlobs.value, [id]: URL.createObjectURL(blob) }
+  } catch (e) { pushEvent('err', 'SUPPORT', `image ${id}: ${e?.message || 'load failed'}`) }
+}
+watch(ticketOpen, (id) => {
+  const t = tickets.value.find(x => x.id === id)
+  ;(t?.attachments || []).forEach(loadAttachment)
+})
 
 // ─── Canonicalize queue: clean up orphan/junk profiles ─────────────────────
 const canonList = ref([])
@@ -1620,6 +1637,12 @@ function shortStatus(s) {
                           <span class="k">email</span><span class="v">{{ t.email || '—' }}<span v-if="t.email_status" class="muted"> · email {{ t.email_status }}</span></span>
                         </div>
 
+                        <!-- Screenshots -->
+                        <div v-if="t.attachments?.length" class="shots" @click.stop>
+                          <img v-for="aid in t.attachments" :key="aid" :src="attBlobs[aid]"
+                               class="shot-thumb" alt="screenshot" @click="lightbox = attBlobs[aid]">
+                        </div>
+
                         <!-- Resolved: summary (user/email) on top, detail (admin) below -->
                         <div v-if="t.status === 'resolved'" class="resolved-box">
                           <div class="rb-label">Resolution summary <span class="muted">(sent to user)</span></div>
@@ -1649,6 +1672,9 @@ function shortStatus(s) {
                 </template>
               </tbody>
             </table>
+          </div>
+          <div v-if="lightbox" class="lightbox" @click="lightbox = ''">
+            <img :src="lightbox" alt="screenshot">
           </div>
         </template>
 
@@ -1967,4 +1993,10 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .resolve-form .muted { text-transform: none; font-weight: 400; }
 .resolve-form textarea { background: var(--panel); border: 1px solid var(--border); color: var(--fg); border-radius: 6px; padding: 8px 10px; font-family: inherit; font-size: 13px; font-weight: 400; resize: vertical; }
 .resolve-form textarea:focus { outline: none; border-color: var(--accent); }
+/* Support screenshots */
+.shots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.shot-thumb { width: 88px; height: 88px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; background: var(--bg); }
+.shot-thumb:hover { border-color: var(--accent); }
+.lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 200; cursor: zoom-out; padding: 30px; }
+.lightbox img { max-width: 95vw; max-height: 92vh; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
 </style>
