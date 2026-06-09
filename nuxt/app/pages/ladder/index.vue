@@ -282,6 +282,17 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
         </ul>
       </section>
 
+      <!-- Format -->
+      <section class="rules">
+        <h2>Format</h2>
+        <ul>
+          <li><strong>Ruleset:</strong> {{ ladder?.rules?.ruleset || 'smackdown' }} <span class="muted">(KTX competitive standard)</span></li>
+          <li><strong>Mode:</strong> 2on2 (TDM) · <strong>Best of {{ ladder?.rules?.best_of || 3 }}</strong></li>
+          <li><strong>Timelimit:</strong> {{ ladder?.rules?.timelimit || 10 }} min per map · overtime on a draw</li>
+          <li><strong>Maps:</strong> Aerowalk · ztndm3 · DM2 · DM4 · Bravado · Nova · Shifter</li>
+        </ul>
+      </section>
+
       <!-- Rules -->
       <section class="rules">
         <h2>How it works</h2>

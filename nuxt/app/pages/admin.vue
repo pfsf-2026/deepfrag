@@ -431,7 +431,7 @@ async function createLadder() {
         season: newLadder.value.season,
         team_size: Number(newLadder.value.team_size) || 2,
         map_pool: DEFAULT_MAPS,
-        rules: { rung_jump: 2, forfeit_days: 7, best_of: 3 }
+        rules: { rung_jump: 2, forfeit_days: 7, best_of: 3, ruleset: 'smackdown', timelimit: 10 }
       }
     })
     pushEvent('ok', 'LADDER', `created "${r.name}" (id ${r.ladder_id})`)
