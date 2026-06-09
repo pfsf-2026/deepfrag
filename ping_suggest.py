@@ -69,7 +69,7 @@ def suggest_servers(cur, player_ids: list[str], states: dict | None = None, top:
                percentile_cont(0.5) WITHIN GROUP (ORDER BY p.player_ping) AS med, COUNT(*) AS n,
                na.country, na.city, na.lat, na.lon
         FROM players p
-        JOIN matches m ON m.id = p.match_id
+        JOIN matches m ON m.match_id = p.match_id
         JOIN na ON na.host = split_part(m.server_hostname,':',1)
         WHERE p.canonical_id = ANY(%s) AND p.player_ping BETWEEN 5 AND 400
         GROUP BY p.canonical_id, host, na.country, na.city, na.lat, na.lon
