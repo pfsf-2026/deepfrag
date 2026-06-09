@@ -237,7 +237,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               <span class="badge" :class="t.status === 'resolved' ? 'ok' : t.status === 'in_progress' ? 'info' : 'warn'">{{ t.status }}</span>
               <div v-if="ticketOpen === t.id" style="flex-basis:100%; margin-top:8px; color:var(--fg-2); font-size:13px; white-space:pre-wrap;">
                 {{ t.description }}
-                <div v-if="t.resolution" style="margin-top:8px; color:var(--win);">✓ {{ t.resolution }}</div>
+                <div v-if="t.resolution_summary" style="margin-top:8px; color:var(--win);">✓ {{ t.resolution_summary }}</div>
                 <div class="muted small" style="margin-top:6px;">opened {{ fmtTicketDate(t.created_at) }}<span v-if="t.resolved_at"> · resolved {{ fmtTicketDate(t.resolved_at) }}</span></div>
               </div>
             </div>

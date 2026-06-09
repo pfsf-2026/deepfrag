@@ -434,6 +434,36 @@ def _ensure_support_schema(cur):
         created_at   TIMESTAMPTZ DEFAULT now(),
         resolved_at  TIMESTAMPTZ
     )""")
+    # Two-tier resolution: plain-English summary (shown to user + emailed) and a
+    # detailed technical writeup (admin only). Plus email-delivery tracking.
+    cur.execute("ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS resolution_summary TEXT")
+    cur.execute("ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS resolution_detail TEXT")
+    cur.execute("ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS email_status TEXT")  # null|pending|sent|failed
+
+
+def _send_resolution_email(to: str, num: int, summary: str) -> str:
+    """Email the user their plain-English resolution. Uses Resend if configured
+    (RESEND_API_KEY + EMAIL_FROM). Returns 'sent' | 'pending' (no provider) |
+    'failed'. Never raises."""
+    if not to:
+        return None
+    key = os.environ.get("RESEND_API_KEY")
+    sender = os.environ.get("EMAIL_FROM")
+    if not key or not sender:
+        return "pending"   # provider not configured yet — queued for later
+    body = (f"Hi,\n\nYour DeepFrag support ticket #{num} has been resolved.\n\n"
+            f"{summary}\n\nThanks for the report — it helped.\n\n— DeepFrag")
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=json.dumps({"from": sender, "to": [to],
+                             "subject": f"Your DeepFrag ticket #{num} is resolved", "text": body}).encode(),
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return "sent" if 200 <= r.status < 300 else "failed"
+    except Exception:
+        return "failed"
 
 
 @app.post("/api/support/ticket")
@@ -502,8 +532,8 @@ def ladder_admin_support(authorization: str | None = Header(default=None)):
     with pg() as conn:
         cur = conn.cursor()
         _ensure_support_schema(cur)
-        cur.execute("""SELECT id, title, area, description, username, email, status, resolution,
-                              created_at, resolved_at
+        cur.execute("""SELECT id, title, area, description, username, email, status,
+                              resolution_summary, created_at, resolved_at
                        FROM support_tickets WHERE area ILIKE '%ladder%'
                        ORDER BY (status='resolved'), created_at DESC""")
         rows = []
@@ -519,8 +549,11 @@ def ladder_admin_support(authorization: str | None = Header(default=None)):
 @app.post("/api/admin/support/tickets/{ticket_id}/status")
 def admin_support_status(ticket_id: int, authorization: str | None = Header(default=None),
                          status: str = Body(..., embed=True),
-                         resolution: str | None = Body(default=None, embed=True)):
-    """Update a ticket's status (admin): open | in_progress | resolved."""
+                         resolution_summary: str | None = Body(default=None, embed=True),
+                         resolution_detail: str | None = Body(default=None, embed=True)):
+    """Update a ticket (admin). On 'resolved', store the plain-English summary
+    (user-facing/email) + the detailed technical writeup (admin), and — if the
+    reporter left an email — send/queue the summary to them."""
     _check_admin_auth(authorization)
     if status not in ("open", "in_progress", "resolved"):
         raise HTTPException(400, "bad status")
@@ -528,15 +561,22 @@ def admin_support_status(ticket_id: int, authorization: str | None = Header(defa
         cur = conn.cursor()
         _ensure_support_schema(cur)
         cur.execute("""UPDATE support_tickets
-                       SET status=%s, resolution=COALESCE(%s, resolution),
+                       SET status=%s,
+                           resolution_summary=COALESCE(%s, resolution_summary),
+                           resolution_detail=COALESCE(%s, resolution_detail),
                            resolved_at = CASE WHEN %s='resolved' THEN now() ELSE resolved_at END
-                       WHERE id=%s RETURNING id, status""",
-                    (status, resolution, status, ticket_id))
+                       WHERE id=%s RETURNING id, status, email, resolution_summary""",
+                    (status, resolution_summary, resolution_detail, status, ticket_id))
         row = cur.fetchone()
+        if not row:
+            conn.commit()
+            raise HTTPException(404, "ticket not found")
+        email_status = None
+        if status == "resolved" and row["email"] and row["resolution_summary"]:
+            email_status = _send_resolution_email(row["email"], row["id"], row["resolution_summary"])
+            cur.execute("UPDATE support_tickets SET email_status=%s WHERE id=%s", (email_status, ticket_id))
         conn.commit()
-    if not row:
-        raise HTTPException(404, "ticket not found")
-    return dict(row)
+    return {"id": row["id"], "status": row["status"], "email_status": email_status}
 
 
 # ── Ladder cron tick: reminders + forfeit clock ──────────────────────────────

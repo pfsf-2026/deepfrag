@@ -296,16 +296,23 @@ async function loadSupport() {
     ticketsLoading.value = false
   }
 }
-async function setTicketStatus(t, status) {
+const resolveForm = ref({})   // ticket_id -> { summary, detail }
+async function setTicketStatus(t, status, body = {}) {
   try {
-    await $fetch(`${apiBase}/api/admin/support/tickets/${t.id}/status`, {
-      method: 'POST', headers: adminHeaders(), body: { status }
+    const r = await $fetch(`${apiBase}/api/admin/support/tickets/${t.id}/status`, {
+      method: 'POST', headers: adminHeaders(), body: { status, ...body }
     })
-    pushEvent('ok', 'SUPPORT', `#${t.id} → ${status}`)
+    const em = r.email_status ? ` · email ${r.email_status}` : ''
+    pushEvent('ok', 'SUPPORT', `#${t.id} → ${status}${em}`)
     await loadSupport()
   } catch (e) {
     pushEvent('err', 'SUPPORT', e?.data?.detail || e?.message || 'update failed')
   }
+}
+async function resolveTicket(t) {
+  const f = resolveForm.value[t.id] || {}
+  if (!f.summary || !f.summary.trim()) { pushEvent('err', 'SUPPORT', 'add a plain-English summary first'); return }
+  await setTicketStatus(t, 'resolved', { resolution_summary: f.summary, resolution_detail: f.detail || '' })
 }
 // Build a ready-to-paste brief for a Claude Code session, and mark in-progress.
 async function resolveWithClaude(t) {
@@ -1610,12 +1617,30 @@ function shortStatus(s) {
                           <span class="k">description</span><span class="v" style="white-space:pre-wrap;">{{ t.description }}</span>
                           <span class="k">page</span><span class="v">{{ t.page_url || '—' }}</span>
                           <span class="k">reporter</span><span class="v">{{ t.username || '—' }}<span v-if="t.canonical_id" class="muted"> · {{ t.canonical_id }}</span></span>
-                          <span class="k">email</span><span class="v">{{ t.email || '—' }}</span>
-                          <span v-if="t.resolution" class="k">resolution</span><span v-if="t.resolution" class="v">{{ t.resolution }}</span>
+                          <span class="k">email</span><span class="v">{{ t.email || '—' }}<span v-if="t.email_status" class="muted"> · email {{ t.email_status }}</span></span>
                         </div>
+
+                        <!-- Resolved: summary (user/email) on top, detail (admin) below -->
+                        <div v-if="t.status === 'resolved'" class="resolved-box">
+                          <div class="rb-label">Resolution summary <span class="muted">(sent to user)</span></div>
+                          <div class="rb-summary">{{ t.resolution_summary || '—' }}</div>
+                          <div v-if="t.resolution_detail" class="rb-label" style="margin-top:10px;">Detailed writeup <span class="muted">(admin)</span></div>
+                          <div v-if="t.resolution_detail" class="rb-detail">{{ t.resolution_detail }}</div>
+                        </div>
+
+                        <!-- Open/in-progress: resolve form -->
+                        <div v-else class="resolve-form" @click.stop>
+                          <label>Resolution summary <span class="muted">(plain English — shown to the user{{ t.email ? ' + emailed' : '' }})</span>
+                            <textarea v-model="(resolveForm[t.id] ||= {}).summary" rows="2" placeholder="What was fixed, in plain language…"></textarea>
+                          </label>
+                          <label>Detailed writeup <span class="muted">(admin — root cause, fix, prevention)</span>
+                            <textarea v-model="(resolveForm[t.id] ||= {}).detail" rows="4" placeholder="Root cause · code change · how we'll prevent recurrence…"></textarea>
+                          </label>
+                        </div>
+
                         <div style="display:flex; gap:8px; margin-top:12px;">
                           <button class="btn sm" @click.stop="resolveWithClaude(t)">🤖 Resolve w/ Claude</button>
-                          <button v-if="t.status !== 'resolved'" class="btn sm ghost" @click.stop="setTicketStatus(t, 'resolved')">Mark resolved</button>
+                          <button v-if="t.status !== 'resolved'" class="btn sm" @click.stop="resolveTicket(t)">Resolve &amp; notify</button>
                           <button v-else class="btn sm ghost" @click.stop="setTicketStatus(t, 'open')">Reopen</button>
                         </div>
                       </div>
@@ -1932,4 +1957,14 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .link-res .muted { color: var(--fg-3); }
 .btn.danger { background: rgba(239,68,68,0.15); color: var(--loss); }
 .btn.danger:hover { background: rgba(239,68,68,0.28); }
+/* Support resolution */
+.resolved-box { margin-top: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.rb-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-3); font-weight: 700; }
+.rb-summary { color: var(--win); font-size: 13px; margin-top: 4px; white-space: pre-wrap; }
+.rb-detail { color: var(--fg-2); font-size: 12px; margin-top: 4px; white-space: pre-wrap; font-family: 'JetBrains Mono', monospace; }
+.resolve-form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.resolve-form label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--fg-3); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.resolve-form .muted { text-transform: none; font-weight: 400; }
+.resolve-form textarea { background: var(--panel); border: 1px solid var(--border); color: var(--fg); border-radius: 6px; padding: 8px 10px; font-family: inherit; font-size: 13px; font-weight: 400; resize: vertical; }
+.resolve-form textarea:focus { outline: none; border-color: var(--accent); }
 </style>
