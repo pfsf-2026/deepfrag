@@ -38,11 +38,18 @@ const proposerName = computed(() => proposedByLocal.value ? teamName(proposedByL
 // to the next ET calendar day). Slots stored as UTC ISO; labelled in ET.
 const HOURS_ET = [19, 20, 21, 22, 23, 0, 1, 2]
 const ET = 'America/New_York'
-// UTC instant for wall-clock h:00 ET on (y, mo, d), DST-correct.
+// UTC instant for wall-clock h:00 ET on (y, mo, d), DST-correct AND independent
+// of the viewer's browser timezone. We get ET's offset by formatting the same
+// instant in ET and in UTC, parsing both as local time — the browser's own zone
+// cancels in the difference, leaving ET's true offset. (The previous version
+// subtracted only the ET-parsed value, so it silently baked in the browser's
+// offset and mis-placed every slot for non-UTC users.)
 function etToUtcISO(y, mo, d, h) {
   const asUTC = Date.UTC(y, mo, d, h, 0, 0)
-  const tz = new Date(new Date(asUTC).toLocaleString('en-US', { timeZone: ET }))
-  return new Date(asUTC + (asUTC - tz.getTime())).toISOString()
+  const inst = new Date(asUTC)
+  const etMs = new Date(inst.toLocaleString('en-US', { timeZone: ET })).getTime()
+  const utcMs = new Date(inst.toLocaleString('en-US', { timeZone: 'UTC' })).getTime()
+  return new Date(asUTC + (utcMs - etMs)).toISOString()
 }
 const proposedLocal = ref([...(c.proposed || [])])   // updates in-place after save
 const selected = ref(new Set(c.proposed || []))
