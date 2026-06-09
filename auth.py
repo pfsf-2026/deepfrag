@@ -156,6 +156,11 @@ def ensure_users(cur):
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT")  # US state / CA province / INTL
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS favorite_server TEXT")
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone TEXT")  # IANA, optional override
+    # General weekly availability for the ladder scheduler. JSONB:
+    #   {"tz": "America/New_York", "slots": {"mon":[19,20,21], ...}}
+    # Day keys mon..sun; hour ints in the player's tz, 0-23 plus 24=midnight,
+    # 25=1am, 26=2am of the following day (covers the ladder's late ET slots).
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS availability JSONB")
 
 
 def upsert_user(cur, du: dict) -> dict:

@@ -105,6 +105,53 @@ function fmtLocal(iso) {
   // Viewer's resolved zone (with the zone abbreviation so it's unambiguous).
   return new Date(iso).toLocaleString('en-US', { timeZone: tz.value, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
 }
+
+// ── general-availability overlay ────────────────────────────────────────────
+// Each involved player's general weekly availability (in their OWN tz). For a
+// given slot we convert the instant into each player's tz, then check whether
+// that weekday/hour falls in their free hours — so a slot shows "2 usually free".
+const ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+const overlayPlayers = ref([])
+const overlayMeta = ref({ total: 0, withAvail: 0 })
+async function loadOverlay() {
+  try {
+    const r = await $fetch(`${base}/api/ladder/challenge/${c.id}/availability`)
+    overlayPlayers.value = r.players || []
+    overlayMeta.value = { total: r.total_players || 0, withAvail: r.with_availability || 0 }
+  } catch { overlayPlayers.value = [] }
+}
+function partsInTz(iso, ptz) {
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: ptz || ET, weekday: 'short', hour: '2-digit', hourCycle: 'h23' })
+  let wd = '', hr = 0
+  for (const p of fmt.formatToParts(new Date(iso))) {
+    if (p.type === 'weekday') wd = p.value.toLowerCase()
+    if (p.type === 'hour') hr = parseInt(p.value, 10) % 24
+  }
+  return { wd, hr }
+}
+function playerFree(pl, wd, hr) {
+  const s = pl.slots || {}
+  if ((s[wd] || []).includes(hr)) return true
+  if (hr <= 2) {                                  // late-night wrap (free until 1/2am the night before)
+    const prev = ORDER[(ORDER.indexOf(wd) - 1 + 7) % 7]
+    if ((s[prev] || []).includes(hr + 24)) return true
+  }
+  return false
+}
+function freeNamesAt(iso) {
+  const out = []
+  for (const pl of overlayPlayers.value) {
+    const { wd, hr } = partsInTz(iso, pl.tz)
+    if (playerFree(pl, wd, hr)) out.push(pl.name)
+  }
+  return out
+}
+function freeCount(iso) { return freeNamesAt(iso).length }
+function freeTitle(iso) {
+  const n = freeNamesAt(iso)
+  return n.length ? `Usually free: ${n.join(', ')}` : ''
+}
+const hasOverlay = computed(() => overlayMeta.value.withAvail > 0)
 async function confirmSlot() {
   if (!pick.value) { err.value = 'Pick a time'; return }
   saving.value = true; err.value = ''
@@ -126,7 +173,7 @@ const view = computed(() => {
   return 'waiting-pick'                                       // I proposed; opponent's move
 })
 
-onMounted(() => { if (view.value === 'act') loadSuggestions() })
+onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
 </script>
 
 <template>
@@ -154,13 +201,15 @@ onMounted(() => { if (view.value === 'act') loadSuggestions() })
           <a v-if="tzIsGuess" class="tz-link" @click="showSettings = true">Showing Eastern — set your time zone →</a>
         </div>
         <button v-if="countering" class="link-btn" @click="countering = false">← back to {{ proposerName }}'s times</button>
+        <p v-if="hasOverlay" class="legend"><span class="fdot">2</span> = players whose general availability covers that time. Set yours from the ladder page.</p>
         <div class="grid">
           <div v-for="day in days" :key="day.label" class="day">
             <div class="day-lbl">{{ day.label }}</div>
             <div class="slots">
               <button v-for="s in day.slots" :key="s.iso" class="slot"
                       :class="{ on: selected.has(s.iso), past: s.past }" :disabled="s.past"
-                      @click="toggle(s.iso)">{{ s.label }}</button>
+                      :title="freeTitle(s.iso)" @click="toggle(s.iso)">{{ s.label }}<span
+                      v-if="freeCount(s.iso)" class="fdot" :class="{ allfree: freeCount(s.iso) === overlayMeta.withAvail }">{{ freeCount(s.iso) }}</span></button>
             </div>
           </div>
         </div>
@@ -180,7 +229,11 @@ onMounted(() => { if (view.value === 'act') loadSuggestions() })
         </div>
         <div class="picklist">
           <label v-for="iso in proposedLocal" :key="iso" class="pickrow" :class="{ on: pick === iso }">
-            <input type="radio" :value="iso" v-model="pick"> {{ fmtLocal(iso) }}
+            <input type="radio" :value="iso" v-model="pick">
+            <span class="pl-time">{{ fmtLocal(iso) }}</span>
+            <span v-if="freeCount(iso)" class="pl-free" :title="freeTitle(iso)">
+              <span class="fdot" :class="{ allfree: freeCount(iso) === overlayMeta.withAvail }">{{ freeCount(iso) }}</span> usually free
+            </span>
           </label>
         </div>
         <button class="link-btn" @click="countering = true">None of these work — suggest different times →</button>
@@ -269,4 +322,14 @@ onMounted(() => { if (view.value === 'act') loadSuggestions() })
 .tz-link:hover { text-decoration: underline; }
 .link-btn { background: none; border: 0; color: var(--accent); font-size: 12px; cursor: pointer; padding: 4px 0 10px; font-family: inherit; }
 .link-btn:hover { text-decoration: underline; }
+/* general-availability overlay */
+.slot { position: relative; }
+.fdot { display: inline-flex; align-items: center; justify-content: center; min-width: 14px; height: 14px; padding: 0 3px; margin-left: 5px; border-radius: 7px; background: var(--draw); color: var(--bg); font-size: 9px; font-weight: 800; vertical-align: middle; }
+.fdot.allfree { background: var(--win); }
+.slot .fdot { position: absolute; top: -6px; right: -6px; margin: 0; border: 1px solid var(--panel); }
+.legend { font-size: 11px; color: var(--fg-3); margin: -4px 0 12px; display: flex; align-items: center; gap: 6px; }
+.legend .fdot { position: static; }
+.pickrow { flex-wrap: wrap; }
+.pl-free { margin-left: auto; font-size: 11px; color: var(--fg-3); display: inline-flex; align-items: center; gap: 5px; }
+.pl-free .fdot { position: static; }
 </style>

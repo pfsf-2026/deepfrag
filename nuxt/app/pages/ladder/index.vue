@@ -13,6 +13,7 @@ const needsLocation = computed(() => loggedIn.value && user.value?.canonical_id 
 // pending claim already in flight).
 const needsClaim = computed(() => loggedIn.value && user.value && !user.value.canonical_id && !user.value.pending_claim)
 const showAddTeam = ref(false)
+const showAvail = useState('show-availability', () => false)   // editor mounted in app.vue
 const editingTeam = ref(null)        // team object being edited (Team Settings)
 const teamSubmitted = ref('')
 // Already rostered on an active team? (pending teams aren't in standings.)
@@ -166,6 +167,9 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
       <img src="/koth-ladder.jpg" alt="KOTH — 2v2 Ladder" class="koth-logo">
       <p class="sub">Challenge up. Win to climb. Hold the hill till Christmas.</p>
       <button v-if="!loggedIn" class="cta" @click="login">Sign in with Discord to play</button>
+      <ClientOnly>
+        <button v-if="loggedIn && user?.canonical_id" class="cta avail-cta" @click="showAvail = true">📅 Set your general availability</button>
+      </ClientOnly>
     </header>
 
     <ClientOnly>
@@ -449,6 +453,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
   padding: 10px 18px; border-radius: 9px; font-size: 14px; font-weight: 700; cursor: pointer;
 }
 .cta:hover { background: #4752c4; }
+.avail-cta { margin-top: 10px; background: var(--panel-2); color: var(--fg); border: 1px solid var(--accent); }
+.avail-cta:hover { background: var(--panel-3); }
 .muted { color: var(--fg-2); }
 .pad { padding: 40px 0; text-align: center; }
 .pending-note { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; color: var(--fg-2); font-size: 14px; }

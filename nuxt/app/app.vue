@@ -3,11 +3,13 @@ const { user, loggedIn, ready, fetchMe, login, logout } = useAuth()
 const menuOpen = ref(false)
 // Shared so the KOTH "set your location" prompt can open the same modal.
 const showSettings = useState('show-settings', () => false)
+const showAvail = useState('show-availability', () => false)
 const openTeamSettings = useState('open-team-settings', () => false)
 const showSupport = ref(false)
 onMounted(() => { fetchMe() })
 function closeMenu() { menuOpen.value = false }
 function openSettings() { menuOpen.value = false; showSettings.value = true }
+function openAvail() { menuOpen.value = false; showAvail.value = true }
 async function teamSettings() {
   menuOpen.value = false
   await navigateTo('/ladder')
@@ -59,6 +61,7 @@ useSeoMeta({
               <NuxtLink v-if="user?.canonical_id" :to="`/p/${user.canonical_id}`" class="mi" @click="closeMenu">My profile</NuxtLink>
               <button v-if="user?.team" class="mi" @click="teamSettings">Team settings</button>
               <NuxtLink v-else to="/ladder" class="mi" @click="closeMenu">Join the ladder</NuxtLink>
+              <button v-if="user?.canonical_id" class="mi" @click="openAvail">My availability</button>
               <button class="mi" @click="openSettings">Personal settings</button>
               <NuxtLink v-if="user?.is_admin" to="/ladder/admin" class="mi" @click="closeMenu">Ladder admin</NuxtLink>
               <button class="mi danger" @click="logout(); closeMenu()">Sign out</button>
@@ -75,6 +78,7 @@ useSeoMeta({
     <NuxtPage />
     <ClientOnly>
       <PersonalSettings v-if="showSettings" @close="showSettings = false" />
+      <AvailabilityEditor v-if="showAvail" @close="showAvail = false" />
     </ClientOnly>
 
     <!-- Report a problem — global, subtle floating button -->

@@ -157,7 +157,7 @@ def _current_user(authorization: str | None, required: bool = True):
         cur = conn.cursor()
         A.ensure_users(cur)
         cur.execute("""SELECT discord_id, username, global_name, avatar, canonical_id, is_admin, verified,
-                              region, country, city, state, favorite_server, timezone
+                              region, country, city, state, favorite_server, timezone, availability
                        FROM users WHERE discord_id=%s""", (payload.get("sub"),))
         u = cur.fetchone()
     if not u and required:
@@ -297,6 +297,50 @@ def auth_set_location(authorization: str | None = Header(default=None),
         conn.commit()
     return {"state": st, "city": city, "country": country, "favorite_server": favorite_server,
             "region": region, "timezone": timezone}
+
+
+_DAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def _clean_availability(payload):
+    """Validate/normalize an availability blob -> {"tz": str|None, "slots": {day:[hours]}}.
+    Hours kept in 0..26 (26 = 2am next day). Empty days dropped. Returns None if
+    nothing is set (so we can store SQL NULL)."""
+    if not isinstance(payload, dict):
+        return None
+    tz = payload.get("tz")
+    tz = (tz or "").strip()[:64] or None
+    raw = payload.get("slots") or {}
+    slots = {}
+    if isinstance(raw, dict):
+        for d in _DAY_KEYS:
+            hrs = raw.get(d)
+            if not isinstance(hrs, list):
+                continue
+            clean = sorted({int(h) for h in hrs if isinstance(h, (int, float)) and 0 <= int(h) <= 26})
+            if clean:
+                slots[d] = clean
+    if not slots:
+        return None
+    return {"tz": tz, "slots": slots}
+
+
+@app.post("/api/auth/availability")
+def auth_set_availability(authorization: str | None = Header(default=None),
+                          tz: str | None = Body(default=None, embed=True),
+                          slots: dict | None = Body(default=None, embed=True)):
+    """Save the current user's general weekly availability for the ladder
+    scheduler. Stored in the player's own tz; days mon..sun, hours 0..26."""
+    import auth as A
+    u = _current_user(authorization, required=True)
+    blob = _clean_availability({"tz": tz, "slots": slots})
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        cur.execute("UPDATE users SET availability=%s WHERE discord_id=%s",
+                    (json.dumps(blob) if blob else None, u["discord_id"]))
+        conn.commit()
+    return {"availability": blob}
 
 
 @app.get("/api/auth/claim/suggestions")
@@ -3260,6 +3304,64 @@ def ladder_server_suggestion(challenge_id: int, response: Response):
         for p in s["pings"]:
             p["name"] = names.get(p["player"], p["player"])
     return {"suggestions": suggestions}
+
+
+@app.get("/api/ladder/challenge/{challenge_id}/availability")
+def ladder_challenge_availability(challenge_id: int, response: Response):
+    """Both teams' players' general weekly availability, for overlaying 'who's
+    usually free' onto the scheduler's slots. The client converts each slot into
+    each player's tz and checks their free hours. Public (low-sensitivity)."""
+    import ladder as _ladder
+    import auth as A
+    response.headers["Cache-Control"] = "no-store"
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT ca.id AS a_id, ca.name AS a_name, ca.members AS a,
+                              cd.id AS b_id, cd.name AS b_name, cd.members AS b
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id
+                       WHERE c.id=%s""", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        team_a, team_b = list(ch["a"] or []), list(ch["b"] or [])
+        player_ids = list({*team_a, *team_b})
+        avail, names = {}, {}
+        if player_ids:
+            A.ensure_users(cur)
+            cur.execute("""SELECT canonical_id, availability, timezone
+                           FROM users WHERE canonical_id = ANY(%s) AND availability IS NOT NULL""",
+                        (player_ids,))
+            for r in cur.fetchall():
+                avail[r["canonical_id"]] = {"av": r["availability"], "tz": r["timezone"]}
+            cur.execute("SELECT canonical_id, display_name FROM players_canonical WHERE canonical_id = ANY(%s)", (player_ids,))
+            names = {r["canonical_id"]: r["display_name"] for r in cur.fetchall()}
+
+    def _players(ids):
+        out = []
+        for cid in ids:
+            a = avail.get(cid)
+            if not a or not a["av"]:
+                continue
+            blob = a["av"]
+            out.append({"id": cid, "name": names.get(cid, cid),
+                        "tz": (blob.get("tz") or a["tz"]),
+                        "slots": blob.get("slots") or {}})
+        return out
+
+    total_players = len(player_ids)
+    listed = _players(team_a) + _players(team_b)
+    return {
+        "teams": [
+            {"id": ch["a_id"], "name": ch["a_name"], "players": _players(team_a)},
+            {"id": ch["b_id"], "name": ch["b_name"], "players": _players(team_b)},
+        ],
+        "players": listed,
+        "total_players": total_players,
+        "with_availability": len(listed),
+    }
 
 
 def _user_on_team(cur, user, team_id):
