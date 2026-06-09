@@ -326,10 +326,10 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 
       <!-- Full match ruleset (collapsible) -->
       <section class="rules">
-        <details class="ruleset">
+        <details class="ruleset" open>
           <summary>
             <span class="rs-title">📋 Full match ruleset</span>
-            <span class="rs-sum">smackdown · 2on2 · Bo3 · 10-min maps — tap to expand</span>
+            <span class="rs-sum">smackdown · 2on2 · Bo3 · 10-min maps</span>
           </summary>
 
           <div class="rs-body">
