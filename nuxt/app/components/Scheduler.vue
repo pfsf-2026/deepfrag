@@ -196,7 +196,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
 
 <template>
   <div class="modal-bg" @click.self="emit('close')">
-    <div class="modal">
+    <div class="modal" :class="{ wide: view === 'fill' }">
       <div class="m-head">
         <h3>Schedule · {{ c.challenger }} vs {{ c.challenged }}</h3>
         <button class="x" @click="emit('close')">✕</button>
@@ -220,14 +220,16 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
         </div>
         <button v-if="countering" class="link-btn" @click="countering = false">← back to {{ proposerName }}'s times</button>
         <p v-if="hasOverlay" class="legend"><span class="fdot">2</span> = players (either team) whose general availability covers that time — hover a slot to see who. Set yours from the ladder page.</p>
-        <div class="grid">
-          <div v-for="day in days" :key="day.label" class="day">
-            <div class="day-lbl">{{ day.label }}</div>
-            <div class="slots">
-              <button v-for="s in day.slots" :key="s.iso" class="slot"
-                      :class="{ on: selected.has(s.iso), past: s.past }" :disabled="s.past"
-                      :title="freeTitle(s.iso)" @click="toggle(s.iso)">{{ s.label }}<span
-                      v-if="freeCount(s.iso)" class="fdot" :class="{ allfree: freeCount(s.iso) === overlayMeta.withAvail }">{{ freeCount(s.iso) }}</span></button>
+        <div class="grid-scroll">
+          <div class="grid">
+            <div v-for="day in days" :key="day.label" class="day">
+              <div class="day-lbl">{{ day.label }}</div>
+              <div class="slots">
+                <button v-for="s in day.slots" :key="s.iso" class="slot"
+                        :class="{ on: selected.has(s.iso), past: s.past }" :disabled="s.past"
+                        :title="freeTitle(s.iso)" @click="toggle(s.iso)">{{ s.label }}<span
+                        v-if="freeCount(s.iso)" class="fdot" :class="{ allfree: freeCount(s.iso) === overlayMeta.withAvail }">{{ freeCount(s.iso) }}</span></button>
+              </div>
             </div>
           </div>
         </div>
@@ -297,15 +299,19 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
 <style scoped>
 .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
 .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
+/* The propose grid needs room for all 8 slots on one line per day. */
+.modal.wide { max-width: 780px; }
 .m-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .m-head h3 { margin: 0; font-size: 17px; font-weight: 800; }
 .x { background: none; border: 0; color: var(--fg-3); font-size: 18px; cursor: pointer; }
 .lede { color: var(--fg-2); font-size: 13px; margin: 6px 0 16px; }
-.grid { display: flex; flex-direction: column; gap: 8px; }
-.day { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: center; }
-.day-lbl { font-size: 12px; color: var(--fg-2); font-weight: 700; }
-.slots { display: flex; flex-wrap: wrap; gap: 5px; }
-.slot { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg-2); border-radius: 6px; padding: 5px 9px; font-size: 12px; cursor: pointer; font-family: 'JetBrains Mono', monospace; }
+.grid-scroll { overflow-x: auto; }
+.grid { display: flex; flex-direction: column; gap: 8px; min-width: 540px; }
+.day { display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center; }
+.day-lbl { font-size: 12px; color: var(--fg-2); font-weight: 700; white-space: nowrap; }
+/* 8 equal slots, always one line (the grid-scroll wrapper handles tiny screens). */
+.slots { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; }
+.slot { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg-2); border-radius: 6px; padding: 5px 4px; font-size: 12px; cursor: pointer; font-family: 'JetBrains Mono', monospace; white-space: nowrap; text-align: center; position: relative; }
 .slot.on { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 700; }
 .slot.past { opacity: 0.3; cursor: not-allowed; }
 .slot:not(.past):hover { border-color: var(--accent); }
