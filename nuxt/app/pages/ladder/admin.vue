@@ -21,6 +21,9 @@ const isAdmin = computed(() => loggedIn.value && user.value?.is_admin)
 const newTeam = ref({ name: '', members: '', rung: '' })
 const report = ref(null)  // challenge being reported
 const schedulerC = ref(null)  // challenge being scheduled (admin can act either side)
+const supportTickets = ref([])  // ladder-area tickets (read-only monitoring)
+const ticketOpen = ref(null)
+function fmtTicketDate(s) { return s ? new Date(s).toLocaleString() : '—' }
 const reportForm = ref({ winner_id: null, score_a: 2, score_b: 0, hub: '' })
 
 onMounted(async () => {
@@ -44,6 +47,10 @@ async function load() {
       challenges.value = d.challenges || []
       const p = await $fetch(`${base}/api/admin/ladder/${ladder.value.id}/teams/pending`, { headers: authHeader() })
       pending.value = p.pending || []
+      try {
+        const s = await $fetch(`${base}/api/admin/ladder/support`, { headers: authHeader() })
+        supportTickets.value = s.tickets || []
+      } catch { supportTickets.value = [] }
     }
   } catch (e) {
     err.value = e?.data?.detail || e?.message || 'load failed'
@@ -217,6 +224,25 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
             </div>
           </section>
 
+          <!-- Ladder support tickets (read-only monitoring) -->
+          <section class="card">
+            <h2>Support tickets <span class="count">{{ supportTickets.filter(t => t.status !== 'resolved').length }} open</span></h2>
+            <p class="muted small">Ladder-related reports (read-only). Resolving happens in the main admin panel.</p>
+            <div v-if="!supportTickets.length" class="muted small">No ladder tickets.</div>
+            <div v-for="t in supportTickets" :key="t.id" class="srow" style="flex-wrap:wrap; cursor:pointer;" @click="ticketOpen = ticketOpen === t.id ? null : t.id">
+              <span class="rung">#{{ t.id }}</span>
+              <strong>{{ t.title }}</strong>
+              <span class="muted small">{{ t.username || t.email || 'anon' }}</span>
+              <span class="spacer" />
+              <span class="badge" :class="t.status === 'resolved' ? 'ok' : t.status === 'in_progress' ? 'info' : 'warn'">{{ t.status }}</span>
+              <div v-if="ticketOpen === t.id" style="flex-basis:100%; margin-top:8px; color:var(--fg-2); font-size:13px; white-space:pre-wrap;">
+                {{ t.description }}
+                <div v-if="t.resolution" style="margin-top:8px; color:var(--win);">✓ {{ t.resolution }}</div>
+                <div class="muted small" style="margin-top:6px;">opened {{ fmtTicketDate(t.created_at) }}<span v-if="t.resolved_at"> · resolved {{ fmtTicketDate(t.resolved_at) }}</span></div>
+              </div>
+            </div>
+          </section>
+
           <!-- Create challenge (admin-arranged matchup) -->
           <section class="card">
             <h2>Create challenge</h2>
@@ -308,6 +334,10 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .btn.ghost { background: transparent; color: var(--fg-2); border: 1px solid var(--border); }
 .btn.danger { background: rgba(239,68,68,0.15); color: var(--loss); }
 .btn.danger:hover { background: rgba(239,68,68,0.28); }
+.badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.badge.ok { background: rgba(34,197,94,0.15); color: var(--win); }
+.badge.info { background: rgba(74,159,255,0.15); color: var(--accent-2); }
+.badge.warn { background: rgba(245,158,11,0.15); color: var(--draw); }
 .form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .form.col { flex-direction: column; align-items: stretch; }
 .form input, .form select { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 8px 12px; border-radius: 7px; font-family: inherit; font-size: 13px; flex: 1; min-width: 120px; }

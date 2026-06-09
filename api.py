@@ -493,6 +493,29 @@ def admin_support_list(authorization: str | None = Header(default=None),
     return {"tickets": rows}
 
 
+@app.get("/api/admin/ladder/support")
+def ladder_admin_support(authorization: str | None = Header(default=None)):
+    """Ladder-area support tickets, read-only, for ladder admins (Nin/Bance/Cronus)
+    to monitor. They can't resolve here — that's the god panel — but they get the
+    history."""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_support_schema(cur)
+        cur.execute("""SELECT id, title, area, description, username, email, status, resolution,
+                              created_at, resolved_at
+                       FROM support_tickets WHERE area ILIKE '%ladder%'
+                       ORDER BY (status='resolved'), created_at DESC""")
+        rows = []
+        for r in cur.fetchall():
+            d = dict(r)
+            for k in ("created_at", "resolved_at"):
+                if d.get(k) and hasattr(d[k], "isoformat"):
+                    d[k] = d[k].isoformat()
+            rows.append(d)
+    return {"tickets": rows}
+
+
 @app.post("/api/admin/support/tickets/{ticket_id}/status")
 def admin_support_status(ticket_id: int, authorization: str | None = Header(default=None),
                          status: str = Body(..., embed=True),
