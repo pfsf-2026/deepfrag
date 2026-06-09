@@ -319,6 +319,71 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
           <li>Server pool: Denver · Miami · Chicago · Dallas · New York · LA · Iowa · Washington.</li>
         </ul>
       </section>
+
+      <!-- Full match ruleset (collapsible) -->
+      <section class="rules">
+        <details class="ruleset">
+          <summary>
+            <span class="rs-title">📋 Full match ruleset</span>
+            <span class="rs-sum">smackdown · 2on2 · Bo3 · 10-min maps — tap to expand</span>
+          </summary>
+
+          <div class="rs-body">
+            <h4>Format</h4>
+            <ul>
+              <li>2on2 TDM, ruleset <strong>smackdown</strong>, <strong>best of 3</strong> maps, 10-minute maps.</li>
+              <li>Client: a recent <strong>ezQuake</strong> or <strong>unEzQuake</strong>. In-game: set mode <code>2on2</code>, <code>ruleset smackdown</code>.</li>
+              <li><strong>SmackDrive is not permitted.</strong></li>
+            </ul>
+
+            <h4>Maps &amp; picks (Bo3)</h4>
+            <ul>
+              <li>Pool: Aerowalk · ztndm3 · DM2 · DM4 · Bravado · Nova · Shifter.</li>
+              <li><code>rnd team1 team2</code> decides who picks first.</li>
+              <li>Team A picks map 1 → Team B picks map 2.</li>
+              <li>If it's 1–1, the decider is chosen by toss (the team that picked 2nd tosses).</li>
+              <li>No map is played twice.</li>
+            </ul>
+
+            <h4>Servers &amp; ping</h4>
+            <ul>
+              <li><strong>NA servers only</strong> (a Brazil-vs-Brazil match may use a BR server).</li>
+              <li>Aim for <strong>even pings</strong> on the closest-proximity NA server. <strong>No ping-ups / delay commands.</strong></li>
+              <li>DeepFrag auto-suggests the fairest server from both teams' ping history.</li>
+              <li>Proxy / routing allowed. Packet-loss disputes: both teams agree on a server; if you can't, an admin picks — refusing the admin's server is a forfeit.</li>
+            </ul>
+
+            <h4>Client integrity</h4>
+            <ul>
+              <li>unEzQuake must pass the ruleset check (shows <strong>CLEAR</strong>).</li>
+              <li>Required: <code>scr_allowsnap 1</code>, <code>tp_triggers 0</code>, <code>allow_scripts 0</code>.</li>
+              <li>Banned: anything that changes gameplay or graphics vs standard ezQuake — jump automation, radar overlays, colored backpacks, smartspawn, etc.</li>
+              <li>unEzQuake must behave exactly like ezQuake — no visual or gameplay edge. No wallhacks, no homebuilt client features. Period.</li>
+            </ul>
+
+            <h4>Match conduct</h4>
+            <ul>
+              <li><strong>Names:</strong> use consistent clan tags + player names all season — critical for stats tracking.</li>
+              <li><strong>Pacing:</strong> play at least one ladder match per week; prioritize ladder games over pracs.</li>
+              <li><strong>Pauses:</strong> one pause per team per map (don't abuse it).</li>
+              <li><strong>Sportsmanship:</strong> fair play expected, always.</li>
+            </ul>
+
+            <h4>Roster</h4>
+            <ul>
+              <li>Declare your full roster at signup.</li>
+              <li>No playing for multiple teams.</li>
+              <li>Roster changes after signup need admin approval.</li>
+              <li>Stand-ins allowed with the opponent's agreement.</li>
+            </ul>
+
+            <h4>Admins</h4>
+            <ul>
+              <li>Head admins: <strong>Cronus, Nin, Bance</strong>. Questions / disputes → the KOTH Discord channel.</li>
+            </ul>
+          </div>
+        </details>
+      </section>
       </div><!-- /main -->
 
       <!-- Schedule rail -->
@@ -456,4 +521,21 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .rules li { padding: 6px 0; color: var(--fg-2); padding-left: 20px; position: relative; }
 .rules li::before { content: '▸'; position: absolute; left: 0; color: var(--accent); }
 .rules strong { color: var(--fg); }
+/* Collapsible full ruleset */
+.ruleset { }
+.ruleset summary { cursor: pointer; list-style: none; display: flex; flex-direction: column; gap: 2px; padding: 2px 0; }
+.ruleset summary::-webkit-details-marker { display: none; }
+.ruleset summary::before { content: '▸'; color: var(--accent); position: absolute; margin-left: -16px; transition: transform 0.15s; }
+.ruleset[open] summary::before { transform: rotate(90deg); }
+.ruleset summary { padding-left: 16px; }
+.rs-title { font-size: 16px; font-weight: 800; color: var(--fg); }
+.rs-sum { font-size: 12px; color: var(--fg-3); }
+.rs-body { margin-top: 14px; padding-left: 16px; }
+.rs-body h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); font-weight: 800; margin: 16px 0 6px; }
+.rs-body h4:first-child { margin-top: 0; }
+.rs-body ul { margin: 0; padding-left: 18px; list-style: none; }
+.rs-body li { color: var(--fg-2); font-size: 13px; padding: 3px 0; position: relative; }
+.rs-body li::before { content: '·'; position: absolute; left: -12px; color: var(--fg-3); }
+.rs-body code { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--accent); }
+.rs-body strong { color: var(--fg); }
 </style>
