@@ -20,6 +20,22 @@ const tz = ref(user.value?.availability?.tz || resolveTz(user.value))
 const grid = reactive({})
 for (const [d] of DAYS) grid[d] = new Set((user.value?.availability?.slots?.[d]) || [])
 function isOn(d, h) { return grid[d].has(h) }
+// Per-cell classes: `on` + which sides are a BLOCK BOUNDARY (neighbour not also
+// selected). Interior edges get no outline so a contiguous region reads as one
+// solid block; only the outer perimeter is drawn.
+function cellClass(d, h) {
+  if (!isOn(d, h)) return {}
+  const di = DAYS.findIndex(x => x[0] === d)
+  const up = di > 0 ? DAYS[di - 1][0] : null
+  const dn = di < DAYS.length - 1 ? DAYS[di + 1][0] : null
+  return {
+    on: true,
+    bt: !(up && isOn(up, h)),       // top edge
+    bb: !(dn && isOn(dn, h)),       // bottom edge
+    bl: !isOn(d, h - 1),            // left edge (has() is false off-grid)
+    br: !isOn(d, h + 1),            // right edge
+  }
+}
 function setCell(d, h, on) {
   if (on) grid[d].add(h); else grid[d].delete(h)
   grid[d] = new Set(grid[d])  // trigger reactivity
@@ -93,7 +109,7 @@ async function save() {
           <tbody>
             <tr v-for="[d, dl] in DAYS" :key="d">
               <th class="dd">{{ dl }}</th>
-              <td v-for="h in HOURS" :key="h" class="cell" :class="{ on: isOn(d, h) }"
+              <td v-for="h in HOURS" :key="h" class="cell" :class="cellClass(d, h)"
                   @pointerdown.prevent="down(d, h)" @pointerenter="enter(d, h)"></td>
             </tr>
           </tbody>
@@ -128,14 +144,23 @@ async function save() {
 .chip:hover { border-color: var(--accent); color: var(--fg); }
 .chip.ghost { color: var(--fg-3); }
 .gridwrap { overflow-x: auto; margin-bottom: 16px; touch-action: none; }
-.avail { border-collapse: collapse; user-select: none; width: 100%; }
+.avail { border-collapse: separate; border-spacing: 0; user-select: none; width: 100%; }
 .avail th { font-weight: 700; color: var(--fg-3); }
 .avail .hh { font-size: 10px; padding: 0 0 5px; font-family: 'JetBrains Mono', monospace; text-align: center; }
 .avail .corner { width: 38px; }
 .avail .dd { font-size: 12px; text-align: right; padding-right: 8px; color: var(--fg-2); }
-.cell { width: 26px; height: 26px; border: 1px solid var(--border); background: var(--panel-2); cursor: pointer; border-radius: 3px; }
-.cell:hover { border-color: var(--accent); }
-.cell.on { background: var(--accent); border-color: var(--accent); }
+/* Square, seamless cells. box-sizing keeps every cell exactly 26px even when a
+   boundary border thickens, so blocks don't jiggle. */
+.cell { box-sizing: border-box; width: 26px; height: 26px; border: 1px solid var(--border); background: var(--panel-2); cursor: pointer; }
+.cell:not(.on):hover { background: var(--panel-3); border-color: var(--fg-3); }
+/* Selected: solid fill, transparent 1px borders so adjacent green cells merge
+   into one block (background paints under the transparent border). */
+.cell.on { background: var(--accent); border-color: transparent; }
+/* Outline only the outer perimeter of each contiguous block. */
+.cell.on.bt { border-top: 2px solid #fff; }
+.cell.on.bb { border-bottom: 2px solid #fff; }
+.cell.on.bl { border-left: 2px solid #fff; }
+.cell.on.br { border-right: 2px solid #fff; }
 .m-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
 .count { margin-right: auto; font-size: 12px; color: var(--fg-3); }
 .btn { background: var(--accent); color: var(--bg); border: 0; padding: 10px 16px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; }
