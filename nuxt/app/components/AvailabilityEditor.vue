@@ -50,7 +50,8 @@ async function save() {
   for (const [d] of DAYS) { const a = [...grid[d]].sort((x, y) => x - y); if (a.length) slots[d] = a }
   try {
     await $fetch(`${base}/api/auth/availability`, {
-      method: 'POST', headers: authHeader(), body: { tz: tz.value, slots }
+      method: 'POST', headers: authHeader(), body: { tz: tz.value, slots },
+      retry: 2, retryDelay: 700, timeout: 20000   // ride out Cloud Run cold-start blips
     })
     await fetchMe()
     saved.value = true
