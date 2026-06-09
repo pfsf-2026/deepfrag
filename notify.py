@@ -144,6 +144,14 @@ def forfeit_posted(challenged: str):
         COLOR_WARN))
 
 
+def support_ticket(num: int, area: str | None, title: str, who: str | None):
+    """New support ticket — surface to admins in the channel."""
+    return send(embed=_embed(
+        f"🆘 Support ticket #{num}",
+        f"**{title}**\nArea: {area or '—'} · From: {who or 'anonymous'}",
+        COLOR_WARN))
+
+
 def koth_changed(team: str):
     return send(embed=_embed(
         "👑 New King of the Hill",

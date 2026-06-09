@@ -4,6 +4,7 @@ const menuOpen = ref(false)
 // Shared so the KOTH "set your location" prompt can open the same modal.
 const showSettings = useState('show-settings', () => false)
 const openTeamSettings = useState('open-team-settings', () => false)
+const showSupport = ref(false)
 onMounted(() => { fetchMe() })
 function closeMenu() { menuOpen.value = false }
 function openSettings() { menuOpen.value = false; showSettings.value = true }
@@ -75,6 +76,14 @@ useSeoMeta({
     <ClientOnly>
       <PersonalSettings v-if="showSettings" @close="showSettings = false" />
     </ClientOnly>
+
+    <!-- Report a problem — global, subtle floating button -->
+    <button class="report-fab" title="Report a problem" @click="showSupport = true">
+      <span class="q">?</span><span class="lbl">Report a problem</span>
+    </button>
+    <ClientOnly>
+      <SupportTicket v-if="showSupport" @close="showSupport = false" />
+    </ClientOnly>
   </UApp>
 </template>
 
@@ -144,6 +153,20 @@ body {
 .topbar .menu .mi.danger { color: var(--fg-3); border-top: 1px solid var(--border); margin-top: 4px; padding-top: 11px; }
 .topbar .menu .mi.danger:hover { color: var(--loss); }
 .menu-backdrop { position: fixed; inset: 0; z-index: 55; }
+
+/* Report-a-problem floating button — present everywhere, subtle until hover */
+.report-fab {
+  position: fixed; right: 18px; bottom: 18px; z-index: 90;
+  display: flex; align-items: center; gap: 0;
+  background: var(--panel-2); color: var(--fg-2);
+  border: 1px solid var(--border); border-radius: 999px;
+  height: 42px; padding: 0 12px; cursor: pointer; font-family: inherit;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.4); transition: all 0.18s;
+}
+.report-fab .q { font-weight: 900; font-size: 17px; color: var(--accent); }
+.report-fab .lbl { max-width: 0; overflow: hidden; white-space: nowrap; opacity: 0; font-size: 13px; font-weight: 600; transition: all 0.18s; }
+.report-fab:hover { color: var(--fg); border-color: var(--accent); }
+.report-fab:hover .lbl { max-width: 160px; opacity: 1; margin-left: 8px; }
 .topbar .discord-btn {
   display: flex; align-items: center; gap: 7px;
   background: #5865f2; color: #fff; border: none;

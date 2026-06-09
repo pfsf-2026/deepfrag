@@ -341,7 +341,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
               <li>Pool: Aerowalk · ztndm3 · DM2 · DM4 · Bravado · Nova · Shifter.</li>
               <li><code>rnd team1 team2</code> decides who picks first.</li>
               <li>Team A picks map 1 → Team B picks map 2.</li>
-              <li>If it's 1–1, the decider is chosen by toss (the team that picked 2nd tosses).</li>
+              <li>If it's 1–1, the team that picked 2nd tosses first for the decider.</li>
               <li>No map is played twice.</li>
             </ul>
 
@@ -356,7 +356,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <h4>Client integrity</h4>
             <ul>
               <li>unEzQuake must pass the ruleset check (shows <strong>CLEAR</strong>).</li>
-              <li>Required: <code>scr_allowsnap 1</code>, <code>tp_triggers 0</code>, <code>allow_scripts 0</code>.</li>
+              <li><strong>unEzQuake only</strong> — required commands: <code>scr_allowsnap 1</code>, <code>tp_triggers 0</code>, <code>allow_scripts 0</code>.</li>
               <li>Banned: anything that changes gameplay or graphics vs standard ezQuake — jump automation, radar overlays, colored backpacks, smartspawn, etc.</li>
               <li>unEzQuake must behave exactly like ezQuake — no visual or gameplay edge. No wallhacks, no homebuilt client features. Period.</li>
             </ul>
@@ -374,7 +374,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
               <li>Declare your full roster at signup.</li>
               <li>No playing for multiple teams.</li>
               <li>Roster changes after signup need admin approval.</li>
-              <li>Stand-ins allowed with the opponent's agreement.</li>
+              <li>No stand-ins.</li>
             </ul>
 
             <h4>Admins</h4>

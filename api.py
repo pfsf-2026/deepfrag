@@ -417,6 +417,105 @@ def health():
     return {"ok": True, "matches": matches, "now": datetime.now(timezone.utc).isoformat()}
 
 
+# ── Support tickets ──────────────────────────────────────────────────────────
+def _ensure_support_schema(cur):
+    cur.execute("""CREATE TABLE IF NOT EXISTS support_tickets (
+        id           BIGSERIAL PRIMARY KEY,
+        title        TEXT NOT NULL,
+        area         TEXT,
+        description  TEXT NOT NULL,
+        email        TEXT,
+        discord_id   TEXT,
+        username     TEXT,
+        canonical_id TEXT,
+        page_url     TEXT,
+        status       TEXT NOT NULL DEFAULT 'open',   -- open | in_progress | resolved
+        resolution   TEXT,
+        created_at   TIMESTAMPTZ DEFAULT now(),
+        resolved_at  TIMESTAMPTZ
+    )""")
+
+
+@app.post("/api/support/ticket")
+def support_create(authorization: str | None = Header(default=None),
+                   title: str = Body(..., embed=True),
+                   area: str | None = Body(default=None, embed=True),
+                   description: str = Body(..., embed=True),
+                   email: str | None = Body(default=None, embed=True),
+                   page_url: str | None = Body(default=None, embed=True)):
+    """Submit a support ticket. No sign-in required; if signed in, the user's
+    Discord/profile is attached. Returns the sequential ticket number."""
+    if not title.strip() or not description.strip():
+        raise HTTPException(400, "title and description are required")
+    u = _current_user(authorization, required=False)  # optional
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_support_schema(cur)
+        cur.execute("""INSERT INTO support_tickets
+                       (title, area, description, email, discord_id, username, canonical_id, page_url)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (title.strip()[:200], (area or "").strip()[:60] or None, description.strip()[:5000],
+                     (email or "").strip()[:120] or None,
+                     u.get("discord_id") if u else None,
+                     (u.get("global_name") or u.get("username")) if u else None,
+                     u.get("canonical_id") if u else None,
+                     (page_url or "").strip()[:300] or None))
+        num = cur.fetchone()["id"]
+        conn.commit()
+    try:
+        import notify
+        who = (u.get("global_name") or u.get("username")) if u else (email or "anonymous")
+        notify.support_ticket(num, area, title.strip(), who)
+    except Exception:
+        pass
+    return {"ticket": num, "status": "open"}
+
+
+@app.get("/api/admin/support/tickets")
+def admin_support_list(authorization: str | None = Header(default=None),
+                       status: str = Query("all")):
+    """All support tickets (admin)."""
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_support_schema(cur)
+        if status and status != "all":
+            cur.execute("SELECT * FROM support_tickets WHERE status=%s ORDER BY created_at DESC", (status,))
+        else:
+            cur.execute("SELECT * FROM support_tickets ORDER BY (status='resolved'), created_at DESC")
+        rows = []
+        for r in cur.fetchall():
+            d = dict(r)
+            for k in ("created_at", "resolved_at"):
+                if d.get(k) and hasattr(d[k], "isoformat"):
+                    d[k] = d[k].isoformat()
+            rows.append(d)
+    return {"tickets": rows}
+
+
+@app.post("/api/admin/support/tickets/{ticket_id}/status")
+def admin_support_status(ticket_id: int, authorization: str | None = Header(default=None),
+                         status: str = Body(..., embed=True),
+                         resolution: str | None = Body(default=None, embed=True)):
+    """Update a ticket's status (admin): open | in_progress | resolved."""
+    _check_admin_auth(authorization)
+    if status not in ("open", "in_progress", "resolved"):
+        raise HTTPException(400, "bad status")
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_support_schema(cur)
+        cur.execute("""UPDATE support_tickets
+                       SET status=%s, resolution=COALESCE(%s, resolution),
+                           resolved_at = CASE WHEN %s='resolved' THEN now() ELSE resolved_at END
+                       WHERE id=%s RETURNING id, status""",
+                    (status, resolution, status, ticket_id))
+        row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(404, "ticket not found")
+    return dict(row)
+
+
 # ── Rankings ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/rankings")

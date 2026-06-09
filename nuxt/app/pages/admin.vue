@@ -60,6 +60,9 @@ const sections = [
   { group: 'Ladder', items: [
     { id: 'ladder', label: 'King of the Hill' }
   ]},
+  { group: 'Support', items: [
+    { id: 'support', label: 'Support tickets' }
+  ]},
   { group: 'Federation', items: [
     { id: 'users', label: 'Users' },
     { id: 'oauth', label: 'OAuth providers' },
@@ -274,7 +277,55 @@ watch(activeSection, (s) => {
   if (s === 'oauth') { loadOAuth(); loadClaims() }
   if (s === 'ladder') loadLadder()
   if (s === 'canon') loadCanon()
+  if (s === 'support') loadSupport()
 })
+
+// ─── Support tickets ───────────────────────────────────────────────────────
+const tickets = ref([])
+const ticketsLoading = ref(false)
+const ticketOpen = ref(null)        // expanded ticket id
+const claudeBrief = ref(null)       // { id, text } for the "Resolve w/ Claude" box
+async function loadSupport() {
+  ticketsLoading.value = true
+  try {
+    const r = await $fetch(`${apiBase}/api/admin/support/tickets`, { headers: adminHeaders() })
+    tickets.value = r.tickets || []
+  } catch (e) {
+    pushEvent('err', 'SUPPORT', e?.data?.detail || e?.message || 'load failed')
+  } finally {
+    ticketsLoading.value = false
+  }
+}
+async function setTicketStatus(t, status) {
+  try {
+    await $fetch(`${apiBase}/api/admin/support/tickets/${t.id}/status`, {
+      method: 'POST', headers: adminHeaders(), body: { status }
+    })
+    pushEvent('ok', 'SUPPORT', `#${t.id} → ${status}`)
+    await loadSupport()
+  } catch (e) {
+    pushEvent('err', 'SUPPORT', e?.data?.detail || e?.message || 'update failed')
+  }
+}
+// Build a ready-to-paste brief for a Claude Code session, and mark in-progress.
+async function resolveWithClaude(t) {
+  const lines = [
+    `Resolve DeepFrag support ticket #${t.id}.`,
+    `Area: ${t.area || '—'}`,
+    `Summary: ${t.title}`,
+    '',
+    'Details:',
+    t.description,
+    '',
+    `Reported on page: ${t.page_url || '—'}`,
+    `Reporter: ${t.username || t.email || 'anonymous'}${t.canonical_id ? ' (profile ' + t.canonical_id + ')' : ''}`,
+    '',
+    'Diagnose the root cause in the codebase, fix it, and report what you changed.'
+  ]
+  claudeBrief.value = { id: t.id, text: lines.join('\n') }
+  try { await navigator.clipboard.writeText(claudeBrief.value.text) } catch { /* clipboard optional */ }
+  if (t.status === 'open') await setTicketStatus(t, 'in_progress')
+}
 
 // ─── Canonicalize queue: clean up orphan/junk profiles ─────────────────────
 const canonList = ref([])
@@ -1516,6 +1567,63 @@ function shortStatus(s) {
               <button class="btn sm ghost" @click="canonAction(row, 'keep')">Keep</button>
               <button class="btn sm danger" @click="canonAction(row, 'delete')">Delete</button>
             </div>
+          </div>
+        </template>
+
+        <!-- SUPPORT TICKETS -->
+        <template v-else-if="activeSection === 'support'">
+          <div class="pane-head">
+            <div>
+              <h2>Support tickets</h2>
+              <div class="scope">{{ tickets.filter(t => t.status !== 'resolved').length }} open · {{ tickets.length }} total</div>
+            </div>
+            <div class="actions">
+              <button class="btn ghost" @click="loadSupport" :disabled="ticketsLoading">⟳ Refresh</button>
+            </div>
+          </div>
+
+          <div v-if="claudeBrief" class="card" style="margin-bottom:14px; border-color: var(--accent);">
+            <h3>Claude brief · ticket #{{ claudeBrief.id }} <span class="meta">copied to clipboard — paste into a Claude Code session <a class="link" @click="claudeBrief=null">dismiss</a></span></h3>
+            <pre style="background:var(--bg); border:1px solid var(--border); padding:12px; border-radius:6px; font-size:11px; max-height:240px; overflow:auto; white-space:pre-wrap;">{{ claudeBrief.text }}</pre>
+          </div>
+
+          <div v-if="ticketsLoading && !tickets.length" class="placeholder">Loading tickets…</div>
+          <div v-else-if="!tickets.length" class="placeholder">No tickets yet. 🎉</div>
+          <div v-else class="card" style="padding:0;">
+            <table class="deploy-table">
+              <thead><tr><th>#</th><th>Area</th><th>Summary</th><th>From</th><th>Status</th><th>When</th><th></th></tr></thead>
+              <tbody>
+                <template v-for="t in tickets" :key="t.id">
+                  <tr :class="{ active: t.status !== 'resolved' }" style="cursor:pointer;" @click="ticketOpen = ticketOpen === t.id ? null : t.id">
+                    <td class="mono">{{ t.id }}</td>
+                    <td class="small">{{ t.area || '—' }}</td>
+                    <td>{{ t.title }}</td>
+                    <td class="small muted">{{ t.username || t.email || 'anon' }}</td>
+                    <td><span class="badge" :class="t.status === 'resolved' ? 'ok' : t.status === 'in_progress' ? 'info' : 'err'">{{ t.status }}</span></td>
+                    <td class="small muted">{{ fmtDate(t.created_at) }}</td>
+                    <td class="small">{{ ticketOpen === t.id ? '▾' : '▸' }}</td>
+                  </tr>
+                  <tr v-if="ticketOpen === t.id">
+                    <td colspan="7" style="background:var(--panel-2);">
+                      <div style="padding:6px 4px 12px;">
+                        <div class="kv">
+                          <span class="k">description</span><span class="v" style="white-space:pre-wrap;">{{ t.description }}</span>
+                          <span class="k">page</span><span class="v">{{ t.page_url || '—' }}</span>
+                          <span class="k">reporter</span><span class="v">{{ t.username || '—' }}<span v-if="t.canonical_id" class="muted"> · {{ t.canonical_id }}</span></span>
+                          <span class="k">email</span><span class="v">{{ t.email || '—' }}</span>
+                          <span v-if="t.resolution" class="k">resolution</span><span v-if="t.resolution" class="v">{{ t.resolution }}</span>
+                        </div>
+                        <div style="display:flex; gap:8px; margin-top:12px;">
+                          <button class="btn sm" @click.stop="resolveWithClaude(t)">🤖 Resolve w/ Claude</button>
+                          <button v-if="t.status !== 'resolved'" class="btn sm ghost" @click.stop="setTicketStatus(t, 'resolved')">Mark resolved</button>
+                          <button v-else class="btn sm ghost" @click.stop="setTicketStatus(t, 'open')">Reopen</button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
           </div>
         </template>
 
