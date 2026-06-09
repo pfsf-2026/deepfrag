@@ -165,13 +165,23 @@ def forfeit_posted(challenged: str):
 
 
 def match_reminder(team_a: str, team_b: str, when: str | None, server: str | None,
-                   soon: bool = False, mention: str | None = None):
-    """Upcoming-match reminder (24h out, or starting soon). Time in US Eastern."""
-    head = "🔴 Match starting soon" if soon else "⏰ Match reminder"
+                   kind: str = "1h", mention: str | None = None):
+    """Upcoming-match reminder. kind: '1h' (~1 hour out) or '10m' (starting in
+    ~10 min). Time shown in US Eastern."""
+    head = "🔴 Match in ~10 minutes" if kind == "10m" else "🔔 Match in ~1 hour"
     bits = [f"**{team_a}** vs **{team_b}**", f"🗓️ {fmt_et(when)}"]
     if server:
         bits.append(f"🖥️ {server}")
     return send(content=mention or None, embed=_embed(head, "\n".join(bits), COLOR_CHALLENGE))
+
+
+def match_rescheduled(team_a: str, team_b: str, when: str | None, server: str | None,
+                      mention: str | None = None):
+    """An admin moved a scheduled match to a new time. Time in US Eastern."""
+    bits = [f"**{team_a}** vs **{team_b}**", f"🗓️ New time: **{fmt_et(when)}**"]
+    if server:
+        bits.append(f"🖥️ {server}")
+    return send(content=mention or None, embed=_embed("🔁 Match rescheduled", "\n".join(bits), COLOR_WARN))
 
 
 def challenge_overdue(team_a: str, team_b: str, deadline: str | None, mention: str | None = None):

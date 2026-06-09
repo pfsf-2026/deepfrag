@@ -702,28 +702,30 @@ def _ladder_tick(cur):
     import notify
     _ladder.ensure_schema(cur)
     now = datetime.now(timezone.utc)
-    counts = {"reminded_24h": 0, "reminded_soon": 0, "overdue": 0}
+    counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0}
 
-    # Scheduled matches → reminders.
+    # Scheduled matches → reminders. Two tiers: ~1 hour out and ~10 minutes out.
+    # Windows are sized so the */5 cron always lands at least one tick inside them
+    # before kickoff; per-challenge fired-once flags prevent repeats.
     cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.agreed_at, c.server,
-                          c.reminded_24h, c.reminded_soon, ca.name AS a, cd.name AS b
+                          c.reminded_soon, c.reminded_10m, ca.name AS a, cd.name AS b
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
                    JOIN ladder_teams cd ON cd.id=c.challenged_id
                    WHERE c.status='scheduled' AND c.agreed_at IS NOT NULL
-                     AND c.agreed_at > now() - interval '2 hours'""")
+                     AND c.agreed_at > now() - interval '1 hour'""")
     for r in cur.fetchall():
-        agreed = r["agreed_at"]
-        if not r["reminded_24h"] and timedelta(0) <= (agreed - now) <= timedelta(hours=24):
-            notify.match_reminder(r["a"], r["b"], agreed.isoformat(), r["server"], soon=False,
-                                  mention=_mentions(cur, r["challenger_id"], r["challenged_id"]))
-            cur.execute("UPDATE ladder_challenges SET reminded_24h=TRUE WHERE id=%s", (r["id"],))
-            counts["reminded_24h"] += 1
-        if not r["reminded_soon"] and timedelta(minutes=-30) <= (agreed - now) <= timedelta(minutes=60):
-            notify.match_reminder(r["a"], r["b"], agreed.isoformat(), r["server"], soon=True,
+        d = r["agreed_at"] - now
+        if not r["reminded_soon"] and timedelta(minutes=12) < d <= timedelta(minutes=70):
+            notify.match_reminder(r["a"], r["b"], r["agreed_at"].isoformat(), r["server"], kind="1h",
                                   mention=_mentions(cur, r["challenger_id"], r["challenged_id"]))
             cur.execute("UPDATE ladder_challenges SET reminded_soon=TRUE WHERE id=%s", (r["id"],))
-            counts["reminded_soon"] += 1
+            counts["reminded_1h"] += 1
+        if not r["reminded_10m"] and timedelta(0) < d <= timedelta(minutes=12):
+            notify.match_reminder(r["a"], r["b"], r["agreed_at"].isoformat(), r["server"], kind="10m",
+                                  mention=_mentions(cur, r["challenger_id"], r["challenged_id"]))
+            cur.execute("UPDATE ladder_challenges SET reminded_10m=TRUE WHERE id=%s", (r["id"],))
+            counts["reminded_10m"] += 1
 
     # Open challenges past their play-by deadline → flag once for admins.
     cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.deadline, ca.name AS a, cd.name AS b
@@ -3651,6 +3653,49 @@ def admin_ladder_cancel(challenge_id: int, authorization: str | None = Header(de
     if not row:
         raise HTTPException(404, "no open challenge with that id")
     return {"challenge_id": challenge_id, "status": "cancelled"}
+
+
+@app.post("/api/admin/ladder/challenge/{challenge_id}/reschedule")
+def admin_ladder_reschedule(challenge_id: int, authorization: str | None = Header(default=None),
+                            slot: str = Body(..., embed=True),
+                            server: str | None = Body(default=None, embed=True)):
+    """Move an already-scheduled match to a new time (and optionally change the
+    server). Resets the reminder flags so the 1h/10m pings re-fire for the new
+    time, and posts an updated message to Discord."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    try:
+        dt = datetime.fromisoformat(slot.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        raise HTTPException(400, "bad time — expected an ISO-8601 instant")
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT c.status, c.server, c.challenger_id, c.challenged_id,
+                              ca.name AS a, cd.name AS b
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] != "scheduled":
+            raise HTTPException(409, "only a scheduled match can be rescheduled")
+        new_server = (server or "").strip() or ch["server"]
+        cur.execute("""UPDATE ladder_challenges
+                       SET agreed_at=%s, server=%s,
+                           reminded_soon=FALSE, reminded_10m=FALSE, reminded_24h=FALSE
+                       WHERE id=%s""", (dt, new_server, challenge_id))
+        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
+        conn.commit()
+    try:
+        import notify
+        notify.match_rescheduled(ch["a"], ch["b"], dt.isoformat(), new_server, mention=mention)
+    except Exception:
+        pass
+    return {"challenge_id": challenge_id, "agreed_at": dt.isoformat(), "server": new_server}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/forfeit")

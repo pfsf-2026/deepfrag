@@ -157,6 +157,43 @@ async function cancelChallenge(c) {
   catch (e) { err.value = e?.data?.detail || 'cancel failed' }
 }
 
+// ── Reschedule a scheduled match (admin) ────────────────────────────────────
+// The ladder is ET-anchored, so the admin enters the new time in ET; convert to
+// a UTC instant (browser-tz-independent) before sending.
+const ET_ZONE = 'America/New_York'
+const reschedC = ref(null)     // challenge being rescheduled
+const reschedVal = ref('')     // datetime-local string, ET wall clock
+function utcToEtInput(iso) {
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: ET_ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(iso))
+  const g = t => p.find(x => x.type === t).value
+  let hh = g('hour'); if (hh === '24') hh = '00'
+  return `${g('year')}-${g('month')}-${g('day')}T${hh}:${g('minute')}`
+}
+function etInputToUtc(s) {
+  const [date, time] = s.split('T')
+  const [y, mo, d] = date.split('-').map(Number)
+  const [h, mi] = time.split(':').map(Number)
+  const asUTC = Date.UTC(y, mo - 1, d, h, mi, 0)
+  const inst = new Date(asUTC)
+  const etMs = new Date(inst.toLocaleString('en-US', { timeZone: ET_ZONE })).getTime()
+  const utcMs = new Date(inst.toLocaleString('en-US', { timeZone: 'UTC' })).getTime()
+  return new Date(asUTC + (utcMs - etMs)).toISOString()
+}
+function startReschedule(c) {
+  reschedC.value = c
+  reschedVal.value = c.agreed_at ? utcToEtInput(c.agreed_at) : ''
+}
+async function doReschedule() {
+  if (!reschedVal.value) { err.value = 'pick a new time'; return }
+  const c = reschedC.value
+  try {
+    await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/reschedule`, {
+      method: 'POST', headers: authHeader(), body: { slot: etInputToUtc(reschedVal.value) }
+    })
+    note('rescheduled — Discord updated'); reschedC.value = null; await load()
+  } catch (e) { err.value = e?.data?.detail || 'reschedule failed' }
+}
+
 useHead({ title: 'KOTH Admin · DeepFrag' })
 </script>
 
@@ -232,9 +269,16 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               <span class="muted small">{{ c.agreed_at ? ('📅 ' + new Date(c.agreed_at).toLocaleString()) : ((c.proposed||[]).length ? 'awaiting pick' : 'awaiting availability') }}</span>
               <span class="spacer" />
               <button class="btn sm" @click="schedulerC = c">Schedule</button>
+              <button v-if="c.agreed_at" class="btn sm ghost" @click="startReschedule(c)">Reschedule</button>
               <button class="btn sm ghost" @click="startReport(c)">Report</button>
               <button class="btn sm ghost" @click="forfeit(c)">Forfeit</button>
               <button class="btn sm danger" @click="cancelChallenge(c)">Cancel</button>
+              <div v-if="reschedC && reschedC.id === c.id" class="resched" @click.stop>
+                <span class="muted small">New time (ET):</span>
+                <input type="datetime-local" step="900" v-model="reschedVal">
+                <button class="btn sm" @click="doReschedule">Save &amp; notify</button>
+                <button class="btn sm ghost" @click="reschedC = null">Cancel</button>
+              </div>
             </div>
           </section>
 
@@ -364,6 +408,9 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; width: 100%; max-width: 380px; }
 .modal h3 { margin: 0 0 14px; font-size: 18px; font-weight: 800; }
 .m-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.resched { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.resched input { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); border-radius: 8px; padding: 7px 10px; font-family: inherit; font-size: 13px; }
+.resched input:focus { outline: none; border-color: var(--accent); }
 .shots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .shot-thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; background: var(--bg); }
 .shot-thumb:hover { border-color: var(--accent); }
