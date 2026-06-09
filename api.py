@@ -516,6 +516,64 @@ def admin_support_status(ticket_id: int, authorization: str | None = Header(defa
     return dict(row)
 
 
+# ── Ladder cron tick: reminders + forfeit clock ──────────────────────────────
+def _ladder_tick(cur):
+    """Fire upcoming-match reminders (24h out, starting soon) and flag overdue
+    challenges. Idempotent via per-challenge fired-once flags. Returns counts."""
+    import ladder as _ladder
+    import notify
+    _ladder.ensure_schema(cur)
+    now = datetime.now(timezone.utc)
+    counts = {"reminded_24h": 0, "reminded_soon": 0, "overdue": 0}
+
+    # Scheduled matches → reminders.
+    cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.agreed_at, c.server,
+                          c.reminded_24h, c.reminded_soon, ca.name AS a, cd.name AS b
+                   FROM ladder_challenges c
+                   JOIN ladder_teams ca ON ca.id=c.challenger_id
+                   JOIN ladder_teams cd ON cd.id=c.challenged_id
+                   WHERE c.status='scheduled' AND c.agreed_at IS NOT NULL
+                     AND c.agreed_at > now() - interval '2 hours'""")
+    for r in cur.fetchall():
+        agreed = r["agreed_at"]
+        if not r["reminded_24h"] and timedelta(0) <= (agreed - now) <= timedelta(hours=24):
+            notify.match_reminder(r["a"], r["b"], agreed.isoformat(), r["server"], soon=False,
+                                  mention=_mentions(cur, r["challenger_id"], r["challenged_id"]))
+            cur.execute("UPDATE ladder_challenges SET reminded_24h=TRUE WHERE id=%s", (r["id"],))
+            counts["reminded_24h"] += 1
+        if not r["reminded_soon"] and timedelta(minutes=-30) <= (agreed - now) <= timedelta(minutes=60):
+            notify.match_reminder(r["a"], r["b"], agreed.isoformat(), r["server"], soon=True,
+                                  mention=_mentions(cur, r["challenger_id"], r["challenged_id"]))
+            cur.execute("UPDATE ladder_challenges SET reminded_soon=TRUE WHERE id=%s", (r["id"],))
+            counts["reminded_soon"] += 1
+
+    # Open challenges past their play-by deadline → flag once for admins.
+    cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.deadline, ca.name AS a, cd.name AS b
+                   FROM ladder_challenges c
+                   JOIN ladder_teams ca ON ca.id=c.challenger_id
+                   JOIN ladder_teams cd ON cd.id=c.challenged_id
+                   WHERE c.status='open' AND c.deadline < now() AND NOT c.overdue_flagged""")
+    for r in cur.fetchall():
+        notify.challenge_overdue(r["a"], r["b"], r["deadline"].isoformat() if r["deadline"] else None,
+                                 mention=_mentions(cur, r["challenger_id"], r["challenged_id"]))
+        cur.execute("UPDATE ladder_challenges SET overdue_flagged=TRUE WHERE id=%s", (r["id"],))
+        counts["overdue"] += 1
+    return counts
+
+
+@app.post("/api/cron/ladder-tick")
+def cron_ladder_tick(authorization: str | None = Header(default=None)):
+    """Cloud Scheduler hits this (every ~30 min). Auth: SYNC_SECRET or CRON_SECRET."""
+    expected = {os.environ.get("SYNC_SECRET"), os.environ.get("CRON_SECRET")} - {None, ""}
+    if not expected or (authorization or "").removeprefix("Bearer ") not in expected:
+        raise HTTPException(401, "bad cron token")
+    with pg() as conn:
+        cur = conn.cursor()
+        counts = _ladder_tick(cur)
+        conn.commit()
+    return {"ok": True, **counts}
+
+
 # ── Rankings ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/rankings")

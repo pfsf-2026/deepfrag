@@ -100,6 +100,10 @@ def ensure_schema(cur):
     # counter-proposes). agreed_at + server recorded once a slot is picked.
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS server TEXT")
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS proposed_by BIGINT")
+    # Reminder + forfeit-clock bookkeeping (fired-once flags, set by the cron tick).
+    cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS reminded_24h BOOLEAN NOT NULL DEFAULT FALSE")
+    cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS reminded_soon BOOLEAN NOT NULL DEFAULT FALSE")
+    cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS overdue_flagged BOOLEAN NOT NULL DEFAULT FALSE")
 
 
 def standings(cur, ladder_id):

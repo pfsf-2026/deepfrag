@@ -144,6 +144,25 @@ def forfeit_posted(challenged: str):
         COLOR_WARN))
 
 
+def match_reminder(team_a: str, team_b: str, when: str | None, server: str | None,
+                   soon: bool = False, mention: str | None = None):
+    """Upcoming-match reminder (24h out, or starting soon). Time in US Eastern."""
+    head = "🔴 Match starting soon" if soon else "⏰ Match reminder"
+    bits = [f"**{team_a}** vs **{team_b}**", f"🗓️ {fmt_et(when)}"]
+    if server:
+        bits.append(f"🖥️ {server}")
+    return send(content=mention or None, embed=_embed(head, "\n".join(bits), COLOR_CHALLENGE))
+
+
+def challenge_overdue(team_a: str, team_b: str, deadline: str | None, mention: str | None = None):
+    """A challenge blew past its play-by deadline — flag for admins."""
+    return send(content=mention or None, embed=_embed(
+        "⏳ Challenge overdue",
+        f"**{team_a}** vs **{team_b}** wasn't played by {fmt_et(deadline)}.\n"
+        f"Admins — review (forfeit the challenged team, or extend).",
+        COLOR_WARN))
+
+
 def support_ticket(num: int, area: str | None, title: str, who: str | None):
     """New support ticket — surface to admins in the channel."""
     return send(embed=_embed(
