@@ -111,12 +111,13 @@ function fmtLocal(iso) {
 // given slot we convert the instant into each player's tz, then check whether
 // that weekday/hour falls in their free hours — so a slot shows "2 usually free".
 const ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-const overlayPlayers = ref([])
+const overlayPlayers = ref([])   // flat list, each tagged with its team
 const overlayMeta = ref({ total: 0, withAvail: 0 })
 async function loadOverlay() {
   try {
     const r = await $fetch(`${base}/api/ladder/challenge/${c.id}/availability`)
-    overlayPlayers.value = r.players || []
+    const teams = r.teams || []
+    overlayPlayers.value = teams.flatMap(t => (t.players || []).map(p => ({ ...p, team: t.name, teamId: t.id })))
     overlayMeta.value = { total: r.total_players || 0, withAvail: r.with_availability || 0 }
   } catch { overlayPlayers.value = [] }
 }
@@ -138,18 +139,28 @@ function playerFree(pl, wd, hr) {
   }
   return false
 }
-function freeNamesAt(iso) {
+function freeAt(iso) {
   const out = []
   for (const pl of overlayPlayers.value) {
     const { wd, hr } = partsInTz(iso, pl.tz)
-    if (playerFree(pl, wd, hr)) out.push(pl.name)
+    if (playerFree(pl, wd, hr)) out.push(pl)
   }
   return out
 }
-function freeCount(iso) { return freeNamesAt(iso).length }
+function freeCount(iso) { return freeAt(iso).length }
+// Free players grouped by team → [{team, names:[...]}], so the overlay shows
+// WHO from WHICH team is usually around at that time.
+function freeGroups(iso) {
+  const byTeam = new Map()
+  for (const p of freeAt(iso)) {
+    if (!byTeam.has(p.team)) byTeam.set(p.team, [])
+    byTeam.get(p.team).push(p.name)
+  }
+  return [...byTeam.entries()].map(([team, names]) => ({ team, names }))
+}
 function freeTitle(iso) {
-  const n = freeNamesAt(iso)
-  return n.length ? `Usually free: ${n.join(', ')}` : ''
+  const g = freeGroups(iso)
+  return g.length ? `Usually free — ${g.map(x => `${x.team}: ${x.names.join(', ')}`).join(' · ')}` : ''
 }
 const hasOverlay = computed(() => overlayMeta.value.withAvail > 0)
 async function confirmSlot() {
@@ -201,7 +212,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
           <a v-if="tzIsGuess" class="tz-link" @click="showSettings = true">Showing Eastern — set your time zone →</a>
         </div>
         <button v-if="countering" class="link-btn" @click="countering = false">← back to {{ proposerName }}'s times</button>
-        <p v-if="hasOverlay" class="legend"><span class="fdot">2</span> = players whose general availability covers that time. Set yours from the ladder page.</p>
+        <p v-if="hasOverlay" class="legend"><span class="fdot">2</span> = players (either team) whose general availability covers that time — hover a slot to see who. Set yours from the ladder page.</p>
         <div class="grid">
           <div v-for="day in days" :key="day.label" class="day">
             <div class="day-lbl">{{ day.label }}</div>
@@ -231,8 +242,9 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
           <label v-for="iso in proposedLocal" :key="iso" class="pickrow" :class="{ on: pick === iso }">
             <input type="radio" :value="iso" v-model="pick">
             <span class="pl-time">{{ fmtLocal(iso) }}</span>
-            <span v-if="freeCount(iso)" class="pl-free" :title="freeTitle(iso)">
-              <span class="fdot" :class="{ allfree: freeCount(iso) === overlayMeta.withAvail }">{{ freeCount(iso) }}</span> usually free
+            <span v-if="freeCount(iso)" class="pl-free">
+              <span class="fdot" :class="{ allfree: freeCount(iso) === overlayMeta.withAvail }">{{ freeCount(iso) }}</span>
+              <span v-for="g in freeGroups(iso)" :key="g.team" class="ftag">{{ g.team }}: {{ g.names.join(', ') }}</span>
             </span>
           </label>
         </div>
@@ -330,6 +342,8 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
 .legend { font-size: 11px; color: var(--fg-3); margin: -4px 0 12px; display: flex; align-items: center; gap: 6px; }
 .legend .fdot { position: static; }
 .pickrow { flex-wrap: wrap; }
-.pl-free { margin-left: auto; font-size: 11px; color: var(--fg-3); display: inline-flex; align-items: center; gap: 5px; }
+.pl-free { margin-left: auto; font-size: 11px; color: var(--fg-3); display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .pl-free .fdot { position: static; }
+.ftag { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1px 7px; }
+.ftag strong { color: var(--fg-2); }
 </style>
