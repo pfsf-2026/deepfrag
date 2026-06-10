@@ -24,7 +24,7 @@ onMounted(load)
 const COLS = [
   { k: 'eff', l: 'Eff', pct: true, cls: 'eff' }, { k: 'frags', l: 'F' }, { k: 'deaths', l: 'D' },
   { k: 'suicides', l: '☠' }, { k: 'tk', l: 'TK' },
-  { k: 'dmg_given', l: 'Gvn', grp: true, fmt: 'k' }, { k: 'dmg_taken', l: 'Tkn', fmt: 'k' },
+  { k: 'dmg_given', l: 'Gvn', grp: true, fmt: 'int' }, { k: 'dmg_taken', l: 'Tkn', fmt: 'int' },
   { k: 'ya', l: 'YA', grp: true, cls: 'c-ya' }, { k: 'ra', l: 'RA', cls: 'c-ra' }, { k: 'mh', l: 'MH', cls: 'c-mh' },
   { k: 'sg', l: 'SG', grp: true, pct: true, cls: 'c-wpn' }, { k: 'lg', l: 'LG', pct: true, cls: 'c-wpn' },
   { k: 'rl', l: 'RL', pct: true, cls: 'c-wpn' }, { k: 'quad', l: 'Q', grp: true, cls: 'c-q' },
@@ -33,7 +33,7 @@ const sortKey = ref('eff'); const sortDir = ref(-1)
 function sortBy(k) { if (sortKey.value === k) sortDir.value *= -1; else { sortKey.value = k; sortDir.value = -1 } }
 const sortedTeams = computed(() => [...teamStats.value].sort((a, b) => ((a[sortKey.value] ?? -1) - (b[sortKey.value] ?? -1)) * sortDir.value))
 const anyData = computed(() => teamStats.value.some(t => t.maps > 0))
-function fmtCell(v, c) { if (v == null) return '—'; if (c.pct) return v + '%'; if (c.fmt === 'k') return v >= 1000 ? (v/1000).toFixed(0)+'k' : v; return v }
+function fmtCell(v, c) { if (v == null) return '—'; if (c.pct) return v + '%'; if (c.fmt === 'int') return Math.round(v).toLocaleString(); return v }
 function logoUrl(id) { return `${base}/api/ladder/team/${id}/logo` }
 function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '' }
 </script>
