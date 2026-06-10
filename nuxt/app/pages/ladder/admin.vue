@@ -163,6 +163,8 @@ async function cancelChallenge(c) {
 const ET_ZONE = 'America/New_York'
 const reschedC = ref(null)     // challenge being rescheduled
 const reschedVal = ref('')     // datetime-local string, ET wall clock
+const reschedSrv = ref('')     // server hostname
+const reschedSugs = ref([])    // ping-based server suggestions
 function utcToEtInput(iso) {
   const p = new Intl.DateTimeFormat('en-CA', { timeZone: ET_ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(new Date(iso))
   const g = t => p.find(x => x.type === t).value
@@ -179,16 +181,23 @@ function etInputToUtc(s) {
   const utcMs = new Date(inst.toLocaleString('en-US', { timeZone: 'UTC' })).getTime()
   return new Date(asUTC + (utcMs - etMs)).toISOString()
 }
-function startReschedule(c) {
+async function startReschedule(c) {
   reschedC.value = c
   reschedVal.value = c.agreed_at ? utcToEtInput(c.agreed_at) : ''
+  reschedSrv.value = c.server || ''
+  reschedSugs.value = []
+  try {
+    const r = await $fetch(`${base}/api/ladder/challenge/${c.id}/server-suggestion`)
+    reschedSugs.value = r.suggestions || []
+  } catch { reschedSugs.value = [] }
 }
 async function doReschedule() {
   if (!reschedVal.value) { err.value = 'pick a new time'; return }
   const c = reschedC.value
   try {
     await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/reschedule`, {
-      method: 'POST', headers: authHeader(), body: { slot: etInputToUtc(reschedVal.value) }
+      method: 'POST', headers: authHeader(),
+      body: { slot: etInputToUtc(reschedVal.value), server: reschedSrv.value || null }
     })
     note('rescheduled — Discord updated'); reschedC.value = null; await load()
   } catch (e) { err.value = e?.data?.detail || 'reschedule failed' }
@@ -274,10 +283,25 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               <button class="btn sm ghost" @click="forfeit(c)">Forfeit</button>
               <button class="btn sm danger" @click="cancelChallenge(c)">Cancel</button>
               <div v-if="reschedC && reschedC.id === c.id" class="resched" @click.stop>
-                <span class="muted small">New time (ET):</span>
-                <input type="datetime-local" step="900" v-model="reschedVal">
-                <button class="btn sm" @click="doReschedule">Save &amp; notify</button>
-                <button class="btn sm ghost" @click="reschedC = null">Cancel</button>
+                <div class="resched-row">
+                  <span class="muted small">New time (ET):</span>
+                  <input type="datetime-local" step="900" v-model="reschedVal">
+                </div>
+                <div class="resched-row">
+                  <span class="muted small">Server:</span>
+                  <input type="text" v-model="reschedSrv" placeholder="server hostname" style="min-width:200px;">
+                </div>
+                <div v-if="reschedSugs.length" class="resched-row" style="flex-wrap:wrap;">
+                  <span class="muted small">Suggested:</span>
+                  <button v-for="s in reschedSugs" :key="s.host" class="srv-chip" :class="{ on: reschedSrv === s.host }" @click="reschedSrv = s.host">
+                    <strong>{{ s.host }}</strong>
+                    <span class="muted">{{ s.city || s.country || 'NA' }} · worst {{ s.max_ping }}ms</span>
+                  </button>
+                </div>
+                <div class="resched-row">
+                  <button class="btn sm" @click="doReschedule">Save &amp; notify</button>
+                  <button class="btn sm ghost" @click="reschedC = null">Cancel</button>
+                </div>
               </div>
             </div>
           </section>
@@ -408,9 +432,14 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 22px 24px; width: 100%; max-width: 380px; }
 .modal h3 { margin: 0 0 14px; font-size: 18px; font-weight: 800; }
 .m-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
-.resched { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
-.resched input { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); border-radius: 8px; padding: 7px 10px; font-family: inherit; font-size: 13px; }
+.resched { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding: 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; }
+.resched-row { display: flex; gap: 8px; align-items: center; }
+.resched input { background: var(--panel); border: 1px solid var(--border); color: var(--fg); border-radius: 8px; padding: 7px 10px; font-family: inherit; font-size: 13px; }
 .resched input:focus { outline: none; border-color: var(--accent); }
+.srv-chip { display: inline-flex; gap: 6px; align-items: baseline; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 12px; color: var(--fg); cursor: pointer; font-family: inherit; }
+.srv-chip:hover { border-color: var(--accent); }
+.srv-chip.on { border-color: var(--accent); background: rgba(20,230,192,0.08); }
+.srv-chip .muted { font-size: 11px; }
 .shots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .shot-thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; background: var(--bg); }
 .shot-thumb:hover { border-color: var(--accent); }
