@@ -1076,6 +1076,12 @@ def player_profile(canonical_id: str):
 
 # ── Stats leaderboards (mechanical-skill: accuracy, damage, items, etc.) ──────
 
+def _stats_window_since(window: str) -> str:
+    """ISO cutoff for a stats time window, or '' for all-time."""
+    days = {"30d": 30, "90d": 90, "6mo": 182, "1yr": 365}.get(window)
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat() if days else ""
+
+
 @app.get("/api/stats/leaderboards")
 def stats_leaderboards(
     response: Response,
@@ -1083,6 +1089,7 @@ def stats_leaderboards(
     map: str = Query("all", description="Map name or 'all'"),
     region: str = Query("all", description="EU/NA/SA/OC/AS/AF or 'all'"),
     min_matches: int = Query(25, ge=5, le=10_000),
+    window: str = Query("all", description="30d/90d/6mo/1yr/all"),
     top: int = Query(10, ge=1, le=100),
 ):
     """Aggregate per-player stats once, slice into one top-N leaderboard per
@@ -1091,7 +1098,8 @@ def stats_leaderboards(
     if mode != "1on1":
         return {"mode": mode, "leaderboards": {}, "note": "Only 1on1 leaderboards are available right now."}
 
-    sql, params = stats_pg.stats_query(mode=mode, map_name=map, region=region, min_matches=min_matches)
+    sql, params = stats_pg.stats_query(mode=mode, map_name=map, region=region,
+                                       min_matches=min_matches, since=_stats_window_since(window))
     with pg() as conn:
         cur = conn.cursor()
         cur.execute(sql, params)
@@ -1105,6 +1113,29 @@ def stats_leaderboards(
         "player_count": len(rows),
         "leaderboards": stats_pg.build_leaderboards(rows, top_n=top),
     }
+
+
+@app.get("/api/stats/table")
+def stats_table(
+    response: Response,
+    mode: str = Query("1on1", pattern="^(1on1|2on2|4on4)$"),
+    map: str = Query("all"),
+    region: str = Query("all"),
+    min_matches: int = Query(100, ge=5, le=10_000),
+    window: str = Query("all", description="30d/90d/6mo/1yr/all"),
+):
+    """Every qualifying player with ALL stat columns — powers the sortable,
+    paginated full-table view on /stats. 1on1 only for now."""
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=3600"
+    if mode != "1on1":
+        return {"mode": mode, "columns": [], "players": [], "note": "Only 1on1 stats are available right now."}
+    sql, params = stats_pg.stats_query(mode=mode, map_name=map, region=region,
+                                       min_matches=min_matches, since=_stats_window_since(window))
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        rows = [dict(r) for r in cur.fetchall()]
+    return {"mode": mode, "columns": stats_pg.table_columns(), "players": stats_pg.build_table(rows)}
 
 
 @app.get("/api/stats/maps")

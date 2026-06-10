@@ -26,7 +26,7 @@ STATS_1ON1 = [
 
 
 def stats_query(mode: str = "1on1", map_name: str = "", region: str = "",
-                min_matches: int = 25) -> tuple[str, dict]:
+                min_matches: int = 25, since: str = "") -> tuple[str, dict]:
     """Build the SQL + params dict for the 1on1 stats aggregation.
 
     `spawnfrags_taken` = opponent's `player_spawnfrags` in each 1on1 match
@@ -42,6 +42,10 @@ def stats_query(mode: str = "1on1", map_name: str = "", region: str = "",
     if region and region != "all":
         region_clause = "AND pc.region = %(region)s"
         params["region"] = region
+    # Time window: match_date is ISO-8601 TEXT → lexical compare against a cutoff.
+    if since:
+        where_extra += " AND m.match_date > %(since)s"
+        params["since"] = since
 
     sql = f"""
         WITH player_stats AS (
@@ -77,6 +81,47 @@ def stats_query(mode: str = "1on1", map_name: str = "", region: str = "",
         SELECT * FROM player_stats
     """
     return sql, params
+
+
+# Display-format token per stat for the full table (the frontend maps these to a
+# JS formatter; raw values are kept for sorting).
+_FMT_TOKEN = {
+    "lg_pct": "pct", "rl_pct": "pct", "frag_diff": "plus1", "ddr": "ratio2",
+    "net_dmg": "plusnum", "dmg_given": "num0", "dmg_taken": "num0",
+    "ra_per_match": "num2", "mh_per_match": "num2", "ya_per_match": "num2",
+    "avg_frags": "num1", "avg_speed": "num0", "spawnfrags_taken": "num2",
+}
+# Short column headers for the dense table.
+_SHORT = {
+    "lg_pct": "LG%", "rl_pct": "RL%", "frag_diff": "±Frag", "ddr": "DDR",
+    "net_dmg": "Net dmg", "dmg_given": "Dmg given", "dmg_taken": "Dmg taken",
+    "ra_per_match": "RA/m", "mh_per_match": "MH/m", "ya_per_match": "YA/m",
+    "avg_frags": "Frags/m", "avg_speed": "Speed", "spawnfrags_taken": "Spawn-d/m",
+}
+
+
+def table_columns() -> list:
+    """Column metadata for the full sortable stats table."""
+    return [{"id": sid, "label": _SHORT.get(sid, disp), "full": disp,
+             "direction": direction, "fmt": _FMT_TOKEN.get(sid, "num1")}
+            for sid, disp, direction, _ in STATS_1ON1]
+
+
+def build_table(rows: list) -> list:
+    """Every qualifying player with all stat metrics (raw floats for client-side
+    sort + pagination)."""
+    out = []
+    for r in rows:
+        rec = {"canonical_id": r["canonical_id"], "display": r["display"],
+               "region": r.get("region"), "matches": r["matches"]}
+        for sid, *_ in STATS_1ON1:
+            v = r.get(sid)
+            try:
+                rec[sid] = float(v) if v is not None else None
+            except (TypeError, ValueError):
+                rec[sid] = None
+        out.append(rec)
+    return out
 
 
 def build_leaderboards(rows: list, top_n: int = 5) -> dict:
