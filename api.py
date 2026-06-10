@@ -4599,6 +4599,15 @@ def admin_sync(authorization: str | None = Header(default=None),
     # backlogs because it iterates every distinct player_name in the DB).
     summary["steps"].append({"step": "canonicalize", **_run_script("canonicalize.py", timeout=1500)})
 
+    # Step 2b — fast safety net: directly link any still-unassigned rows from
+    # player_name_map. Guarantees returning players' matches are visible even if
+    # the heavy canonicalize above timed out / errored (the 2026-06 stall).
+    try:
+        with pg() as conn:
+            summary["steps"].append({"step": "assign_from_map", **_assign_canonical_from_map(conn)})
+    except Exception as e:
+        summary["steps"].append({"step": "assign_from_map", "error": str(e)})
+
     # Step 3 — re-assign player regions (idempotent, fast)
     summary["steps"].append({"step": "assign_regions", **_run_script("assign_player_regions.py", timeout=300)})
 
@@ -4728,6 +4737,34 @@ def admin_canon_review_action(canonical_id: str, authorization: str | None = Hea
             cur.execute("UPDATE players_canonical SET hidden=TRUE, reviewed=TRUE WHERE canonical_id=%s", (canonical_id,))
         conn.commit()
     return {"canonical_id": canonical_id, "action": action, "target": target}
+
+
+def _assign_canonical_from_map(conn):
+    """Fast, can't-fail canonical assignment: link every player row that has no
+    canonical_id to the canonical it maps to in player_name_map (names resolved
+    by a prior canonicalize run). O(rows), no fuzzy — covers all known/returning
+    players instantly, independent of the heavy full canonicalize pass. Returns
+    {assigned, still_unmapped}."""
+    cur = conn.cursor()
+    cur.execute("""UPDATE players p SET canonical_id = nm.canonical_id
+                   FROM player_name_map nm
+                   WHERE p.canonical_id IS NULL AND p.player_name = nm.raw_name""")
+    assigned = cur.rowcount
+    cur.execute("SELECT count(*) AS n FROM players WHERE canonical_id IS NULL")
+    still = cur.fetchone()["n"]
+    conn.commit()
+    return {"assigned": assigned, "still_unmapped": still}
+
+
+@app.post("/api/admin/canon/backfill-unassigned")
+def admin_canon_backfill(authorization: str | None = Header(default=None)):
+    """One-click fix for orphaned (canonical_id NULL) player rows: assign from
+    player_name_map. For returning players this is instant; brand-new names not
+    yet in the map need the full canonicalize. Ladder-admin or god key."""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        res = _assign_canonical_from_map(conn)
+    return res
 
 
 @app.post("/api/admin/apply-aliases")

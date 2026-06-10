@@ -204,6 +204,23 @@ async function applyAliases() {
   }
 }
 
+// ─── Backfill unassigned canonical_ids (fast, from player_name_map) ────────
+const backfillRunning = ref(false)
+async function backfillUnassigned() {
+  backfillRunning.value = true
+  pushEvent('info', 'CANON', 'backfill unassigned started…')
+  try {
+    const r = await $fetch(`${apiBase}/api/admin/canon/backfill-unassigned`, {
+      method: 'POST', headers: adminHeaders(), timeout: 120000
+    })
+    pushEvent('ok', 'CANON', `assigned ${r.assigned} rows · ${r.still_unmapped} still unmapped (new names)`)
+  } catch (e) {
+    pushEvent('err', 'CANON', e?.data?.detail || e?.message || 'failed')
+  } finally {
+    backfillRunning.value = false
+  }
+}
+
 // ─── Recanonicalize names (fast name pass; surfaces errors) ───────────────
 const recanonRunning = ref(false)
 async function recanon() {
@@ -880,6 +897,7 @@ function shortStatus(s) {
               <button class="btn" @click="loadStatus" :disabled="statusLoading">⟳ Refresh</button>
               <button class="btn ghost" @click="triggerSync">Trigger sync</button>
               <button class="btn ghost" @click="applyAliases" :disabled="aliasRunning">{{ aliasRunning ? 'Applying…' : 'Apply aliases (fast)' }}</button>
+              <button class="btn" @click="backfillUnassigned" :disabled="backfillRunning">{{ backfillRunning ? 'Backfilling…' : 'Backfill unassigned (fast)' }}</button>
               <button class="btn ghost" @click="recanon" :disabled="recanonRunning">{{ recanonRunning ? 'Recanonicalizing…' : 'Recanonicalize names' }}</button>
               <button class="btn warn" @click="startRerate">Full re-rate</button>
             </div>
