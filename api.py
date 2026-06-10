@@ -785,6 +785,64 @@ def cron_ladder_tick(authorization: str | None = Header(default=None)):
     return {"ok": True, **counts}
 
 
+@app.post("/api/cron/freshness-check")
+def cron_freshness_check(authorization: str | None = Header(default=None)):
+    """Data-freshness watchdog. Alerts (once per throttle window) if ingestion is
+    stale (newest match too old) or canonicalize is behind (recent rows with no
+    profile link). This is the alarm that the 2026-06 silent stall lacked.
+    Auth: SYNC_SECRET or CRON_SECRET."""
+    expected = {os.environ.get("SYNC_SECRET"), os.environ.get("CRON_SECRET")} - {None, ""}
+    if not expected or (authorization or "").removeprefix("Bearer ") not in expected:
+        raise HTTPException(401, "bad cron token")
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=4)).isoformat()
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS monitor_state (key TEXT PRIMARY KEY, value TEXT)")
+        cur.execute("SELECT max(match_date) AS m FROM matches")
+        maxd = cur.fetchone()["m"]
+        cur.execute("""SELECT count(*) AS n FROM players p JOIN matches m ON m.match_id=p.match_id
+                       WHERE p.canonical_id IS NULL AND m.match_date > %s""", (cutoff,))
+        unassigned = cur.fetchone()["n"]
+        stale_hours = None
+        if maxd:
+            try:
+                dt = datetime.fromisoformat(str(maxd).replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                stale_hours = round((now - dt).total_seconds() / 3600, 1)
+            except Exception:
+                pass
+        problems = []
+        if stale_hours is None or stale_hours > 4:
+            problems.append(f"newest match is {stale_hours if stale_hours is not None else '?'}h old — ingestion may be stalled")
+        if unassigned > 200:
+            problems.append(f"{unassigned} recent player rows have no profile link — canonicalize may be stalled")
+        # Throttle: alert at most once every 3h while unhealthy.
+        alerted = False
+        if problems:
+            cur.execute("SELECT value FROM monitor_state WHERE key='last_health_alert'")
+            row = cur.fetchone()
+            last = None
+            if row and row["value"]:
+                try:
+                    last = datetime.fromisoformat(row["value"])
+                except Exception:
+                    pass
+            if last is None or (now - last).total_seconds() > 3 * 3600:
+                try:
+                    import notify
+                    if notify.data_health_alert(problems, maxd):
+                        alerted = True
+                        cur.execute("""INSERT INTO monitor_state (key, value) VALUES ('last_health_alert', %s)
+                                       ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value""", (now.isoformat(),))
+                except Exception:
+                    pass
+        conn.commit()
+    return {"healthy": not problems, "stale_hours": stale_hours,
+            "recent_unassigned": unassigned, "problems": problems, "alerted": alerted}
+
+
 # ── Rankings ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/rankings")
@@ -4595,18 +4653,15 @@ def admin_sync(authorization: str | None = Header(default=None),
             summary["ended_at"] = datetime.now(timezone.utc).isoformat()
             return summary
 
-    # Step 2 — canonicalize new player names (idempotent; can be slow on big
-    # backlogs because it iterates every distinct player_name in the DB).
-    summary["steps"].append({"step": "canonicalize", **_run_script("canonicalize.py", timeout=1500)})
-
-    # Step 2b — fast safety net: directly link any still-unassigned rows from
-    # player_name_map. Guarantees returning players' matches are visible even if
-    # the heavy canonicalize above timed out / errored (the 2026-06 stall).
+    # Step 2 — INCREMENTAL canonicalize (resolve only NEW names + link all NULL
+    # rows). Replaces the old full-pass canonicalize.py, which re-resolved and
+    # re-upserted every distinct name each run (16k+ round trips) and silently
+    # timed out as the DB grew — the root of the 2026-06 stall.
     try:
         with pg() as conn:
-            summary["steps"].append({"step": "assign_from_map", **_assign_canonical_from_map(conn)})
+            summary["steps"].append({"step": "canonicalize", **_canonicalize_incremental(conn)})
     except Exception as e:
-        summary["steps"].append({"step": "assign_from_map", "error": str(e)})
+        summary["steps"].append({"step": "canonicalize", "error": str(e)})
 
     # Step 3 — re-assign player regions (idempotent, fast)
     summary["steps"].append({"step": "assign_regions", **_run_script("assign_player_regions.py", timeout=300)})
@@ -4740,30 +4795,71 @@ def admin_canon_review_action(canonical_id: str, authorization: str | None = Hea
 
 
 def _assign_canonical_from_map(conn):
-    """Fast, can't-fail canonical assignment: link every player row that has no
-    canonical_id to the canonical it maps to in player_name_map (names resolved
-    by a prior canonicalize run). O(rows), no fuzzy — covers all known/returning
-    players instantly, independent of the heavy full canonicalize pass. Returns
-    {assigned, still_unmapped}."""
+    """Link every player row that has no canonical_id to the canonical it maps to
+    in player_name_map. O(rows), no fuzzy."""
     cur = conn.cursor()
     cur.execute("""UPDATE players p SET canonical_id = nm.canonical_id
                    FROM player_name_map nm
                    WHERE p.canonical_id IS NULL AND p.player_name = nm.raw_name""")
     assigned = cur.rowcount
+    conn.commit()
+    return assigned
+
+
+def _canonicalize_incremental(conn):
+    """INCREMENTAL canonicalize — replaces the O(n) full pass that re-resolved and
+    re-upserted EVERY distinct name (16k+ per-row round trips) on every run and
+    timed out as the DB grew.
+
+    Only NEW names (not yet in player_name_map) are resolved + batch-upserted,
+    then every NULL-canonical row is linked from the (now-complete) map. Cost is
+    O(new names), not O(all names). Returns a small summary."""
+    import name_canon
+    c = name_canon.Canonicalizer.load()
+    now = datetime.now(timezone.utc).isoformat()
+    cur = conn.cursor()
+    # Distinct player names with no map entry yet — most common first so each new
+    # canonical gets its busiest variant as the display name.
+    cur.execute("""SELECT p.player_name, COALESCE(NULLIF(p.player_login,''),NULL) AS login, count(*) AS n
+                   FROM players p
+                   LEFT JOIN player_name_map nm ON nm.raw_name = p.player_name
+                   WHERE nm.raw_name IS NULL AND p.player_name IS NOT NULL
+                   GROUP BY p.player_name, p.player_login
+                   ORDER BY n DESC""")
+    rows = cur.fetchall()
+    canon_by_cid = {}      # cid -> (cid, display, login, now, now)  (dedup per batch)
+    map_rows = []          # (raw_name, cid, source, confidence, now)
+    for r in rows:
+        name, login = r["player_name"], r["login"]
+        cid, decision = c.resolve(name, login)
+        if cid not in canon_by_cid:
+            display = name_canon.clean_for_display(name) or name
+            canon_by_cid[cid] = (cid, display, login or "", now, now)
+        map_rows.append((name, cid, decision, 1.0, now))
+    if map_rows:
+        psycopg2.extras.execute_values(cur,
+            "INSERT INTO players_canonical (canonical_id, display_name, login, created_at, updated_at) "
+            "VALUES %s ON CONFLICT (canonical_id) DO UPDATE SET updated_at=EXCLUDED.updated_at",
+            list(canon_by_cid.values()), page_size=1000)
+        psycopg2.extras.execute_values(cur,
+            "INSERT INTO player_name_map (raw_name, canonical_id, source, confidence, created_at) "
+            "VALUES %s ON CONFLICT (raw_name) DO UPDATE SET canonical_id=EXCLUDED.canonical_id, source=EXCLUDED.source",
+            map_rows, page_size=1000)
+        conn.commit()
+    assigned = _assign_canonical_from_map(conn)
     cur.execute("SELECT count(*) AS n FROM players WHERE canonical_id IS NULL")
     still = cur.fetchone()["n"]
-    conn.commit()
-    return {"assigned": assigned, "still_unmapped": still}
+    return {"new_names_resolved": len(rows), "rows_assigned": assigned, "still_unassigned": still}
 
 
 @app.post("/api/admin/canon/backfill-unassigned")
 def admin_canon_backfill(authorization: str | None = Header(default=None)):
-    """One-click fix for orphaned (canonical_id NULL) player rows: assign from
-    player_name_map. For returning players this is instant; brand-new names not
-    yet in the map need the full canonicalize. Ladder-admin or god key."""
+    """One-click fix for orphaned (canonical_id NULL) rows: resolve any brand-new
+    names (incremental, batched) then link everything from player_name_map.
+    Ladder-admin or god key."""
     _check_ladder_admin(authorization)
     with pg() as conn:
-        res = _assign_canonical_from_map(conn)
+        res = _canonicalize_incremental(conn)
     return res
 
 

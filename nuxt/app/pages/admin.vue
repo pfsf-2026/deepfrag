@@ -213,7 +213,7 @@ async function backfillUnassigned() {
     const r = await $fetch(`${apiBase}/api/admin/canon/backfill-unassigned`, {
       method: 'POST', headers: adminHeaders(), timeout: 120000
     })
-    pushEvent('ok', 'CANON', `assigned ${r.assigned} rows · ${r.still_unmapped} still unmapped (new names)`)
+    pushEvent('ok', 'CANON', `${r.new_names_resolved} new names · ${r.rows_assigned} rows assigned · ${r.still_unassigned} still unassigned`)
   } catch (e) {
     pushEvent('err', 'CANON', e?.data?.detail || e?.message || 'failed')
   } finally {

@@ -193,6 +193,16 @@ def challenge_overdue(team_a: str, team_b: str, deadline: str | None, mention: s
         COLOR_WARN))
 
 
+def data_health_alert(problems: list, latest: str | None):
+    """Pipeline-stall alert (ingestion stale or canonicalize behind). Quiet (no
+    @mention) — it posts to the channel for admins to see."""
+    desc = ("**The DeepFrag data pipeline looks stalled:**\n\n"
+            + "\n".join(f"• {p}" for p in problems)
+            + f"\n\nNewest match in DB: `{latest or 'unknown'}`\n"
+            "Check `/api/debug/ingest`; the 2h sync + canonicalize should self-heal.")
+    return send(embed=_embed("🚨 Data health alert", desc, COLOR_WARN))
+
+
 def support_ticket(num: int, area: str | None, title: str, who: str | None):
     """New support ticket — surface to admins in the channel."""
     return send(embed=_embed(
