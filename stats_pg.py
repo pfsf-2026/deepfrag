@@ -16,9 +16,9 @@ STATS_1ON1 = [
     ("net_dmg",         "Net damage / match",     "desc", "{:+,.0f}"),
     ("dmg_given",       "Total damage given",     "desc", "{:,.0f}"),
     ("dmg_taken",       "Total damage taken",     "asc",  "{:,.0f}"),  # lower better
-    ("ra_per_match",    "RA / match",             "desc", "{:.2f}"),
-    ("mh_per_match",    "Mega / match",           "desc", "{:.2f}"),
-    ("ya_per_match",    "YA / match",             "desc", "{:.2f}"),
+    ("ra_pct",          "RA control",             "desc", "{:.1%}"),
+    ("mh_pct",          "Mega control",           "desc", "{:.1%}"),
+    ("ya_pct",          "YA control",             "desc", "{:.1%}"),
     ("avg_frags",       "Avg frags / match",      "desc", "{:.1f}"),
     ("avg_speed",       "Avg speed",              "desc", "{:.0f}"),
     ("spawnfrags_taken","Spawnfrags taken / match","asc", "{:.2f}"),   # lower better
@@ -60,17 +60,33 @@ def stats_query(mode: str = "1on1", map_name: str = "", region: str = "",
                    AVG(p.player_damage_taken) AS dmg_taken,
                    AVG(p.player_damage_given - p.player_damage_taken) AS net_dmg,
                    SUM(p.player_damage_given)::float / NULLIF(SUM(p.player_damage_taken), 0) AS ddr,
-                   AVG(p.player_ra_taken) AS ra_per_match,
-                   AVG(p.player_health100_taken) AS mh_per_match,
-                   AVG(p.player_ya_taken) AS ya_per_match,
+                   -- Item CONTROL = this player's pickups as a share of all
+                   -- pickups (this player + opponent) of that item. Map-geometry
+                   -- independent: on DM2 (2 RAs) both numerator and denominator
+                   -- scale, so a 50/50 split = 50% on any map. Replaces the old
+                   -- per-match counts that inflated DM2 specialists.
+                   SUM(p.player_ra_taken)::float
+                     / NULLIF(SUM(p.player_ra_taken + COALESCE(opp.ra, 0)), 0) AS ra_pct,
+                   SUM(p.player_health100_taken)::float
+                     / NULLIF(SUM(p.player_health100_taken + COALESCE(opp.mh, 0)), 0) AS mh_pct,
+                   SUM(p.player_ya_taken)::float
+                     / NULLIF(SUM(p.player_ya_taken + COALESCE(opp.ya, 0)), 0) AS ya_pct,
                    AVG(p.player_frags) AS avg_frags,
                    AVG(p.player_speed_avg) AS avg_speed,
-                   AVG((SELECT p2.player_spawnfrags FROM players p2
-                        WHERE p2.match_id = p.match_id AND p2.player_name <> p.player_name
-                        LIMIT 1)) AS spawnfrags_taken
+                   AVG(opp.spawnfrags) AS spawnfrags_taken
             FROM players p
             JOIN matches m ON m.match_id = p.match_id
             LEFT JOIN players_canonical pc ON pc.canonical_id = p.canonical_id
+            LEFT JOIN LATERAL (
+                SELECT p2.player_ra_taken AS ra,
+                       p2.player_ya_taken AS ya,
+                       p2.player_health100_taken AS mh,
+                       p2.player_spawnfrags AS spawnfrags
+                FROM players p2
+                WHERE p2.match_id = p.match_id
+                  AND p2.player_name <> p.player_name
+                LIMIT 1
+            ) opp ON true
             WHERE m.match_mode = %(mode)s
               AND p.canonical_id IS NOT NULL
               {where_extra}
@@ -88,14 +104,14 @@ def stats_query(mode: str = "1on1", map_name: str = "", region: str = "",
 _FMT_TOKEN = {
     "lg_pct": "pct", "rl_pct": "pct", "frag_diff": "plus1", "ddr": "ratio2",
     "net_dmg": "plusnum", "dmg_given": "num0", "dmg_taken": "num0",
-    "ra_per_match": "num2", "mh_per_match": "num2", "ya_per_match": "num2",
+    "ra_pct": "pct", "mh_pct": "pct", "ya_pct": "pct",
     "avg_frags": "num1", "avg_speed": "num0", "spawnfrags_taken": "num2",
 }
 # Short column headers for the dense table.
 _SHORT = {
     "lg_pct": "LG%", "rl_pct": "RL%", "frag_diff": "±Frag", "ddr": "DDR",
     "net_dmg": "Net dmg", "dmg_given": "Dmg given", "dmg_taken": "Dmg taken",
-    "ra_per_match": "RA/m", "mh_per_match": "MH/m", "ya_per_match": "YA/m",
+    "ra_pct": "RA%", "mh_pct": "MH%", "ya_pct": "YA%",
     "avg_frags": "Frags/m", "avg_speed": "Speed", "spawnfrags_taken": "Spawn-d/m",
 }
 
