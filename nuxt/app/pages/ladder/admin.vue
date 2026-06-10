@@ -138,13 +138,16 @@ async function createChallenge() {
 const candGames = ref([])        // [{hub_game_id, map, a_frags, b_frags, winner, played_at, pick(0-based order)}]
 const candLoading = ref(false)
 const candInfo = ref(null)       // {a_name,b_name,challenger_id,challenged_id}
+const autoDetected = ref(false)
 async function startReport(c) {
   report.value = c
-  candGames.value = []; candInfo.value = null; candLoading.value = true
+  candGames.value = []; candInfo.value = null; candLoading.value = true; autoDetected.value = false
   try {
     const r = await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/candidate-games`, { headers: authHeader() })
     candInfo.value = r
-    candGames.value = (r.candidates || []).map(g => ({ ...g, picked: false }))
+    // Pre-tick the auto-detected decisive Bo3 maps; admin reviews + confirms.
+    candGames.value = (r.candidates || []).map(g => ({ ...g, picked: !!g.suggested }))
+    autoDetected.value = r.suggested_complete && candGames.value.some(g => g.picked)
   } catch (e) { err.value = e?.data?.detail || 'could not load games' } finally { candLoading.value = false }
 }
 function toggleGame(g) { g.picked = !g.picked }
@@ -416,6 +419,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
         <h3>Report result · {{ teamName(report.challenger_id) }} vs {{ teamName(report.challenged_id) }}</h3>
         <p class="muted small" style="margin:-6px 0 12px;">Tick the <strong>decisive Bo3 maps</strong> (first to 2). Extra games (warmups, re-dos) won't count — only ticked games go into results &amp; stats.</p>
 
+        <div v-if="autoDetected" class="auto-banner">🤖 Auto-detected Bo3 — review the pre-ticked maps and confirm. Untick a warm-up / extra game if needed.</div>
         <div v-if="candLoading" class="muted small pad">Finding played games…</div>
         <div v-else-if="!candGames.length" class="muted small" style="padding:8px 0;">
           No ingested 2on2 games found for these two teams yet. They appear here ~within the 2h sync after the match is played (rosters must be linked to profiles).
@@ -477,6 +481,7 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .btn.sm { padding: 5px 11px; font-size: 12px; }
 .btn.ghost { background: transparent; color: var(--fg-2); border: 1px solid var(--border); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.auto-banner { background: rgba(20,230,192,.1); border: 1px solid rgba(20,230,192,.4); color: var(--accent-2, #5eead4); border-radius: 8px; padding: 8px 11px; font-size: 12px; margin-bottom: 10px; }
 .cand-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; margin-bottom: 12px; }
 .cand { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; cursor: pointer; font-size: 13px; }
 .cand.on { border-color: var(--accent); background: rgba(20,230,192,0.08); }

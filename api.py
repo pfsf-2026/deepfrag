@@ -3906,8 +3906,28 @@ def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = 
             cands.append({"hub_game_id": r["hub_game_id"], "map": r["match_map"],
                           "played_at": str(r["match_date"]), "a_frags": a, "b_frags": b,
                           "winner": "a" if a > b else "b" if b > a else "tie"})
+    # Auto-detect the decisive Bo3 set: walk games in time order, counting map
+    # wins, until one team reaches 2. Those are `suggested` (pre-ticked in the UI);
+    # extra games (warm-ups, post-decider) are left off. Same logic the future
+    # fully-auto resolver will use.
+    aw = bw = 0
+    done = False
+    for c in cands:
+        if done or c["winner"] == "tie":
+            c["suggested"] = False
+            continue
+        c["suggested"] = True
+        if c["winner"] == "a":
+            aw += 1
+        else:
+            bw += 1
+        if aw == 2 or bw == 2:
+            done = True
     return {"challenge_id": challenge_id, "a_name": ch["a_name"], "b_name": ch["b_name"],
-            "challenger_id": ch["challenger_id"], "challenged_id": ch["challenged_id"], "candidates": cands}
+            "challenger_id": ch["challenger_id"], "challenged_id": ch["challenged_id"],
+            "candidates": cands,
+            "suggested_score": {"a": aw, "b": bw},
+            "suggested_complete": (aw == 2 or bw == 2)}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/result")
