@@ -2979,6 +2979,23 @@ def ladder_detail(ladder_id: int, response: Response):
         if not lad:
             raise HTTPException(404, "ladder not found")
         teams = _enrich_members(cur, _ladder.standings(cur, ladder_id))
+        # Loss cooldown: a team that lost in the last `loss_cooldown_days` can't
+        # issue challenges until cooldown_until. Attach it so the board can show a
+        # countdown + disable that team's challenge buttons.
+        cd_days = (lad.get("rules") or {}).get("loss_cooldown_days", 7)
+        cur.execute("""SELECT t.id,
+                              max(m.played_at) FILTER (WHERE m.winner_id IS NOT NULL AND m.winner_id <> t.id) AS last_loss
+                       FROM ladder_teams t
+                       LEFT JOIN ladder_matches m ON (m.team_a_id=t.id OR m.team_b_id=t.id) AND m.ladder_id=%s
+                       WHERE t.ladder_id=%s GROUP BY t.id""", (ladder_id, ladder_id))
+        cd = {}
+        for r in cur.fetchall():
+            if r["last_loss"]:
+                until = r["last_loss"] + timedelta(days=cd_days)
+                if until > datetime.now(timezone.utc):
+                    cd[r["id"]] = until.isoformat()
+        for t in teams:
+            t["cooldown_until"] = cd.get(t["id"])
         # King of the Hill: current rung-1 team + how long they've held it.
         koth = None
         top = next((t for t in teams if t.get("rung") == 1), None)
@@ -3593,19 +3610,22 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
                     (ladder_id, challenger_id, challenged_id, challenger_id, challenged_id))
         if cur.fetchone():
             raise HTTPException(409, "one of these teams already has an open challenge")
-        # Same-opponent cooldown: after losing to a team you can't re-challenge
-        # THAT team for a week (you may still challenge other teams up to 2 rungs).
-        cooldown_days = (lad.get("rules") or {}).get("rematch_cooldown_days", 7)
-        cur.execute("""SELECT 1 FROM ladder_matches
-                       WHERE ladder_id=%s AND winner_id=%s
-                         AND played_at > now() - (%s || ' days')::interval
-                         AND ((team_a_id=%s AND team_b_id=%s) OR (team_a_id=%s AND team_b_id=%s))
-                       LIMIT 1""",
-                    (ladder_id, challenged_id, str(cooldown_days),
-                     challenger_id, challenged_id, challenged_id, challenger_id))
-        if cur.fetchone():
-            raise HTTPException(409, f"you lost to this team recently — wait {cooldown_days} days "
-                                     "to rematch them (you can challenge a different team now)")
+        # Loss cooldown: after losing ANY match, a team can't ISSUE challenges for
+        # a week (it can still BE challenged). The sting of a loss. Winners stay
+        # free to challenge until they lose or get tied up in a challenge.
+        cooldown_days = (lad.get("rules") or {}).get("loss_cooldown_days", 7)
+        cur.execute("""SELECT max(played_at) AS last_loss FROM ladder_matches
+                       WHERE ladder_id=%s AND winner_id IS NOT NULL AND winner_id <> %s
+                         AND (team_a_id=%s OR team_b_id=%s)""",
+                    (ladder_id, challenger_id, challenger_id, challenger_id))
+        lr = cur.fetchone()
+        if lr and lr["last_loss"]:
+            until = lr["last_loss"] + timedelta(days=cooldown_days)
+            now = datetime.now(timezone.utc)
+            if until > now:
+                rem = until - now
+                raise HTTPException(409, f"your team lost recently — you can't issue challenges for "
+                                         f"{rem.days}d {rem.seconds // 3600}h. (You can still be challenged.)")
         forfeit_days = (lad.get("rules") or {}).get("forfeit_days", 7)
         deadline = datetime.now(timezone.utc) + timedelta(days=forfeit_days)
         cur.execute("""INSERT INTO ladder_challenges (ladder_id, challenger_id, challenged_id, rungs_up, deadline)

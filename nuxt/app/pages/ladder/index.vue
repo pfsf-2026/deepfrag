@@ -37,9 +37,24 @@ const myOpenChallenge = computed(() => {
 })
 const ladderOpen = computed(() => !!ladder.value?.rules?.open)
 const TEAMS_TO_OPEN = 10
+// Live "now" for the loss-cooldown countdown (tick every minute).
+const now = ref(isBrowser ? Date.now() : 0)
+let nowTimer = null
+onMounted(() => { nowTimer = setInterval(() => { now.value = Date.now() }, 60000) })
+onBeforeUnmount(() => { if (nowTimer) clearInterval(nowTimer) })
+// A team that lost in the last week can't ISSUE challenges. Returns "6d 23h" or null.
+function teamCooldown(t) {
+  if (!t.cooldown_until) return null
+  const until = new Date(t.cooldown_until).getTime()
+  if (until <= now.value) return null
+  const rem = until - now.value
+  return `${Math.floor(rem / 86400000)}d ${Math.floor((rem % 86400000) / 3600000)}h`
+}
+const myCooldown = computed(() => myTeam.value ? teamCooldown(myTeam.value) : null)
 function canChallenge(t) {
   if (!ladderOpen.value) return false
   if (!myTeam.value || !myTeam.value.rung || !t.rung || myOpenChallenge.value) return false
+  if (myCooldown.value) return false   // my team lost recently — benched from challenging
   const gap = myTeam.value.rung - t.rung
   return gap === 1 || gap === 2
 }
@@ -147,11 +162,13 @@ function teamChallenge(t) { return incoming.value[t.id]?.[0] || outgoing.value[t
 function teamStatus(t) {
   const c = teamChallenge(t)
   if (!c) return null
-  const other = c.challenger_id === t.id ? teamName(c.challenged_id) : teamName(c.challenger_id)
-  if (c.agreed_at) return `📅 Scheduled vs ${other}`
+  // Use the short clan tag (falls back to name) so the badge stays one line.
+  const other = teamLabel(c.challenger_id === t.id ? c.challenged_id : c.challenger_id)
+  if (c.agreed_at) return `📅 vs ${other}`
   return c.challenged_id === t.id ? `⚔ Challenged by ${other}` : `⚔ Challenging ${other}`
 }
 function teamName(id) { return teams.value.find(t => t.id === id)?.name || `#${id}` }
+function teamLabel(id) { const t = teams.value.find(x => x.id === id); return t ? (t.tag || t.name) : `#${id}` }
 const scheduledMatches = computed(() => challenges.value.filter(c => c.agreed_at).sort((a, b) => new Date(a.agreed_at) - new Date(b.agreed_at)))
 const openChallengeCount = computed(() => challenges.value.length)
 function fmtMatchTime(iso) { return new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
@@ -203,6 +220,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
         <div v-else-if="user?.pending_claim" class="note">⏳ Profile claim for <strong>{{ user.pending_claim.display }}</strong> is awaiting admin approval.</div>
         <div v-if="teamSubmitted" class="note">✅ Team <strong>{{ teamSubmitted }}</strong> submitted — an admin will approve it and you'll appear on the board.</div>
         <div v-if="needsLocation" class="note tip" @click="showSettings = true">📍 Add your location (Personal settings) to sharpen server suggestions.</div>
+        <div v-if="myCooldown" class="note cooldown-note">⏳ Your team lost recently — you can't issue challenges for <strong>{{ myCooldown }}</strong>. You can still be challenged.</div>
         <div v-if="challengeErr" class="note err">{{ challengeErr }}</div>
       </ClientOnly>
 
@@ -236,6 +254,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
               <span class="c-status">
                 <span v-if="teamStatus(t)" class="badge challenged">{{ teamStatus(t) }}</span>
                 <button v-else-if="canChallenge(t)" class="chal-btn" @click="doChallenge(t)">⚔ Challenge</button>
+                <span v-else-if="teamCooldown(t)" class="badge cooldown" title="Lost recently — can't issue challenges (can still be challenged)">⏳ {{ teamCooldown(t) }}</span>
                 <span v-else class="badge open">Open</span>
               </span>
             </div>
@@ -327,6 +346,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 
       <!-- ============ RULES ============ -->
       <div v-show="tab === 'rules'" class="rules-wrap">
+        <div class="rcols">
+        <div class="rcol">
         <section class="card rules">
           <h3>Format</h3>
           <ul>
@@ -343,10 +364,12 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <li><strong>Win a 1-rung challenge</strong> → swap places.</li>
             <li><strong>Win a 2-rung challenge</strong> → jump up 2; the teams you passed each drop one.</li>
             <li><strong>Forfeit</strong> (no game within a week) → the challenged team drops a rung.</li>
-            <li>Best of 3. Winners may re-challenge immediately.</li>
-            <li><strong>After a loss</strong> you can't re-challenge the same team for a week — but you can challenge a <em>different</em> team (up to 2 rungs up) right away.</li>
+            <li>Best of 3 — three games count toward stats; the Bo3 result (first to 2) sets the ladder W/L. Winners may challenge again immediately.</li>
+            <li><strong>After a loss</strong> your team <strong>can't issue challenges for a week</strong> — you can still be challenged. (A live countdown shows on your row.)</li>
           </ul>
         </section>
+        </div>
+        <div class="rcol">
         <section class="card rules">
           <h3>Servers &amp; ping</h3>
           <ul>
@@ -358,6 +381,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <li>Pool: Denver · Miami · Chicago · Dallas · New York · LA · Iowa · Washington.</li>
           </ul>
         </section>
+        </div>
+        </div>
         <section class="card rules">
           <details class="ruleset" open>
             <summary><span class="rs-title">📋 Full match ruleset</span><span class="rs-sum">smackdown · 2on2 · Bo3 · 10-min maps</span></summary>
@@ -406,7 +431,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 </template>
 
 <style scoped>
-.wrap { max-width: 1140px; margin: 0 auto; padding: 28px 24px 80px; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 28px 28px 80px; }
 .head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; margin-bottom: 18px; }
 .head .koth-logo { width: 100%; max-width: 440px; height: auto; display: block; filter: drop-shadow(0 6px 24px rgba(0,0,0,0.5)); }
 .head .sub { color: var(--fg-2); margin: 0; font-size: 15px; }
@@ -451,22 +476,26 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .koth-weeks { margin-left: auto; color: var(--fg-2); font-size: 13px; } .koth-weeks strong { color: var(--fg); font-size: 18px; }
 
 .board { margin: 0 -18px; }
-.board-head, .row { display: grid; grid-template-columns: 40px 1.3fr 1.5fr 1.4fr; align-items: center; gap: 10px; padding: 10px 18px; }
+.board-head, .row { display: grid; grid-template-columns: 34px minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.15fr); align-items: center; gap: 12px; padding: 10px 18px; }
 .board-head { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; border-bottom: 1px solid var(--border); }
 .row { border-top: 1px solid rgba(43,54,80,.5); font-size: 14px; }
 .row:first-of-type { border-top: 0; }
 .row .c-rung { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--fg-2); }
 .row.top { background: rgba(245,158,11,0.07); } .row.top .c-rung { color: var(--draw); } .row.top .tname::before { content: '👑 '; }
-.c-team { display: flex; align-items: center; gap: 8px; }
-.tlogo { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; }
-.ttag { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(20,230,192,0.12); border: 1px solid rgba(20,230,192,0.3); border-radius: 5px; padding: 1px 6px; }
-.tname { font-weight: 700; }
+.c-team { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tlogo { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; flex: 0 0 22px; }
+.ttag { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(20,230,192,0.12); border: 1px solid rgba(20,230,192,0.3); border-radius: 5px; padding: 1px 6px; flex: 0 0 auto; }
+.tname { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .edit { background: none; border: 0; color: var(--fg-3); cursor: pointer; font-size: 13px; padding: 2px 4px; opacity: .7; } .edit:hover { color: var(--accent); opacity: 1; }
 .plink { color: var(--fg-2); text-decoration: none; } .plink:hover { color: var(--accent); text-decoration: underline; }
-.c-members { color: var(--fg-2); font-size: 13px; } .c-members .dot { color: var(--fg-3); }
-.badge { font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 600; }
+.c-members { color: var(--fg-2); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .c-members .dot { color: var(--fg-3); }
+.c-status { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.badge { font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .badge.open { background: var(--panel-2); color: var(--fg-3); }
 .badge.challenged { background: rgba(239,68,68,0.15); color: #fca5a5; }
+.badge.cooldown { background: rgba(245,158,11,0.14); color: var(--draw); font-family: 'JetBrains Mono', monospace; }
+.note.cooldown-note { background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.4); color: var(--draw); }
+.note.cooldown-note strong { color: var(--fg); font-family: 'JetBrains Mono', monospace; }
 .chal-btn { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.4); border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
 .chal-btn:hover { background: rgba(239,68,68,0.28); }
 
@@ -495,9 +524,10 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .sm-teams { font-weight: 600; } .sm-when { color: var(--accent); font-size: 12px; margin-top: 2px; } .sm-srv { color: var(--fg-3); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
 
 /* rules */
-.rules-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-.rules-wrap .ruleset-card, .rules-wrap section:last-child { grid-column: 1 / -1; }
-@media (max-width: 880px) { .rules-wrap { grid-template-columns: 1fr; } }
+.rules-wrap { display: flex; flex-direction: column; gap: 16px; }
+.rcols { display: flex; gap: 16px; align-items: flex-start; }
+.rcol { flex: 1; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+@media (max-width: 880px) { .rcols { flex-direction: column; } }
 .rules h3 { color: var(--fg-3); }
 .rules ul { margin: 0; padding-left: 0; list-style: none; }
 .rules li { padding: 6px 0; color: var(--fg-2); padding-left: 18px; position: relative; font-size: 14px; }
