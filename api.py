@@ -785,62 +785,66 @@ def cron_ladder_tick(authorization: str | None = Header(default=None)):
     return {"ok": True, **counts}
 
 
+def _evaluate_freshness(conn):
+    """Data-freshness watchdog core: flag stale ingestion / behind canonicalize,
+    alert to Discord (throttled 3h via monitor_state). Returns a verdict dict.
+    Called by the cron endpoint AND at the end of every 2h sync."""
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=4)).isoformat()
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE IF NOT EXISTS monitor_state (key TEXT PRIMARY KEY, value TEXT)")
+    cur.execute("SELECT max(match_date) AS m FROM matches")
+    maxd = cur.fetchone()["m"]
+    cur.execute("""SELECT count(*) AS n FROM players p JOIN matches m ON m.match_id=p.match_id
+                   WHERE p.canonical_id IS NULL AND m.match_date > %s""", (cutoff,))
+    unassigned = cur.fetchone()["n"]
+    stale_hours = None
+    if maxd:
+        try:
+            dt = datetime.fromisoformat(str(maxd).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            stale_hours = round((now - dt).total_seconds() / 3600, 1)
+        except Exception:
+            pass
+    problems = []
+    if stale_hours is None or stale_hours > 4:
+        problems.append(f"newest match is {stale_hours if stale_hours is not None else '?'}h old — ingestion may be stalled")
+    if unassigned > 200:
+        problems.append(f"{unassigned} recent player rows have no profile link — canonicalize may be stalled")
+    alerted = False
+    if problems:  # throttle: alert at most once every 3h while unhealthy
+        cur.execute("SELECT value FROM monitor_state WHERE key='last_health_alert'")
+        row = cur.fetchone()
+        last = None
+        if row and row["value"]:
+            try:
+                last = datetime.fromisoformat(row["value"])
+            except Exception:
+                pass
+        if last is None or (now - last).total_seconds() > 3 * 3600:
+            try:
+                import notify
+                if notify.data_health_alert(problems, maxd):
+                    alerted = True
+                    cur.execute("""INSERT INTO monitor_state (key, value) VALUES ('last_health_alert', %s)
+                                   ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value""", (now.isoformat(),))
+            except Exception:
+                pass
+    conn.commit()
+    return {"healthy": not problems, "stale_hours": stale_hours,
+            "recent_unassigned": unassigned, "problems": problems, "alerted": alerted}
+
+
 @app.post("/api/cron/freshness-check")
 def cron_freshness_check(authorization: str | None = Header(default=None)):
-    """Data-freshness watchdog. Alerts (once per throttle window) if ingestion is
-    stale (newest match too old) or canonicalize is behind (recent rows with no
-    profile link). This is the alarm that the 2026-06 silent stall lacked.
-    Auth: SYNC_SECRET or CRON_SECRET."""
+    """Data-freshness watchdog — the alarm the 2026-06 silent stall lacked.
+    Auth: SYNC_SECRET or CRON_SECRET. (Also runs automatically after each 2h sync.)"""
     expected = {os.environ.get("SYNC_SECRET"), os.environ.get("CRON_SECRET")} - {None, ""}
     if not expected or (authorization or "").removeprefix("Bearer ") not in expected:
         raise HTTPException(401, "bad cron token")
-    now = datetime.now(timezone.utc)
-    cutoff = (now - timedelta(days=4)).isoformat()
     with pg() as conn:
-        cur = conn.cursor()
-        cur.execute("CREATE TABLE IF NOT EXISTS monitor_state (key TEXT PRIMARY KEY, value TEXT)")
-        cur.execute("SELECT max(match_date) AS m FROM matches")
-        maxd = cur.fetchone()["m"]
-        cur.execute("""SELECT count(*) AS n FROM players p JOIN matches m ON m.match_id=p.match_id
-                       WHERE p.canonical_id IS NULL AND m.match_date > %s""", (cutoff,))
-        unassigned = cur.fetchone()["n"]
-        stale_hours = None
-        if maxd:
-            try:
-                dt = datetime.fromisoformat(str(maxd).replace("Z", "+00:00"))
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                stale_hours = round((now - dt).total_seconds() / 3600, 1)
-            except Exception:
-                pass
-        problems = []
-        if stale_hours is None or stale_hours > 4:
-            problems.append(f"newest match is {stale_hours if stale_hours is not None else '?'}h old — ingestion may be stalled")
-        if unassigned > 200:
-            problems.append(f"{unassigned} recent player rows have no profile link — canonicalize may be stalled")
-        # Throttle: alert at most once every 3h while unhealthy.
-        alerted = False
-        if problems:
-            cur.execute("SELECT value FROM monitor_state WHERE key='last_health_alert'")
-            row = cur.fetchone()
-            last = None
-            if row and row["value"]:
-                try:
-                    last = datetime.fromisoformat(row["value"])
-                except Exception:
-                    pass
-            if last is None or (now - last).total_seconds() > 3 * 3600:
-                try:
-                    import notify
-                    if notify.data_health_alert(problems, maxd):
-                        alerted = True
-                        cur.execute("""INSERT INTO monitor_state (key, value) VALUES ('last_health_alert', %s)
-                                       ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value""", (now.isoformat(),))
-                except Exception:
-                    pass
-        conn.commit()
-    return {"healthy": not problems, "stale_hours": stale_hours,
-            "recent_unassigned": unassigned, "problems": problems, "alerted": alerted}
+        return _evaluate_freshness(conn)
 
 
 # ── Rankings ───────────────────────────────────────────────────────────────────
@@ -4695,6 +4699,15 @@ def admin_sync(authorization: str | None = Header(default=None),
     # failure here doesn't roll back the sync, just surfaces in the response
     # so admin/observability tools can alert on it.
     summary["steps"].append({"step": "invariants", **_run_script("tests/test_invariants.py", timeout=60)})
+
+    # Step 7 — freshness watchdog: right after a sync, if the pipeline is STILL
+    # stale/behind, that's a real problem → alert (throttled). This is the alarm
+    # the 2026-06 silent stall lacked.
+    try:
+        with pg() as conn:
+            summary["steps"].append({"step": "freshness", **_evaluate_freshness(conn)})
+    except Exception as e:
+        summary["steps"].append({"step": "freshness", "error": str(e)})
 
     summary["ended_at"] = datetime.now(timezone.utc).isoformat()
     return summary
