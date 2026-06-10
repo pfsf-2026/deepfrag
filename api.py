@@ -3643,6 +3643,68 @@ def ladder_team_stats(ladder_id: int, response: Response):
     return {"teams": out}
 
 
+@app.get("/api/ladder/{ladder_id}/player-stats")
+def ladder_player_stats(ladder_id: int, response: Response):
+    """Per-player, per-map averages from KTX stats across the ladder's reported
+    matches (decisive maps only). Same columns as Team Stats, ranked by efficiency."""
+    import ladder as _ladder
+    response.headers["Cache-Control"] = "public, max-age=20"
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT hub_game_ids FROM ladder_matches WHERE ladder_id=%s", (ladder_id,))
+        game_ids = set()
+        for r in cur.fetchall():
+            game_ids.update(int(g) for g in (r["hub_game_ids"] or []) if g is not None)
+        # canonical_id -> (team name, tag) from active rosters
+        cur.execute("SELECT name, tag, members FROM ladder_teams WHERE ladder_id=%s AND status='active'", (ladder_id,))
+        cid_team = {}
+        for t in cur.fetchall():
+            for m in (t["members"] or []):
+                cid_team[m] = (t["name"], t["tag"])
+        if not game_ids:
+            return {"players": []}
+        cur.execute("""SELECT p.canonical_id AS cid, mt.hub_game_id AS g,
+                              p.player_frags AS f, p.player_deaths AS d, p.player_suicides AS sui,
+                              p.player_teamkills AS tk, p.player_damage_given AS gvn, p.player_damage_taken AS tkn,
+                              p.player_ya_taken AS ya, p.player_ra_taken AS ra, p.player_health100_taken AS mh,
+                              p.player_sg_hits AS sgh, p.player_sg_attacks AS sga,
+                              p.player_lg_hits AS lgh, p.player_lg_attacks AS lga,
+                              p.player_rl_directs AS rlh, p.player_rl_attacks AS rla, p.player_quad_taken AS q,
+                              COALESCE(pc.display_name, p.player_name) AS display
+                       FROM players p
+                       JOIN matches mt ON mt.match_id = p.match_id
+                       LEFT JOIN players_canonical pc ON pc.canonical_id = p.canonical_id
+                       WHERE mt.hub_game_id = ANY(%s) AND p.canonical_id IS NOT NULL""",
+                    (list(game_ids),))
+        from collections import defaultdict
+        byp = defaultdict(list)
+        disp = {}
+        for r in cur.fetchall():
+            byp[r["cid"]].append(r)
+            disp[r["cid"]] = r["display"]
+        out = []
+        for cid, g in byp.items():
+            n = len(g)
+            def avg(k): return round(sum((x[k] or 0) for x in g) / n, 1)
+            sf = sum(x["f"] or 0 for x in g)
+            sd = sum(x["d"] or 0 for x in g)
+            team = cid_team.get(cid)
+            out.append({
+                "canonical_id": cid, "name": disp.get(cid, cid),
+                "team": team[0] if team else None, "tag": team[1] if team else None, "maps": n,
+                "eff": _pct(sf, sf + sd), "frags": avg("f"), "deaths": avg("d"),
+                "suicides": avg("sui"), "tk": avg("tk"), "dmg_given": avg("gvn"), "dmg_taken": avg("tkn"),
+                "ya": avg("ya"), "ra": avg("ra"), "mh": avg("mh"),
+                "sg": _pct(sum(x["sgh"] or 0 for x in g), sum(x["sga"] or 0 for x in g)),
+                "lg": _pct(sum(x["lgh"] or 0 for x in g), sum(x["lga"] or 0 for x in g)),
+                "rl": _pct(sum(x["rlh"] or 0 for x in g), sum(x["rla"] or 0 for x in g)),
+                "quad": avg("q"),
+            })
+    out.sort(key=lambda x: -(x.get("eff") or 0))
+    return {"players": out}
+
+
 @app.post("/api/ladder/{ladder_id}/challenge")
 def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=None),
                      challenger_id: int = Body(..., embed=True),

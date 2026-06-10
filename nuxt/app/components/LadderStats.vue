@@ -5,18 +5,21 @@ const props = defineProps({ ladderId: { type: Number, required: true } })
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 
-const teamStats = ref([]); const mapStats = ref(null); const matches = ref([])
+const teamStats = ref([]); const playerStats = ref([]); const mapStats = ref(null); const matches = ref([])
 const loading = ref(true); const openMatchId = ref(null)
+const statView = ref('team')   // 'team' | 'players'
 
 async function load() {
   loading.value = true
   try {
-    const [ts, ms, mr] = await Promise.all([
+    const [ts, ps, ms, mr] = await Promise.all([
       $fetch(`${base}/api/ladder/${props.ladderId}/team-stats`),
+      $fetch(`${base}/api/ladder/${props.ladderId}/player-stats`),
       $fetch(`${base}/api/ladder/${props.ladderId}/map-stats`),
       $fetch(`${base}/api/ladder/${props.ladderId}/matches`),
     ])
-    teamStats.value = ts.teams || []; mapStats.value = ms; matches.value = mr.matches || []
+    teamStats.value = ts.teams || []; playerStats.value = ps.players || []
+    mapStats.value = ms; matches.value = mr.matches || []
   } catch (e) { console.error('[ladderstats]', e) } finally { loading.value = false }
 }
 onMounted(load)
@@ -32,6 +35,7 @@ const COLS = [
 const sortKey = ref('eff'); const sortDir = ref(-1)
 function sortBy(k) { if (sortKey.value === k) sortDir.value *= -1; else { sortKey.value = k; sortDir.value = -1 } }
 const sortedTeams = computed(() => [...teamStats.value].sort((a, b) => ((a[sortKey.value] ?? -1) - (b[sortKey.value] ?? -1)) * sortDir.value))
+const sortedPlayers = computed(() => [...playerStats.value].sort((a, b) => ((a[sortKey.value] ?? -1) - (b[sortKey.value] ?? -1)) * sortDir.value))
 const anyData = computed(() => teamStats.value.some(t => t.maps > 0))
 function fmtCell(v, c) { if (v == null) return '—'; if (c.pct) return v + '%'; if (c.fmt === 'int') return Math.round(v).toLocaleString(); return v }
 function logoUrl(id) { return `${base}/api/ladder/team/${id}/logo` }
@@ -47,8 +51,15 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
     </div>
     <template v-else>
       <section class="panel">
-        <h2>Team Statistics <span class="meta">per-map averages · click a header to sort</span></h2>
-        <div class="scroll">
+        <h2>
+          <span class="toggle">
+            <button :class="{ on: statView === 'team' }" @click="statView = 'team'">Team Stats</button>
+            <button :class="{ on: statView === 'players' }" @click="statView = 'players'">Player Stats</button>
+          </span>
+          <span class="meta">per-map averages · click a header to sort</span>
+        </h2>
+        <!-- Team Statistics -->
+        <div v-if="statView === 'team'" class="scroll">
           <table class="stats">
             <thead><tr>
               <th class="team">Team</th>
@@ -57,12 +68,30 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
             </tr></thead>
             <tbody>
               <tr v-for="t in sortedTeams" :key="t.team_id">
-                <td class="team"><span class="tc"><img v-if="t.has_logo" :src="logoUrl(t.team_id)" class="lg" alt=""><span v-if="t.tag" class="tag">{{ t.tag }}</span> {{ t.name }}</span></td>
+                <td class="team"><span class="tc"><img v-if="t.has_logo" :src="logoUrl(t.team_id)" class="lg" alt=""><span class="tag">{{ t.tag || '—' }}</span> {{ t.name }}</span></td>
                 <td v-for="c in COLS" :key="c.k" :class="[c.cls, { colgrp: c.grp }]">{{ fmtCell(t[c.k], c) }}</td>
                 <td class="muted">{{ t.maps }}</td>
               </tr>
             </tbody>
           </table>
+        </div>
+        <!-- Player Statistics -->
+        <div v-else class="scroll">
+          <table v-if="playerStats.length" class="stats">
+            <thead><tr>
+              <th class="team">Player</th>
+              <th v-for="c in COLS" :key="c.k" :class="[{ sorted: sortKey === c.k, colgrp: c.grp }]" @click="sortBy(c.k)">{{ c.l }}<span v-if="sortKey === c.k">{{ sortDir < 0 ? ' ▾' : ' ▴' }}</span></th>
+              <th>Maps</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="p in sortedPlayers" :key="p.canonical_id">
+                <td class="team"><span class="tc"><NuxtLink :to="`/p/${p.canonical_id}`" class="pl-name">{{ p.name }}</NuxtLink><span v-if="p.tag" class="tag sm">{{ p.tag }}</span></span></td>
+                <td v-for="c in COLS" :key="c.k" :class="[c.cls, { colgrp: c.grp }]">{{ fmtCell(p[c.k], c) }}</td>
+                <td class="muted">{{ p.maps }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="muted small" style="padding:8px 0;">No player stats yet.</div>
         </div>
       </section>
 
@@ -105,6 +134,12 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; margin-bottom: 16px; }
 .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-3); margin: 0 0 14px; font-weight: 800; display: flex; gap: 8px; }
 .panel h2 .meta { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.toggle { display: inline-flex; gap: 2px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+.toggle button { background: none; border: 0; color: var(--fg-3); font-family: inherit; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 6px; cursor: pointer; text-transform: none; letter-spacing: 0; }
+.toggle button.on { background: var(--accent); color: var(--bg); }
+.pl-name { color: var(--fg); text-decoration: none; font-weight: 700; }
+.pl-name:hover { color: var(--accent); }
+.tag.sm { font-size: 9px; }
 .two { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
 @media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
 .scroll { overflow-x: auto; }
