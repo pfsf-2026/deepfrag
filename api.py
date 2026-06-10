@@ -467,19 +467,23 @@ def debug_ingest(response: Response):
     linking them? Disambiguates 'stuck profiles' (ingestion vs canonicalization).
     Aggregate counts only — safe to expose."""
     response.headers["Cache-Control"] = "no-store"
+    # match_date is stored as ISO-8601 TEXT, so compare lexically against a string
+    # cutoff (works for same-format ISO timestamps; avoids a text→ts cast that
+    # would blow up on any odd row).
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=4)).isoformat()
     with pg() as conn:
         cur = conn.cursor()
         cur.execute("SELECT max(match_date) AS max_date, count(*) AS total FROM matches")
         a = cur.fetchone()
-        cur.execute("SELECT count(*) AS n FROM matches WHERE match_date > now() - interval '4 days'")
+        cur.execute("SELECT count(*) AS n FROM matches WHERE match_date > %s", (cutoff,))
         recent = cur.fetchone()["n"]
         cur.execute("""SELECT count(*) AS n FROM players p JOIN matches m ON m.match_id=p.match_id
-                       WHERE p.canonical_id IS NULL AND m.match_date > now() - interval '4 days'""")
+                       WHERE p.canonical_id IS NULL AND m.match_date > %s""", (cutoff,))
         recent_unassigned = cur.fetchone()["n"]
         cur.execute("SELECT count(*) AS n FROM players WHERE canonical_id IS NULL")
         unassigned = cur.fetchone()["n"]
     return {
-        "max_match_date": a["max_date"].isoformat() if a["max_date"] else None,
+        "max_match_date": a["max_date"],
         "total_matches": a["total"],
         "matches_last_4d": recent,                 # >0 → ingestion is working
         "recent_player_rows_unassigned": recent_unassigned,  # >0 → canonicalize is behind
