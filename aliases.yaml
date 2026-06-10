@@ -116,3 +116,11 @@ nin:
     - nin
     - nintendo
     - nin7endo
+
+dusty:
+  # Merged 2026-06-10: pierre is dusty (same QW login 'dusty').
+  display: dusty
+  login: dusty
+  variants:
+    - dusty
+    - pierre
