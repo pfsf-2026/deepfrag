@@ -8,7 +8,7 @@ const mode = ref('1on1')
 const mapFilter = ref('all')
 const regionFilter = ref('all')
 const minMatches = ref(100)
-const window = ref('all')
+const timeWindow = ref('all')
 const maps = ref([])
 const data = ref(null)
 const pending = ref(true)
@@ -30,7 +30,7 @@ async function loadStats() {
       map: mapFilter.value,
       region: regionFilter.value,
       min_matches: String(minMatches.value),
-      window: window.value,
+      window: timeWindow.value,
       top: '10',
     })
     data.value = await $fetch(`${apiBase}/api/stats/leaderboards?${params}`)
@@ -50,12 +50,12 @@ const pageSize = ref(100)
 async function loadTable() {
   if (!apiBase && !isBrowser) return
   try {
-    const params = new URLSearchParams({ mode: mode.value, map: mapFilter.value, region: regionFilter.value, min_matches: String(minMatches.value), window: window.value })
+    const params = new URLSearchParams({ mode: mode.value, map: mapFilter.value, region: regionFilter.value, min_matches: String(minMatches.value), window: timeWindow.value })
     tableData.value = await $fetch(`${apiBase}/api/stats/table?${params}`)
   } catch (e) { console.error('[stats-table]', e); tableData.value = null }
 }
 watch(view, v => { if (v === 'table' && !tableData.value) loadTable() })
-watch([mode, mapFilter, regionFilter, minMatches, window], () => { if (view.value === 'table') loadTable() })
+watch([mode, mapFilter, regionFilter, minMatches, timeWindow], () => { if (view.value === 'table') loadTable() })
 function setSort(col) {
   if (tableSort.value.key === col.id) tableSort.value = { key: col.id, dir: tableSort.value.dir === 'desc' ? 'asc' : 'desc' }
   else tableSort.value = { key: col.id, dir: col.direction }   // default to the stat's natural direction
@@ -90,7 +90,7 @@ onMounted(async () => {
   await loadMaps()
   await loadStats()
 })
-watch([mode, mapFilter, regionFilter, minMatches, window], loadStats)
+watch([mode, mapFilter, regionFilter, minMatches, timeWindow], loadStats)
 watch(mode, loadMaps)
 
 function profileHref(cid) { return `/p/${encodeURIComponent(cid)}` }
@@ -143,7 +143,7 @@ useHead({ title: 'Stats leaderboards · DeepFrag' })
       </div>
       <div class="dd-group">
         <label>Window</label>
-        <select v-model="window" class="dd">
+        <select v-model="timeWindow" class="dd">
           <option value="30d">Last 30d</option>
           <option value="90d">Last 90d</option>
           <option value="6mo">Last 6mo</option>
