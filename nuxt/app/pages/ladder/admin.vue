@@ -133,14 +133,46 @@ async function createChallenge() {
     note('challenge created'); newChal.value = { challenger: null, challenged: null }; await load()
   } catch (e) { err.value = e?.data?.detail || 'create challenge failed' }
 }
-function startReport(c) { report.value = c; reportForm.value = { winner_id: c.challenger_id, score_a: 2, score_b: 0, hub: '' } }
+// Report flow: pull candidate hub games (may be >3 — warmups/re-dos) and let the
+// admin tick the decisive Bo3 maps in order. Only ticked games count.
+const candGames = ref([])        // [{hub_game_id, map, a_frags, b_frags, winner, played_at, pick(0-based order)}]
+const candLoading = ref(false)
+const candInfo = ref(null)       // {a_name,b_name,challenger_id,challenged_id}
+async function startReport(c) {
+  report.value = c
+  candGames.value = []; candInfo.value = null; candLoading.value = true
+  try {
+    const r = await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/candidate-games`, { headers: authHeader() })
+    candInfo.value = r
+    candGames.value = (r.candidates || []).map(g => ({ ...g, picked: false }))
+  } catch (e) { err.value = e?.data?.detail || 'could not load games' } finally { candLoading.value = false }
+}
+function toggleGame(g) { g.picked = !g.picked }
+// Derived from the ticked games (challenger=a, challenged=b).
+const picked = computed(() => candGames.value.filter(g => g.picked))
+const reportScore = computed(() => {
+  let a = 0, b = 0
+  for (const g of picked.value) { if (g.winner === 'a') a++; else if (g.winner === 'b') b++ }
+  return { a, b }
+})
+const reportWinnerId = computed(() => {
+  const { a, b } = reportScore.value
+  if (a === b) return null
+  return a > b ? candInfo.value?.challenger_id : candInfo.value?.challenged_id
+})
+const reportValid = computed(() => {
+  const { a, b } = reportScore.value
+  const n = picked.value.length
+  return n >= 2 && n <= 3 && Math.max(a, b) === 2   // Bo3: first to 2
+})
 async function submitReport() {
   const c = report.value
-  const maps = reportForm.value.hub ? reportForm.value.hub.split(',').map(h => ({ hub_game_id: h.trim() })).filter(m => m.hub_game_id) : []
+  if (!reportValid.value) { err.value = 'Pick the decisive Bo3 maps (a 2–0 or 2–1 result).'; return }
+  const maps = picked.value.map(g => ({ map: g.map, a_frags: g.a_frags, b_frags: g.b_frags, hub_game_id: g.hub_game_id }))
   try {
     await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/result`, {
       method: 'POST', headers: authHeader(),
-      body: { winner_id: Number(reportForm.value.winner_id), score_a: Number(reportForm.value.score_a), score_b: Number(reportForm.value.score_b), maps }
+      body: { winner_id: reportWinnerId.value, score_a: reportScore.value.a, score_b: reportScore.value.b, maps }
     })
     note('result recorded'); report.value = null; await load()
   } catch (e) { err.value = e?.data?.detail || 'report failed' }
@@ -380,22 +412,35 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
 
     <!-- Report modal -->
     <div v-if="report" class="modal-bg" @click.self="report = null">
-      <div class="modal">
-        <h3>Report result</h3>
-        <div class="form col">
-          <label>Winner
-            <select v-model="reportForm.winner_id">
-              <option :value="report.challenger_id">{{ teamName(report.challenger_id) }}</option>
-              <option :value="report.challenged_id">{{ teamName(report.challenged_id) }}</option>
-            </select>
-          </label>
-          <label>Score (challenger)<input v-model="reportForm.score_a" type="number"></label>
-          <label>Score (challenged)<input v-model="reportForm.score_b" type="number"></label>
-          <label>Hub game IDs (comma-sep, optional)<input v-model="reportForm.hub"></label>
+      <div class="modal" style="max-width:560px;">
+        <h3>Report result · {{ teamName(report.challenger_id) }} vs {{ teamName(report.challenged_id) }}</h3>
+        <p class="muted small" style="margin:-6px 0 12px;">Tick the <strong>decisive Bo3 maps</strong> (first to 2). Extra games (warmups, re-dos) won't count — only ticked games go into results &amp; stats.</p>
+
+        <div v-if="candLoading" class="muted small pad">Finding played games…</div>
+        <div v-else-if="!candGames.length" class="muted small" style="padding:8px 0;">
+          No ingested 2on2 games found for these two teams yet. They appear here ~within the 2h sync after the match is played (rosters must be linked to profiles).
         </div>
+        <div v-else class="cand-list">
+          <label v-for="g in candGames" :key="g.hub_game_id" class="cand" :class="{ on: g.picked }">
+            <input type="checkbox" :checked="g.picked" @change="toggleGame(g)">
+            <span class="cand-map">{{ g.map || '?' }}</span>
+            <span class="cand-score">
+              <b :class="{ win: g.winner==='a' }">{{ g.a_frags }}</b>–<b :class="{ win: g.winner==='b' }">{{ g.b_frags }}</b>
+            </span>
+            <span class="cand-win">{{ g.winner==='a' ? teamName(report.challenger_id) : g.winner==='b' ? teamName(report.challenged_id) : 'tie' }}</span>
+            <span class="cand-time">{{ new Date(g.played_at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) }}</span>
+          </label>
+        </div>
+
+        <div v-if="candGames.length" class="report-sum" :class="{ ok: reportValid, bad: picked.length && !reportValid }">
+          <span>{{ teamName(report.challenger_id) }} <b>{{ reportScore.a }}</b> – <b>{{ reportScore.b }}</b> {{ teamName(report.challenged_id) }}</span>
+          <span v-if="reportValid" class="winner">🏆 {{ teamName(reportWinnerId) }}</span>
+          <span v-else-if="picked.length" class="hint">need a 2–0 or 2–1 (pick 2–3 maps)</span>
+        </div>
+
         <div class="m-actions">
           <button class="btn ghost" @click="report = null">Cancel</button>
-          <button class="btn" @click="submitReport">Save</button>
+          <button class="btn" :disabled="!reportValid" @click="submitReport">Save result</button>
         </div>
       </div>
     </div>
@@ -431,6 +476,20 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .btn { background: var(--accent); color: var(--bg); border: 0; padding: 8px 14px; border-radius: 7px; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; }
 .btn.sm { padding: 5px 11px; font-size: 12px; }
 .btn.ghost { background: transparent; color: var(--fg-2); border: 1px solid var(--border); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.cand-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; margin-bottom: 12px; }
+.cand { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; cursor: pointer; font-size: 13px; }
+.cand.on { border-color: var(--accent); background: rgba(20,230,192,0.08); }
+.cand-map { font-family: 'JetBrains Mono', monospace; font-weight: 700; width: 76px; }
+.cand-score { font-family: 'JetBrains Mono', monospace; width: 72px; color: var(--fg-3); }
+.cand-score b { color: var(--fg-2); } .cand-score b.win { color: var(--accent); }
+.cand-win { flex: 1; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cand-time { color: var(--fg-3); font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+.report-sum { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border); font-size: 14px; margin-bottom: 12px; }
+.report-sum.ok { border-color: rgba(34,197,94,0.5); }
+.report-sum.bad { border-color: rgba(245,158,11,0.5); }
+.report-sum .winner { margin-left: auto; color: var(--win); font-weight: 700; }
+.report-sum .hint { margin-left: auto; color: var(--draw); font-size: 12px; }
 .btn.danger { background: rgba(239,68,68,0.15); color: var(--loss); }
 .btn.danger:hover { background: rgba(239,68,68,0.28); }
 .badge { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }

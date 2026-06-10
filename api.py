@@ -3855,6 +3855,61 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
     return {"challenge_id": challenge_id, "agreed_at": slot, "server": server, "status": "scheduled"}
 
 
+@app.get("/api/admin/ladder/challenge/{challenge_id}/candidate-games")
+def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = Header(default=None)):
+    """Ingested 2on2 hub games involving BOTH teams' rostered players, around the
+    scheduled time — candidates for the admin to mark as the official Bo3 maps.
+    There may be MORE than 3 (warmups, re-dos); the admin picks the decisive set
+    and only those count toward results + stats."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.agreed_at,
+                              ca.name AS a_name, cd.name AS b_name,
+                              ca.members AS a_members, cd.members AS b_members
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        a_roster = list(ch["a_members"] or [])
+        b_roster = list(ch["b_members"] or [])
+        if not a_roster or not b_roster:
+            return {"challenge_id": challenge_id, "candidates": [], "note": "rosters not fully linked yet"}
+        # Time window: ±~18h around the agreed time if set, else last 3 days. (Plays
+        # often drift from the scheduled slot.) match_date is ISO text → lexical compare.
+        if ch.get("agreed_at"):
+            lo = (ch["agreed_at"] - timedelta(hours=18)).isoformat()
+            hi = (ch["agreed_at"] + timedelta(hours=30)).isoformat()
+        else:
+            lo = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+            hi = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        cur.execute("""SELECT mt.hub_game_id, mt.match_map, mt.match_date,
+                              SUM(CASE WHEN p.canonical_id = ANY(%(a)s) THEN p.player_frags ELSE 0 END) AS a_frags,
+                              SUM(CASE WHEN p.canonical_id = ANY(%(b)s) THEN p.player_frags ELSE 0 END) AS b_frags,
+                              COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(a)s)) AS a_n,
+                              COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(b)s)) AS b_n
+                       FROM matches mt JOIN players p ON p.match_id = mt.match_id
+                       WHERE mt.match_mode='2on2' AND mt.hub_game_id IS NOT NULL
+                         AND mt.match_date > %(lo)s AND mt.match_date < %(hi)s
+                       GROUP BY mt.hub_game_id, mt.match_map, mt.match_date
+                       HAVING COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(a)s)) >= 1
+                          AND COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(b)s)) >= 1
+                       ORDER BY mt.match_date""",
+                    {"a": a_roster, "b": b_roster, "lo": lo, "hi": hi})
+        cands = []
+        for r in cur.fetchall():
+            a, b = r["a_frags"] or 0, r["b_frags"] or 0
+            cands.append({"hub_game_id": r["hub_game_id"], "map": r["match_map"],
+                          "played_at": str(r["match_date"]), "a_frags": a, "b_frags": b,
+                          "winner": "a" if a > b else "b" if b > a else "tie"})
+    return {"challenge_id": challenge_id, "a_name": ch["a_name"], "b_name": ch["b_name"],
+            "challenger_id": ch["challenger_id"], "challenged_id": ch["challenged_id"], "candidates": cands}
+
+
 @app.post("/api/admin/ladder/challenge/{challenge_id}/result")
 def admin_ladder_result(challenge_id: int, authorization: str | None = Header(default=None),
                         winner_id: int = Body(..., embed=True),
