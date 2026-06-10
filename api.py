@@ -3407,7 +3407,7 @@ def ladder_match_detail(match_id: int, response: Response):
     """Single-match deep-dive: per-map scorelines + per-player KTX stats for each
     map (joined via the map's hub_game_id)."""
     import ladder as _ladder
-    response.headers["Cache-Control"] = "public, max-age=120"
+    response.headers["Cache-Control"] = "public, max-age=20"
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
@@ -3461,7 +3461,7 @@ def ladder_map_stats(ladder_id: int, response: Response):
     """Map analytics over reported maps: most played, first pick, decider, closest,
     blowouts, high scoring."""
     import ladder as _ladder
-    response.headers["Cache-Control"] = "public, max-age=120"
+    response.headers["Cache-Control"] = "public, max-age=20"
     from collections import Counter
     with pg() as conn:
         cur = conn.cursor()
@@ -3477,6 +3477,10 @@ def ladder_map_stats(ladder_id: int, response: Response):
     total_maps = 0
     for r in rows:
         maps = list(r["maps"] or [])
+        aw = bw = 0
+        clinched = False   # decider = the CLINCHING map (a team's 2nd win), not the
+                           # last one played — dead-rubber games after the clinch
+                           # still count for played/scoring but aren't the decider.
         for i, mp in enumerate(maps):
             name = mp.get("map")
             if not name:
@@ -3485,12 +3489,17 @@ def ladder_map_stats(ladder_id: int, response: Response):
             played[name] += 1; total_maps += 1
             if i == 0:
                 firstpick[name] += 1
-            if len(maps) >= 3 and i == len(maps) - 1:
-                decider[name] += 1
             if a is not None and b is not None:
                 totals[name] += (a + b); counts[name] += 1
                 games.append({"map": name, "a": a, "b": b, "diff": abs(a - b),
                               "total": a + b, "label": f"{r['a']} vs {r['b']}"})
+                if not clinched:
+                    if a > b:
+                        aw += 1
+                    elif b > a:
+                        bw += 1
+                    if aw == 2 or bw == 2:
+                        decider[name] += 1; clinched = True
     def top(counter, n=6):
         return [{"map": k, "count": v, "pct": _pct(v, total_maps)} for k, v in counter.most_common(n)]
     high = sorted(((k, round(totals[k] / counts[k], 1)) for k in counts), key=lambda x: -x[1])
@@ -3510,7 +3519,7 @@ def ladder_team_stats(ladder_id: int, response: Response):
     """Per-team, per-map averages from the rostered players' KTX stats across the
     team's reported matches. Mirrors thebig4's Team Statistics table."""
     import ladder as _ladder
-    response.headers["Cache-Control"] = "public, max-age=120"
+    response.headers["Cache-Control"] = "public, max-age=20"
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
@@ -3645,7 +3654,7 @@ def ladder_server_suggestion(challenge_id: int, response: Response):
     import ladder as _ladder
     import ping_suggest as PS
     import auth as A
-    response.headers["Cache-Control"] = "public, max-age=120"
+    response.headers["Cache-Control"] = "public, max-age=20"
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
@@ -3973,11 +3982,19 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
         if winner_id not in (ch["challenger_id"], ch["challenged_id"]):
             raise HTTPException(400, "winner must be one of the two teams")
         hub_ids = [m.get("hub_game_id") for m in maps if m.get("hub_game_id")]
+        # played_at = when the LAST counted game actually ended (drives the loss
+        # cooldown), not when the admin got around to reporting it. Falls back to
+        # now() if no hub games are linked.
+        played_at = None
+        if hub_ids:
+            cur.execute("SELECT max(match_date) AS m FROM matches WHERE hub_game_id = ANY(%s)", (hub_ids,))
+            mr = cur.fetchone()
+            played_at = mr["m"] if mr and mr["m"] else None
         cur.execute("""INSERT INTO ladder_matches
                        (ladder_id, challenge_id, team_a_id, team_b_id, maps, score_a, score_b, winner_id, hub_game_ids, played_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, now()) RETURNING id""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, COALESCE(%s::timestamptz, now())) RETURNING id""",
                     (ch["ladder_id"], challenge_id, ch["challenger_id"], ch["challenged_id"],
-                     json.dumps(maps), score_a, score_b, winner_id, json.dumps(hub_ids)))
+                     json.dumps(maps), score_a, score_b, winner_id, json.dumps(hub_ids), played_at))
         match_id = cur.fetchone()["id"]
         moves = {}
         if winner_id == ch["challenger_id"]:

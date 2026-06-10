@@ -254,10 +254,16 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
               <span class="c-status">
                 <span v-if="teamStatus(t)" class="badge challenged">{{ teamStatus(t) }}</span>
                 <button v-else-if="canChallenge(t)" class="chal-btn" @click="doChallenge(t)">⚔ Challenge</button>
-                <span v-else-if="teamCooldown(t)" class="badge cooldown" title="Lost recently — can't issue challenges (can still be challenged)">⏳ {{ teamCooldown(t) }}</span>
+                <span v-else-if="teamCooldown(t)" class="badge cooldown" title="Lost recently — can't issue challenges (can still be challenged)">⏳ Cooldown · {{ teamCooldown(t) }}</span>
                 <span v-else class="badge open">Open</span>
               </span>
             </div>
+          </div>
+          <div class="legend">
+            <span class="lg-item"><span class="badge open">Open</span> free to challenge / be challenged</span>
+            <span class="lg-item"><span class="badge challenged">📅 vs</span> match scheduled</span>
+            <span class="lg-item"><span class="badge challenged">⚔</span> in an active challenge</span>
+            <span class="lg-item"><span class="badge cooldown">⏳ Cooldown</span> lost recently — can't <em>issue</em> challenges (still challengeable)</span>
           </div>
         </section>
 
@@ -490,7 +496,11 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .plink { color: var(--fg-2); text-decoration: none; } .plink:hover { color: var(--accent); text-decoration: underline; }
 .c-members { color: var(--fg-2); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .c-members .dot { color: var(--fg-3); }
 .c-status { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.badge { font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { font-size: 12px; padding: 4px 11px; border-radius: 999px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 12px 18px 4px; margin: 0 -18px; border-top: 1px solid var(--border); }
+.legend .lg-item { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg-3); }
+.legend .badge { font-size: 11px; padding: 2px 8px; }
+.legend em { font-style: italic; }
 .badge.open { background: var(--panel-2); color: var(--fg-3); }
 .badge.challenged { background: rgba(239,68,68,0.15); color: #fca5a5; }
 .badge.cooldown { background: rgba(245,158,11,0.14); color: var(--draw); font-family: 'JetBrains Mono', monospace; }
