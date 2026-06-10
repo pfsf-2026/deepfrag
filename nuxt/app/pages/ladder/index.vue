@@ -151,14 +151,30 @@ async function openMyTeamSettings() {
 watch(openTeamSettings, (v) => { if (v) openMyTeamSettings() })
 onMounted(() => { if (openTeamSettings.value) openMyTeamSettings() })
 
-// challenged_id -> list of incoming challenger names (to badge rows)
+// A team is busy if it's in ANY active challenge — as the challenged side OR the
+// challenger. Map both so the board never shows a committed team as "Open".
 const incoming = computed(() => {
   const m = {}
-  for (const c of challenges.value) {
-    (m[c.challenged_id] ||= []).push(c)
-  }
+  for (const c of challenges.value) (m[c.challenged_id] ||= []).push(c)
   return m
 })
+const outgoing = computed(() => {
+  const m = {}
+  for (const c of challenges.value) (m[c.challenger_id] ||= []).push(c)
+  return m
+})
+// This team's active challenge (either role), or null.
+function teamChallenge(t) {
+  return incoming.value[t.id]?.[0] || outgoing.value[t.id]?.[0] || null
+}
+// Row status label: scheduled vs / challenged by / challenging.
+function teamStatus(t) {
+  const c = teamChallenge(t)
+  if (!c) return null
+  const other = c.challenger_id === t.id ? teamName(c.challenged_id) : teamName(c.challenger_id)
+  if (c.agreed_at) return `📅 Scheduled vs ${other}`
+  return c.challenged_id === t.id ? `⚔ Challenged by ${other}` : `⚔ Challenging ${other}`
+}
 
 function teamName(id) {
   return teams.value.find(t => t.id === id)?.name || `#${id}`
@@ -280,10 +296,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <span v-if="!(t.members || []).length">—</span>
           </span>
           <span class="c-status">
-            <button v-if="canChallenge(t)" class="chal-btn" @click="doChallenge(t)">⚔ Challenge</button>
-            <span v-else-if="incoming[t.id]?.length" class="badge challenged">
-              ⚔ Challenged by {{ incoming[t.id].map(c => teamName(c.challenger_id)).join(', ') }}
-            </span>
+            <span v-if="teamStatus(t)" class="badge challenged">{{ teamStatus(t) }}</span>
+            <button v-else-if="canChallenge(t)" class="chal-btn" @click="doChallenge(t)">⚔ Challenge</button>
             <span v-else class="badge open">Open</span>
           </span>
         </div>
