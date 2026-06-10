@@ -733,7 +733,23 @@ def _ladder_tick(cur):
     import notify
     _ladder.ensure_schema(cur)
     now = datetime.now(timezone.utc)
-    counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0}
+    counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0, "playedat_fixed": 0}
+
+    # Self-heal: a match's played_at must equal its LAST counted game's end (drives
+    # the loss cooldown). Matches reported before the fix used report-time; correct
+    # them from the linked hub games. Idempotent — only updates when it differs.
+    cur.execute("SELECT id, hub_game_ids, played_at FROM ladder_matches WHERE hub_game_ids IS NOT NULL")
+    for r in cur.fetchall():
+        ids = [int(x) for x in (r["hub_game_ids"] or []) if x is not None]
+        if not ids:
+            continue
+        cur.execute("SELECT max(match_date) AS m FROM matches WHERE hub_game_id = ANY(%s)", (ids,))
+        mr = cur.fetchone()
+        if mr and mr["m"]:
+            cur.execute("""UPDATE ladder_matches SET played_at = %s::timestamptz
+                           WHERE id=%s AND played_at IS DISTINCT FROM %s::timestamptz""",
+                        (mr["m"], r["id"], mr["m"]))
+            counts["playedat_fixed"] += cur.rowcount
 
     # Scheduled matches → reminders. Two tiers: ~1 hour out and ~10 minutes out.
     # Windows are sized so the */5 cron always lands at least one tick inside them
