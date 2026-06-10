@@ -355,7 +355,8 @@ watch(mode, loadH2H)
       <div v-if="sortedMaps.length === 0" class="placeholder">
         No H2H matches between {{ data.player_a.display }} and {{ data.player_b.display }} on top-20 1on1 maps yet.
       </div>
-      <table v-else class="matchup">
+      <div v-else class="table-wrap">
+      <table class="matchup">
         <thead>
           <tr>
             <th @click="setSort('map')" class="sortable">Map <span class="arrow" v-if="sortKey==='map'">{{ sortDir === 'desc' ? '▼' : '▲' }}</span></th>
@@ -407,6 +408,7 @@ watch(mode, loadH2H)
           </tr>
         </tbody>
       </table>
+      </div>
     </template>
   </div>
 </template>
@@ -610,4 +612,38 @@ table.matchup .pred .win-b { color: #a855f7; }
 
 .placeholder { padding: 60px; text-align: center; color: var(--fg-3); }
 .placeholder.err { color: var(--loss); }
+
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 760px) {
+  .page { padding: 20px 14px 64px; }
+  .head h1 { font-size: 22px; }
+
+  /* Picker: stack the two sides, VS divider between */
+  .picker-wrap { grid-template-columns: 1fr; gap: 12px; padding: 16px; }
+  .picker-vs { padding: 2px 0; }
+
+  /* Header bar: stack A / score / B vertically */
+  .head-bar { grid-template-columns: 1fr; gap: 16px; padding: 16px; text-align: center; }
+  .head-bar .p, .head-bar .p.right { justify-content: center; }
+  .head-bar .avatar { width: 46px; height: 46px; font-size: 22px; }
+  .head-bar .name { font-size: 17px; }
+  .head-bar .p .cons, .head-bar .p.right .cons { margin: 0 0 0 12px; font-size: 22px; }
+  .head-bar .center .h2h-score { font-size: 26px; }
+
+  /* Skill profile overlay: stack radar over the value grid */
+  .wo-body { grid-template-columns: 1fr; gap: 16px; justify-items: center; }
+  .wo-svg { width: 100%; max-width: 280px; height: auto; }
+  .wo-grid { grid-template-columns: repeat(3, 1fr); width: 100%; }
+
+  /* Strip: 6 cells -> 3x2 */
+  .strip { grid-template-columns: repeat(3, 1fr); }
+  .strip .cell { padding: 12px 8px; }
+  .strip .cell .v { font-size: 16px; }
+}
+
+@media (max-width: 400px) {
+  .wo-grid { grid-template-columns: repeat(2, 1fr); }
+  .strip { grid-template-columns: repeat(2, 1fr); }
+}
 </style>

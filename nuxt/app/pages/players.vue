@@ -132,4 +132,13 @@ useHead({ title: 'All Players · DeepFrag' })
 
 .placeholder { padding: 60px; text-align: center; color: var(--fg-3); }
 .more { color: var(--fg-3); font-size: 12px; text-align: center; margin-top: 24px; }
+
+@media (max-width: 640px) {
+  .page { padding: 18px 12px 64px; }
+  .hero h1 { font-size: 22px; }
+  .hero .sub { font-size: 13px; }
+  .controls { gap: 10px; margin-bottom: 16px; }
+  .search { min-width: 0; flex: 1 1 100%; }
+  .count { margin-left: 0; }
+}
 </style>

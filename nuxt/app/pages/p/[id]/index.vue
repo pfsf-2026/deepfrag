@@ -1049,4 +1049,29 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
   color: var(--fg-3); font-size: 10px;
   text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
 }
+
+@media (max-width: 640px) {
+  .page { padding: 18px 12px 64px; }
+
+  /* Hero: smaller avatar + name, actions wrap below */
+  .hero { gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
+  .hero .avatar { width: 56px; height: 56px; font-size: 26px; border-radius: 12px; }
+  .hero .id h1 { font-size: 24px; }
+  .hero-actions { width: 100%; }
+
+  /* Rating tiles full width */
+  .rating-tile { min-width: 0; flex: 1 1 140px; }
+
+  /* Tabbar: window select drops to its own line */
+  .profile-tabbar { gap: 8px; }
+  .window-select { width: 100%; }
+
+  /* Coach lever rows: drop the wide fixed label column */
+  .lever { grid-template-columns: 1fr; gap: 4px; }
+  .lever-vals { text-align: left; }
+
+  /* Nav + metric cards: tighter padding */
+  .nav-card { padding: 18px; min-height: 0; }
+  .nc-title { font-size: 18px; }
+}
 </style>

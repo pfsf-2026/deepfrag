@@ -530,4 +530,16 @@ tr.detail-row td { padding: 0; border-bottom: 1px solid var(--border); backgroun
 .ai-card .ai-text { color: var(--fg-2); font-size: 12px; line-height: 1.5; }
 
 .empty { text-align: center; color: var(--fg-3); padding: 30px; font-style: italic; }
+
+@media (max-width: 640px) {
+  .page { padding: 18px 12px 64px; }
+  .hero h1 { font-size: 22px; }
+  /* Let the wide map table scroll instead of clipping */
+  .table-wrap { overflow-x: auto; }
+  /* Expanded detail: stack stat tiles + opponent cards */
+  .detail-stats { grid-template-columns: repeat(2, 1fr); }
+  .detail-extra { grid-template-columns: 1fr; }
+  .detail-rating .big { font-size: 30px; }
+  .detail-pad { padding: 14px 14px 16px; }
+}
 </style>

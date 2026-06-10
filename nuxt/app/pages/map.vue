@@ -93,4 +93,11 @@ useHead({ title: 'Player Map · DeepFrag' })
 .player:hover { border-color: var(--accent); color: var(--accent); }
 .player.nolink { pointer-events: none; color: var(--fg-3); }
 .player .pin { margin-right: 3px; }
+
+@media (max-width: 640px) {
+  .page { padding: 18px 12px 64px; }
+  .countries { grid-template-columns: 1fr; }
+  .hero h1 { font-size: 22px; }
+  .hero .sub { font-size: 13px; }
+}
 </style>

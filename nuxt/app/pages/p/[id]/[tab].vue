@@ -445,4 +445,12 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .cmp-val.prv { color: var(--fg-3); }
 .cmp-diff { text-align: right; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .cmp-diff.up { color: var(--win, #34e6b0); } .cmp-diff.down { color: var(--loss, #ff5d6c); }
+
+@media (max-width: 640px) {
+  .page { padding: 16px 12px 64px; }
+  .section-h h2 { font-size: 14px; }
+  .cmp-row { grid-template-columns: 1.4fr 1fr 1fr; font-size: 12px; }
+  .cmp-row .cmp-val.prv { display: none; }
+  .cmp-headrow .cmp-val.prv { display: none; }
+}
 </style>
