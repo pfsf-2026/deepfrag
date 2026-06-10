@@ -241,7 +241,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
               <span class="c-rung">{{ t.rung }}</span>
               <span class="c-team">
                 <img v-if="t.has_logo" :src="logoUrl(t.id)" class="tlogo" alt="">
-                <span v-if="t.tag" class="ttag">{{ t.tag }}</span>
+                <span v-else class="tlogo tlogo-ph">👑</span>
+                <span class="ttag">{{ t.tag || '—' }}</span>
                 <span class="tname">{{ t.name }}</span>
                 <button v-if="isMyTeam(t)" class="edit" title="Team settings" @click="editTeam(t)">✎</button>
               </span>
@@ -496,7 +497,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .row.top { background: rgba(245,158,11,0.07); } .row.top .c-rung { color: var(--draw); } .row.top .tname::before { content: '👑 '; }
 .c-team { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .tlogo { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; flex: 0 0 22px; }
-.ttag { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(20,230,192,0.12); border: 1px solid rgba(20,230,192,0.3); border-radius: 5px; padding: 1px 6px; flex: 0 0 auto; }
+.tlogo-ph { display: inline-flex; align-items: center; justify-content: center; background: var(--panel-3); font-size: 12px; opacity: 0.55; }
+.ttag { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(20,230,192,0.12); border: 1px solid rgba(20,230,192,0.3); border-radius: 5px; padding: 1px 4px; flex: 0 0 auto; min-width: 42px; text-align: center; box-sizing: border-box; }
 .tname { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .edit { background: none; border: 0; color: var(--fg-3); cursor: pointer; font-size: 13px; padding: 2px 4px; opacity: .7; } .edit:hover { color: var(--accent); opacity: 1; }
 .plink { color: var(--fg-2); text-decoration: none; } .plink:hover { color: var(--accent); text-decoration: underline; }

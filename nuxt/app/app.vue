@@ -161,16 +161,15 @@ body {
 /* Report-a-problem floating button — present everywhere, subtle until hover */
 .report-fab {
   position: fixed; right: 18px; bottom: 18px; z-index: 90;
-  display: flex; align-items: center; gap: 0;
-  background: var(--panel-2); color: var(--fg-2);
-  border: 1px solid var(--border); border-radius: 999px;
-  height: 42px; padding: 0 12px; cursor: pointer; font-family: inherit;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--panel-2); color: var(--fg);
+  border: 1px solid var(--accent); border-radius: 999px;
+  height: 42px; padding: 0 16px; cursor: pointer; font-family: inherit;
   box-shadow: 0 6px 20px rgba(0,0,0,0.4); transition: all 0.18s;
 }
 .report-fab .q { font-weight: 900; font-size: 17px; color: var(--accent); }
-.report-fab .lbl { max-width: 0; overflow: hidden; white-space: nowrap; opacity: 0; font-size: 13px; font-weight: 600; transition: all 0.18s; }
-.report-fab:hover { color: var(--fg); border-color: var(--accent); }
-.report-fab:hover .lbl { max-width: 160px; opacity: 1; margin-left: 8px; }
+.report-fab .lbl { white-space: nowrap; font-size: 13px; font-weight: 600; }
+.report-fab:hover { background: var(--panel-3); }
 .topbar .discord-btn {
   display: flex; align-items: center; gap: 7px;
   background: #5865f2; color: #fff; border: none;
@@ -195,7 +194,6 @@ body {
   .topbar .who .name { display: none; }        /* avatar-only to save room */
   .topbar .discord-btn span { display: none; } /* icon-only sign-in */
   .topbar .discord-btn { padding: 8px 10px; }
-  .report-fab { right: 12px; bottom: 12px; height: 38px; }
-  .report-fab .lbl { display: none; }          /* hover-expand label is moot on touch */
+  .report-fab { right: 12px; bottom: 12px; height: 38px; padding: 0 13px; }
 }
 </style>
