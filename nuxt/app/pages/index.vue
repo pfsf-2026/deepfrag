@@ -369,4 +369,33 @@ useHead({ title: 'Rankings · DeepFrag' })
 
 .placeholder { padding: 60px; text-align: center; color: var(--fg-3); }
 .more { padding: 16px; text-align: center; color: var(--fg-3); font-size: 12px; }
+
+/* ── Mobile ─────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .page { padding: 18px 12px 64px; }
+  .head h1 { font-size: 22px; }
+  .head .sub { font-size: 12px; }
+  .controls { flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .controls .search { flex: 1 1 140px; }
+  .controls .count { width: 100%; text-align: right; }
+  .header-row { display: none; }
+  .row {
+    grid-template-columns: 30px 40px minmax(0,1fr) auto;
+    grid-template-areas:
+      "rank avatar id     rating"
+      "rank avatar tier   rating"
+      "rank avatar winbar matches";
+    gap: 4px 10px; padding: 11px 12px;
+  }
+  .row:hover { transform: none; }
+  .row .rank   { grid-area: rank; font-size: 15px; align-self: center; }
+  .row .avatar { grid-area: avatar; width: 38px; height: 38px; font-size: 16px; align-self: center; }
+  .row .id     { grid-area: id; align-self: center; }
+  .row .id .name { font-size: 15px; }
+  .row .tier-cell { grid-area: tier; align-self: center; }
+  .row .tier-badge { font-size: 10px; padding: 3px 8px; }
+  .row .rating { grid-area: rating; font-size: 20px; align-self: center; }
+  .row .winbar { grid-area: winbar; align-self: center; }
+  .row .matches { grid-area: matches; align-self: center; text-align: right; }
+}
 </style>
