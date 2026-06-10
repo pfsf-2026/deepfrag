@@ -178,4 +178,24 @@ body {
   cursor: pointer; transition: background 0.15s;
 }
 .topbar .discord-btn:hover { background: #4752c4; }
+
+/* ── Mobile app shell ───────────────────────────────────────────────────── */
+@media (max-width: 760px) {
+  .topbar { padding: 10px 14px; gap: 10px 12px; flex-wrap: wrap; }
+  .topbar .brand { font-size: 16px; }
+  .topbar .spacer { flex: 1; }
+  /* nav drops to its own full-width scrollable strip below brand + auth */
+  .topbar .nav {
+    order: 5; flex-basis: 100%; overflow-x: auto; gap: 2px;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    margin: 2px -14px -4px; padding: 0 14px 2px;
+  }
+  .topbar .nav::-webkit-scrollbar { display: none; }
+  .topbar .nav a { flex: 0 0 auto; padding: 7px 11px; white-space: nowrap; font-size: 13px; }
+  .topbar .who .name { display: none; }        /* avatar-only to save room */
+  .topbar .discord-btn span { display: none; } /* icon-only sign-in */
+  .topbar .discord-btn { padding: 8px 10px; }
+  .report-fab { right: 12px; bottom: 12px; height: 38px; }
+  .report-fab .lbl { display: none; }          /* hover-expand label is moot on touch */
+}
 </style>
