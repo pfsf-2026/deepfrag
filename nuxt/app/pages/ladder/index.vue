@@ -208,6 +208,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
       <ClientOnly>
         <button v-if="loggedIn && user?.canonical_id" class="cta avail-cta" @click="showAvail = true">📅 Set your general availability</button>
       </ClientOnly>
+      <NuxtLink to="/ladder/stats" class="cta avail-cta" style="text-decoration:none;display:inline-block;">📊 Match &amp; team stats</NuxtLink>
     </header>
 
     <ClientOnly>

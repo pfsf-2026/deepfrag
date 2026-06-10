@@ -67,6 +67,7 @@ export default defineNuxtConfig({
     // (live data, captain-auth gated actions) so it's never stale at the edge.
     '/ladder': { prerender: true, ssr: false },
     '/ladder/admin': { prerender: true, ssr: false },
+    '/ladder/stats': { prerender: true, ssr: false },
     '/servers': { prerender: true },
     '/stats': { prerender: true },
     '/h2h': { prerender: true },
