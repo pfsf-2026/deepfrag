@@ -733,23 +733,52 @@ def _ladder_tick(cur):
     import notify
     _ladder.ensure_schema(cur)
     now = datetime.now(timezone.utc)
-    counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0, "playedat_fixed": 0}
+    counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0, "bo3_normalized": 0}
 
-    # Self-heal: a match's played_at must equal its LAST counted game's end (drives
-    # the loss cooldown). Matches reported before the fix used report-time; correct
-    # them from the linked hub games. Idempotent — only updates when it differs.
-    cur.execute("SELECT id, hub_game_ids, played_at FROM ladder_matches WHERE hub_game_ids IS NOT NULL")
+    # Self-heal: enforce Bo3-only. A match's maps = the DECISIVE set up to the
+    # clinching 2nd win; games after that are "for fun" and don't count. Trim
+    # them, recompute score/winner/hub_game_ids, and set played_at to the last
+    # DECISIVE game's end (drives the loss cooldown). Idempotent.
+    cur.execute("SELECT id, maps, team_a_id, team_b_id, score_a, score_b, winner_id, hub_game_ids FROM ladder_matches")
     for r in cur.fetchall():
-        ids = [int(x) for x in (r["hub_game_ids"] or []) if x is not None]
-        if not ids:
+        maps = list(r["maps"] or [])
+        if not maps:
             continue
-        cur.execute("SELECT max(match_date) AS m FROM matches WHERE hub_game_id = ANY(%s)", (ids,))
-        mr = cur.fetchone()
-        if mr and mr["m"]:
-            cur.execute("""UPDATE ladder_matches SET played_at = %s::timestamptz
-                           WHERE id=%s AND played_at IS DISTINCT FROM %s::timestamptz""",
-                        (mr["m"], r["id"], mr["m"]))
-            counts["playedat_fixed"] += cur.rowcount
+        aw = bw = 0
+        cut = len(maps)
+        for i, mp in enumerate(maps):
+            a, b = mp.get("a_frags"), mp.get("b_frags")
+            if a is None or b is None:
+                continue
+            if a > b:
+                aw += 1
+            elif b > a:
+                bw += 1
+            if aw == 2 or bw == 2:
+                cut = i + 1
+                break
+        decisive = maps[:cut]
+        na = sum(1 for mp in decisive if (mp.get("a_frags") or 0) > (mp.get("b_frags") or 0))
+        nb = sum(1 for mp in decisive if (mp.get("b_frags") or 0) > (mp.get("a_frags") or 0))
+        winner = r["team_a_id"] if na > nb else r["team_b_id"] if nb > na else r["winner_id"]
+        hub_ids = [mp.get("hub_game_id") for mp in decisive if mp.get("hub_game_id")]
+        pa = None
+        if hub_ids:
+            cur.execute("SELECT max(match_date) AS m FROM matches WHERE hub_game_id = ANY(%s)",
+                        ([int(x) for x in hub_ids],))
+            mm = cur.fetchone()
+            pa = mm["m"] if mm and mm["m"] else None
+        # Only write if something actually changed (trim or score or played_at).
+        cur.execute("""UPDATE ladder_matches
+                       SET maps=%s, score_a=%s, score_b=%s, winner_id=%s, hub_game_ids=%s,
+                           played_at=COALESCE(%s::timestamptz, played_at)
+                       WHERE id=%s AND (
+                         jsonb_array_length(maps) <> %s OR score_a IS DISTINCT FROM %s
+                         OR score_b IS DISTINCT FROM %s
+                         OR (%s::timestamptz IS NOT NULL AND played_at IS DISTINCT FROM %s::timestamptz))""",
+                    (json.dumps(decisive), na, nb, winner, json.dumps(hub_ids), pa,
+                     r["id"], len(decisive), na, nb, pa, pa))
+        counts["bo3_normalized"] += cur.rowcount
 
     # Scheduled matches → reminders. Two tiers: ~1 hour out and ~10 minutes out.
     # Windows are sized so the */5 cron always lands at least one tick inside them

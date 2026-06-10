@@ -166,12 +166,12 @@ const reportWinnerId = computed(() => {
 const reportValid = computed(() => {
   const { a, b } = reportScore.value
   const n = picked.value.length
-  // Admin picks 2 or 3 maps; just needs a clear winner (allows 2-0, 2-1, 3-0).
-  return n >= 2 && n <= 3 && a !== b
+  // Bo3 only: first to 2 (2-0 or 2-1). Extra games don't count.
+  return n >= 2 && n <= 3 && Math.max(a, b) === 2
 })
 async function submitReport() {
   const c = report.value
-  if (!reportValid.value) { err.value = 'Pick 2–3 maps with a clear winner (one team must win more).'; return }
+  if (!reportValid.value) { err.value = 'Pick the decisive Bo3 maps — a 2–0 or 2–1 (first to 2). Extra games don\'t count.'; return }
   const maps = picked.value.map(g => ({ map: g.map, a_frags: g.a_frags, b_frags: g.b_frags, hub_game_id: g.hub_game_id }))
   try {
     await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/result`, {
@@ -418,7 +418,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
     <div v-if="report" class="modal-bg" @click.self="report = null">
       <div class="modal" style="max-width:560px;">
         <h3>Report result · {{ teamName(report.challenger_id) }} vs {{ teamName(report.challenged_id) }}</h3>
-        <p class="muted small" style="margin:-6px 0 12px;">Tick the <strong>maps that count</strong> (2 or 3). Only ticked games go into results &amp; stats; extras (warmups, re-dos) won't. Auto-detect pre-ticks a suggestion — adjust freely.</p>
+        <p class="muted small" style="margin:-6px 0 12px;">Tick the <strong>decisive Bo3 maps</strong> (first to 2 — a 2–0 or 2–1). Extra games are just for fun and <strong>don't count</strong>. Auto-detect pre-ticks the decisive set; adjust if it grabbed a warm-up.</p>
 
         <div v-if="autoDetected" class="auto-banner">🤖 Auto-detected Bo3 — review the pre-ticked maps and confirm. Untick a warm-up / extra game if needed.</div>
         <div v-if="candLoading" class="muted small pad">Finding played games…</div>
@@ -440,7 +440,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
         <div v-if="candGames.length" class="report-sum" :class="{ ok: reportValid, bad: picked.length && !reportValid }">
           <span>{{ teamName(report.challenger_id) }} <b>{{ reportScore.a }}</b> – <b>{{ reportScore.b }}</b> {{ teamName(report.challenged_id) }}</span>
           <span v-if="reportValid" class="winner">🏆 {{ teamName(reportWinnerId) }}</span>
-          <span v-else-if="picked.length" class="hint">pick 2–3 maps with a clear winner</span>
+          <span v-else-if="picked.length" class="hint">need a 2–0 or 2–1 (Bo3, first to 2)</span>
         </div>
 
         <div class="m-actions">
