@@ -90,32 +90,54 @@ const challenges = ref([])
 const loading = ref(true)
 const err = ref(null)
 
-async function loadDetail(id) {
-  // cache-bust: the endpoint sends max-age=30, but right after a mutation
-  // (challenge/schedule/reorder) we need the fresh state, not the browser copy.
-  const d = await $fetch(`${base}/api/ladder/${id}`, { query: { _: Date.now() } })
+async function loadDetail(id, bust = true) {
+  // bust: right after a mutation (challenge/schedule/reorder) we need the fresh
+  // state, not the browser/edge copy. Background refreshes skip it so they ride
+  // the endpoint's short edge cache (cheap) instead of hammering the origin.
+  const d = await $fetch(`${base}/api/ladder/${id}`, { query: bust ? { _: Date.now() } : {} })
   ladder.value = d.ladder
   teams.value = d.teams || []
   koth.value = d.koth
   challenges.value = d.challenges || []
 }
 
-async function load() {
-  loading.value = true
+async function load({ silent = false, bust = true } = {}) {
+  if (!silent) loading.value = true
   err.value = null
   try {
-    const list = await $fetch(`${base}/api/ladder`, { query: { _: Date.now() } })
+    const list = await $fetch(`${base}/api/ladder`, { query: bust ? { _: Date.now() } : {} })
     const first = (list.ladders || [])[0]
     if (!first) { ladder.value = null; return }
-    await loadDetail(first.id)
+    await loadDetail(first.id, bust)
   } catch (e) {
-    err.value = 'Could not load the ladder.'
+    if (!silent) err.value = 'Could not load the ladder.'
     console.error('[ladder]', e)
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
-onMounted(load)
+onMounted(() => load())
+
+// Keep the board live: refetch when the player returns to the tab (focus /
+// visibility) and on a gentle poll while the tab is visible — so newly approved
+// teams + challenge updates show up without a manual reload.
+let pollTimer = null
+function refreshIfVisible() {
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible') load({ silent: true, bust: false })
+}
+onMounted(() => {
+  if (typeof document === 'undefined') return
+  document.addEventListener('visibilitychange', refreshIfVisible)
+  window.addEventListener('focus', refreshIfVisible)
+  pollTimer = setInterval(refreshIfVisible, 90000)
+})
+onBeforeUnmount(() => {
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', refreshIfVisible)
+    window.removeEventListener('focus', refreshIfVisible)
+  }
+  if (pollTimer) clearInterval(pollTimer)
+})
 
 // Topbar "Team settings" flips a shared flag — open the edit modal for the
 // user's team (works for pending teams too, fetched fresh + enriched). Using a

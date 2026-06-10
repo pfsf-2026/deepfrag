@@ -393,6 +393,23 @@ function canonPick(cid, p) {
   st.picked = { id: p.canonical_id, display: p.display }
   st.q = p.display; st.results = []
 }
+// Hide/delete any profile by canonical_id (not just queue rows). Soft + reversible.
+const delProfileId = ref('')
+async function deleteProfileById() {
+  const id = delProfileId.value.trim()
+  if (!id) return
+  if (!confirm(`Hide profile "${id}" everywhere? Reversible — match data is untouched.`)) return
+  try {
+    await $fetch(`${apiBase}/api/admin/canon/${encodeURIComponent(id)}/review`, {
+      method: 'POST', headers: adminHeaders(), body: { action: 'delete', target: null }
+    })
+    pushEvent('ok', 'CANON', `hidden ${id}`)
+    delProfileId.value = ''
+    canonList.value = canonList.value.filter(x => x.canonical_id !== id)
+  } catch (e) {
+    pushEvent('err', 'CANON', e?.data?.detail || e?.message || 'delete failed')
+  }
+}
 async function canonAction(row, action) {
   const target = action === 'merge' ? canonLink.value[row.canonical_id]?.picked?.id : null
   if (action === 'merge' && !target) { pushEvent('err', 'CANON', 'pick a profile to link into first'); return }
@@ -1566,6 +1583,12 @@ function shortStatus(s) {
             </div>
           </div>
 
+          <div class="del-by-id">
+            <span class="muted small">Delete any profile by id (hide, reversible):</span>
+            <input v-model="delProfileId" placeholder="canonical_id e.g. christer" class="dd" style="width:220px;" @keyup.enter="deleteProfileById">
+            <button class="btn sm danger" :disabled="!delProfileId.trim()" @click="deleteProfileById">Hide profile</button>
+          </div>
+
           <div v-if="canonLoading" class="placeholder">Loading profiles…</div>
           <div v-else-if="!canonList.length" class="placeholder">No profiles in this range. 🎉</div>
           <div v-else class="muted small" style="margin-bottom:10px;">{{ canonList.length }} profiles · {{ canonMin }}–{{ canonMax }} games{{ canonOnlyIsolated ? ' · single-variant (no connections)' : '' }}</div>
@@ -1993,6 +2016,7 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .resolve-form .muted { text-transform: none; font-weight: 400; }
 .resolve-form textarea { background: var(--panel); border: 1px solid var(--border); color: var(--fg); border-radius: 6px; padding: 8px 10px; font-family: inherit; font-size: 13px; font-weight: 400; resize: vertical; }
 .resolve-form textarea:focus { outline: none; border-color: var(--accent); }
+.del-by-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
 /* Support screenshots */
 .shots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .shot-thumb { width: 88px; height: 88px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; background: var(--bg); }
