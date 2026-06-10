@@ -251,8 +251,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
                 </template>
                 <span v-if="!(t.members || []).length">—</span>
               </span>
-              <span class="c-rec"><b>{{ t.match_w ?? 0 }}</b><span class="dash">–</span>{{ t.match_l ?? 0 }}</span>
-              <span class="c-rec"><b>{{ t.game_w ?? 0 }}</b><span class="dash">–</span>{{ t.game_l ?? 0 }}</span>
+              <span class="c-rec c-match"><span class="rec-lbl">M </span><b>{{ t.match_w ?? 0 }}</b><span class="dash">–</span>{{ t.match_l ?? 0 }}</span>
+              <span class="c-rec c-games"><span class="rec-lbl">G </span><b>{{ t.game_w ?? 0 }}</b><span class="dash">–</span>{{ t.game_l ?? 0 }}</span>
               <span class="c-status">
                 <span v-if="teamStatus(t)" class="badge challenged">{{ teamStatus(t) }}</span>
                 <button v-else-if="canChallenge(t)" class="chal-btn" @click="doChallenge(t)">⚔ Challenge</button>
@@ -485,9 +485,10 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 
 .board { margin: 0 -18px; }
 .board-head, .row { display: grid; grid-template-columns: 34px minmax(0,1.5fr) minmax(0,1.1fr) 58px 58px minmax(0,1.15fr); align-items: center; gap: 12px; padding: 10px 18px; }
-.c-rec { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--fg-3); text-align: center; white-space: nowrap; }
+.c-rec { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--fg-3); text-align: left; white-space: nowrap; }
 .c-rec b { color: var(--win); font-weight: 700; } .c-rec .dash { color: var(--fg-3); margin: 0 1px; }
 .board-head .c-rec { font-size: 11px; }
+.rec-lbl { display: none; }   /* shown only on mobile, where the header row is hidden */
 .board-head { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; border-bottom: 1px solid var(--border); }
 .row { border-top: 1px solid rgba(43,54,80,.5); font-size: 14px; }
 .row:first-of-type { border-top: 0; }
@@ -559,4 +560,47 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .rs-body li { color: var(--fg-2); font-size: 13px; padding: 3px 0; position: relative; } .rs-body li::before { content: '·'; position: absolute; left: -12px; color: var(--fg-3); }
 .rs-body code { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--accent); }
 .rs-body strong { color: var(--fg); }
+
+/* ── Mobile ─────────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .wrap { padding: 16px 12px 64px; }
+  .head { margin-bottom: 14px; }
+  .head .koth-logo { max-width: 300px; }
+  .head .sub { font-size: 13px; }
+  /* tabs scroll horizontally instead of wrapping/squishing */
+  .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { padding: 11px 13px; flex: 0 0 auto; white-space: nowrap; font-size: 13px; }
+  .bento { gap: 12px; }
+  .card { padding: 13px 14px; }
+  .card h3 .exp { font-size: 11px; }
+  /* Standings board → stacked card per team (header row hidden) */
+  .board { margin: 0 -14px; }
+  .board-head { display: none; }
+  .row {
+    grid-template-columns: 26px minmax(0,1fr) auto auto;
+    grid-template-areas:
+      "rung team    team   status"
+      "rung players players players"
+      "rung match   games  games";
+    column-gap: 8px; row-gap: 3px; padding: 11px 14px; align-items: center;
+  }
+  .row .c-rung    { grid-area: rung; }
+  .row .c-team    { grid-area: team; }
+  .row .c-members { grid-area: players; font-size: 12px; }
+  .row .c-match   { grid-area: match; }
+  .row .c-games   { grid-area: games; }
+  .row .c-status  { grid-area: status; justify-self: end; }
+  .c-rec { font-size: 12px; }
+  .rec-lbl { display: inline; color: var(--fg-3); font-weight: 700; }
+  /* legend wraps cleanly */
+  .legend { gap: 5px 12px; padding: 12px 14px 4px; margin: 0 -14px; }
+  /* schedule + rules already stack via their own breakpoints */
+  .chal-row { font-size: 13px; }
+  .koth-team { font-size: 17px; }
+}
+@media (max-width: 380px) {
+  .row { grid-template-columns: 22px minmax(0,1fr) auto auto; }
+  .head .koth-logo { max-width: 260px; }
+}
 </style>
