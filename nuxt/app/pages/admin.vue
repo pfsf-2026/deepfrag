@@ -393,6 +393,12 @@ function canonPick(cid, p) {
   st.picked = { id: p.canonical_id, display: p.display }
   st.q = p.display; st.results = []
 }
+// Inspect any profile by canonical_id (opens the slide-in with aliases + counts).
+const inspectId = ref('')
+function inspectById() {
+  const id = inspectId.value.trim()
+  if (id) selectPlayer({ canonical_id: id, display: id })
+}
 // Hide/delete any profile by canonical_id (not just queue rows). Soft + reversible.
 const delProfileId = ref('')
 async function deleteProfileById() {
@@ -1072,12 +1078,11 @@ function shortStatus(s) {
                 </div>
 
                 <div v-if="playerDetail.aliases?.length" class="insp-section-h">Aliases ({{ playerDetail.aliases.length }})</div>
-                <div v-if="playerDetail.aliases?.length" class="alias-list">
-                  <div v-for="a in playerDetail.aliases.slice(0, 8)" :key="a.name" class="alias-row">
+                <div v-if="playerDetail.aliases?.length" class="alias-list" style="max-height:320px; overflow-y:auto;">
+                  <div v-for="a in playerDetail.aliases" :key="a.name" class="alias-row">
                     <span class="alias-name">{{ a.name }}</span>
                     <span class="alias-uses">{{ a.uses.toLocaleString() }}</span>
                   </div>
-                  <div v-if="playerDetail.aliases.length > 8" class="muted small" style="text-align:center; padding:4px;">+ {{ playerDetail.aliases.length - 8 }} more</div>
                 </div>
 
                 <div class="insp-section-h">Federation</div>
@@ -1584,9 +1589,13 @@ function shortStatus(s) {
           </div>
 
           <div class="del-by-id">
-            <span class="muted small">Delete any profile by id (hide, reversible):</span>
-            <input v-model="delProfileId" placeholder="canonical_id e.g. christer" class="dd" style="width:220px;" @keyup.enter="deleteProfileById">
-            <button class="btn sm danger" :disabled="!delProfileId.trim()" @click="deleteProfileById">Hide profile</button>
+            <span class="muted small">Inspect any profile by id (aliases + counts):</span>
+            <input v-model="inspectId" placeholder="canonical_id e.g. chris" class="dd" style="width:200px;" @keyup.enter="inspectById">
+            <button class="btn sm" :disabled="!inspectId.trim()" @click="inspectById">Inspect</button>
+            <span style="width:18px;"></span>
+            <span class="muted small">Delete by id (hide, reversible):</span>
+            <input v-model="delProfileId" placeholder="canonical_id" class="dd" style="width:160px;" @keyup.enter="deleteProfileById">
+            <button class="btn sm danger" :disabled="!delProfileId.trim()" @click="deleteProfileById">Hide</button>
           </div>
 
           <div v-if="canonLoading" class="placeholder">Loading profiles…</div>

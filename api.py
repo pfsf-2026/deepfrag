@@ -461,6 +461,33 @@ def health():
     return {"ok": True, "matches": matches, "now": datetime.now(timezone.utc).isoformat()}
 
 
+@app.get("/api/debug/ingest")
+def debug_ingest(response: Response):
+    """Read-only ingest health: is the sync pulling matches, and is canonicalize
+    linking them? Disambiguates 'stuck profiles' (ingestion vs canonicalization).
+    Aggregate counts only — safe to expose."""
+    response.headers["Cache-Control"] = "no-store"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT max(match_date) AS max_date, count(*) AS total FROM matches")
+        a = cur.fetchone()
+        cur.execute("SELECT count(*) AS n FROM matches WHERE match_date > now() - interval '4 days'")
+        recent = cur.fetchone()["n"]
+        cur.execute("""SELECT count(*) AS n FROM players p JOIN matches m ON m.match_id=p.match_id
+                       WHERE p.canonical_id IS NULL AND m.match_date > now() - interval '4 days'""")
+        recent_unassigned = cur.fetchone()["n"]
+        cur.execute("SELECT count(*) AS n FROM players WHERE canonical_id IS NULL")
+        unassigned = cur.fetchone()["n"]
+    return {
+        "max_match_date": a["max_date"].isoformat() if a["max_date"] else None,
+        "total_matches": a["total"],
+        "matches_last_4d": recent,                 # >0 → ingestion is working
+        "recent_player_rows_unassigned": recent_unassigned,  # >0 → canonicalize is behind
+        "total_player_rows_unassigned": unassigned,
+        "now": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # ── Support tickets ──────────────────────────────────────────────────────────
 def _ensure_support_schema(cur):
     cur.execute("""CREATE TABLE IF NOT EXISTS support_tickets (
@@ -4022,7 +4049,7 @@ def admin_player_detail(canonical_id: str,
         cur.execute("""
             SELECT player_name, COUNT(*) AS uses
             FROM players WHERE canonical_id = %s
-            GROUP BY player_name ORDER BY uses DESC LIMIT 20
+            GROUP BY player_name ORDER BY uses DESC LIMIT 200
         """, (canonical_id,))
         aliases = [{"name": r["player_name"], "uses": r["uses"]} for r in cur.fetchall()]
 

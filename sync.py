@@ -319,13 +319,15 @@ def sync_all_recent(db, since=None, limit=None, workers=8):
     for match in fetch_all_hub_matches(since):
         if limit is not None and len(candidates) >= limit:
             break
+        if not match.get("demo_sha256"):
+            continue  # no demo → no KTX stats to fetch; skip (don't crash the run)
         cur.execute("SELECT ktx_fetched FROM matches WHERE match_id=%s", (match["id"],))
         existing = cur.fetchone()
         if existing and existing["ktx_fetched"]:
             continue
         candidates.append(match)
     cur.close()
-    print(f"  {len(candidates)} new matches to fetch KTX for")
+    print(f"  {len(candidates)} new matches to fetch KTX for", flush=True)
 
     processed = 0
     failed = 0
@@ -335,17 +337,23 @@ def sync_all_recent(db, since=None, limit=None, workers=8):
             future_to_match = {pool.submit(fetch_ktx, m["demo_sha256"]): m for m in candidates}
             for future in as_completed(future_to_match):
                 match = future_to_match[future]
+                # Per-match isolation: ANY failure (KTX fetch, parse, bad row,
+                # DB error) must not abort the whole sync. Commit per match so one
+                # poison row can't take the rest down, and rollback to clear an
+                # aborted transaction before the next insert.
                 try:
                     ktx = future.result()
-                except requests.RequestException as e:
-                    failed += 1
-                    print(f"  [{match['id']}] KTX fetch failed: {e}")
-                    continue
-                insert_match(db, match, ktx)
-                processed += 1
-                if processed % 100 == 0:
+                    insert_match(db, match, ktx)
                     db.commit()
-        db.commit()
+                    processed += 1
+                except Exception as e:
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+                    failed += 1
+                    print(f"  [{match.get('id')}] sync failed: {type(e).__name__}: {e}", flush=True)
+                    continue
     elapsed = (datetime.now() - start).total_seconds()
     print(f"sync_all_recent done: {processed} fetched, {failed} failed in {elapsed:.0f}s")
     return {
