@@ -21,6 +21,12 @@ const isAdmin = computed(() => loggedIn.value && user.value?.is_admin)
 const newTeam = ref({ name: '', members: '', rung: '' })
 const report = ref(null)  // challenge being reported
 const schedulerC = ref(null)  // challenge being scheduled (admin can act either side)
+const editTeam = ref(null)  // team being edited (roster/name/tag/logo)
+function startEditTeam(t) {
+  // AddTeam expects {id, name, tag, members:[{id,display}], has_logo}
+  editTeam.value = { id: t.id, name: t.name, tag: t.tag || '', members: t.members || [], has_logo: t.has_logo }
+}
+function onTeamEdited() { editTeam.value = null; note('team updated'); load() }
 const supportTickets = ref([])  // ladder-area tickets (read-only monitoring)
 const ticketOpen = ref(null)
 function fmtTicketDate(s) { return s ? new Date(s).toLocaleString() : '—' }
@@ -247,6 +253,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
                 <span class="muted small">{{ (t.members || []).map(m => m.display).join(' · ') || '—' }}</span>
               </div>
               <span class="spacer" />
+              <button class="btn sm ghost" @click="startEditTeam(t)">Edit</button>
               <button class="btn sm" @click="approve(t)">Approve</button>
               <button class="btn sm ghost" @click="reject(t)">Reject</button>
             </div>
@@ -264,6 +271,8 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               <img v-if="t.has_logo" :src="`${base}/api/ladder/team/${t.id}/logo`" class="tlogo" alt="">
               <strong>{{ t.name }}</strong>
               <span class="muted small">{{ (t.members || []).map(m => m.display).join(' · ') }}</span>
+              <span class="spacer" />
+              <button class="btn sm ghost" draggable="false" @click.stop="startEditTeam(t)">Edit</button>
             </div>
             <div v-if="!order.length" class="muted small">No teams placed yet.</div>
           </section>
@@ -364,6 +373,10 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
     <!-- Scheduler (admin can fill availability OR pick a time for either side) -->
     <Scheduler v-if="schedulerC" :challenge="schedulerC" :user-team-id="null"
                @done="schedulerC = null; load()" @saved="load" @close="schedulerC = null" />
+
+    <!-- Team editor (admin: fix roster / add a missing teammate, name, tag, logo) -->
+    <AddTeam v-if="editTeam && ladder" :ladder-id="ladder.id" :edit-team="editTeam"
+             @done="onTeamEdited" @close="editTeam = null" />
 
     <!-- Report modal -->
     <div v-if="report" class="modal-bg" @click.self="report = null">

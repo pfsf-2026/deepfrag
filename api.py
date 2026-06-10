@@ -3141,7 +3141,7 @@ def admin_ladder_pending(ladder_id: int, authorization: str | None = Header(defa
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("""SELECT id, name, members, created_by, created_at,
+        cur.execute("""SELECT id, name, tag, members, created_by, created_at,
                               (logo IS NOT NULL) AS has_logo
                        FROM ladder_teams
                        WHERE ladder_id=%s AND status='pending'
