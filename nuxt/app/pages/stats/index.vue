@@ -115,7 +115,6 @@ useHead({ title: 'Stats leaderboards · DeepFrag' })
         <div v-else>
           <div v-for="(p, i) in lb.top.slice(0, 5)" :key="p.canonical_id" class="row" :class="{ top1: i === 0 }">
             <span class="rank">#{{ p.rank }}</span>
-            <div class="avatar">{{ (p.display || '?')[0].toUpperCase() }}</div>
             <NuxtLink :to="profileHref(p.canonical_id)" class="name">{{ p.display }}</NuxtLink>
             <span v-if="p.region" class="region-pill">{{ p.region }}</span>
             <span class="val">{{ p.formatted }}</span>
@@ -154,7 +153,7 @@ useHead({ title: 'Stats leaderboards · DeepFrag' })
 .card .dir { color: var(--fg-3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
 
 .row {
-  display: grid; grid-template-columns: 26px 26px 1fr auto auto;
+  display: grid; grid-template-columns: 26px 1fr auto auto;
   gap: 8px; align-items: center; padding: 6px 0; font-size: 13px;
   border-bottom: 1px solid var(--border);
 }
