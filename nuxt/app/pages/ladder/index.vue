@@ -236,7 +236,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
         <section class="card board-card">
           <h3>🏆 Standings <button class="exp" @click="setTab('rules')">how it works ⓘ</button></h3>
           <div class="board">
-            <div class="board-head"><span class="c-rung">#</span><span class="c-team">Team</span><span class="c-members">Players</span><span class="c-status">Status</span></div>
+            <div class="board-head"><span class="c-rung">#</span><span class="c-team">Team</span><span class="c-members">Players</span><span class="c-rec" title="Match record (won–lost)">Match</span><span class="c-rec" title="Game/map record (won–lost)">Games</span><span class="c-status">Status</span></div>
             <div v-for="t in teams" :key="t.id" class="row" :class="{ top: t.rung === 1 }">
               <span class="c-rung">{{ t.rung }}</span>
               <span class="c-team">
@@ -251,6 +251,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
                 </template>
                 <span v-if="!(t.members || []).length">—</span>
               </span>
+              <span class="c-rec"><b>{{ t.match_w ?? 0 }}</b><span class="dash">–</span>{{ t.match_l ?? 0 }}</span>
+              <span class="c-rec"><b>{{ t.game_w ?? 0 }}</b><span class="dash">–</span>{{ t.game_l ?? 0 }}</span>
               <span class="c-status">
                 <span v-if="teamStatus(t)" class="badge challenged">{{ teamStatus(t) }}</span>
                 <button v-else-if="canChallenge(t)" class="chal-btn" @click="doChallenge(t)">⚔ Challenge</button>
@@ -463,7 +465,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .empty h2 { margin: 0 0 8px; } .empty p { color: var(--fg-2); max-width: 420px; margin: 0 auto 20px; }
 
 /* bento */
-.bento { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(0,1fr); gap: 16px; align-items: start; }
+.bento { display: grid; grid-template-columns: minmax(0,2.25fr) minmax(0,1fr); gap: 16px; align-items: start; }
 .span2 { grid-column: 1 / -1; }
 .rail { display: flex; flex-direction: column; gap: 16px; }
 @media (max-width: 880px) { .bento { grid-template-columns: 1fr; } }
@@ -482,7 +484,10 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .koth-weeks { margin-left: auto; color: var(--fg-2); font-size: 13px; } .koth-weeks strong { color: var(--fg); font-size: 18px; }
 
 .board { margin: 0 -18px; }
-.board-head, .row { display: grid; grid-template-columns: 34px minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.15fr); align-items: center; gap: 12px; padding: 10px 18px; }
+.board-head, .row { display: grid; grid-template-columns: 34px minmax(0,1.5fr) minmax(0,1.1fr) 58px 58px minmax(0,1.15fr); align-items: center; gap: 12px; padding: 10px 18px; }
+.c-rec { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--fg-3); text-align: center; white-space: nowrap; }
+.c-rec b { color: var(--win); font-weight: 700; } .c-rec .dash { color: var(--fg-3); margin: 0 1px; }
+.board-head .c-rec { font-size: 11px; }
 .board-head { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; border-bottom: 1px solid var(--border); }
 .row { border-top: 1px solid rgba(43,54,80,.5); font-size: 14px; }
 .row:first-of-type { border-top: 0; }

@@ -2996,6 +2996,28 @@ def ladder_detail(ladder_id: int, response: Response):
                     cd[r["id"]] = until.isoformat()
         for t in teams:
             t["cooldown_until"] = cd.get(t["id"])
+        # Match record (W-L) + game/map record (W-L) per team, from reported matches.
+        cur.execute("SELECT team_a_id, team_b_id, winner_id, maps FROM ladder_matches WHERE ladder_id=%s", (ladder_id,))
+        rec = {}
+        for r in cur.fetchall():
+            a, b = r["team_a_id"], r["team_b_id"]
+            for tid in (a, b):
+                rec.setdefault(tid, {"mw": 0, "ml": 0, "gw": 0, "gl": 0})
+            if r["winner_id"]:
+                rec[r["winner_id"]]["mw"] += 1
+                rec[b if r["winner_id"] == a else a]["ml"] += 1
+            for mp in (r["maps"] or []):
+                af, bf = mp.get("a_frags"), mp.get("b_frags")
+                if af is None or bf is None:
+                    continue
+                if af > bf:
+                    rec[a]["gw"] += 1; rec[b]["gl"] += 1
+                elif bf > af:
+                    rec[b]["gw"] += 1; rec[a]["gl"] += 1
+        for t in teams:
+            r = rec.get(t["id"], {"mw": 0, "ml": 0, "gw": 0, "gl": 0})
+            t["match_w"], t["match_l"] = r["mw"], r["ml"]
+            t["game_w"], t["game_l"] = r["gw"], r["gl"]
         # King of the Hill: current rung-1 team + how long they've held it.
         koth = None
         top = next((t for t in teams if t.get("rung") == 1), None)
