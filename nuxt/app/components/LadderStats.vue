@@ -1,0 +1,139 @@
+<script setup>
+// Full ladder stats: sortable Team Statistics, Map Statistics, and the reports
+// list (→ MatchDetailModal). Used by the Stats tab and the /ladder/stats route.
+const props = defineProps({ ladderId: { type: Number, required: true } })
+const isBrowser = typeof window !== 'undefined'
+const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
+
+const teamStats = ref([]); const mapStats = ref(null); const matches = ref([])
+const loading = ref(true); const openMatchId = ref(null)
+
+async function load() {
+  loading.value = true
+  try {
+    const [ts, ms, mr] = await Promise.all([
+      $fetch(`${base}/api/ladder/${props.ladderId}/team-stats`),
+      $fetch(`${base}/api/ladder/${props.ladderId}/map-stats`),
+      $fetch(`${base}/api/ladder/${props.ladderId}/matches`),
+    ])
+    teamStats.value = ts.teams || []; mapStats.value = ms; matches.value = mr.matches || []
+  } catch (e) { console.error('[ladderstats]', e) } finally { loading.value = false }
+}
+onMounted(load)
+
+const COLS = [
+  { k: 'eff', l: 'Eff', pct: true, cls: 'eff' }, { k: 'frags', l: 'F' }, { k: 'deaths', l: 'D' },
+  { k: 'suicides', l: '☠' }, { k: 'tk', l: 'TK' },
+  { k: 'dmg_given', l: 'Gvn', grp: true, fmt: 'k' }, { k: 'dmg_taken', l: 'Tkn', fmt: 'k' },
+  { k: 'ya', l: 'YA', grp: true, cls: 'c-ya' }, { k: 'ra', l: 'RA', cls: 'c-ra' }, { k: 'mh', l: 'MH', cls: 'c-mh' },
+  { k: 'sg', l: 'SG', grp: true, pct: true, cls: 'c-wpn' }, { k: 'lg', l: 'LG', pct: true, cls: 'c-wpn' },
+  { k: 'rl', l: 'RL', pct: true, cls: 'c-wpn' }, { k: 'quad', l: 'Q', grp: true, cls: 'c-q' },
+]
+const sortKey = ref('eff'); const sortDir = ref(-1)
+function sortBy(k) { if (sortKey.value === k) sortDir.value *= -1; else { sortKey.value = k; sortDir.value = -1 } }
+const sortedTeams = computed(() => [...teamStats.value].sort((a, b) => ((a[sortKey.value] ?? -1) - (b[sortKey.value] ?? -1)) * sortDir.value))
+const anyData = computed(() => teamStats.value.some(t => t.maps > 0))
+function fmtCell(v, c) { if (v == null) return '—'; if (c.pct) return v + '%'; if (c.fmt === 'k') return v >= 1000 ? (v/1000).toFixed(0)+'k' : v; return v }
+function logoUrl(id) { return `${base}/api/ladder/team/${id}/logo` }
+function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '' }
+</script>
+
+<template>
+  <div>
+    <div v-if="loading" class="muted pad">Loading stats…</div>
+    <div v-else-if="!anyData && !matches.length" class="empty">
+      <h3>No match stats yet</h3>
+      <p>Team &amp; map stats fill in automatically once matches are reported. The first reported Bo3 lands here.</p>
+    </div>
+    <template v-else>
+      <section class="panel">
+        <h2>Team Statistics <span class="meta">per-map averages · click a header to sort</span></h2>
+        <div class="scroll">
+          <table class="stats">
+            <thead><tr>
+              <th class="team">Team</th>
+              <th v-for="c in COLS" :key="c.k" :class="[{ sorted: sortKey === c.k, colgrp: c.grp }]" @click="sortBy(c.k)">{{ c.l }}<span v-if="sortKey === c.k">{{ sortDir < 0 ? ' ▾' : ' ▴' }}</span></th>
+              <th>Maps</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="t in sortedTeams" :key="t.team_id">
+                <td class="team"><span class="tc"><img v-if="t.has_logo" :src="logoUrl(t.team_id)" class="lg" alt=""><span v-if="t.tag" class="tag">{{ t.tag }}</span> {{ t.name }}</span></td>
+                <td v-for="c in COLS" :key="c.k" :class="[c.cls, { colgrp: c.grp }]">{{ fmtCell(t[c.k], c) }}</td>
+                <td class="muted">{{ t.maps }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="two">
+        <section class="panel" v-if="mapStats">
+          <h2>Map Statistics <span class="meta">{{ mapStats.total_maps }} maps</span></h2>
+          <div class="mapgrid">
+            <div class="mcard"><div class="mh">Most played</div><div v-for="r in mapStats.most_played" :key="r.map" class="mrow"><span class="k">{{ r.map }}</span><span class="v">{{ r.count }} <small>({{ r.pct }}%)</small></span></div><div v-if="!mapStats.most_played.length" class="muted small">—</div></div>
+            <div class="mcard"><div class="mh">First pick</div><div v-for="r in mapStats.first_pick" :key="r.map" class="mrow"><span class="k">{{ r.map }}</span><span class="v">{{ r.count }} <small>({{ r.pct }}%)</small></span></div><div v-if="!mapStats.first_pick.length" class="muted small">—</div></div>
+            <div class="mcard"><div class="mh">Decider</div><div v-for="r in mapStats.decider" :key="r.map" class="mrow"><span class="k">{{ r.map }}</span><span class="v">{{ r.count }} <small>({{ r.pct }}%)</small></span></div><div v-if="!mapStats.decider.length" class="muted small">—</div></div>
+            <div class="mcard"><div class="mh">High scoring <small>avg combined</small></div><div v-for="r in mapStats.high_scoring" :key="r.map" class="mrow"><span class="k">{{ r.map }}</span><span class="v">{{ r.avg }}</span></div><div v-if="!mapStats.high_scoring.length" class="muted small">—</div></div>
+            <div class="mcard"><div class="mh">Closest</div><div v-for="(g, i) in mapStats.closest" :key="i" class="mrow match"><span class="k">{{ g.label }} · {{ g.map }}</span><span class="v">{{ g.a }}–{{ g.b }}</span></div><div v-if="!mapStats.closest.length" class="muted small">—</div></div>
+            <div class="mcard"><div class="mh">Blowouts</div><div v-for="(g, i) in mapStats.blowouts" :key="i" class="mrow match"><span class="k">{{ g.label }} · {{ g.map }}</span><span class="v">{{ g.a }}–{{ g.b }}</span></div><div v-if="!mapStats.blowouts.length" class="muted small">—</div></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Match reports</h2>
+          <div v-if="!matches.length" class="muted small">No matches reported yet.</div>
+          <div class="reports">
+            <button v-for="m in matches" :key="m.id" class="rep" @click="openMatchId = m.id">
+              <span class="rt"><img v-if="m.a_logo" :src="logoUrl(m.team_a_id)" class="lg" alt=""> {{ m.a_name }}</span>
+              <span class="rs"><b :class="{ w: m.winner_id === m.team_a_id }">{{ m.score_a }}</b>–<b :class="{ w: m.winner_id === m.team_b_id }">{{ m.score_b }}</b></span>
+              <span class="rt right">{{ m.b_name }} <img v-if="m.b_logo" :src="logoUrl(m.team_b_id)" class="lg" alt=""></span>
+              <span class="rd">{{ fmtDate(m.played_at) }}</span>
+            </button>
+          </div>
+        </section>
+      </div>
+    </template>
+
+    <MatchDetailModal v-if="openMatchId" :match-id="openMatchId" @close="openMatchId = null" />
+  </div>
+</template>
+
+<style scoped>
+.muted { color: var(--fg-3); } .small { font-size: 12px; } .pad { padding: 40px 0; text-align: center; }
+.empty { text-align: center; padding: 50px 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
+.empty h3 { margin: 0 0 8px; } .empty p { color: var(--fg-2); margin: 0; }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; margin-bottom: 16px; }
+.panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-3); margin: 0 0 14px; font-weight: 800; display: flex; gap: 8px; }
+.panel h2 .meta { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.two { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+@media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+.scroll { overflow-x: auto; }
+table.stats { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; }
+table.stats th, table.stats td { padding: 7px 9px; text-align: right; white-space: nowrap; }
+table.stats th { font-size: 11px; color: var(--fg-3); font-weight: 700; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
+table.stats th.sorted { color: var(--accent); }
+table.stats th.team, table.stats td.team { text-align: left; }
+table.stats td { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; border-bottom: 1px solid rgba(43,54,80,.45); }
+table.stats tbody tr:hover { background: var(--panel-2); }
+.colgrp { border-left: 1px solid var(--border); }
+.tc { display: flex; align-items: center; gap: 8px; font-family: system-ui, sans-serif; font-weight: 700; }
+.tag { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--panel-3); color: var(--accent); }
+.lg { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; }
+.eff { color: var(--accent); font-weight: 700; }
+.c-ya { color: #fbbf24; } .c-ra { color: var(--loss); } .c-mh { color: #60a5fa; } .c-wpn { color: var(--accent); } .c-q { color: #22d3ee; }
+.mapgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.mcard { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; }
+.mcard .mh { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); font-weight: 800; margin-bottom: 7px; }
+.mcard .mh small { color: var(--fg-3); text-transform: none; font-weight: 400; }
+.mrow { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px solid rgba(43,54,80,.4); }
+.mrow:last-child { border-bottom: 0; }
+.mrow .k { color: var(--fg-2); font-family: 'JetBrains Mono', monospace; }
+.mrow .v { font-family: 'JetBrains Mono', monospace; font-weight: 700; } .mrow .v small { color: var(--fg-3); font-weight: 400; }
+.mrow.match .k { font-family: system-ui, sans-serif; font-size: 11px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reports { display: flex; flex-direction: column; gap: 7px; }
+.rep { display: flex; align-items: center; gap: 9px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; font-size: 13px; cursor: pointer; color: var(--fg); font-family: inherit; text-align: left; }
+.rep:hover { border-color: var(--accent); }
+.rep .rt { display: flex; align-items: center; gap: 7px; flex: 1; } .rep .rt.right { justify-content: flex-end; }
+.rep .rs { font-family: 'JetBrains Mono', monospace; font-weight: 800; } .rep .rs b { color: var(--fg-3); } .rep .rs b.w { color: var(--accent); }
+.rep .rd { color: var(--fg-3); font-size: 11px; width: 44px; text-align: right; }
+</style>
