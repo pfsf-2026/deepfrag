@@ -68,7 +68,7 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
             </tr></thead>
             <tbody>
               <tr v-for="t in sortedTeams" :key="t.team_id">
-                <td class="team"><span class="tc"><img v-if="t.has_logo" :src="logoUrl(t.team_id)" class="lg" alt=""><span class="tag">{{ t.tag || '—' }}</span> {{ t.name }}</span></td>
+                <td class="team"><span class="tc"><img v-if="t.has_logo" :src="logoUrl(t.team_id)" class="lg" alt=""><span v-else class="lg lg-ph">👑</span><span class="tag">{{ t.tag || '—' }}</span> {{ t.name }}</span></td>
                 <td v-for="c in COLS" :key="c.k" :class="[c.cls, { colgrp: c.grp }]">{{ fmtCell(t[c.k], c) }}</td>
                 <td class="muted">{{ t.maps }}</td>
               </tr>
@@ -152,7 +152,9 @@ table.stats td { font-family: 'JetBrains Mono', monospace; font-variant-numeric:
 table.stats tbody tr:hover { background: var(--panel-2); }
 .colgrp { border-left: 1px solid var(--border); }
 .tc { display: flex; align-items: center; gap: 8px; font-family: system-ui, sans-serif; font-weight: 700; }
-.tag { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--panel-3); color: var(--accent); }
+.lg { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; flex: 0 0 20px; }
+.lg-ph { display: inline-flex; align-items: center; justify-content: center; background: var(--panel-3); font-size: 11px; opacity: 0.55; }
+.tag { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 4px; background: var(--panel-3); color: var(--accent); min-width: 40px; text-align: center; box-sizing: border-box; flex: 0 0 auto; }
 .lg { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; }
 .eff { color: var(--accent); font-weight: 700; }
 .c-ya { color: #fbbf24; } .c-ra { color: var(--loss); } .c-mh { color: #60a5fa; } .c-wpn { color: var(--accent); } .c-q { color: #22d3ee; }
