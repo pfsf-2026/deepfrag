@@ -63,8 +63,10 @@ def stats_query(mode: str = "1on1", map_name: str = "", region: str = "",
                    -- Item CONTROL = this player's pickups as a share of all
                    -- pickups (this player + opponent) of that item. Map-geometry
                    -- independent: on DM2 (2 RAs) both numerator and denominator
-                   -- scale, so a 50/50 split = 50% on any map. Replaces the old
-                   -- per-match counts that inflated DM2 specialists.
+                   -- scale, so an even split reads as half on any map. Replaces
+                   -- the old per-match counts that inflated DM2 specialists.
+                   -- (Keep this comment free of the percent character: psycopg
+                   --  reads a lone one as a param placeholder and crashes.)
                    SUM(p.player_ra_taken)::float
                      / NULLIF(SUM(p.player_ra_taken + COALESCE(opp.ra, 0)), 0) AS ra_pct,
                    SUM(p.player_health100_taken)::float
