@@ -51,6 +51,9 @@ const sections = [
     { id: 'canon', label: 'Canonicalize queue' },
     { id: 'ratings', label: 'Ratings' }
   ]},
+  { group: 'Profiles', items: [
+    { id: 'cards', label: 'Player Rating Cards' }
+  ]},
   { group: 'Operations', items: [
     { id: 'scheduler', label: 'Scheduler' },
     { id: 'rerate', label: 'Re-rate' },
@@ -1729,6 +1732,13 @@ function shortStatus(s) {
         </template>
 
         <!-- Placeholders for other sections -->
+        <template v-else-if="activeSection === 'cards'">
+          <div class="pane-head">
+            <h2>Player Rating Cards</h2>
+          </div>
+          <PlayerRatingCards :api-base="apiBase" :headers="adminHeaders()" />
+        </template>
+
         <template v-else>
           <div class="pane-head">
             <h2>{{ sections.flatMap(g => g.items).find(i => i.id === activeSection)?.label }}</h2>

@@ -4560,6 +4560,111 @@ def _parse_logo_data_uri(s: str):
     return raw, mime
 
 
+# ── Player Rating Cards (Decision & Skill Framework, R1: Tier-A attributes) ───
+# Eight attributes scored 0-99 as the player's percentile within the rated 1on1
+# population, drawn from signals DeepFrag already computes. Maps onto the pillars
+# in docs/decision_skill_framework.md. The doc's Air-Strafe Eff. + Efficiency
+# need the movement-metrics pipeline (not in DeepFrag's stat aggregation yet), so
+# until then the two extra live combat axes are Dueling (DDR) and Impact (frag
+# diff). (key, label, pillar, stat_id, higher_is_better)
+_CARD_ATTRS = [
+    ("tracking",   "Tracking",   "Aim",         "lg_pct",           True),
+    ("prediction", "Prediction", "Aim",         "rl_pct",           True),
+    ("dueling",    "Dueling",    "Aim",         "ddr",              True),
+    ("economy",    "Economy",    "Game Sense",  "_control",         True),
+    ("awareness",  "Awareness",  "Awareness",   "spawnfrags_taken", False),  # lower = better
+    ("speed",      "Speed",      "Movement",    "avg_speed",        True),
+    ("aggression", "Aggression", "Temperament", "dmg_given",        True),
+    ("impact",     "Impact",     "Overall",     "frag_diff",        True),
+]
+
+
+@app.get("/api/admin/player-cards")
+def admin_player_cards(authorization: str | None = Header(default=None),
+                       mode: str = "1on1"):
+    """R1 Player Rating Cards: top-20 overall + top-10 of Div 1/2/3, each scored
+    on the 8 Tier-A attributes as a 0-99 percentile within the rated population."""
+    import bisect
+    _check_admin_auth(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        # 1) Per-player attribute signals across the rated population (>=5 matches
+        #    = the rating floor), used both as the percentile anchor and the cards.
+        sql, params = stats_pg.stats_query(mode=mode, min_matches=5)
+        cur.execute(sql, params)
+        sig = {}
+        for r in cur.fetchall():
+            ctrl = [r.get(k) for k in ("ra_pct", "ya_pct", "mh_pct")]
+            ctrl = [c for c in ctrl if c is not None]
+            sig[r["canonical_id"]] = {
+                "lg_pct": r.get("lg_pct"), "rl_pct": r.get("rl_pct"), "ddr": r.get("ddr"),
+                "_control": (sum(ctrl) / len(ctrl)) if ctrl else None,
+                "spawnfrags_taken": r.get("spawnfrags_taken"), "avg_speed": r.get("avg_speed"),
+                "dmg_given": r.get("dmg_given"), "frag_diff": r.get("frag_diff"),
+                "display": r.get("display"), "matches": r.get("matches"),
+            }
+        # 2) Sorted value list per signal → percentile lookup.
+        pop = {a[3]: sorted(v[a[3]] for v in sig.values() if v.get(a[3]) is not None)
+               for a in _CARD_ATTRS}
+
+        def rate(cid, stat_id, higher):
+            v = sig[cid].get(stat_id)
+            vals = pop[stat_id]
+            if v is None or len(vals) < 2:
+                return None
+            pct = bisect.bisect_left(vals, v) / (len(vals) - 1)
+            if not higher:
+                pct = 1 - pct
+            return max(0, min(99, round(pct * 99)))
+
+        def card_for(cid):
+            attrs = [{"key": k, "label": lbl, "pillar": pil, "value": rate(cid, sid, hb),
+                      "raw": sig[cid].get(sid)} for k, lbl, pil, sid, hb in _CARD_ATTRS]
+            vals = [a["value"] for a in attrs if a["value"] is not None]
+            return {"ovr": round(sum(vals) / len(vals)) if vals else None, "attrs": attrs}
+
+        # 3) Ranked player list + tier per player (stored conservative + tier cutoffs).
+        cutoffs = _get_tier_cutoffs(cur, mode)
+        cur.execute("""SELECT r.canonical_id, COALESCE(pc.display_name, r.canonical_id) AS display,
+                              pc.region, r.conservative, r.matches_rated
+                       FROM ratings r LEFT JOIN players_canonical pc ON pc.canonical_id = r.canonical_id
+                       WHERE r.mode=%s AND r.map='' AND r.matches_rated >= 10
+                         AND NOT COALESCE(pc.hidden, FALSE)
+                       ORDER BY r.conservative DESC""", (mode,))
+        ranked = cur.fetchall()
+
+    enriched = []
+    for i, r in enumerate(ranked):
+        p = {"canonical_id": r["canonical_id"], "display": r["display"], "region": r["region"],
+             "rank": i + 1, "conservative": round(r["conservative"], 1),
+             "matches": r["matches_rated"], "tier": tier_for(r["conservative"], cutoffs)}
+        c = card_for(r["canonical_id"]) if r["canonical_id"] in sig else {"ovr": None, "attrs": None}
+        p.update(c)
+        enriched.append(p)
+
+    def take(pred, n):
+        out = []
+        for p in enriched:
+            if pred(p):
+                out.append(p)
+                if len(out) >= n:
+                    break
+        return out
+
+    def in_div(slug):
+        return lambda p: bool(p["tier"]) and p["tier"]["slug"] == slug
+
+    sections = [
+        {"key": "overall", "label": "Top 20 — Overall", "players": take(lambda p: True, 20)},
+        {"key": "div1", "label": "Top 10 — Div 1", "players": take(in_div("div1"), 10)},
+        {"key": "div2", "label": "Top 10 — Div 2", "players": take(in_div("div2"), 10)},
+        {"key": "div3", "label": "Top 10 — Div 3", "players": take(in_div("div3"), 10)},
+    ]
+    return {"mode": mode, "population": len(sig),
+            "attributes": [{"key": k, "label": lbl, "pillar": pil} for k, lbl, pil, _, _ in _CARD_ATTRS],
+            "sections": sections}
+
+
 @app.get("/api/admin/status")
 def admin_status(authorization: str | None = Header(default=None)):
     """One-stop admin dashboard payload: scheduler state, last sync time,
