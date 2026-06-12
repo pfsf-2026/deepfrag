@@ -4560,22 +4560,24 @@ def _parse_logo_data_uri(s: str):
     return raw, mime
 
 
-# ── Player Rating Cards (Decision & Skill Framework, R1: Tier-A attributes) ───
-# Eight attributes scored 0-99 as the player's percentile within the rated 1on1
-# population, drawn from signals DeepFrag already computes. Maps onto the pillars
-# in docs/decision_skill_framework.md. The doc's Air-Strafe Eff. + Efficiency
-# need the movement-metrics pipeline (not in DeepFrag's stat aggregation yet), so
-# until then the two extra live combat axes are Dueling (DDR) and Impact (frag
-# diff). (key, label, pillar, stat_id, higher_is_better)
+# ── Player Rating Cards (Decision & Skill Framework) ─────────────────────────
+# Deep playstyle characteristics — composites/ratios that reveal HOW a player
+# wins, not raw box scores — each scored 0-99 as a sample-shrunk percentile vs
+# the established population. Maps onto the pillars in docs/decision_skill_framework.md.
+# Deeper coaching characteristics (stack discipline, Mega timing, restack, FSO)
+# are loaded per-player in the modal from the coaching layer. (key, label, pillar,
+# higher_is_better)
 _CARD_ATTRS = [
-    ("tracking",   "Tracking",   "Aim",         "lg_pct",           True),
-    ("prediction", "Prediction", "Aim",         "rl_pct",           True),
-    ("dueling",    "Dueling",    "Aim",         "ddr",              True),
-    ("economy",    "Economy",    "Game Sense",  "_control",         True),
-    ("awareness",  "Awareness",  "Awareness",   "spawnfrags_taken", False),  # lower = better
-    ("speed",      "Speed",      "Movement",    "avg_speed",        True),
-    ("aggression", "Aggression", "Temperament", "dmg_given",        True),
-    ("impact",     "Impact",     "Overall",     "frag_diff",        True),
+    ("tracking",      "Tracking",      "Aim",         True),   # LG hit%
+    ("rocket_aim",    "Rocket Aim",    "Aim",         True),   # RL DIRECT-hit% (real prediction)
+    ("finishing",     "Finishing",     "Aim",         True),   # kills per 100 dmg — clinical conversion
+    ("firepower",     "Firepower",     "Temperament", True),   # damage output / match
+    ("survivability", "Survivability", "Awareness",   True),   # dmg absorbed per death (tankiness/escape)
+    ("anti_spawn",    "Anti-Spawn",    "Awareness",   False),  # opponent spawnfrags (lower = better positioning)
+    ("tempo",         "Tempo",         "Movement",    True),   # avg speed
+    ("mobility",      "Mobility",      "Movement",    True),   # self-damage/match = rocket-jump aggression
+    ("armor_ctrl",    "Armor Control", "Game Sense",  True),   # RA share vs opponent (map-independent)
+    ("mega_ctrl",     "Mega Control",  "Game Sense",  True),   # MH share vs opponent
 ]
 
 
@@ -4588,41 +4590,76 @@ def admin_player_cards(authorization: str | None = Header(default=None),
     _check_admin_auth(authorization)
     with pg() as conn:
         cur = conn.cursor()
-        # 1) Per-player attribute signals across the rated population (>=5 matches
-        #    = the rating floor), used both as the percentile anchor and the cards.
-        sql, params = stats_pg.stats_query(mode=mode, min_matches=5)
-        cur.execute(sql, params)
+        # 1) Aggregate the RICH per-match columns per player (>=5 matches), then
+        #    derive deep playstyle composites. Item control uses a LATERAL join to
+        #    the opponent so RA/MH share is map-independent (same trick stats_pg uses).
+        cur.execute("""
+            SELECT p.canonical_id,
+                   COALESCE(pc.display_name, p.canonical_id) AS display,
+                   COUNT(*) AS n,
+                   SUM(p.player_lg_hits) AS lg_h, SUM(p.player_lg_attacks) AS lg_a,
+                   SUM(p.player_rl_directs) AS rl_d, SUM(p.player_rl_attacks) AS rl_a,
+                   SUM(p.player_damage_given) AS dmg_g,
+                   SUM(p.player_damage_to_die) AS dmg_die, SUM(p.player_deaths) AS deaths,
+                   SUM(COALESCE(p.player_rl_kills_enemy,0)+COALESCE(p.player_lg_kills_enemy,0)) AS kills,
+                   SUM(p.player_damage_self) AS dmg_self,
+                   AVG(p.player_speed_avg) AS speed,
+                   SUM(p.player_ra_taken) AS ra_mine, SUM(p.player_health100_taken) AS mh_mine,
+                   SUM(COALESCE(opp.ra,0)) AS ra_opp, SUM(COALESCE(opp.mh,0)) AS mh_opp,
+                   AVG(opp.spawnf) AS spawnf
+            FROM players p
+            JOIN matches m ON m.match_id = p.match_id
+            LEFT JOIN players_canonical pc ON pc.canonical_id = p.canonical_id
+            LEFT JOIN LATERAL (
+                SELECT p2.player_ra_taken AS ra, p2.player_health100_taken AS mh,
+                       p2.player_spawnfrags AS spawnf
+                FROM players p2
+                WHERE p2.match_id = p.match_id AND p2.player_name <> p.player_name
+                LIMIT 1
+            ) opp ON true
+            WHERE m.match_mode = %s AND p.canonical_id IS NOT NULL
+            GROUP BY p.canonical_id, pc.display_name
+            HAVING COUNT(*) >= 5
+        """, (mode,))
         sig = {}
+
+        def _ratio(a, b):
+            return (a / b) if (a is not None and b) else None
+
         for r in cur.fetchall():
-            ctrl = [r.get(k) for k in ("ra_pct", "ya_pct", "mh_pct")]
-            ctrl = [c for c in ctrl if c is not None]
+            n = r["n"] or 0
+            ra_m, ra_o = r["ra_mine"] or 0, r["ra_opp"] or 0
+            mh_m, mh_o = r["mh_mine"] or 0, r["mh_opp"] or 0
             sig[r["canonical_id"]] = {
-                "lg_pct": r.get("lg_pct"), "rl_pct": r.get("rl_pct"), "ddr": r.get("ddr"),
-                "_control": (sum(ctrl) / len(ctrl)) if ctrl else None,
-                "spawnfrags_taken": r.get("spawnfrags_taken"), "avg_speed": r.get("avg_speed"),
-                "dmg_given": r.get("dmg_given"), "frag_diff": r.get("frag_diff"),
-                "display": r.get("display"), "matches": r.get("matches"),
+                "display": r["display"], "matches": n,
+                "tracking":      _ratio(r["lg_h"], r["lg_a"]),
+                "rocket_aim":    _ratio(r["rl_d"], r["rl_a"]),
+                "finishing":     _ratio(r["kills"], (r["dmg_g"] or 0) / 100.0),  # kills / 100 dmg
+                "firepower":     _ratio(r["dmg_g"], n),
+                "survivability": _ratio(r["dmg_die"], r["deaths"]),
+                "anti_spawn":    r["spawnf"],                                     # lower better
+                "tempo":         r["speed"],
+                "mobility":      _ratio(r["dmg_self"], n),
+                "armor_ctrl":    _ratio(ra_m, ra_m + ra_o),
+                "mega_ctrl":     _ratio(mh_m, mh_m + mh_o),
             }
+
         # 2) Percentile anchor = ESTABLISHED players only (>= MIN_ANCHOR_MATCHES),
-        #    so a few-game player's variance can't distort the distribution. Each
-        #    scored player's stat is first SHRUNK toward the population mean by
-        #    sample size (empirical Bayes, prior strength SHRINK_K matches), so a
-        #    10-match fluke regresses to ~average instead of scoring 95, while a
-        #    600-match veteran is essentially unshrunk. Then percentile vs anchor.
+        #    + empirical-Bayes shrinkage toward the mean by sample size so a
+        #    few-game fluke regresses to ~average instead of scoring 95.
         MIN_ANCHOR_MATCHES = 50
-        SHRINK_K = 150  # ~150 games to fully "earn" a rating; few-game flukes regress to mean
+        SHRINK_K = 150  # ~150 games to fully "earn" a rating
         anchor = [v for v in sig.values() if (v.get("matches") or 0) >= MIN_ANCHOR_MATCHES]
         pop, mean = {}, {}
-        for a in _CARD_ATTRS:
-            sid = a[3]
-            vals = sorted(v[sid] for v in anchor if v.get(sid) is not None)
-            pop[sid] = vals
-            mean[sid] = (sum(vals) / len(vals)) if vals else None
+        for k, *_ in _CARD_ATTRS:
+            vals = sorted(v[k] for v in anchor if v.get(k) is not None)
+            pop[k] = vals
+            mean[k] = (sum(vals) / len(vals)) if vals else None
 
-        def rate(cid, stat_id, higher):
-            raw = sig[cid].get(stat_id)
-            vals = pop[stat_id]
-            mu = mean[stat_id]
+        def rate(cid, key, higher):
+            raw = sig[cid].get(key)
+            vals = pop[key]
+            mu = mean[key]
             n = sig[cid].get("matches") or 0
             if raw is None or mu is None or len(vals) < 2:
                 return None
@@ -4634,8 +4671,8 @@ def admin_player_cards(authorization: str | None = Header(default=None),
 
         def card_for(cid):
             n = sig[cid].get("matches") or 0
-            attrs = [{"key": k, "label": lbl, "pillar": pil, "value": rate(cid, sid, hb),
-                      "raw": sig[cid].get(sid)} for k, lbl, pil, sid, hb in _CARD_ATTRS]
+            attrs = [{"key": k, "label": lbl, "pillar": pil, "value": rate(cid, k, hb),
+                      "raw": sig[cid].get(k)} for k, lbl, pil, hb in _CARD_ATTRS]
             vals = [a["value"] for a in attrs if a["value"] is not None]
             conf = "established" if n >= MIN_ANCHOR_MATCHES else ("provisional" if n >= 15 else "low")
             return {"ovr": round(sum(vals) / len(vals)) if vals else None, "attrs": attrs,

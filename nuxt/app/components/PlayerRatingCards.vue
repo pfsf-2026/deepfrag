@@ -146,7 +146,7 @@ function confTitle(p) {
               <span class="rval" :style="{ color: ratingColor(a.value) }">{{ ovrText(a.value) }}</span>
             </div>
           </div>
-          <p class="foot">R1 · Tier-A attributes only. The full 6-pillar card lands as we ship R2–R3.</p>
+          <p class="foot">Playstyle characteristics (sample-shrunk percentiles). Deep coaching characteristics — stack discipline, Mega timing, first-spawn — load here next.</p>
         </div>
       </div>
     </Teleport>
