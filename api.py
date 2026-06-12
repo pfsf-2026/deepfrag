@@ -4585,98 +4585,96 @@ def admin_player_cards(authorization: str | None = Header(default=None),
     on the 8 Tier-A attributes as a 0-99 percentile within the rated population."""
     import bisect
     _check_admin_auth(authorization)
-    with pg() as conn:
-        cur = conn.cursor()
-        # 1) Aggregate the Phase-1 columns per ESTABLISHED player (>=50 matches —
-        #    the floor we both anchor and card on). A hash SELF-JOIN to the
-        #    opponent (1on1 = 2 players/match) gives map-independent RA/MH share
-        #    cheaply; the old per-row LATERAL timed out the uncached admin call.
-        cur.execute("""
-            SELECT p.canonical_id,
-                   COALESCE(pc.display_name, p.canonical_id) AS display,
-                   COUNT(*) AS n,
-                   SUM(p.player_lg_hits) AS lg_h, SUM(p.player_lg_attacks) AS lg_a,
-                   SUM(p.player_rl_directs) AS rl_d, SUM(p.player_rl_attacks) AS rl_a,
-                   SUM(p.player_sg_hits) AS sg_h, SUM(p.player_sg_attacks) AS sg_a,
-                   SUM(p.player_damage_given) AS dmg_g,
-                   SUM(p.player_lg_damage_enemy) AS lg_dmg, SUM(p.player_rl_damage_enemy) AS rl_dmg,
-                   SUM(p.player_ra_taken) AS ra_mine, SUM(p.player_health100_taken) AS mh_mine,
-                   SUM(COALESCE(opp.player_ra_taken,0)) AS ra_opp,
-                   SUM(COALESCE(opp.player_health100_taken,0)) AS mh_opp
-            FROM players p
-            JOIN matches m ON m.match_id = p.match_id
-            JOIN players opp ON opp.match_id = p.match_id AND opp.player_name <> p.player_name
-            LEFT JOIN players_canonical pc ON pc.canonical_id = p.canonical_id
-            WHERE m.match_mode = %s AND p.canonical_id IS NOT NULL
-            GROUP BY p.canonical_id, pc.display_name
-            HAVING COUNT(*) >= 50
-        """, (mode,))
-        sig = {}
+    MIN_ANCHOR_MATCHES = 50
+    SHRINK_K = 150  # ~150 games to fully "earn" a rating
+    try:
+        with pg() as conn:
+            cur = conn.cursor()
+            # A) Ranked players + tier cutoffs (fast, indexed on the ratings table).
+            cutoffs = _get_tier_cutoffs(cur, mode)
+            cur.execute("""SELECT r.canonical_id, COALESCE(pc.display_name, r.canonical_id) AS display,
+                                  pc.region, r.conservative, r.matches_rated
+                           FROM ratings r LEFT JOIN players_canonical pc ON pc.canonical_id = r.canonical_id
+                           WHERE r.mode=%s AND r.map='' AND r.matches_rated >= 10
+                             AND NOT COALESCE(pc.hidden, FALSE)
+                           ORDER BY r.conservative DESC""", (mode,))
+            ranked = cur.fetchall()
+            rated_cids = [r["canonical_id"] for r in ranked]
 
-        def _ratio(a, b):
-            return (a / b) if (a is not None and b) else None
+            # B) Aggregate Phase-1 columns ONLY for rated players — index-bounded by
+            #    canonical_id, not a full-history scan (that timed out the uncached
+            #    admin call). Self-join to the opponent gives map-independent RA/MH
+            #    share; HAVING>=50 = the established floor we card/anchor on.
+            sig = {}
+            if rated_cids:
+                cur.execute("""
+                    SELECT p.canonical_id, COUNT(*) AS n,
+                           SUM(p.player_lg_hits) AS lg_h, SUM(p.player_lg_attacks) AS lg_a,
+                           SUM(p.player_rl_directs) AS rl_d, SUM(p.player_rl_attacks) AS rl_a,
+                           SUM(p.player_sg_hits) AS sg_h, SUM(p.player_sg_attacks) AS sg_a,
+                           SUM(p.player_damage_given) AS dmg_g,
+                           SUM(p.player_lg_damage_enemy) AS lg_dmg, SUM(p.player_rl_damage_enemy) AS rl_dmg,
+                           SUM(p.player_ra_taken) AS ra_mine, SUM(p.player_health100_taken) AS mh_mine,
+                           SUM(COALESCE(opp.player_ra_taken,0)) AS ra_opp,
+                           SUM(COALESCE(opp.player_health100_taken,0)) AS mh_opp
+                    FROM players p
+                    JOIN matches m ON m.match_id = p.match_id
+                    JOIN players opp ON opp.match_id = p.match_id AND opp.player_name <> p.player_name
+                    WHERE m.match_mode = %s AND p.canonical_id = ANY(%s)
+                    GROUP BY p.canonical_id
+                    HAVING COUNT(*) >= 50
+                """, (mode, rated_cids))
 
-        for r in cur.fetchall():
-            n = r["n"] or 0
-            ra_m, ra_o = r["ra_mine"] or 0, r["ra_opp"] or 0
-            mh_m, mh_o = r["mh_mine"] or 0, r["mh_opp"] or 0
-            lg_dmg, rl_dmg = r["lg_dmg"] or 0, r["rl_dmg"] or 0
-            sig[r["canonical_id"]] = {
-                "display": r["display"], "matches": n,
-                "lg_acc":     _ratio(r["lg_h"], r["lg_a"]),
-                "rl_acc":     _ratio(r["rl_d"], r["rl_a"]),
-                "sg_acc":     _ratio(r["sg_h"], r["sg_a"]),
-                "ra_ctrl":    _ratio(ra_m, ra_m + ra_o),
-                "mh_ctrl":    _ratio(mh_m, mh_m + mh_o),
-                "aggression": _ratio(r["dmg_g"], n),
-                # Style descriptor (not a 0-99 skill): LG share of LG+RL damage.
-                "weapon_pref": _ratio(lg_dmg, lg_dmg + rl_dmg),
-            }
+                def _ratio(a, b):
+                    return (a / b) if (a is not None and b) else None
 
-        # 2) Percentile anchor = ESTABLISHED players only (>= MIN_ANCHOR_MATCHES),
-        #    + empirical-Bayes shrinkage toward the mean by sample size so a
-        #    few-game fluke regresses to ~average instead of scoring 95.
-        MIN_ANCHOR_MATCHES = 50
-        SHRINK_K = 150  # ~150 games to fully "earn" a rating
-        anchor = [v for v in sig.values() if (v.get("matches") or 0) >= MIN_ANCHOR_MATCHES]
-        pop, mean = {}, {}
-        for k, *_ in _CARD_ATTRS:
-            vals = sorted(v[k] for v in anchor if v.get(k) is not None)
-            pop[k] = vals
-            mean[k] = (sum(vals) / len(vals)) if vals else None
+                for r in cur.fetchall():
+                    n = r["n"] or 0
+                    ra_m, ra_o = r["ra_mine"] or 0, r["ra_opp"] or 0
+                    mh_m, mh_o = r["mh_mine"] or 0, r["mh_opp"] or 0
+                    lg_dmg, rl_dmg = r["lg_dmg"] or 0, r["rl_dmg"] or 0
+                    sig[r["canonical_id"]] = {
+                        "matches": n,
+                        "lg_acc":     _ratio(r["lg_h"], r["lg_a"]),
+                        "rl_acc":     _ratio(r["rl_d"], r["rl_a"]),
+                        "sg_acc":     _ratio(r["sg_h"], r["sg_a"]),
+                        "ra_ctrl":    _ratio(ra_m, ra_m + ra_o),
+                        "mh_ctrl":    _ratio(mh_m, mh_m + mh_o),
+                        "aggression": _ratio(r["dmg_g"], n),
+                        "weapon_pref": _ratio(lg_dmg, lg_dmg + rl_dmg),  # LG share (style)
+                    }
+    except Exception as e:
+        raise HTTPException(500, f"player-cards aggregation failed: {type(e).__name__}: {e}")
 
-        def rate(cid, key, higher):
-            raw = sig[cid].get(key)
-            vals = pop[key]
-            mu = mean[key]
-            n = sig[cid].get("matches") or 0
-            if raw is None or mu is None or len(vals) < 2:
-                return None
-            shrunk = (n * raw + SHRINK_K * mu) / (n + SHRINK_K)
-            pct = bisect.bisect_left(vals, shrunk) / (len(vals) - 1)
-            if not higher:
-                pct = 1 - pct
-            return max(0, min(99, round(pct * 99)))
+    # Percentile anchor = the aggregated established players; shrink each stat toward
+    # the population mean by sample size before percentile-ranking.
+    pop, mean = {}, {}
+    for k, *_ in _CARD_ATTRS:
+        vals = sorted(v[k] for v in sig.values() if v.get(k) is not None)
+        pop[k] = vals
+        mean[k] = (sum(vals) / len(vals)) if vals else None
 
-        def card_for(cid):
-            n = sig[cid].get("matches") or 0
-            attrs = [{"key": k, "label": lbl, "pillar": pil, "value": rate(cid, k, hb),
-                      "raw": sig[cid].get(k)} for k, lbl, pil, hb in _CARD_ATTRS]
-            vals = [a["value"] for a in attrs if a["value"] is not None]
-            conf = "established" if n >= MIN_ANCHOR_MATCHES else ("provisional" if n >= 15 else "low")
-            return {"ovr": round(sum(vals) / len(vals)) if vals else None, "attrs": attrs,
-                    "stat_matches": n, "confidence": conf,
-                    "weapon_pref": sig[cid].get("weapon_pref")}
+    def rate(cid, key, higher):
+        raw = sig[cid].get(key)
+        vals = pop[key]
+        mu = mean[key]
+        n = sig[cid].get("matches") or 0
+        if raw is None or mu is None or len(vals) < 2:
+            return None
+        shrunk = (n * raw + SHRINK_K * mu) / (n + SHRINK_K)
+        pct = bisect.bisect_left(vals, shrunk) / (len(vals) - 1)
+        if not higher:
+            pct = 1 - pct
+        return max(0, min(99, round(pct * 99)))
 
-        # 3) Ranked player list + tier per player (stored conservative + tier cutoffs).
-        cutoffs = _get_tier_cutoffs(cur, mode)
-        cur.execute("""SELECT r.canonical_id, COALESCE(pc.display_name, r.canonical_id) AS display,
-                              pc.region, r.conservative, r.matches_rated
-                       FROM ratings r LEFT JOIN players_canonical pc ON pc.canonical_id = r.canonical_id
-                       WHERE r.mode=%s AND r.map='' AND r.matches_rated >= 10
-                         AND NOT COALESCE(pc.hidden, FALSE)
-                       ORDER BY r.conservative DESC""", (mode,))
-        ranked = cur.fetchall()
+    def card_for(cid):
+        n = sig[cid].get("matches") or 0
+        attrs = [{"key": k, "label": lbl, "pillar": pil, "value": rate(cid, k, hb),
+                  "raw": sig[cid].get(k)} for k, lbl, pil, hb in _CARD_ATTRS]
+        vals = [a["value"] for a in attrs if a["value"] is not None]
+        conf = "established" if n >= MIN_ANCHOR_MATCHES else ("provisional" if n >= 15 else "low")
+        return {"ovr": round(sum(vals) / len(vals)) if vals else None, "attrs": attrs,
+                "stat_matches": n, "confidence": conf, "weapon_pref": sig[cid].get("weapon_pref")}
 
     enriched = []
     for i, r in enumerate(ranked):
