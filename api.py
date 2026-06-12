@@ -4603,25 +4603,43 @@ def admin_player_cards(authorization: str | None = Header(default=None),
                 "dmg_given": r.get("dmg_given"), "frag_diff": r.get("frag_diff"),
                 "display": r.get("display"), "matches": r.get("matches"),
             }
-        # 2) Sorted value list per signal → percentile lookup.
-        pop = {a[3]: sorted(v[a[3]] for v in sig.values() if v.get(a[3]) is not None)
-               for a in _CARD_ATTRS}
+        # 2) Percentile anchor = ESTABLISHED players only (>= MIN_ANCHOR_MATCHES),
+        #    so a few-game player's variance can't distort the distribution. Each
+        #    scored player's stat is first SHRUNK toward the population mean by
+        #    sample size (empirical Bayes, prior strength SHRINK_K matches), so a
+        #    10-match fluke regresses to ~average instead of scoring 95, while a
+        #    600-match veteran is essentially unshrunk. Then percentile vs anchor.
+        MIN_ANCHOR_MATCHES = 50
+        SHRINK_K = 150  # ~150 games to fully "earn" a rating; few-game flukes regress to mean
+        anchor = [v for v in sig.values() if (v.get("matches") or 0) >= MIN_ANCHOR_MATCHES]
+        pop, mean = {}, {}
+        for a in _CARD_ATTRS:
+            sid = a[3]
+            vals = sorted(v[sid] for v in anchor if v.get(sid) is not None)
+            pop[sid] = vals
+            mean[sid] = (sum(vals) / len(vals)) if vals else None
 
         def rate(cid, stat_id, higher):
-            v = sig[cid].get(stat_id)
+            raw = sig[cid].get(stat_id)
             vals = pop[stat_id]
-            if v is None or len(vals) < 2:
+            mu = mean[stat_id]
+            n = sig[cid].get("matches") or 0
+            if raw is None or mu is None or len(vals) < 2:
                 return None
-            pct = bisect.bisect_left(vals, v) / (len(vals) - 1)
+            shrunk = (n * raw + SHRINK_K * mu) / (n + SHRINK_K)
+            pct = bisect.bisect_left(vals, shrunk) / (len(vals) - 1)
             if not higher:
                 pct = 1 - pct
             return max(0, min(99, round(pct * 99)))
 
         def card_for(cid):
+            n = sig[cid].get("matches") or 0
             attrs = [{"key": k, "label": lbl, "pillar": pil, "value": rate(cid, sid, hb),
                       "raw": sig[cid].get(sid)} for k, lbl, pil, sid, hb in _CARD_ATTRS]
             vals = [a["value"] for a in attrs if a["value"] is not None]
-            return {"ovr": round(sum(vals) / len(vals)) if vals else None, "attrs": attrs}
+            conf = "established" if n >= MIN_ANCHOR_MATCHES else ("provisional" if n >= 15 else "low")
+            return {"ovr": round(sum(vals) / len(vals)) if vals else None, "attrs": attrs,
+                    "stat_matches": n, "confidence": conf}
 
         # 3) Ranked player list + tier per player (stored conservative + tier cutoffs).
         cutoffs = _get_tier_cutoffs(cur, mode)

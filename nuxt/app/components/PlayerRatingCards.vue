@@ -59,6 +59,13 @@ function ratingColor(v) {
   return '#ef4444'
 }
 function ovrText(v) { return v == null ? '—' : v }
+function confColor(c) { return c === 'low' ? '#ef4444' : c === 'provisional' ? '#eab308' : '#22c55e' }
+function confTitle(p) {
+  const m = p.stat_matches ?? 0
+  if (p.confidence === 'low') return `Only ${m} games — ratings heavily regressed to the mean (low confidence)`
+  if (p.confidence === 'provisional') return `${m} games — provisional, partially regressed toward the mean`
+  return `${m} games — established`
+}
 </script>
 
 <template>
@@ -80,6 +87,7 @@ function ovrText(v) { return v == null ? '—' : v }
               <tr>
                 <th class="num sortable" @click="setSort('rank')">#</th>
                 <th class="lcell">Player</th>
+                <th class="num" title="Games played (1on1). Few games → ratings regress to the mean.">GP</th>
                 <th class="num sortable" :class="{ on: sortKey === 'ovr' }" @click="setSort('ovr')">OVR</th>
                 <th v-for="a in attrs" :key="a.key" class="num sortable" :class="{ on: sortKey === a.key }"
                     :title="a.pillar" @click="setSort(a.key)">{{ a.label.slice(0, 4) }}</th>
@@ -90,8 +98,11 @@ function ovrText(v) { return v == null ? '—' : v }
                 <td class="num dim">{{ p.rank }}</td>
                 <td class="lcell">
                   <button class="namebtn" @click="selected = p">{{ p.display }}</button>
+                  <span v-if="p.confidence && p.confidence !== 'established'" class="conf"
+                        :style="{ color: confColor(p.confidence) }" :title="confTitle(p)">●</span>
                   <span v-if="p.tier" class="tierpill" :style="{ color: p.tier.color, borderColor: p.tier.color }">{{ p.tier.name }}</span>
                 </td>
+                <td class="num dim" :title="confTitle(p)">{{ p.stat_matches ?? '—' }}</td>
                 <td class="num ovr" :style="{ color: ratingColor(p.ovr) }">{{ ovrText(p.ovr) }}</td>
                 <td v-for="a in attrs" :key="a.key" class="num rt"
                     :style="{ color: ratingColor(attrVal(p, a.key)) }">{{ ovrText(attrVal(p, a.key)) }}</td>
@@ -119,7 +130,11 @@ function ovrText(v) { return v == null ? '—' : v }
               <div class="meta">
                 <span v-if="selected.tier" class="tierpill" :style="{ color: selected.tier.color, borderColor: selected.tier.color }">{{ selected.tier.name }}</span>
                 <span v-if="selected.region" class="region">{{ selected.region }}</span>
-                <span class="dim">#{{ selected.rank }} · {{ selected.matches }} matches</span>
+                <span class="dim">#{{ selected.rank }} · {{ selected.stat_matches ?? selected.matches }} games</span>
+              </div>
+              <div v-if="selected.confidence && selected.confidence !== 'established'" class="conf-note"
+                   :style="{ color: confColor(selected.confidence) }">
+                ● {{ selected.confidence }} — few games, ratings regressed toward the mean
               </div>
             </div>
           </div>
@@ -159,6 +174,8 @@ function ovrText(v) { return v == null ? '—' : v }
 .rt { font-weight: 700; } .ovr { font-weight: 800; }
 .namebtn { background: none; border: 0; color: var(--fg); font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; padding: 0; }
 .namebtn:hover { color: var(--accent); text-decoration: underline; }
+.conf { font-size: 9px; margin-left: 6px; vertical-align: middle; }
+.conf-note { font-size: 11px; font-weight: 700; margin-top: 6px; text-transform: capitalize; }
 .tierpill { display: inline-block; margin-left: 8px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid; border-radius: 4px; padding: 1px 5px; }
 
 /* Modal card */
