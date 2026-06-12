@@ -4578,6 +4578,43 @@ _CARD_ATTRS = [
 ]
 
 
+@app.get("/api/debug/cards-timing")
+def debug_cards_timing(mode: str = "1on1"):
+    """TEMP, no-auth, no sensitive data: times the two player-cards queries so we
+    can diagnose the hang. Returns only counts + elapsed ms. Remove after."""
+    import time
+    out = {"mode": mode, "build": os.environ.get("K_REVISION", "?")}
+    try:
+        with pg() as conn:
+            cur = conn.cursor()
+            t0 = time.monotonic()
+            cur.execute("""SELECT r.canonical_id FROM ratings r
+                           LEFT JOIN players_canonical pc ON pc.canonical_id=r.canonical_id
+                           WHERE r.mode=%s AND r.map='' AND r.matches_rated>=10
+                             AND NOT COALESCE(pc.hidden,FALSE)""", (mode,))
+            cids = [r["canonical_id"] for r in cur.fetchall()]
+            out["ranked_ms"] = round((time.monotonic() - t0) * 1000)
+            out["ranked_count"] = len(cids)
+            t1 = time.monotonic()
+            cur.execute("""
+                SELECT p.canonical_id, COUNT(*) AS n,
+                       SUM(p.player_lg_hits) AS lg_h, SUM(p.player_lg_attacks) AS lg_a,
+                       SUM(COALESCE(opp.player_ra_taken,0)) AS ra_opp
+                FROM players p
+                JOIN matches m ON m.match_id = p.match_id
+                JOIN players opp ON opp.match_id = p.match_id AND opp.player_name <> p.player_name
+                WHERE m.match_mode = %s AND p.canonical_id = ANY(%s)
+                GROUP BY p.canonical_id HAVING COUNT(*) >= 50
+            """, (mode, cids))
+            rows = cur.fetchall()
+            out["agg_ms"] = round((time.monotonic() - t1) * 1000)
+            out["agg_count"] = len(rows)
+        out["total_ms"] = out.get("ranked_ms", 0) + out.get("agg_ms", 0)
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {e}"
+    return out
+
+
 @app.get("/api/admin/player-cards")
 def admin_player_cards(authorization: str | None = Header(default=None),
                        mode: str = "1on1"):
