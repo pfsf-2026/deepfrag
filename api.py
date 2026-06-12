@@ -4656,14 +4656,19 @@ def admin_player_cards(authorization: str | None = Header(default=None),
         p = {"canonical_id": r["canonical_id"], "display": r["display"], "region": r["region"],
              "rank": i + 1, "conservative": round(r["conservative"], 1),
              "matches": r["matches_rated"], "tier": tier_for(r["conservative"], cutoffs)}
-        c = card_for(r["canonical_id"]) if r["canonical_id"] in sig else {"ovr": None, "attrs": None}
+        c = (card_for(r["canonical_id"]) if r["canonical_id"] in sig
+             else {"ovr": None, "attrs": None, "stat_matches": 0, "confidence": "none"})
         p.update(c)
         enriched.append(p)
+
+    # Only card ESTABLISHED players (>= 50 games) — the same floor as the percentile
+    # anchor, so every carded player has a stable, sample-backed rating.
+    MIN_CARD_MATCHES = 50
 
     def take(pred, n):
         out = []
         for p in enriched:
-            if pred(p):
+            if (p.get("stat_matches") or 0) >= MIN_CARD_MATCHES and pred(p):
                 out.append(p)
                 if len(out) >= n:
                     break
@@ -4674,9 +4679,9 @@ def admin_player_cards(authorization: str | None = Header(default=None),
 
     sections = [
         {"key": "overall", "label": "Top 20 — Overall", "players": take(lambda p: True, 20)},
-        {"key": "div1", "label": "Top 10 — Div 1", "players": take(in_div("div1"), 10)},
-        {"key": "div2", "label": "Top 10 — Div 2", "players": take(in_div("div2"), 10)},
-        {"key": "div3", "label": "Top 10 — Div 3", "players": take(in_div("div3"), 10)},
+        {"key": "div1", "label": "Top 10 — Div 1 (50+ games)", "players": take(in_div("div1"), 10)},
+        {"key": "div2", "label": "Top 10 — Div 2 (50+ games)", "players": take(in_div("div2"), 10)},
+        {"key": "div3", "label": "Top 10 — Div 3 (50+ games)", "players": take(in_div("div3"), 10)},
     ]
     return {"mode": mode, "population": len(sig),
             "attributes": [{"key": k, "label": lbl, "pillar": pil} for k, lbl, pil, _, _ in _CARD_ATTRS],
