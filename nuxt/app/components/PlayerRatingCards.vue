@@ -14,6 +14,14 @@ const sortKey = ref('ovr')
 const sortDir = ref('desc')      // 'desc' | 'asc'
 const selected = ref(null)        // the player object for the modal
 
+function weaponStyle(p) {
+  const lg = p?.weapon_pref
+  if (lg == null) return null
+  const pct = Math.round(lg * 100)
+  const tag = lg >= 0.62 ? 'LG-reliant' : lg <= 0.38 ? 'RL-reliant' : 'Balanced'
+  return `${tag} · ${pct}% LG`
+}
+
 async function load() {
   pending.value = true; err.value = ''
   try {
@@ -132,6 +140,7 @@ function confTitle(p) {
                 <span v-if="selected.region" class="region">{{ selected.region }}</span>
                 <span class="dim">#{{ selected.rank }} · {{ selected.stat_matches ?? selected.matches }} games</span>
               </div>
+              <div v-if="weaponStyle(selected)" class="wstyle">🔫 {{ weaponStyle(selected) }}</div>
               <div v-if="selected.confidence && selected.confidence !== 'established'" class="conf-note"
                    :style="{ color: confColor(selected.confidence) }">
                 ● {{ selected.confidence }} — few games, ratings regressed toward the mean
@@ -146,7 +155,7 @@ function confTitle(p) {
               <span class="rval" :style="{ color: ratingColor(a.value) }">{{ ovrText(a.value) }}</span>
             </div>
           </div>
-          <p class="foot">Playstyle characteristics (sample-shrunk percentiles). Deep coaching characteristics — stack discipline, Mega timing, first-spawn — load here next.</p>
+          <p class="foot">Phase 1 — easy, directly bot-transmutable skills (each maps to a frogbot dial). Movement, situational aim, reaction come in Phase 2–3.</p>
         </div>
       </div>
     </Teleport>
@@ -176,6 +185,7 @@ function confTitle(p) {
 .namebtn:hover { color: var(--accent); text-decoration: underline; }
 .conf { font-size: 9px; margin-left: 6px; vertical-align: middle; }
 .conf-note { font-size: 11px; font-weight: 700; margin-top: 6px; text-transform: capitalize; }
+.wstyle { font-size: 11px; color: var(--fg-2); margin-top: 6px; font-weight: 600; }
 .tierpill { display: inline-block; margin-left: 8px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid; border-radius: 4px; padding: 1px 5px; }
 
 /* Modal card */

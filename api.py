@@ -4560,24 +4560,21 @@ def _parse_logo_data_uri(s: str):
     return raw, mime
 
 
-# ── Player Rating Cards (Decision & Skill Framework) ─────────────────────────
-# Deep playstyle characteristics — composites/ratios that reveal HOW a player
-# wins, not raw box scores — each scored 0-99 as a sample-shrunk percentile vs
-# the established population. Maps onto the pillars in docs/decision_skill_framework.md.
-# Deeper coaching characteristics (stack discipline, Mega timing, restack, FSO)
-# are loaded per-player in the modal from the coaching layer. (key, label, pillar,
-# higher_is_better)
+# ── Player Rating Cards — Phase 1 (Decision & Skill Framework) ───────────────
+# The EASY tier: single-number skills already stored per match (no reparse), each
+# a direct frogbot cvar so a player rating transmutes straight into a bot dial.
+# Scored 0-99 as a sample-shrunk percentile vs the established population.
+# Phase 2/3 add movement, situational aim (yaw/pitch, under-fire), reaction.
+# (key, label, pillar, higher_is_better) → bot dial:
+#   lg_acc/sg_acc → accuracy · rl_acc → prediction_error · ra/mh_ctrl → item-desire
+#   weights · aggression → engage threshold. Weapon Preference (style) → lg/rl_pref.
 _CARD_ATTRS = [
-    ("tracking",      "Tracking",      "Aim",         True),   # LG hit%
-    ("rocket_aim",    "Rocket Aim",    "Aim",         True),   # RL DIRECT-hit% (real prediction)
-    ("finishing",     "Finishing",     "Aim",         True),   # kills per 100 dmg — clinical conversion
-    ("firepower",     "Firepower",     "Temperament", True),   # damage output / match
-    ("survivability", "Survivability", "Awareness",   True),   # dmg absorbed per death (tankiness/escape)
-    ("anti_spawn",    "Anti-Spawn",    "Awareness",   False),  # opponent spawnfrags (lower = better positioning)
-    ("tempo",         "Tempo",         "Movement",    True),   # avg speed
-    ("mobility",      "Mobility",      "Movement",    True),   # self-damage/match = rocket-jump aggression
-    ("armor_ctrl",    "Armor Control", "Game Sense",  True),   # RA share vs opponent (map-independent)
-    ("mega_ctrl",     "Mega Control",  "Game Sense",  True),   # MH share vs opponent
+    ("lg_acc",     "LG Accuracy", "Aim",         True),
+    ("rl_acc",     "RL Accuracy", "Aim",         True),   # DIRECT hits / attacks
+    ("sg_acc",     "SG Accuracy", "Aim",         True),
+    ("ra_ctrl",    "RA Control",  "Game Sense",  True),   # RA share vs opponent (map-independent)
+    ("mh_ctrl",    "MH Control",  "Game Sense",  True),   # Mega share vs opponent
+    ("aggression", "Aggression",  "Temperament", True),   # damage given / match
 ]
 
 
@@ -4590,29 +4587,24 @@ def admin_player_cards(authorization: str | None = Header(default=None),
     _check_admin_auth(authorization)
     with pg() as conn:
         cur = conn.cursor()
-        # 1) Aggregate the RICH per-match columns per player (>=5 matches), then
-        #    derive deep playstyle composites. Item control uses a LATERAL join to
-        #    the opponent so RA/MH share is map-independent (same trick stats_pg uses).
+        # 1) Aggregate the Phase-1 columns per player (>=5 matches). Item control
+        #    uses a LATERAL join to the opponent so RA/MH share is map-independent.
         cur.execute("""
             SELECT p.canonical_id,
                    COALESCE(pc.display_name, p.canonical_id) AS display,
                    COUNT(*) AS n,
                    SUM(p.player_lg_hits) AS lg_h, SUM(p.player_lg_attacks) AS lg_a,
                    SUM(p.player_rl_directs) AS rl_d, SUM(p.player_rl_attacks) AS rl_a,
+                   SUM(p.player_sg_hits) AS sg_h, SUM(p.player_sg_attacks) AS sg_a,
                    SUM(p.player_damage_given) AS dmg_g,
-                   SUM(p.player_damage_to_die) AS dmg_die, SUM(p.player_deaths) AS deaths,
-                   SUM(COALESCE(p.player_rl_kills_enemy,0)+COALESCE(p.player_lg_kills_enemy,0)) AS kills,
-                   SUM(p.player_damage_self) AS dmg_self,
-                   AVG(p.player_speed_avg) AS speed,
+                   SUM(p.player_lg_damage_enemy) AS lg_dmg, SUM(p.player_rl_damage_enemy) AS rl_dmg,
                    SUM(p.player_ra_taken) AS ra_mine, SUM(p.player_health100_taken) AS mh_mine,
-                   SUM(COALESCE(opp.ra,0)) AS ra_opp, SUM(COALESCE(opp.mh,0)) AS mh_opp,
-                   AVG(opp.spawnf) AS spawnf
+                   SUM(COALESCE(opp.ra,0)) AS ra_opp, SUM(COALESCE(opp.mh,0)) AS mh_opp
             FROM players p
             JOIN matches m ON m.match_id = p.match_id
             LEFT JOIN players_canonical pc ON pc.canonical_id = p.canonical_id
             LEFT JOIN LATERAL (
-                SELECT p2.player_ra_taken AS ra, p2.player_health100_taken AS mh,
-                       p2.player_spawnfrags AS spawnf
+                SELECT p2.player_ra_taken AS ra, p2.player_health100_taken AS mh
                 FROM players p2
                 WHERE p2.match_id = p.match_id AND p2.player_name <> p.player_name
                 LIMIT 1
@@ -4630,18 +4622,17 @@ def admin_player_cards(authorization: str | None = Header(default=None),
             n = r["n"] or 0
             ra_m, ra_o = r["ra_mine"] or 0, r["ra_opp"] or 0
             mh_m, mh_o = r["mh_mine"] or 0, r["mh_opp"] or 0
+            lg_dmg, rl_dmg = r["lg_dmg"] or 0, r["rl_dmg"] or 0
             sig[r["canonical_id"]] = {
                 "display": r["display"], "matches": n,
-                "tracking":      _ratio(r["lg_h"], r["lg_a"]),
-                "rocket_aim":    _ratio(r["rl_d"], r["rl_a"]),
-                "finishing":     _ratio(r["kills"], (r["dmg_g"] or 0) / 100.0),  # kills / 100 dmg
-                "firepower":     _ratio(r["dmg_g"], n),
-                "survivability": _ratio(r["dmg_die"], r["deaths"]),
-                "anti_spawn":    r["spawnf"],                                     # lower better
-                "tempo":         r["speed"],
-                "mobility":      _ratio(r["dmg_self"], n),
-                "armor_ctrl":    _ratio(ra_m, ra_m + ra_o),
-                "mega_ctrl":     _ratio(mh_m, mh_m + mh_o),
+                "lg_acc":     _ratio(r["lg_h"], r["lg_a"]),
+                "rl_acc":     _ratio(r["rl_d"], r["rl_a"]),
+                "sg_acc":     _ratio(r["sg_h"], r["sg_a"]),
+                "ra_ctrl":    _ratio(ra_m, ra_m + ra_o),
+                "mh_ctrl":    _ratio(mh_m, mh_m + mh_o),
+                "aggression": _ratio(r["dmg_g"], n),
+                # Style descriptor (not a 0-99 skill): LG share of LG+RL damage.
+                "weapon_pref": _ratio(lg_dmg, lg_dmg + rl_dmg),
             }
 
         # 2) Percentile anchor = ESTABLISHED players only (>= MIN_ANCHOR_MATCHES),
@@ -4676,7 +4667,8 @@ def admin_player_cards(authorization: str | None = Header(default=None),
             vals = [a["value"] for a in attrs if a["value"] is not None]
             conf = "established" if n >= MIN_ANCHOR_MATCHES else ("provisional" if n >= 15 else "low")
             return {"ovr": round(sum(vals) / len(vals)) if vals else None, "attrs": attrs,
-                    "stat_matches": n, "confidence": conf}
+                    "stat_matches": n, "confidence": conf,
+                    "weapon_pref": sig[cid].get("weapon_pref")}
 
         # 3) Ranked player list + tier per player (stored conservative + tier cutoffs).
         cutoffs = _get_tier_cutoffs(cur, mode)
