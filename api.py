@@ -4587,8 +4587,10 @@ def admin_player_cards(authorization: str | None = Header(default=None),
     _check_admin_auth(authorization)
     with pg() as conn:
         cur = conn.cursor()
-        # 1) Aggregate the Phase-1 columns per player (>=5 matches). Item control
-        #    uses a LATERAL join to the opponent so RA/MH share is map-independent.
+        # 1) Aggregate the Phase-1 columns per ESTABLISHED player (>=50 matches —
+        #    the floor we both anchor and card on). A hash SELF-JOIN to the
+        #    opponent (1on1 = 2 players/match) gives map-independent RA/MH share
+        #    cheaply; the old per-row LATERAL timed out the uncached admin call.
         cur.execute("""
             SELECT p.canonical_id,
                    COALESCE(pc.display_name, p.canonical_id) AS display,
@@ -4599,19 +4601,15 @@ def admin_player_cards(authorization: str | None = Header(default=None),
                    SUM(p.player_damage_given) AS dmg_g,
                    SUM(p.player_lg_damage_enemy) AS lg_dmg, SUM(p.player_rl_damage_enemy) AS rl_dmg,
                    SUM(p.player_ra_taken) AS ra_mine, SUM(p.player_health100_taken) AS mh_mine,
-                   SUM(COALESCE(opp.ra,0)) AS ra_opp, SUM(COALESCE(opp.mh,0)) AS mh_opp
+                   SUM(COALESCE(opp.player_ra_taken,0)) AS ra_opp,
+                   SUM(COALESCE(opp.player_health100_taken,0)) AS mh_opp
             FROM players p
             JOIN matches m ON m.match_id = p.match_id
+            JOIN players opp ON opp.match_id = p.match_id AND opp.player_name <> p.player_name
             LEFT JOIN players_canonical pc ON pc.canonical_id = p.canonical_id
-            LEFT JOIN LATERAL (
-                SELECT p2.player_ra_taken AS ra, p2.player_health100_taken AS mh
-                FROM players p2
-                WHERE p2.match_id = p.match_id AND p2.player_name <> p.player_name
-                LIMIT 1
-            ) opp ON true
             WHERE m.match_mode = %s AND p.canonical_id IS NOT NULL
             GROUP BY p.canonical_id, pc.display_name
-            HAVING COUNT(*) >= 5
+            HAVING COUNT(*) >= 50
         """, (mode,))
         sig = {}
 
