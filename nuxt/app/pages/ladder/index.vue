@@ -78,6 +78,23 @@ function challengeStatus(c) {
   return 'Awaiting availability'
 }
 function involvesMe(c) { return myTeam.value && (c.challenger_id === myTeam.value.id || c.challenged_id === myTeam.value.id) }
+// Only the CHALLENGER may withdraw, and only while still open (no time agreed).
+function canWithdraw(c) {
+  return !!myTeam.value && c.challenger_id === myTeam.value.id && c.status === 'open' && !c.agreed_at
+}
+const withdrawingId = ref(null)
+async function doWithdraw(c) {
+  if (!canWithdraw(c)) return
+  if (!confirm('Withdraw your challenge? Both teams will be freed up.')) return
+  withdrawingId.value = c.id
+  challengeErr.value = ''
+  try {
+    await $fetch(`${base}/api/ladder/challenge/${c.id}/withdraw`, { method: 'POST', headers: useAuth().authHeader() })
+    if (schedulerChallenge.value?.id === c.id) schedulerChallenge.value = null
+    await load()
+  } catch (e) { challengeErr.value = e?.data?.detail || e?.message || 'Could not withdraw challenge' }
+  finally { withdrawingId.value = null }
+}
 async function onScheduled() { schedulerChallenge.value = null; await load() }
 function editTeam(t) { editingTeam.value = t }
 async function onTeamAdded(name) { showAddTeam.value = false; editingTeam.value = null; teamSubmitted.value = name; await load() }
@@ -317,7 +334,10 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <template v-if="myOpenChallenge">
               <div class="ym-teams"><strong>{{ teamName(myOpenChallenge.challenger_id) }}</strong><span class="vs">vs</span><strong>{{ teamName(myOpenChallenge.challenged_id) }}</strong></div>
               <div class="ym-status">{{ challengeStatus(myOpenChallenge) }}</div>
-              <button class="rail-btn" @click="schedulerChallenge = myOpenChallenge">{{ myChallengeAction(myOpenChallenge) }}</button>
+              <div class="ym-actions">
+                <button class="rail-btn" @click="schedulerChallenge = myOpenChallenge">{{ myChallengeAction(myOpenChallenge) }}</button>
+                <button v-if="canWithdraw(myOpenChallenge)" class="rail-btn ghost" :disabled="withdrawingId === myOpenChallenge.id" @click="doWithdraw(myOpenChallenge)">{{ withdrawingId === myOpenChallenge.id ? 'Withdrawing…' : 'Withdraw' }}</button>
+              </div>
             </template>
             <p v-else-if="myTeam" class="muted small">No active match. Go to <a class="lnk" @click="setTab('standings')">Standings</a> and hit ⚔ Challenge on a team 1–2 rungs above you.</p>
             <p v-else-if="loggedIn && user?.canonical_id" class="muted small">Join or create a team to start scheduling matches.</p>
@@ -331,7 +351,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <span class="cstatus">{{ challengeStatus(c) }}</span>
             <span class="spacer" />
             <button v-if="involvesMe(c)" class="sched-btn" @click="schedulerChallenge = c">{{ c.agreed_at ? 'View' : 'Schedule' }}</button>
-            <span v-else-if="c.deadline && !c.agreed_at" class="deadline">by {{ new Date(c.deadline).toLocaleDateString() }}</span>
+            <button v-if="canWithdraw(c)" class="sched-btn ghost" :disabled="withdrawingId === c.id" @click="doWithdraw(c)">{{ withdrawingId === c.id ? '…' : 'Withdraw' }}</button>
+            <span v-else-if="!involvesMe(c) && c.deadline && !c.agreed_at" class="deadline">by {{ new Date(c.deadline).toLocaleDateString() }}</span>
           </div>
         </section>
 
@@ -374,7 +395,9 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <li><strong>Win a 2-rung challenge</strong> → jump up 2; the teams you passed each drop one.</li>
             <li><strong>Forfeit</strong> (no game within a week) → the challenged team drops a rung.</li>
             <li>Best of 3 — three games count toward stats; the Bo3 result (first to 2) sets the ladder W/L. Winners may challenge again immediately.</li>
+            <li><strong>Withdraw:</strong> the <strong>challenging</strong> team can pull a challenge any time <strong>before it's scheduled</strong> (no agreed time yet) — this frees both teams. The challenged team can't withdraw; only the side that issued it.</li>
             <li><strong>After a loss</strong> your team <strong>can't issue challenges for a week</strong> — you can still be challenged. (A live countdown shows on your row.)</li>
+            <li><strong>Win a defense, lift the cooldown:</strong> if a team in cooldown is challenged and <strong>wins</strong>, the cooldown clears <strong>immediately</strong> and they can challenge again right away.</li>
           </ul>
         </section>
         </div>
@@ -533,6 +556,10 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .ym-status { color: var(--fg-2); font-size: 13px; margin: 8px 0 12px; }
 .rail-btn { width: 100%; background: var(--accent); color: var(--bg); border: 0; padding: 9px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; }
 .rail-btn:hover { filter: brightness(1.1); }
+.ym-actions { display: flex; gap: 8px; }
+.rail-btn.ghost, .sched-btn.ghost { background: var(--panel-2); color: var(--fg-2); border: 1px solid var(--border); }
+.rail-btn.ghost:hover, .sched-btn.ghost:hover { color: var(--loss); border-color: var(--loss); filter: none; }
+.rail-btn:disabled, .sched-btn:disabled { opacity: 0.6; cursor: default; }
 .lnk { color: var(--accent); cursor: pointer; }
 .chal-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 0; border-top: 1px solid rgba(43,54,80,.5); font-size: 14px; }
 .chal-row .arrow { color: var(--accent); } .chal-row .cstatus { color: var(--fg-2); font-size: 12px; } .chal-row .spacer { flex: 1; }

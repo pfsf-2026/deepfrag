@@ -3057,16 +3057,19 @@ def ladder_detail(ladder_id: int, response: Response):
         teams = _enrich_members(cur, _ladder.standings(cur, ladder_id))
         # Loss cooldown: a team that lost in the last `loss_cooldown_days` can't
         # issue challenges until cooldown_until. Attach it so the board can show a
-        # countdown + disable that team's challenge buttons.
+        # countdown + disable that team's challenge buttons. A win since that loss
+        # clears it (winning a defense lifts cooldown) — so only count it when the
+        # team's latest decisive result is a loss.
         cd_days = (lad.get("rules") or {}).get("loss_cooldown_days", 7)
         cur.execute("""SELECT t.id,
-                              max(m.played_at) FILTER (WHERE m.winner_id IS NOT NULL AND m.winner_id <> t.id) AS last_loss
+                              max(m.played_at) FILTER (WHERE m.winner_id IS NOT NULL AND m.winner_id <> t.id) AS last_loss,
+                              max(m.played_at) FILTER (WHERE m.winner_id = t.id) AS last_win
                        FROM ladder_teams t
                        LEFT JOIN ladder_matches m ON (m.team_a_id=t.id OR m.team_b_id=t.id) AND m.ladder_id=%s
                        WHERE t.ladder_id=%s GROUP BY t.id""", (ladder_id, ladder_id))
         cd = {}
         for r in cur.fetchall():
-            if r["last_loss"]:
+            if r["last_loss"] and not (r["last_win"] and r["last_win"] > r["last_loss"]):
                 until = r["last_loss"] + timedelta(days=cd_days)
                 if until > datetime.now(timezone.utc):
                     cd[r["id"]] = until.isoformat()
@@ -3782,19 +3785,26 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
         # Loss cooldown: after losing ANY match, a team can't ISSUE challenges for
         # a week (it can still BE challenged). The sting of a loss. Winners stay
         # free to challenge until they lose or get tied up in a challenge.
+        # BUT a win clears it early: a team in cooldown can only play as the
+        # CHALLENGED side, so if they then WIN that defense their most recent
+        # decisive match is a win → cooldown lifts immediately. So cooldown is
+        # active only when the team's latest decisive result is a loss.
         cooldown_days = (lad.get("rules") or {}).get("loss_cooldown_days", 7)
-        cur.execute("""SELECT max(played_at) AS last_loss FROM ladder_matches
-                       WHERE ladder_id=%s AND winner_id IS NOT NULL AND winner_id <> %s
+        cur.execute("""SELECT max(played_at) FILTER (WHERE winner_id <> %s) AS last_loss,
+                              max(played_at) FILTER (WHERE winner_id = %s)  AS last_win
+                       FROM ladder_matches
+                       WHERE ladder_id=%s AND winner_id IS NOT NULL
                          AND (team_a_id=%s OR team_b_id=%s)""",
-                    (ladder_id, challenger_id, challenger_id, challenger_id))
+                    (challenger_id, challenger_id, ladder_id, challenger_id, challenger_id))
         lr = cur.fetchone()
-        if lr and lr["last_loss"]:
+        if lr and lr["last_loss"] and not (lr["last_win"] and lr["last_win"] > lr["last_loss"]):
             until = lr["last_loss"] + timedelta(days=cooldown_days)
             now = datetime.now(timezone.utc)
             if until > now:
                 rem = until - now
                 raise HTTPException(409, f"your team lost recently — you can't issue challenges for "
-                                         f"{rem.days}d {rem.seconds // 3600}h. (You can still be challenged.)")
+                                         f"{rem.days}d {rem.seconds // 3600}h. (You can still be challenged, "
+                                         f"and winning a defense lifts the cooldown.)")
         forfeit_days = (lad.get("rules") or {}).get("forfeit_days", 7)
         deadline = datetime.now(timezone.utc) + timedelta(days=forfeit_days)
         cur.execute("""INSERT INTO ladder_challenges (ladder_id, challenger_id, challenged_id, rungs_up, deadline)
@@ -4042,6 +4052,50 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
     except Exception:
         pass
     return {"challenge_id": challenge_id, "agreed_at": slot, "server": server, "status": "scheduled"}
+
+
+@app.post("/api/ladder/challenge/{challenge_id}/withdraw")
+def ladder_challenge_withdraw(challenge_id: int, authorization: str | None = Header(default=None)):
+    """The CHALLENGER may withdraw their own challenge while it's still `open`
+    (no time agreed yet). Frees both teams. The challenged team cannot withdraw —
+    only the side that issued it. Once `scheduled`, it's locked (ask an admin to
+    cancel). Admins may withdraw on a team's behalf."""
+    import ladder as _ladder
+    user = _current_user(authorization, required=True)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.status,
+                              ca.name AS challenger, cd.name AS challenged
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id
+                       WHERE c.id=%s""", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] != "open":
+            raise HTTPException(409, "this challenge is already scheduled or resolved — "
+                                     "ask an admin to cancel it")
+        # Only the challenger's roster (or an admin) may withdraw. The challenged
+        # team is never allowed to — they can only play it or let it expire.
+        if not _user_on_team(cur, user, ch["challenger_id"]):
+            if _user_on_team(cur, user, ch["challenged_id"]):
+                raise HTTPException(403, "only the challenging team can withdraw a challenge")
+            raise HTTPException(403, "you must be on the challenging team to withdraw this")
+        cur.execute("""UPDATE ladder_challenges SET status='cancelled', resolved_at=now()
+                       WHERE id=%s AND status='open' RETURNING id""", (challenge_id,))
+        row = cur.fetchone()
+        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
+        conn.commit()
+    if not row:
+        raise HTTPException(409, "challenge is no longer open")
+    try:
+        import notify
+        notify.challenge_withdrawn(ch["challenger"], ch["challenged"], mention=mention)
+    except Exception:
+        pass
+    return {"challenge_id": challenge_id, "status": "cancelled"}
 
 
 @app.get("/api/admin/ladder/challenge/{challenge_id}/candidate-games")

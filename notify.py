@@ -164,6 +164,15 @@ def forfeit_posted(challenged: str):
         COLOR_WARN))
 
 
+def challenge_withdrawn(challenger: str, challenged: str, mention: str | None = None):
+    """The challenger pulled their (not-yet-scheduled) challenge. Both teams free."""
+    return send(content=mention or None, embed=_embed(
+        "↩️ Challenge withdrawn",
+        f"**{challenger}** withdrew their challenge against **{challenged}**. "
+        f"Both teams are free again.",
+        COLOR_WARN))
+
+
 def match_reminder(team_a: str, team_b: str, when: str | None, server: str | None,
                    kind: str = "1h", mention: str | None = None):
     """Upcoming-match reminder. kind: '1h' (~1 hour out) or '10m' (starting in
