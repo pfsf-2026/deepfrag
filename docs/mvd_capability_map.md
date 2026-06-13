@@ -11,7 +11,68 @@
 1. **Better coaching AI** — what insight does this give a player about how to improve?
 2. **Smarter / more-human / more-tunable bot** — what frogbot cvar does it drive (transmutability)?
 
-Every capability below is mapped to **both**. A capability that serves neither is noise.
+Every capability is judged against both. But each one is really a **triple** — the
+same measurement is simultaneously:
+- a **coaching insight** (what to fix),
+- a **frogbot cvar** (transmutability — set the bot to it),
+- a **player rating** (0–99, percentile-anchored vs established players, empirical-
+  Bayes shrinkage K≈150 — bragging rights).
+
+A capability that serves none of the three is noise.
+
+---
+
+## 🎖️ Player Rating Catalog — the ~30 sub-dials
+Each is a 0–99 rating AND a bot cvar AND a coaching axis. Scoring: percentile vs
+established players (≥50 games), shrunk toward population mean (K≈150), map-
+normalized where map-dependent. `built` = live in our endpoints; `gap` = data
+exists, not yet computed.
+
+**AIM (7)**
+| rating | data source | bot cvar | status |
+|---|---|---|---|
+| lg_accuracy | `/damage` byWeapon lg + time-held | `accuracy` (lg) | built |
+| rl_accuracy | `/damage` byWeapon rl, direct hits | `accuracy` (rl) | built |
+| **aim_under_fire** | `/damage` `ewep` / given | `prediction_error` | **gap #1 (building now)** |
+| reaction_time | `view` onset vs first `damage` ts | `reaction_time` | gap |
+| airshot_aim | rl hits on `hgt`>0 victims | rl-vs-airborne | gap |
+| vertical_aim | `view` `vp` tracking | aim pitch | gap |
+| tracking_consistency | lg sustained dmg variance | aim steadiness | gap |
+
+**MOVEMENT (5)**
+| speed_ceiling | `vel` p95/p99 | air-accel | built |
+| bunnyhop_sustain | `vel` %>320 | air-strafe | built |
+| coupling | `vel` heading vs `view` yaw | movement-vs-facing tie | built |
+| air_control | `hgt` airborne % + efficiency | air control | built |
+| rocketjump_usage | `hgt` jumps + self-dmg | `use_rocketjumps` | gap |
+
+**ECONOMY / CONTROL (7)**
+| stack_discipline | match_metrics kill vs death stack | risk model | built |
+| ra_control | item_control ra share | item desire (ra) | built |
+| mh_control | item_control mh share | item desire (mh) | built |
+| mega_timing | mh latency | item timing | built |
+| restack_speed | restack sec | recovery | built |
+| ammo_economy | `sh/nl/rk/cl` | ammo discipline | gap |
+| pack_denial | `/backpacks` RL/LG drops taken | greed/denial | gap |
+
+**POWERUP (2)**
+| quad_control | `q` intervals + `/items` | powerup desire | gap |
+| quad_efficiency | frags-per-quad (`q` × `/frags`) | powerup aggression | gap |
+
+**POSITION / DECISION (5)**
+| map_control | `/region-control` | territory | partial |
+| route_efficiency | `/loc-graph` transitions | navigation | gap |
+| item_cycle_timing | `/items` + `/map-entities` | `lookahead_time` | gap |
+| aggression | region + dmg-output cadence | aggression dials | gap |
+| spawn_control | `sp` + frag positions | spawn pressure | gap |
+
+**WEAPON / COMBAT (4)**
+| weapon_preference | `/weapon-pickups` rl vs lg | `rl_preference`/`lg_preference` | gap |
+| weapon_efficiency | `/weapon-pickups` kills-before-death | weapon choice | gap |
+| frag_efficiency | `/frags` K/D adjusted | skill scalar | built |
+| damage_efficiency | `/damage` given/taken | survivability | **gap #1 (building now)** |
+
+= **30 ratings.** ~10 built, ~20 in the GAPS pipeline below.
 
 ---
 

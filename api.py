@@ -4747,6 +4747,8 @@ def _metric_card_for_games(C, rows, display, win=13):
 
     speeds, games_ok, mm_list = [], 0, []
     air_frames = alive_frames = 0
+    dmg_acc = {k: 0 for k in ("given", "taken", "ewep",
+                              "enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")}
     Kbase = max(1, round(50.0 / win))
     cpl = {1: ([], []), Kbase: ([], [])}  # stride(frames) -> (heading_rates, view_rates)
     for gr in rows:
@@ -4795,7 +4797,17 @@ def _metric_card_for_games(C, rows, display, win=13):
             mm = C.match_metrics(gr["gid"], gr["pname"])
             if mm:
                 mm_list.append(mm)
-        except Exception as e:
+            # DAMAGE (gap #1): per-hit damage + EWep victim-weapon buckets.
+            # ewep = damage dealt to enemies HOLDING rl/lg = aim-under-fire vs
+            # dangerous opponents (not farming unarmed). given/taken = trade efficiency.
+            dmg = C._get(f"/v1/demos/gameId:{gr['gid']}/damage")
+            if dmg and "byPlayer" in dmg:
+                dk = C._resolve_player_key(gr["pname"], list(dmg["byPlayer"].keys()))
+                if dk:
+                    pd = dmg["byPlayer"][dk]
+                    for kk in dmg_acc:
+                        dmg_acc[kk] += pd.get(kk, 0) or 0
+        except Exception:
             continue
 
     card = {"games": games_ok}
@@ -4822,6 +4834,15 @@ def _metric_card_for_games(C, rows, display, win=13):
             "mega_latency_sec": _mean([m["mh_latency"] for m in mm_list]),
             "stack_at_kill": sk, "stack_at_death": _mean([m["stack_at_death"] for m in mm_list]),
             "stack_discipline_lead": (round(sk - ek, 1) if sk is not None and ek is not None else None),
+        }
+    if dmg_acc["given"] > 0:
+        g_, t_, e_ = dmg_acc["given"], dmg_acc["taken"], dmg_acc["ewep"]
+        card["DAMAGE"] = {
+            "given": g_, "taken": t_,
+            "efficiency": round(g_ / t_, 2) if t_ else None,    # >1 = winning trades
+            "aim_under_fire_pct": round(100.0 * e_ / g_, 1),    # % of dmg landed on rl/lg-armed enemies
+            "vs_armed": {k.replace("enemyVs", "").lower(): dmg_acc[k]
+                         for k in ("enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")},
         }
     coup_out = {}
     for K, (hh, vv) in cpl.items():
