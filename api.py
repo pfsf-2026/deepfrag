@@ -4936,6 +4936,39 @@ def debug_hub_coverage():
     return {"totals": tot, "by_year_mode": by}
 
 
+@app.get("/api/debug/player-games")
+def debug_player_games(name: str = "cronus"):
+    """Diagnose where a player's games drop out of the movement query: shows the
+    resolver candidates + a staged row count through each filter."""
+    norm = "".join(c for c in name.lower() if c.isalnum())
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""SELECT pc.canonical_id, pc.display_name, count(p.match_id) AS games,
+                              (regexp_replace(lower(pc.display_name),'[^a-z0-9]','','g')=%s) AS exact
+                       FROM players_canonical pc LEFT JOIN players p ON p.canonical_id=pc.canonical_id
+                       WHERE (regexp_replace(lower(pc.display_name),'[^a-z0-9]','','g') LIKE %s
+                              OR regexp_replace(lower(pc.canonical_id),'[^a-z0-9]','','g') LIKE %s)
+                         AND NOT COALESCE(pc.hidden,FALSE)
+                       GROUP BY pc.canonical_id, pc.display_name
+                       ORDER BY exact DESC, count(p.match_id) DESC LIMIT 6""",
+                    (norm, norm + "%", norm + "%"))
+        cands = [dict(r) for r in cur.fetchall()]
+        cid = cands[0]["canonical_id"] if cands else None
+        stages, recent = {}, []
+        if cid:
+            def c1(sql, *a):
+                cur.execute(sql, a); return cur.fetchone()["n"]
+            stages["player_rows"] = c1("SELECT count(*) n FROM players WHERE canonical_id=%s", cid)
+            stages["joined_matches"] = c1("SELECT count(*) n FROM players p JOIN matches m ON m.match_id=p.match_id WHERE p.canonical_id=%s", cid)
+            stages["mode_1on1"] = c1("SELECT count(*) n FROM players p JOIN matches m ON m.match_id=p.match_id WHERE p.canonical_id=%s AND m.match_mode='1on1'", cid)
+            stages["with_hub"] = c1("SELECT count(*) n FROM players p JOIN matches m ON m.match_id=p.match_id WHERE p.canonical_id=%s AND m.match_mode='1on1' AND m.hub_game_id IS NOT NULL", cid)
+            cur.execute("""SELECT m.hub_game_id AS gid, m.match_map AS mp, m.match_mode AS mode, m.match_date AS dt
+                           FROM players p JOIN matches m ON m.match_id=p.match_id
+                           WHERE p.canonical_id=%s ORDER BY m.match_date DESC LIMIT 6""", (cid,))
+            recent = [dict(r) for r in cur.fetchall()]
+    return {"name": name, "resolved": cid, "candidates": cands, "stages": stages, "recent6": recent}
+
+
 @app.get("/api/admin/player-cards")
 def admin_player_cards(authorization: str | None = Header(default=None),
                        mode: str = "1on1"):
