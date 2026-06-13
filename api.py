@@ -4760,6 +4760,7 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
     react_v2_raw = []   # reaction v2 raw: target-acquisition ms (enemy enters FOV -> crosshair)
     react_v2_adj = []   # reaction v2 ping-adjusted: raw - ping(RTT) - tick, per game
     pings = []          # per-game player ping (RTT, ms)
+    wiq = {"lg": [], "rl": []}  # weapon selection IQ: distance-to-enemy per LG/RL hit
     dmg_acc = {k: 0 for k in ("given", "taken", "ewep",
                               "enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")}
     Kbase = max(1, round(50.0 / win))
@@ -4767,6 +4768,8 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
     for gr in rows:
         try:
             VX = VY = []  # velocity track for this game (used by coupling + strafe-aim)
+            pos_me = pos_en = None  # (x,y,z) tracks for me / the 1on1 opponent
+            en_name = None
             # per-game ping (RTT) for reaction correction — varies by game (e.g. yeti
             # AUS->NA ~140ms vs local ~50ms). From /demoinfo players[].ping.
             ping_g = None
@@ -4791,6 +4794,13 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
                     vya, hgt = me.get("vya") or [], me.get("hgt") or []
                     VX, VY = me.get("vx") or [], me.get("vy") or []  # Nexus's velocity vector (v32, central diff)
                     VP = me.get("vp") or []  # view pitch (angle16) — vertical aim
+                    # position tracks for weapon-IQ distance (me + the single 1on1 opponent)
+                    pos_me = (me.get("x") or [], me.get("y") or [], me.get("z") or [])
+                    _oth = [k for k in b["players"] if k != key]
+                    if len(_oth) == 1:
+                        _en = b["players"][_oth[0]]
+                        pos_en = (_en.get("x") or [], _en.get("y") or [], _en.get("z") or [])
+                        en_name = _oth[0]
                     if VX:
                         games_ok += 1
                         # SPEED: magnitude of the velocity vector (vel field). Central
@@ -4919,6 +4929,26 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
                             if ev2.get("attacker") == dk and ev2.get("victim") == atk:
                                 react.append(t2 - t0)
                                 break
+                    # WEAPON SELECTION IQ: distance to the enemy at each LG/RL hit. Right
+                    # tool for the range — LG close, RL mid/long. Uses what FIRED (damage
+                    # weapon), so immune to cl_weapon hide-scripts. 1on1: victim=opponent.
+                    if pos_en is not None and en_name is not None:
+                        mx, my, mz = pos_me
+                        ex, ey, ez = pos_en
+                        for ev in evs:
+                            if ev.get("attacker") != dk or ev.get("isSelf"):
+                                continue
+                            w = ev.get("weapon")
+                            if w not in ("lg", "rl") or ev.get("victim") != en_name:
+                                continue
+                            j = int(round((ev.get("time", 0) or 0) / win))
+                            if not (0 <= j < len(mx) and j < len(ex)
+                                    and mx[j] is not None and ex[j] is not None):
+                                continue
+                            d2 = math.hypot(mx[j] - ex[j], my[j] - ey[j])
+                            if j < len(mz) and j < len(ez) and mz[j] is not None and ez[j] is not None:
+                                d2 = math.hypot(d2, mz[j] - ez[j])
+                            wiq[w].append(d2)
         except Exception:
             continue
 
@@ -4963,6 +4993,16 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
             "rl_lg_ratio": round(bw["rl"] / bw["lg"], 2) if bw["lg"] else None,  # weapon preference proxy
             "vs_armed": {k.replace("enemyVs", "").lower(): dmg_acc[k]
                          for k in ("enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")},
+        }
+    if wiq["lg"] or wiq["rl"]:
+        def _med(xs):
+            xs = sorted(xs)
+            return int(xs[len(xs) // 2]) if xs else None
+        lgm, rlm = _med(wiq["lg"]), _med(wiq["rl"])
+        card["WEAPON_IQ"] = {  # LG should be close, RL mid/long; positive gap = good selection
+            "lg_median_dist": lgm, "lg_hits": len(wiq["lg"]),
+            "rl_median_dist": rlm, "rl_hits": len(wiq["rl"]),
+            "rl_minus_lg_dist": (rlm - lgm) if (lgm is not None and rlm is not None) else None,
         }
     if sa["total"] > 0:
         tot = sa["total"]
