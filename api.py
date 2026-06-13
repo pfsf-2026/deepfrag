@@ -5076,6 +5076,41 @@ def debug_hub_coverage():
     return {"totals": tot, "by_year_mode": by}
 
 
+@app.get("/api/debug/player-game-list")
+def debug_player_game_list(name: str,
+                           maps: str = "aerowalk,ztndm3,bravado,metron,dm2,dm4,skull,dm6,pocket",
+                           per_map: int = 5):
+    """The exact games the movement-bymap run samples for a player: per map, the N
+    most-recent 1on1 games with hub_game_id, incl mode (to confirm 1on1), ping, and
+    demo/hub links."""
+    map_list = [m.strip().lower() for m in maps.split(",") if m.strip()]
+    norm = "".join(c for c in name.lower() if c.isalnum())
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""SELECT pc.canonical_id, pc.display_name
+                       FROM players_canonical pc LEFT JOIN players p ON p.canonical_id=pc.canonical_id
+                       WHERE (regexp_replace(lower(pc.display_name),'[^a-z0-9]','','g') LIKE %s
+                              OR regexp_replace(lower(pc.canonical_id),'[^a-z0-9]','','g') LIKE %s)
+                         AND NOT COALESCE(pc.hidden,FALSE)
+                       GROUP BY pc.canonical_id, pc.display_name
+                       ORDER BY (regexp_replace(lower(pc.display_name),'[^a-z0-9]','','g')=%s) DESC,
+                                count(p.match_id) DESC LIMIT 1""", (norm + "%", norm + "%", norm))
+        row = cur.fetchone()
+        if not row:
+            return {"error": "player not found"}
+        cid = row["canonical_id"]
+        out = {}
+        for mp in map_list:
+            cur.execute("""SELECT m.hub_game_id AS gid, m.match_map AS map, m.match_date AS dt,
+                                  m.match_mode AS mode, p.player_ping AS ping, m.demo_source_url AS demo
+                           FROM players p JOIN matches m ON m.match_id=p.match_id
+                           WHERE p.canonical_id=%s AND m.match_mode='1on1' AND lower(m.match_map)=%s
+                             AND m.hub_game_id IS NOT NULL
+                           ORDER BY m.match_date DESC LIMIT %s""", (cid, mp, per_map))
+            out[mp] = [{**dict(r), "hub": f"https://hub.quakeworld.nu/game/{r['gid']}"} for r in cur.fetchall()]
+    return {"canonical_id": cid, "display": row["display_name"], "maps": out}
+
+
 @app.get("/api/debug/player-games")
 def debug_player_games(name: str = "cronus"):
     """Diagnose where a player's games drop out of the movement query: shows the
