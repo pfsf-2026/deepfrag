@@ -4573,7 +4573,6 @@ _CARD_ATTRS = [
     ("rl_acc",     "RL Accuracy", "Aim",         True),   # virtual (directs + splash) / attacks
     ("ra_ctrl",    "RA Control",  "Game Sense",  True),   # RA share vs opponent (map-independent)
     ("mh_ctrl",    "MH Control",  "Game Sense",  True),   # Mega share vs opponent
-    ("movement",   "Movement",    "Movement",    True),   # map-normalized avg speed (Phase 2)
 ]
 # Aggression dropped from Phase 1: damage-output is map-paced (DM2 lower) and
 # conflates output with fight-seeking. Rebuilt in Phase 2 as map-normalized
@@ -4643,36 +4642,6 @@ def admin_player_cards(authorization: str | None = Header(default=None),
                         "mh_ctrl":    _ratio(mh_m, mh_m + mh_o),
                         "weapon_pref": _ratio(lg_dmg, lg_dmg + rl_dmg),  # LG share (style)
                     }
-
-                # Movement (Phase 2): map-normalized average speed. Speed is map-
-                # paced (DM2 has more room), so normalize each player's per-map
-                # speed by the field average ON THAT MAP, weighted by games. 1.0 =
-                # typical mover; >1 = faster than typical. → bot `movement` dial.
-                cur.execute("""
-                    SELECT p.canonical_id, m.match_map AS map,
-                           AVG(p.player_speed_avg) AS spd, COUNT(*) AS g
-                    FROM players p JOIN matches m ON m.match_id = p.match_id
-                    WHERE m.match_mode = %s AND p.canonical_id = ANY(%s)
-                      AND p.player_speed_avg IS NOT NULL AND p.player_speed_avg > 0
-                    GROUP BY p.canonical_id, m.match_map
-                """, (mode, rated_cids))
-                spd_rows = cur.fetchall()
-                map_tot, map_g = {}, {}
-                for r in spd_rows:
-                    map_tot[r["map"]] = map_tot.get(r["map"], 0) + (r["spd"] or 0) * r["g"]
-                    map_g[r["map"]] = map_g.get(r["map"], 0) + r["g"]
-                map_avg = {mp: map_tot[mp] / map_g[mp] for mp in map_tot if map_g[mp]}
-                pm_num, pm_den = {}, {}
-                for r in spd_rows:
-                    avg = map_avg.get(r["map"])
-                    if not avg:
-                        continue
-                    cid = r["canonical_id"]
-                    pm_num[cid] = pm_num.get(cid, 0) + r["g"] * ((r["spd"] or 0) / avg)
-                    pm_den[cid] = pm_den.get(cid, 0) + r["g"]
-                for cid in sig:
-                    if pm_den.get(cid):
-                        sig[cid]["movement"] = pm_num[cid] / pm_den[cid]
     except Exception as e:
         raise HTTPException(500, f"player-cards aggregation failed: {type(e).__name__}: {e}")
 
