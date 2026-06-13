@@ -31,6 +31,7 @@ exists, not yet computed.
 **AIM (7)**
 | rating | data source | bot cvar | status |
 |---|---|---|---|
+| **strafe_aim** | `/damage` events × `vel` (dmg landed while \|v\|>320) | aim-while-mobile model | **built** — the "fly in & frag at speed" elite skill; pairs with coupling + reaction |
 | lg_accuracy | `/damage` byWeapon lg + time-held | `accuracy` (lg) | built |
 | rl_accuracy | `/damage` byWeapon rl, direct hits | `accuracy` (rl) | built |
 | **aim_under_fire** | `/damage` `ewep` / given | `prediction_error` | **gap #1 (building now)** |

@@ -4747,12 +4747,16 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None):
 
     speeds, games_ok, mm_list = [], 0, []
     air_frames = alive_frames = 0
+    pitch = []                  # signed view-pitch degrees (vertical aim)
+    bw = {"lg": 0, "rl": 0}     # per-weapon damage output
+    sa = {"fast": 0, "total": 0}  # strafe-aim: dmg dealt while |vel|>320 vs total
     dmg_acc = {k: 0 for k in ("given", "taken", "ewep",
                               "enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")}
     Kbase = max(1, round(50.0 / win))
     cpl = {1: ([], []), Kbase: ([], [])}  # stride(frames) -> (heading_rates, view_rates)
     for gr in rows:
         try:
+            VX = VY = []  # velocity track for this game (used by coupling + strafe-aim)
             b = C._get(f"/v1/demos/gameId:{gr['gid']}/buckets?windowMs={win}&layout=column&fields=pos,view,vel,hgt")
             if b and "players" in b:
                 key = (C._resolve_player_key(gr["pname"], list(b["players"].keys()))
@@ -4762,6 +4766,7 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None):
                     alive = me.get("alive") or []
                     vya, hgt = me.get("vya") or [], me.get("hgt") or []
                     VX, VY = me.get("vx") or [], me.get("vy") or []  # Nexus's velocity vector (v32, central diff)
+                    VP = me.get("vp") or []  # view pitch (angle16) — vertical aim
                     if VX:
                         games_ok += 1
                         # SPEED: magnitude of the velocity vector (vel field). Central
@@ -4791,11 +4796,16 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None):
                                                    vya[i - K] * 360.0 / 65536.0))
                         # airborne fraction from BSP floor-height (native 13ms)
                         for i in range(len(alive)):
-                            if alive[i] and i < len(hgt) and hgt[i] is not None:
+                            if not (i < len(alive) and alive[i]):
+                                continue
+                            if i < len(hgt) and hgt[i] is not None:
                                 alive_frames += 1
                                 if hgt[i] > 20:  # clearly off the floor (jump/airborne)
                                     air_frames += 1
-            mm = C.match_metrics(gr["gid"], gr["pname"])
+                            if i < len(VP) and VP[i] is not None:
+                                pd_ = VP[i] * 360.0 / 65536.0
+                                pitch.append(pd_ - 360.0 if pd_ > 180 else pd_)  # signed: + down, - up
+            mm = C.match_metrics(gr["gid"], gr["pname"]) or (C.match_metrics(gr["gid"], cid) if cid else None)
             if mm:
                 mm_list.append(mm)
             # DAMAGE (gap #1): per-hit damage + EWep victim-weapon buckets.
@@ -4806,9 +4816,27 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None):
                 dk = (C._resolve_player_key(gr["pname"], list(dmg["byPlayer"].keys()))
                       or (C._resolve_player_key(cid, list(dmg["byPlayer"].keys())) if cid else None))
                 if dk:
-                    pd = dmg["byPlayer"][dk]
+                    pdmg = dmg["byPlayer"][dk]
                     for kk in dmg_acc:
-                        dmg_acc[kk] += pd.get(kk, 0) or 0
+                        dmg_acc[kk] += pdmg.get(kk, 0) or 0
+                    bwd = pdmg.get("byWeapon") or {}
+                    bw["lg"] += bwd.get("lg", 0) or 0
+                    bw["rl"] += bwd.get("rl", 0) or 0
+                    # STRAFE-AIM: of the damage this player DEALT, how much landed while
+                    # moving at air-strafe speed (|vel|>320)? The "fly in and frag at
+                    # speed" elite skill. Joins damage events (time in ms) to the
+                    # per-frame velocity track (frame j = time_ms / win_ms).
+                    for ev in (dmg.get("events") or []):
+                        if ev.get("attacker") != dk or ev.get("isSelf"):
+                            continue
+                        dd = ev.get("damage", 0) or 0
+                        if dd <= 0:
+                            continue
+                        j = int(round((ev.get("time", 0) or 0) / win))
+                        if 0 <= j < len(VX) and VX[j] is not None and VY[j] is not None:
+                            sa["total"] += dd
+                            if math.hypot(VX[j], VY[j]) > 320:
+                                sa["fast"] += dd
         except Exception:
             continue
 
@@ -4824,6 +4852,12 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None):
         }
     if alive_frames:
         card["AIR"] = {"airborne_pct": round(100.0 * air_frames / alive_frames, 1), "alive_frames": alive_frames}
+    if pitch:
+        import statistics as _st
+        card["AIM"] = {
+            "vertical_activity_deg": round(_st.pstdev(pitch), 1) if len(pitch) > 1 else 0.0,
+            "pct_aim_up": round(100.0 * sum(1 for p in pitch if p < -10) / len(pitch), 1),  # >10deg up
+        }
     if mm_list:
         def ra_share(kind):
             mine = sum((m.get("item_control", {}).get(kind, {}) or {}).get("mine", 0) for m in mm_list)
@@ -4843,8 +4877,15 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None):
             "given": g_, "taken": t_,
             "efficiency": round(g_ / t_, 2) if t_ else None,    # >1 = winning trades
             "aim_under_fire_pct": round(100.0 * e_ / g_, 1),    # % of dmg landed on rl/lg-armed enemies
+            "lg_dmg": bw["lg"], "rl_dmg": bw["rl"],
+            "rl_lg_ratio": round(bw["rl"] / bw["lg"], 2) if bw["lg"] else None,  # weapon preference proxy
             "vs_armed": {k.replace("enemyVs", "").lower(): dmg_acc[k]
                          for k in ("enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")},
+        }
+    if sa["total"] > 0:
+        card["STRAFE_AIM"] = {
+            "pct_dmg_at_speed": round(100.0 * sa["fast"] / sa["total"], 1),  # % of dealt dmg landed while |vel|>320
+            "dmg_classified": sa["total"],
         }
     coup_out = {}
     for K, (hh, vv) in cpl.items():
