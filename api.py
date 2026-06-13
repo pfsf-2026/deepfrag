@@ -4581,6 +4581,70 @@ _CARD_ATTRS = [
 # spawn weapon). It returns as a real signal for 4on4 (weaponstay OFF).
 
 
+@app.get("/api/debug/movement")
+def debug_movement(names: str = "sane,Blood_Dog", games: int = 25):
+    """TEMP proof (no auth, no sensitive data): frame-walk a couple players'
+    recent 1on1 game buckets and return REAL movement ratings — bunnyhop %
+    (time above the 320 run-cap), speed ceiling (p95), etc. Remove after."""
+    import coaching as C
+    import math
+    WIN = 50  # ms per bucket
+    dt = WIN / 1000.0
+    out = []
+    with pg() as conn:
+        cur = conn.cursor()
+        for name in [n.strip() for n in names.split(",") if n.strip()]:
+            cur.execute("""SELECT canonical_id, display_name FROM players_canonical
+                           WHERE display_name ILIKE %s OR canonical_id ILIKE %s LIMIT 1""",
+                        (name, name))
+            row = cur.fetchone()
+            if not row:
+                out.append({"name": name, "error": "player not found"})
+                continue
+            cid, display = row["canonical_id"], row["display_name"]
+            cur.execute("""SELECT m.hub_game_id AS gid, p.player_name AS pname
+                           FROM players p JOIN matches m ON m.match_id = p.match_id
+                           WHERE p.canonical_id = %s AND m.match_mode = '1on1'
+                             AND m.hub_game_id IS NOT NULL
+                           ORDER BY m.match_date DESC LIMIT %s""", (cid, games))
+            rows = cur.fetchall()
+            speeds, games_ok = [], 0
+            for gr in rows:
+                b = C._get(f"/v1/demos/gameId:{gr['gid']}/buckets?windowMs={WIN}&layout=column")
+                if not b or "players" not in b:
+                    continue
+                players = b["players"]
+                key = C._resolve_player_key(gr["pname"], list(players.keys()))
+                if not key:
+                    continue
+                me = players[key]
+                X, Y, alive = me.get("x") or [], me.get("y") or [], me.get("alive") or []
+                if not X:
+                    continue
+                games_ok += 1
+                for i in range(len(X) - 1):
+                    if (i + 1 < len(alive) and alive[i] and alive[i + 1]
+                            and X[i] is not None and X[i + 1] is not None):
+                        spd = math.hypot(X[i + 1] - X[i], Y[i + 1] - Y[i]) / dt
+                        if spd < 2500:  # drop teleport/respawn jumps
+                            speeds.append(spd)
+            if not speeds:
+                out.append({"name": display, "games_found": len(rows),
+                            "games_processed": games_ok, "error": "no movement frames"})
+                continue
+            speeds.sort()
+            nn = len(speeds)
+            pct = lambda p: round(speeds[min(nn - 1, int(p * nn))], 1)
+            out.append({
+                "name": display, "games_processed": games_ok, "frames": nn,
+                "bunnyhop_pct_over_320": round(100.0 * sum(1 for s in speeds if s > 320) / nn, 1),
+                "pct_over_400": round(100.0 * sum(1 for s in speeds if s > 400) / nn, 1),
+                "speed_avg": round(sum(speeds) / nn, 1),
+                "speed_p50": pct(0.50), "speed_p95": pct(0.95), "speed_p99": pct(0.99),
+            })
+    return {"window_ms": WIN, "note": "bunnyhop_pct = % of alive frames above the 320 run-cap (only reachable by air-strafing)", "players": out}
+
+
 @app.get("/api/admin/player-cards")
 def admin_player_cards(authorization: str | None = Header(default=None),
                        mode: str = "1on1"):
