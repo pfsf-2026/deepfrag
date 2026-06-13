@@ -4582,15 +4582,22 @@ _CARD_ATTRS = [
 
 
 @app.get("/api/debug/movement")
-def debug_movement(names: str = "sane,Blood_Dog", games: int = 25):
-    """TEMP proof (no auth, no sensitive data): frame-walk a couple players'
-    recent 1on1 game buckets and return REAL movement ratings — bunnyhop %
-    (time above the 320 run-cap), speed ceiling (p95), etc. Remove after."""
+def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
+    """TEMP proof (no auth): for each named player, frame-walk recent 1on1 games
+    and compute EVERY bucket-derivable rating — Movement (bunnyhop %, ceiling),
+    plus the stack/economy/timing suite via coaching.match_metrics. Angle-only
+    ratings (coupling, situational aim, reaction) are NOT here — buckets lack view
+    angles. Remove after."""
     import coaching as C
     import math
-    WIN = 50  # ms per bucket
+    WIN = 50
     dt = WIN / 1000.0
     out = []
+
+    def _mean(xs):
+        xs = [x for x in xs if x is not None]
+        return round(sum(xs) / len(xs), 1) if xs else None
+
     with pg() as conn:
         cur = conn.cursor()
         for name in [n.strip() for n in names.split(",") if n.strip()]:
@@ -4605,47 +4612,64 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 25):
                 out.append({"name": name, "error": "player not found"})
                 continue
             cid, display = row["canonical_id"], row["display_name"]
-            cur.execute("""SELECT m.hub_game_id AS gid, p.player_name AS pname
+            cur.execute("""SELECT m.hub_game_id AS gid, p.player_name AS pname, m.match_map AS map
                            FROM players p JOIN matches m ON m.match_id = p.match_id
                            WHERE p.canonical_id = %s AND m.match_mode = '1on1'
                              AND m.hub_game_id IS NOT NULL
                            ORDER BY m.match_date DESC LIMIT %s""", (cid, games))
             rows = cur.fetchall()
-            speeds, games_ok = [], 0
+            speeds, games_ok, mm_list = [], 0, []
             for gr in rows:
                 b = C._get(f"/v1/demos/gameId:{gr['gid']}/buckets?windowMs={WIN}&layout=column")
-                if not b or "players" not in b:
-                    continue
-                players = b["players"]
-                key = C._resolve_player_key(gr["pname"], list(players.keys()))
-                if not key:
-                    continue
-                me = players[key]
-                X, Y, alive = me.get("x") or [], me.get("y") or [], me.get("alive") or []
-                if not X:
-                    continue
-                games_ok += 1
-                for i in range(len(X) - 1):
-                    if (i + 1 < len(alive) and alive[i] and alive[i + 1]
-                            and X[i] is not None and X[i + 1] is not None):
-                        spd = math.hypot(X[i + 1] - X[i], Y[i + 1] - Y[i]) / dt
-                        if spd < 2500:  # drop teleport/respawn jumps
-                            speeds.append(spd)
-            if not speeds:
-                out.append({"name": display, "games_found": len(rows),
-                            "games_processed": games_ok, "error": "no movement frames"})
-                continue
-            speeds.sort()
-            nn = len(speeds)
-            pct = lambda p: round(speeds[min(nn - 1, int(p * nn))], 1)
-            out.append({
-                "name": display, "games_processed": games_ok, "frames": nn,
-                "bunnyhop_pct_over_320": round(100.0 * sum(1 for s in speeds if s > 320) / nn, 1),
-                "pct_over_400": round(100.0 * sum(1 for s in speeds if s > 400) / nn, 1),
-                "speed_avg": round(sum(speeds) / nn, 1),
-                "speed_p50": pct(0.50), "speed_p95": pct(0.95), "speed_p99": pct(0.99),
-            })
-    return {"window_ms": WIN, "note": "bunnyhop_pct = % of alive frames above the 320 run-cap (only reachable by air-strafing)", "players": out}
+                if b and "players" in b:
+                    key = C._resolve_player_key(gr["pname"], list(b["players"].keys()))
+                    if key:
+                        me = b["players"][key]
+                        X, Y, alive = me.get("x") or [], me.get("y") or [], me.get("alive") or []
+                        if X:
+                            games_ok += 1
+                            for i in range(len(X) - 1):
+                                if (i + 1 < len(alive) and alive[i] and alive[i + 1]
+                                        and X[i] is not None and X[i + 1] is not None):
+                                    spd = math.hypot(X[i + 1] - X[i], Y[i + 1] - Y[i]) / dt
+                                    if spd < 2500:
+                                        speeds.append(spd)
+                mm = C.match_metrics(gr["gid"], gr["pname"])  # stack/economy/timing
+                if mm:
+                    mm_list.append(mm)
+
+            card = {"name": display, "games_processed": games_ok}
+            if speeds:
+                speeds.sort()
+                nn = len(speeds)
+                pct = lambda p: round(speeds[min(nn - 1, int(p * nn))], 1)
+                card["MOVEMENT"] = {
+                    "bunnyhop_pct": round(100.0 * sum(1 for s in speeds if s > 320) / nn, 1),
+                    "pct_over_400": round(100.0 * sum(1 for s in speeds if s > 400) / nn, 1),
+                    "speed_p50": pct(0.50), "speed_p95": pct(0.95), "speed_p99": pct(0.99),
+                    "speed_avg_ignore": round(sum(speeds) / nn, 1),
+                }
+            if mm_list:
+                def ra_share(kind):
+                    mine = sum((m.get("item_control", {}).get(kind, {}) or {}).get("mine", 0) for m in mm_list)
+                    tot = sum((m.get("item_control", {}).get(kind, {}) or {}).get("total", 0) for m in mm_list)
+                    return round(mine / tot, 3) if tot else None
+                sk, ek = _mean([m["stack_at_kill"] for m in mm_list]), _mean([m["enemy_stack_at_my_kill"] for m in mm_list])
+                card["ECONOMY_STACK"] = {
+                    "avg_stack": _mean([m["avg_stack"] for m in mm_list]),
+                    "pct_stacked": _mean([m["pct_stacked"] for m in mm_list]),
+                    "ra_control_held": ra_share("ra"), "mh_control_held": ra_share("mh"),
+                    "mega_latency_sec": _mean([m["mh_latency"] for m in mm_list]),
+                    "restack_sec": _mean([m["restack_avg_sec"] for m in mm_list]),
+                    "stack_at_kill": sk, "stack_at_death": _mean([m["stack_at_death"] for m in mm_list]),
+                    "stack_discipline_lead": (round(sk - ek, 1) if sk is not None and ek is not None else None),
+                    "enemy_stack_at_my_death": _mean([m["enemy_stack_at_my_death"] for m in mm_list]),
+                }
+            out.append(card)
+    return {"window_ms": WIN,
+            "not_computable_here": ["Coupling", "Aim-under-fire", "Aim-vs-airborne", "Reaction"],
+            "reason": "buckets carry position/armor/health/weapon but NOT view-angles; those need an MVD angle parse",
+            "players": out}
 
 
 @app.get("/api/admin/player-cards")
