@@ -14,12 +14,12 @@ const sortKey = ref('ovr')
 const sortDir = ref('desc')      // 'desc' | 'asc'
 const selected = ref(null)        // the player object for the modal
 
-function weaponStyle(p) {
+function weaponSplit(p) {
   const lg = p?.weapon_pref
   if (lg == null) return null
-  const pct = Math.round(lg * 100)
+  const lgp = Math.round(lg * 100)
   const tag = lg >= 0.62 ? 'LG-reliant' : lg <= 0.38 ? 'RL-reliant' : 'Balanced'
-  return `${tag} · ${pct}% LG`
+  return { lg: lgp, rl: 100 - lgp, tag }
 }
 
 async function load() {
@@ -140,7 +140,11 @@ function confTitle(p) {
                 <span v-if="selected.region" class="region">{{ selected.region }}</span>
                 <span class="dim">#{{ selected.rank }} · {{ selected.stat_matches ?? selected.matches }} games</span>
               </div>
-              <div v-if="weaponStyle(selected)" class="wstyle">🔫 {{ weaponStyle(selected) }}</div>
+              <div v-if="weaponSplit(selected)" class="wstyle">
+                <span class="wlabel">Weapon mix</span>
+                <span class="wval"><b>{{ weaponSplit(selected).lg }}%</b> LG · <b>{{ weaponSplit(selected).rl }}%</b> RL</span>
+                <span class="wtag">{{ weaponSplit(selected).tag }}</span>
+              </div>
               <div v-if="selected.confidence && selected.confidence !== 'established'" class="conf-note"
                    :style="{ color: confColor(selected.confidence) }">
                 ● {{ selected.confidence }} — few games, ratings regressed toward the mean
@@ -185,7 +189,10 @@ function confTitle(p) {
 .namebtn:hover { color: var(--accent); text-decoration: underline; }
 .conf { font-size: 9px; margin-left: 6px; vertical-align: middle; }
 .conf-note { font-size: 11px; font-weight: 700; margin-top: 6px; text-transform: capitalize; }
-.wstyle { font-size: 11px; color: var(--fg-2); margin-top: 6px; font-weight: 600; }
+.wstyle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--fg-2); margin-top: 8px; }
+.wstyle .wlabel { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-3); font-weight: 700; }
+.wstyle .wval b { color: var(--fg); font-weight: 800; }
+.wstyle .wtag { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 1px 5px; }
 .tierpill { display: inline-block; margin-left: 8px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid; border-radius: 4px; padding: 1px 5px; }
 
 /* Modal card */
