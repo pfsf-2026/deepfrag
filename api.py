@@ -4721,7 +4721,7 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
             "players": out}
 
 
-def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450):
+def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450, fov=120):
     """Full metric bucket for one player across a list of {gid,pname} games:
     MOVEMENT (bunnyhop/percentiles), AIR (airborne % from BSP height), COUPLING
     (view-yaw vs heading during air-strafe), ECONOMY_STACK (via match_metrics).
@@ -4750,7 +4750,8 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450)
     pitch = []                  # signed view-pitch degrees (vertical aim)
     bw = {"lg": 0, "rl": 0}     # per-weapon damage output
     sa = {"fast": 0, "total": 0, "b1": 0, "b2": 0, "b3": 0, "b4": 0}  # strafe-aim + speed bands
-    react = []  # reaction: ms from taking a hit to returning fire on that attacker
+    react = []     # reaction v1: ms from taking a hit to returning fire on that attacker
+    react_v2 = []  # reaction v2: target-acquisition ms (enemy enters FOV -> crosshair on)
     dmg_acc = {k: 0 for k in ("given", "taken", "ewep",
                               "enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")}
     Kbase = max(1, round(50.0 / win))
@@ -4806,6 +4807,37 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450)
                             if i < len(VP) and VP[i] is not None:
                                 pd_ = VP[i] * 360.0 / 65536.0
                                 pitch.append(pd_ - 360.0 if pd_ > 180 else pd_)  # signed: + down, - up
+                        # REACTION v2: target acquisition. Time from the enemy entering
+                        # your FOV (in range) to your crosshair landing on them (<5deg).
+                        # Correlates view-yaw (vya) with the enemy's position. FOV-gated
+                        # (LOS approximated by FOV+range; true BSP line-of-sight is the
+                        # refinement). 1on1: enemy = the single other player.
+                        MX, MY = me.get("x") or [], me.get("y") or []
+                        others = [k for k in b["players"] if k != key]
+                        if len(others) == 1 and MX:
+                            en = b["players"][others[0]]
+                            EX, EY, ea = en.get("x") or [], en.get("y") or [], en.get("alive") or []
+                            half = fov / 2.0
+                            acq, prev_in = None, False
+                            nn = min(len(MX), len(EX), len(vya), len(alive), len(ea))
+                            for i in range(nn):
+                                if not (alive[i] and ea[i] and MX[i] is not None and EX[i] is not None):
+                                    prev_in, acq = False, None
+                                    continue
+                                dxe, dye = EX[i] - MX[i], EY[i] - MY[i]
+                                dist = math.hypot(dxe, dye)
+                                off = abs(_angdiff(math.degrees(math.atan2(dye, dxe)),
+                                                   vya[i] * 360.0 / 65536.0))
+                                in_eng = dist < 1500 and off < half
+                                if in_eng and not prev_in and off > 5:
+                                    acq = i  # enemy just appeared on-screen, not yet aimed
+                                if acq is not None:
+                                    if off < 5:
+                                        react_v2.append((i - acq) * win)
+                                        acq = None
+                                    elif (i - acq) * win > 1000:
+                                        acq = None  # gave up / enemy left
+                                prev_in = in_eng
             mm = C.match_metrics(gr["gid"], gr["pname"]) or (C.match_metrics(gr["gid"], cid) if cid else None)
             if mm:
                 mm_list.append(mm)
@@ -4921,7 +4953,11 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450)
         }
     if react:
         react.sort()
-        card["REACTION"] = {"median_ms": int(react[len(react) // 2]), "samples": len(react)}
+        card["REACTION"] = {"median_ms": int(react[len(react) // 2]), "samples": len(react)}  # v1 counter-fire
+    if react_v2:
+        react_v2.sort()
+        card["REACTION_V2"] = {"acq_median_ms": int(react_v2[len(react_v2) // 2]),
+                               "samples": len(react_v2), "fov": fov}  # spot-to-crosshair
     coup_out = {}
     for K, (hh, vv) in cpl.items():
         c = _pearson(hh, vv)
@@ -4937,7 +4973,7 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450)
 @app.get("/api/debug/movement-bymap")
 def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                          maps: str = "aerowalk,ztndm3,bravado,metron,dm2,dm4,skull,dm6,pocket",
-                         per_map: int = 5, win: int = 13, strafe_speed: int = 450):
+                         per_map: int = 5, win: int = 13, strafe_speed: int = 450, fov: int = 120):
     """TEMP (no auth): full metric bucket per player PER MAP, N most-recent 1on1
     games each, on the BSP build (view angles + airborne height live). Call one
     name at a time to keep each request bounded (~per_map*len(maps) parses).
@@ -4978,7 +5014,8 @@ def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                 if not rows:
                     per_map_cards[mp] = {"games": 0, "note": "no games in corpus"}
                     continue
-                per_map_cards[mp] = _metric_card_for_games(C, rows, display, win=win, cid=cid, strafe_speed=strafe_speed)
+                per_map_cards[mp] = _metric_card_for_games(C, rows, display, win=win, cid=cid,
+                                                           strafe_speed=strafe_speed, fov=fov)
             out[display] = {"canonical_id": cid, "maps": per_map_cards}
     return {"window_ms": win, "per_map": per_map, "maps_requested": map_list, "players": out}
 

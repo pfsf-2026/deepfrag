@@ -35,7 +35,7 @@ exists, not yet computed.
 | lg_accuracy | `/damage` byWeapon lg + time-held | `accuracy` (lg) | built |
 | rl_accuracy | `/damage` byWeapon rl, direct hits | `accuracy` (rl) | built |
 | **aim_under_fire** | `/damage` `ewep` / given | `prediction_error` | **gap #1 (building now)** |
-| reaction_time | `view` onset vs first `damage` ts | `reaction_time` | gap |
+| **reaction_v2** | `vya` × enemy `pos`, FOV-gated (default 120) → spot-to-crosshair | `reaction_time` | **built** — true target acquisition; v1 (counter-fire from `/damage` ts) also available |
 | airshot_aim | rl hits on `hgt`>0 victims | rl-vs-airborne | gap |
 | vertical_aim | `view` `vp` tracking | aim pitch | gap |
 | tracking_consistency | lg sustained dmg variance | aim steadiness | gap |
