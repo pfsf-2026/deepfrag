@@ -163,7 +163,7 @@ function confTitle(p) {
 </template>
 
 <style scoped>
-.prc { --fg: #e8edf5; --fg-2: #9fb0c5; --fg-3: #64748b; --panel: #131a26; --panel-2: #1a2433; --border: #2b3445; --accent: #14e6c0; color: var(--fg); }
+.prc { --fg: #e8edf5; --fg-2: #9fb0c5; --fg-3: #64748b; --panel: #131a26; --panel-2: #1a2433; --border: #2b3445; --accent: #14e6c0; color: var(--fg); font-family: 'Inter', -apple-system, system-ui, sans-serif; }
 .pad { padding: 16px; } .small { font-size: 12px; } .muted { color: var(--fg-3); } .err { color: #ef4444; }
 .sub { color: var(--fg-2); font-size: 13px; margin: 0 0 18px; } .sub strong { color: var(--accent); }
 
@@ -189,7 +189,7 @@ function confTitle(p) {
 .tierpill { display: inline-block; margin-left: 8px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid; border-radius: 4px; padding: 1px 5px; }
 
 /* Modal card */
-.modal-back { position: fixed; inset: 0; background: rgba(2,6,14,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+.modal-back { position: fixed; inset: 0; background: rgba(2,6,14,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; font-family: 'Inter', -apple-system, system-ui, sans-serif; color: #e8edf5; }
 .card { width: 100%; max-width: 420px; background: linear-gradient(160deg, #18222f, #0f1620); border: 1px solid var(--border); border-radius: 16px; padding: 22px; position: relative; box-shadow: 0 24px 60px rgba(0,0,0,0.5); }
 .x { position: absolute; top: 12px; right: 12px; background: var(--panel-2); border: 1px solid var(--border); color: var(--fg-2); width: 28px; height: 28px; border-radius: 8px; cursor: pointer; font-size: 12px; }
 .x:hover { color: var(--fg); }

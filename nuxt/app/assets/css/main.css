@@ -2,7 +2,7 @@
 @import "@nuxt/ui";
 
 @theme static {
-  --font-sans: 'Public Sans', sans-serif;
+  --font-sans: 'Inter', -apple-system, system-ui, sans-serif;
 
   --color-green-50: #EFFDF5;
   --color-green-100: #D9FBE8;
@@ -16,6 +16,11 @@
   --color-green-900: #0A5331;
   --color-green-950: #052E16;
 }
+
+/* Global base font — Inter is the loaded webfont (app.vue head). Without this,
+   surfaces that bypass the main layout (the admin panel) and Teleported modals
+   fall back to the browser default serif and look wrong vs main DeepFrag. */
+html, body { font-family: 'Inter', -apple-system, system-ui, sans-serif; }
 
 /* ─── Tooltips ──────────────────────────────────────────────────────────
    v-tip directive (plugins/tooltips.client.ts) sets data-tip + data-tip-pos.
