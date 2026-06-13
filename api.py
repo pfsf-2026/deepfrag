@@ -4721,7 +4721,7 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
             "players": out}
 
 
-def _metric_card_for_games(C, rows, display, win=13):
+def _metric_card_for_games(C, rows, display, win=13, cid=None):
     """Full metric bucket for one player across a list of {gid,pname} games:
     MOVEMENT (bunnyhop/percentiles), AIR (airborne % from BSP height), COUPLING
     (view-yaw vs heading during air-strafe), ECONOMY_STACK (via match_metrics).
@@ -4755,7 +4755,8 @@ def _metric_card_for_games(C, rows, display, win=13):
         try:
             b = C._get(f"/v1/demos/gameId:{gr['gid']}/buckets?windowMs={win}&layout=column&fields=pos,view,vel,hgt")
             if b and "players" in b:
-                key = C._resolve_player_key(gr["pname"], list(b["players"].keys()))
+                key = (C._resolve_player_key(gr["pname"], list(b["players"].keys()))
+                       or (C._resolve_player_key(cid, list(b["players"].keys())) if cid else None))
                 if key:
                     me = b["players"][key]
                     alive = me.get("alive") or []
@@ -4802,7 +4803,8 @@ def _metric_card_for_games(C, rows, display, win=13):
             # dangerous opponents (not farming unarmed). given/taken = trade efficiency.
             dmg = C._get(f"/v1/demos/gameId:{gr['gid']}/damage")
             if dmg and "byPlayer" in dmg:
-                dk = C._resolve_player_key(gr["pname"], list(dmg["byPlayer"].keys()))
+                dk = (C._resolve_player_key(gr["pname"], list(dmg["byPlayer"].keys()))
+                      or (C._resolve_player_key(cid, list(dmg["byPlayer"].keys())) if cid else None))
                 if dk:
                     pd = dmg["byPlayer"][dk]
                     for kk in dmg_acc:
@@ -4900,7 +4902,7 @@ def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                 if not rows:
                     per_map_cards[mp] = {"games": 0, "note": "no games in corpus"}
                     continue
-                per_map_cards[mp] = _metric_card_for_games(C, rows, display, win=win)
+                per_map_cards[mp] = _metric_card_for_games(C, rows, display, win=win, cid=cid)
             out[display] = {"canonical_id": cid, "maps": per_map_cards}
     return {"window_ms": win, "per_map": per_map, "maps_requested": map_list, "players": out}
 
@@ -4962,7 +4964,8 @@ def debug_player_games(name: str = "cronus"):
             stages["joined_matches"] = c1("SELECT count(*) n FROM players p JOIN matches m ON m.match_id=p.match_id WHERE p.canonical_id=%s", cid)
             stages["mode_1on1"] = c1("SELECT count(*) n FROM players p JOIN matches m ON m.match_id=p.match_id WHERE p.canonical_id=%s AND m.match_mode='1on1'", cid)
             stages["with_hub"] = c1("SELECT count(*) n FROM players p JOIN matches m ON m.match_id=p.match_id WHERE p.canonical_id=%s AND m.match_mode='1on1' AND m.hub_game_id IS NOT NULL", cid)
-            cur.execute("""SELECT m.hub_game_id AS gid, m.match_map AS mp, m.match_mode AS mode, m.match_date AS dt
+            cur.execute("""SELECT m.hub_game_id AS gid, m.match_map AS mp, m.match_mode AS mode,
+                                  m.match_date AS dt, p.player_name AS pname
                            FROM players p JOIN matches m ON m.match_id=p.match_id
                            WHERE p.canonical_id=%s ORDER BY m.match_date DESC LIMIT 6""", (cid,))
             recent = [dict(r) for r in cur.fetchall()]
