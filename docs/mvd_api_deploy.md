@@ -58,19 +58,32 @@ use `hub_game_id`, never `match_id`, to reach a demo. (See `project_deepfrag_two
 - `GET /v1/demos/gameId:{id}/events` — chat/weapon/death/frag/spawn/item/powerup/streak.
 - `GET /v1/demos/gameId:{id}/stream-slice?from=..&to=..` — raw `PositionTrack` (`t,x,y,z`[,`vp,vya` on v31]).
 
-## 4. View angles (the schema-v31 unlock)
+## 4. View angles (the schema-v31/v32 unlock) — build from `dev`
 
-Branch **`add-view-direction`** = `CurrentSchemaVersion = 31`. The parser reads
-view pitch/yaw into `PositionTrack.VP`/`VYa` (raw angle16). Decode:
+**Build from the `dev` branch** (currently `CurrentSchemaVersion = 32`). dev folds
+in view direction & velocity (v31–v32), per-sample floor height/airgibs/movers/
+liquids (v24–v30), AND the **angle-carry-forward fix** (PR #87, commit `94af7d7`).
+*Do not build from `add-view-direction` (v31) anymore — it has the angle bug.*
+
+The parser reads view pitch/yaw into `PositionTrack.VP`/`VYa` (raw angle16). Decode:
 `degrees = uint16(v) * 360 / 65536`, range [0,360); for pitch, `>180` = looking up.
 Exposed per 13ms frame via `buckets?fields=pos,view` (→ `vp`/`vya` columns) or
 `stream-slice` `pos`. This is what unlocks Coupling / Reaction / Aim-under-fire /
-Aim-vs-airborne for the bot/player cards. **Requires the image rebuilt from this branch.**
+Aim-vs-airborne for the bot/player cards.
+
+> **🐛 The angle-zero bug (fixed in dev, PR #87 by Xerial).** The MVD server only
+> sends an angle when it *changes*; if unchanged it omits it. The original v31
+> parser recorded `0` for those frames instead of carrying the previous value
+> forward → **spurious 0° angles** scattered through `vp`/`vya`. This invalidates
+> any view-direction metric built on the v31 image (e.g. the first Coupling run
+> came back a junk ~0.12 for everyone — the fake 0° drops manufactured huge bogus
+> yaw deltas). **Always build from dev so angles carry forward.**
 
 ## 5. Build & deploy (the only two commands)
 
-From `~/Projects/mvd_analyzer` on the desired branch (e.g. `add-view-direction`),
-with the `Dockerfile` at repo root (committed-to-DeepFrag copy is in §7):
+From `~/Projects/mvd_analyzer` on the **`dev`** branch (`git fetch origin dev &&
+git checkout FETCH_HEAD`), with the `Dockerfile` + `.gcloudignore` at repo root
+(both are untracked in Nexus's repo — recreate from §7 if a checkout drops them):
 
 ```bash
 # 1) build the image (Cloud Build) into the SAME Artifact Registry repo

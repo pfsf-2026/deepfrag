@@ -4617,11 +4617,22 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
         cur = conn.cursor()
         for name in [n.strip() for n in names.split(",") if n.strip()]:
             norm = "".join(c for c in name.lower() if c.isalnum())
-            cur.execute("""SELECT canonical_id, display_name FROM players_canonical
-                           WHERE regexp_replace(lower(display_name), '[^a-z0-9]', '', 'g') LIKE %s
-                              OR regexp_replace(lower(canonical_id), '[^a-z0-9]', '', 'g') LIKE %s
-                           ORDER BY length(display_name) LIMIT 1""",
-                        (norm + "%", norm + "%"))
+            # Rank candidates by: exact normalized match first, then by games
+            # played (a real established player dwarfs fan/impostor accounts),
+            # then shortest name. Length alone wrongly picked "BloodDogFan"
+            # (11 chars) over "BLooD_DoG(D_P)" (14) for query "blood_dog".
+            cur.execute("""SELECT pc.canonical_id, pc.display_name,
+                                  (regexp_replace(lower(pc.display_name), '[^a-z0-9]', '', 'g') = %s
+                                   OR regexp_replace(lower(pc.canonical_id), '[^a-z0-9]', '', 'g') = %s) AS exact,
+                                  count(p.match_id) AS games
+                           FROM players_canonical pc
+                           LEFT JOIN players p ON p.canonical_id = pc.canonical_id
+                           WHERE regexp_replace(lower(pc.display_name), '[^a-z0-9]', '', 'g') LIKE %s
+                              OR regexp_replace(lower(pc.canonical_id), '[^a-z0-9]', '', 'g') LIKE %s
+                           GROUP BY pc.canonical_id, pc.display_name
+                           ORDER BY exact DESC, games DESC, length(pc.display_name) ASC
+                           LIMIT 1""",
+                        (norm, norm, norm + "%", norm + "%"))
             row = cur.fetchone()
             if not row:
                 out.append({"name": name, "error": "player not found"})
