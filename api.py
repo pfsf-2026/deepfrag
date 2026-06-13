@@ -4822,10 +4822,12 @@ def _metric_card_for_games(C, rows, display, win=13):
 @app.get("/api/debug/movement-bymap")
 def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                          maps: str = "aerowalk,ztndm3,bravado,metron,dm2,dm4,skull,dm6,pocket",
-                         per_map: int = 5):
+                         per_map: int = 5, win: int = 50):
     """TEMP (no auth): full metric bucket per player PER MAP, N most-recent 1on1
     games each, on the BSP build (view angles + airborne height live). Call one
-    name at a time to keep each request bounded (~per_map*len(maps) parses)."""
+    name at a time to keep each request bounded (~per_map*len(maps) parses).
+    win=50ms by default: coupling needs the coarser window for a stable
+    position-derived heading (13ms heading is too noisy → false-low coupling)."""
     import coaching as C
     map_list = [m.strip().lower() for m in maps.split(",") if m.strip()]
     out = {}
@@ -4861,9 +4863,9 @@ def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                 if not rows:
                     per_map_cards[mp] = {"games": 0, "note": "no games in corpus"}
                     continue
-                per_map_cards[mp] = _metric_card_for_games(C, rows, display, win=13)
+                per_map_cards[mp] = _metric_card_for_games(C, rows, display, win=win)
             out[display] = {"canonical_id": cid, "maps": per_map_cards}
-    return {"window_ms": 13, "per_map": per_map, "maps_requested": map_list, "players": out}
+    return {"window_ms": win, "per_map": per_map, "maps_requested": map_list, "players": out}
 
 
 @app.get("/api/admin/player-cards")
