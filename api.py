@@ -4627,8 +4627,9 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
                                   count(p.match_id) AS games
                            FROM players_canonical pc
                            LEFT JOIN players p ON p.canonical_id = pc.canonical_id
-                           WHERE regexp_replace(lower(pc.display_name), '[^a-z0-9]', '', 'g') LIKE %s
-                              OR regexp_replace(lower(pc.canonical_id), '[^a-z0-9]', '', 'g') LIKE %s
+                           WHERE (regexp_replace(lower(pc.display_name), '[^a-z0-9]', '', 'g') LIKE %s
+                                  OR regexp_replace(lower(pc.canonical_id), '[^a-z0-9]', '', 'g') LIKE %s)
+                             AND NOT COALESCE(pc.hidden, FALSE)
                            GROUP BY pc.canonical_id, pc.display_name
                            ORDER BY exact DESC, games DESC, length(pc.display_name) ASC
                            LIMIT 1""",
@@ -5620,6 +5621,29 @@ def admin_canon_review_action(canonical_id: str, authorization: str | None = Hea
             cur.execute("UPDATE players_canonical SET hidden=TRUE, reviewed=TRUE WHERE canonical_id=%s", (canonical_id,))
         conn.commit()
     return {"canonical_id": canonical_id, "action": action, "target": target}
+
+
+@app.post("/api/admin/canon/hide-bulk")
+def admin_canon_hide_bulk(authorization: str | None = Header(default=None),
+                          canonical_ids: list[str] = Body(..., embed=True),
+                          hidden: bool = Body(True, embed=True)):
+    """Bulk soft-delete (or restore) profiles — for clearing impostor / fan / alt
+    accounts out of search in one shot (ladder-admin). Reversible: pass
+    hidden=false to restore. Match data is never touched, only the flag."""
+    _check_ladder_admin(authorization)
+    ids = [c.strip() for c in canonical_ids if c and c.strip()]
+    if not ids:
+        raise HTTPException(400, "canonical_ids required")
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_canon_review_schema(cur)
+        cur.execute("""UPDATE players_canonical SET hidden=%s, reviewed=TRUE
+                       WHERE canonical_id = ANY(%s)
+                       RETURNING canonical_id, display_name""", (hidden, ids))
+        changed = cur.fetchall()
+        conn.commit()
+    return {"hidden": hidden, "requested": len(ids), "updated": len(changed),
+            "profiles": [dict(r) for r in changed]}
 
 
 def _assign_canonical_from_map(conn):
