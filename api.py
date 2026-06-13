@@ -4598,6 +4598,21 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
         xs = [x for x in xs if x is not None]
         return round(sum(xs) / len(xs), 1) if xs else None
 
+    def _angdiff(a, b):  # shortest signed degrees b->a
+        return (a - b + 180) % 360 - 180
+
+    def _pearson(xs, ys):
+        n = len(xs)
+        if n < 30:
+            return None
+        mx, my = sum(xs) / n, sum(ys) / n
+        sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+        sxx = sum((x - mx) ** 2 for x in xs)
+        syy = sum((y - my) ** 2 for y in ys)
+        if sxx <= 0 or syy <= 0:
+            return None
+        return sxy / (sxx ** 0.5 * syy ** 0.5)
+
     with pg() as conn:
         cur = conn.cursor()
         for name in [n.strip() for n in names.split(",") if n.strip()]:
@@ -4619,21 +4634,38 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
                            ORDER BY m.match_date DESC LIMIT %s""", (cid, games))
             rows = cur.fetchall()
             speeds, games_ok, mm_list = [], 0, []
+            cpl_h, cpl_v = [], []  # heading-rate & view-yaw-rate during air-strafe → Coupling
             for gr in rows:
-                b = C._get(f"/v1/demos/gameId:{gr['gid']}/buckets?windowMs={WIN}&layout=column")
+                b = C._get(f"/v1/demos/gameId:{gr['gid']}/buckets?windowMs={WIN}&layout=column&fields=pos,view")
                 if b and "players" in b:
                     key = C._resolve_player_key(gr["pname"], list(b["players"].keys()))
                     if key:
                         me = b["players"][key]
                         X, Y, alive = me.get("x") or [], me.get("y") or [], me.get("alive") or []
+                        vya = me.get("vya") or []
                         if X:
                             games_ok += 1
+                            ph = pv = None  # prev heading / prev view-yaw (deg)
                             for i in range(len(X) - 1):
-                                if (i + 1 < len(alive) and alive[i] and alive[i + 1]
+                                if not (i + 1 < len(alive) and alive[i] and alive[i + 1]
                                         and X[i] is not None and X[i + 1] is not None):
-                                    spd = math.hypot(X[i + 1] - X[i], Y[i + 1] - Y[i]) / dt
-                                    if spd < 2500:
-                                        speeds.append(spd)
+                                    ph = pv = None
+                                    continue
+                                dx, dy = X[i + 1] - X[i], Y[i + 1] - Y[i]
+                                spd = math.hypot(dx, dy) / dt
+                                if spd < 2500:
+                                    speeds.append(spd)
+                                # Coupling: during air-strafe, does the view yaw turn WITH the
+                                # movement heading? (human) or independently? (joystick/bot)
+                                if spd > 320 and i < len(vya):
+                                    head = math.degrees(math.atan2(dy, dx))
+                                    vy = vya[i] * 360.0 / 65536.0
+                                    if ph is not None:
+                                        cpl_h.append(_angdiff(head, ph))
+                                        cpl_v.append(_angdiff(vy, pv))
+                                    ph, pv = head, vy
+                                else:
+                                    ph = pv = None
                 mm = C.match_metrics(gr["gid"], gr["pname"])  # stack/economy/timing
                 if mm:
                     mm_list.append(mm)
@@ -4665,10 +4697,15 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
                     "stack_discipline_lead": (round(sk - ek, 1) if sk is not None and ek is not None else None),
                     "enemy_stack_at_my_death": _mean([m["enemy_stack_at_my_death"] for m in mm_list]),
                 }
+            coup = _pearson(cpl_h, cpl_v)
+            if coup is not None:
+                card["COUPLING"] = {
+                    "view_move_corr": round(coup, 3), "airstrafe_samples": len(cpl_h),
+                    "read": "1.0 = view yaw turns WITH the strafe (human air-strafe); ~0 = view independent of movement (joystick/bot)",
+                }
             out.append(card)
-    return {"window_ms": WIN,
-            "not_computable_here": ["Coupling", "Aim-under-fire", "Aim-vs-airborne", "Reaction"],
-            "reason": "buckets carry position/armor/health/weapon but NOT view-angles; those need an MVD angle parse",
+    return {"window_ms": WIN, "schema": "v31 (view angles live)",
+            "still_todo": ["Reaction", "Aim-under-fire", "Aim-vs-airborne (now possible via Damage v20 + H/airborne; needs BSPs)"],
             "players": out}
 
 
