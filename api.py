@@ -5107,7 +5107,7 @@ def debug_player_game_list(name: str,
                            WHERE p.canonical_id=%s AND m.match_mode='1on1' AND lower(m.match_map)=%s
                              AND m.hub_game_id IS NOT NULL
                            ORDER BY m.match_date DESC LIMIT %s""", (cid, mp, per_map))
-            out[mp] = [{**dict(r), "hub": f"https://hub.quakeworld.nu/game/{r['gid']}"} for r in cur.fetchall()]
+            out[mp] = [{**dict(r), "hub": f"https://hub.quakeworld.nu/games/?gameId={r['gid']}"} for r in cur.fetchall()]
     return {"canonical_id": cid, "display": row["display_name"], "maps": out}
 
 
