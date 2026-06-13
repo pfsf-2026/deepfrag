@@ -4721,7 +4721,7 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
             "players": out}
 
 
-def _metric_card_for_games(C, rows, display, win=13, cid=None):
+def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450):
     """Full metric bucket for one player across a list of {gid,pname} games:
     MOVEMENT (bunnyhop/percentiles), AIR (airborne % from BSP height), COUPLING
     (view-yaw vs heading during air-strafe), ECONOMY_STACK (via match_metrics).
@@ -4749,7 +4749,8 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None):
     air_frames = alive_frames = 0
     pitch = []                  # signed view-pitch degrees (vertical aim)
     bw = {"lg": 0, "rl": 0}     # per-weapon damage output
-    sa = {"fast": 0, "total": 0}  # strafe-aim: dmg dealt while |vel|>320 vs total
+    sa = {"fast": 0, "total": 0, "b1": 0, "b2": 0, "b3": 0, "b4": 0}  # strafe-aim + speed bands
+    react = []  # reaction: ms from taking a hit to returning fire on that attacker
     dmg_acc = {k: 0 for k in ("given", "taken", "ewep",
                               "enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")}
     Kbase = max(1, round(50.0 / win))
@@ -4822,21 +4823,45 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None):
                     bwd = pdmg.get("byWeapon") or {}
                     bw["lg"] += bwd.get("lg", 0) or 0
                     bw["rl"] += bwd.get("rl", 0) or 0
-                    # STRAFE-AIM: of the damage this player DEALT, how much landed while
-                    # moving at air-strafe speed (|vel|>320)? The "fly in and frag at
-                    # speed" elite skill. Joins damage events (time in ms) to the
-                    # per-frame velocity track (frame j = time_ms / win_ms).
-                    for ev in (dmg.get("events") or []):
+                    evs = dmg.get("events") or []
+                    # STRAFE-AIM (+ speed bands): of damage this player DEALT, how much
+                    # landed in each speed band (to set the gate empirically) and the
+                    # share above the tunable strafe_speed gate. The "fly in & frag at
+                    # speed" skill. Joins damage events (ms) to per-frame velocity.
+                    for ev in evs:
                         if ev.get("attacker") != dk or ev.get("isSelf"):
                             continue
                         dd = ev.get("damage", 0) or 0
                         if dd <= 0:
                             continue
                         j = int(round((ev.get("time", 0) or 0) / win))
-                        if 0 <= j < len(VX) and VX[j] is not None and VY[j] is not None:
-                            sa["total"] += dd
-                            if math.hypot(VX[j], VY[j]) > 320:
-                                sa["fast"] += dd
+                        if not (0 <= j < len(VX) and VX[j] is not None and VY[j] is not None):
+                            continue
+                        spd = math.hypot(VX[j], VY[j])
+                        sa["total"] += dd
+                        if spd > strafe_speed:
+                            sa["fast"] += dd
+                        if spd < 320:
+                            sa["b1"] += dd
+                        elif spd < 450:
+                            sa["b2"] += dd
+                        elif spd < 600:
+                            sa["b3"] += dd
+                        else:
+                            sa["b4"] += dd
+                    # REACTION: ms from taking an enemy hit to landing a return hit on
+                    # that same attacker within 2s (counter-strike responsiveness).
+                    for idx, ev in enumerate(evs):
+                        if ev.get("victim") != dk or ev.get("attacker") == dk or ev.get("isSelf"):
+                            continue
+                        atk, t0 = ev.get("attacker"), ev.get("time", 0) or 0
+                        for ev2 in evs[idx + 1:]:
+                            t2 = ev2.get("time", 0) or 0
+                            if t2 - t0 > 2000:
+                                break
+                            if ev2.get("attacker") == dk and ev2.get("victim") == atk:
+                                react.append(t2 - t0)
+                                break
         except Exception:
             continue
 
@@ -4883,10 +4908,20 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None):
                          for k in ("enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")},
         }
     if sa["total"] > 0:
+        tot = sa["total"]
         card["STRAFE_AIM"] = {
-            "pct_dmg_at_speed": round(100.0 * sa["fast"] / sa["total"], 1),  # % of dealt dmg landed while |vel|>320
-            "dmg_classified": sa["total"],
+            "gate_speed": strafe_speed,
+            "pct_dmg_at_speed": round(100.0 * sa["fast"] / tot, 1),  # % of dealt dmg above the gate
+            "speed_bands_pct": {  # where damage lands by speed — to set the gate empirically
+                "<320": round(100.0 * sa["b1"] / tot, 1),
+                "320-450": round(100.0 * sa["b2"] / tot, 1),
+                "450-600": round(100.0 * sa["b3"] / tot, 1),
+                "600+": round(100.0 * sa["b4"] / tot, 1),
+            },
         }
+    if react:
+        react.sort()
+        card["REACTION"] = {"median_ms": int(react[len(react) // 2]), "samples": len(react)}
     coup_out = {}
     for K, (hh, vv) in cpl.items():
         c = _pearson(hh, vv)
@@ -4902,7 +4937,7 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None):
 @app.get("/api/debug/movement-bymap")
 def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                          maps: str = "aerowalk,ztndm3,bravado,metron,dm2,dm4,skull,dm6,pocket",
-                         per_map: int = 5, win: int = 13):
+                         per_map: int = 5, win: int = 13, strafe_speed: int = 450):
     """TEMP (no auth): full metric bucket per player PER MAP, N most-recent 1on1
     games each, on the BSP build (view angles + airborne height live). Call one
     name at a time to keep each request bounded (~per_map*len(maps) parses).
@@ -4943,7 +4978,7 @@ def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                 if not rows:
                     per_map_cards[mp] = {"games": 0, "note": "no games in corpus"}
                     continue
-                per_map_cards[mp] = _metric_card_for_games(C, rows, display, win=win, cid=cid)
+                per_map_cards[mp] = _metric_card_for_games(C, rows, display, win=win, cid=cid, strafe_speed=strafe_speed)
             out[display] = {"canonical_id": cid, "maps": per_map_cards}
     return {"window_ms": win, "per_map": per_map, "maps_requested": map_list, "players": out}
 
