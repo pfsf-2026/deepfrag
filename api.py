@@ -4570,12 +4570,13 @@ def _parse_logo_data_uri(s: str):
 #   weights · aggression → engage threshold. Weapon Preference (style) → lg/rl_pref.
 _CARD_ATTRS = [
     ("lg_acc",     "LG Accuracy", "Aim",         True),
-    ("rl_acc",     "RL Accuracy", "Aim",         True),   # DIRECT hits / attacks
-    ("sg_acc",     "SG Accuracy", "Aim",         True),
+    ("rl_acc",     "RL Accuracy", "Aim",         True),   # virtual (directs + splash) / attacks
     ("ra_ctrl",    "RA Control",  "Game Sense",  True),   # RA share vs opponent (map-independent)
     ("mh_ctrl",    "MH Control",  "Game Sense",  True),   # Mega share vs opponent
     ("aggression", "Aggression",  "Temperament", True),   # damage given / match
 ]
+# SG accuracy dropped for 1on1/2on2 (weaponstay ON → SG is just the discarded
+# spawn weapon). It returns as a real signal for 4on4 (weaponstay OFF).
 
 
 @app.get("/api/admin/player-cards")
@@ -4610,8 +4611,7 @@ def admin_player_cards(authorization: str | None = Header(default=None),
                 cur.execute("""
                     SELECT p.canonical_id, COUNT(*) AS n,
                            SUM(p.player_lg_hits) AS lg_h, SUM(p.player_lg_attacks) AS lg_a,
-                           SUM(p.player_rl_directs) AS rl_d, SUM(p.player_rl_attacks) AS rl_a,
-                           SUM(p.player_sg_hits) AS sg_h, SUM(p.player_sg_attacks) AS sg_a,
+                           SUM(p.player_rl_virtual) AS rl_v, SUM(p.player_rl_attacks) AS rl_a,
                            SUM(p.player_damage_given) AS dmg_g,
                            SUM(p.player_lg_damage_enemy) AS lg_dmg, SUM(p.player_rl_damage_enemy) AS rl_dmg,
                            SUM(p.player_ra_taken) AS ra_mine, SUM(p.player_health100_taken) AS mh_mine,
@@ -4636,8 +4636,7 @@ def admin_player_cards(authorization: str | None = Header(default=None),
                     sig[r["canonical_id"]] = {
                         "matches": n,
                         "lg_acc":     _ratio(r["lg_h"], r["lg_a"]),
-                        "rl_acc":     _ratio(r["rl_d"], r["rl_a"]),
-                        "sg_acc":     _ratio(r["sg_h"], r["sg_a"]),
+                        "rl_acc":     _ratio(r["rl_v"], r["rl_a"]),
                         "ra_ctrl":    _ratio(ra_m, ra_m + ra_o),
                         "mh_ctrl":    _ratio(mh_m, mh_m + mh_o),
                         "aggression": _ratio(r["dmg_g"], n),
