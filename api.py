@@ -4573,8 +4573,10 @@ _CARD_ATTRS = [
     ("rl_acc",     "RL Accuracy", "Aim",         True),   # virtual (directs + splash) / attacks
     ("ra_ctrl",    "RA Control",  "Game Sense",  True),   # RA share vs opponent (map-independent)
     ("mh_ctrl",    "MH Control",  "Game Sense",  True),   # Mega share vs opponent
-    ("aggression", "Aggression",  "Temperament", True),   # damage given / match
 ]
+# Aggression dropped from Phase 1: damage-output is map-paced (DM2 lower) and
+# conflates output with fight-seeking. Rebuilt in Phase 2 as map-normalized
+# engagement → bot engage-readiness.
 # SG accuracy dropped for 1on1/2on2 (weaponstay ON → SG is just the discarded
 # spawn weapon). It returns as a real signal for 4on4 (weaponstay OFF).
 
@@ -4612,7 +4614,6 @@ def admin_player_cards(authorization: str | None = Header(default=None),
                     SELECT p.canonical_id, COUNT(*) AS n,
                            SUM(p.player_lg_hits) AS lg_h, SUM(p.player_lg_attacks) AS lg_a,
                            SUM(p.player_rl_virtual) AS rl_v, SUM(p.player_rl_attacks) AS rl_a,
-                           SUM(p.player_damage_given) AS dmg_g,
                            SUM(p.player_lg_damage_enemy) AS lg_dmg, SUM(p.player_rl_damage_enemy) AS rl_dmg,
                            SUM(p.player_ra_taken) AS ra_mine, SUM(p.player_health100_taken) AS mh_mine,
                            SUM(COALESCE(opp.player_ra_taken,0)) AS ra_opp,
@@ -4639,7 +4640,6 @@ def admin_player_cards(authorization: str | None = Header(default=None),
                         "rl_acc":     _ratio(r["rl_v"], r["rl_a"]),
                         "ra_ctrl":    _ratio(ra_m, ra_m + ra_o),
                         "mh_ctrl":    _ratio(mh_m, mh_m + mh_o),
-                        "aggression": _ratio(r["dmg_g"], n),
                         "weapon_pref": _ratio(lg_dmg, lg_dmg + rl_dmg),  # LG share (style)
                     }
     except Exception as e:
