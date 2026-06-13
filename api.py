@@ -4751,40 +4751,39 @@ def _metric_card_for_games(C, rows, display, win=13):
     cpl = {1: ([], []), Kbase: ([], [])}  # stride(frames) -> (heading_rates, view_rates)
     for gr in rows:
         try:
-            b = C._get(f"/v1/demos/gameId:{gr['gid']}/buckets?windowMs={win}&layout=column&fields=pos,view,hgt")
+            b = C._get(f"/v1/demos/gameId:{gr['gid']}/buckets?windowMs={win}&layout=column&fields=pos,view,vel,hgt")
             if b and "players" in b:
                 key = C._resolve_player_key(gr["pname"], list(b["players"].keys()))
                 if key:
                     me = b["players"][key]
-                    X, Y, alive = me.get("x") or [], me.get("y") or [], me.get("alive") or []
+                    alive = me.get("alive") or []
                     vya, hgt = me.get("vya") or [], me.get("hgt") or []
-                    if X:
+                    VX, VY = me.get("vx") or [], me.get("vy") or []  # Nexus's velocity vector (v32, central diff)
+                    if VX:
                         games_ok += 1
-                        # native per-frame speeds (true peaks at 13ms)
-                        for i in range(len(X) - 1):
-                            if (i + 1 < len(alive) and alive[i] and alive[i + 1]
-                                    and X[i] is not None and X[i + 1] is not None):
-                                spd = math.hypot(X[i + 1] - X[i], Y[i + 1] - Y[i]) / dt
+                        # SPEED: magnitude of the velocity vector (vel field). Central
+                        # difference, respawn/teleport-aware — cleaner than position-delta.
+                        for i in range(len(VX)):
+                            if i < len(alive) and alive[i] and VX[i] is not None and VY[i] is not None:
+                                spd = math.hypot(VX[i], VY[i])
                                 if spd < 2500:
                                     speeds.append(spd)
-                        # COUPLING: correlate heading-turn-rate vs view-yaw-turn-rate
-                        # during air-strafe. Computed at BOTH strides (no downsampling,
-                        # every 13ms frame used): K=1 = pure frame-to-frame; K=Kbase =
-                        # heading measured over ~50ms so it's a real direction not
-                        # quantization noise. Air-strafe gate: speed over the stride > 320.
+                        # COUPLING: heading from the velocity vector (atan2(vy,vx)) — the
+                        # canonical movement direction — correlated against view-yaw.
+                        # Reported at K=1 (frame-to-frame turn rate) and K=Kbase (~52ms
+                        # turn rate), both on native 13ms data. Air-strafe gate: |v|>320.
                         for K, (hh, vv) in cpl.items():
-                            for i in range(2 * K, len(X)):
+                            for i in range(K, len(VX)):
                                 if i >= len(vya):
                                     break
-                                if not all(j < len(alive) and alive[j] and X[j] is not None
-                                           for j in range(i - 2 * K, i + 1)):
+                                if not all(j < len(alive) and alive[j] for j in range(i - K, i + 1)):
                                     continue
-                                dx1, dy1 = X[i] - X[i - K], Y[i] - Y[i - K]
-                                if math.hypot(dx1, dy1) / (K * dt) <= 320:
+                                if None in (VX[i], VY[i], VX[i - K], VY[i - K]):
                                     continue
-                                dx0, dy0 = X[i - K] - X[i - 2 * K], Y[i - K] - Y[i - 2 * K]
-                                hh.append(_angdiff(math.degrees(math.atan2(dy1, dx1)),
-                                                   math.degrees(math.atan2(dy0, dx0))))
+                                if math.hypot(VX[i], VY[i]) <= 320:
+                                    continue
+                                hh.append(_angdiff(math.degrees(math.atan2(VY[i], VX[i])),
+                                                   math.degrees(math.atan2(VY[i - K], VX[i - K]))))
                                 vv.append(_angdiff(vya[i] * 360.0 / 65536.0,
                                                    vya[i - K] * 360.0 / 65536.0))
                         # airborne fraction from BSP floor-height (native 13ms)
@@ -4828,7 +4827,7 @@ def _metric_card_for_games(C, rows, display, win=13):
     for K, (hh, vv) in cpl.items():
         c = _pearson(hh, vv)
         if c is not None:
-            label = "frame_to_frame_13ms" if K == 1 else f"heading_{K}frame_~{int(K * win)}ms_baseline"
+            label = "vel_frame_to_frame_13ms" if K == 1 else f"vel_{K}frame_~{int(K * win)}ms_rate"
             coup_out[label] = {"view_move_corr": round(c, 3), "airstrafe_samples": len(hh)}
     if coup_out:
         coup_out["read"] = "1.0 = view yaw turns WITH the strafe (human air-strafe); ~0 = view independent (joystick/bot)"
