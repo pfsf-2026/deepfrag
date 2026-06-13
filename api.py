@@ -4905,6 +4905,37 @@ def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
     return {"window_ms": win, "per_map": per_map, "maps_requested": map_list, "players": out}
 
 
+@app.get("/api/debug/hub-coverage")
+def debug_hub_coverage():
+    """Audit (no auth): hub_game_id coverage across ALL matches by year + mode.
+    hub_game_id is required to fetch a demo for frame-level analysis. Rows with
+    NULL hub_game_id (old spreadsheet-imported, negative match_id) are invisible
+    to all demo-parsing features until backfill_hub_game_id.py correlates them by
+    demo filename. This quantifies the gap 2022->2026."""
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT left(match_date, 4) AS yr, match_mode AS mode,
+                   count(*) AS total,
+                   count(*) FILTER (WHERE hub_game_id IS NOT NULL) AS with_hub,
+                   count(*) FILTER (WHERE match_id < 0) AS negative_id,
+                   count(*) FILTER (WHERE demo_source_url IS NOT NULL AND demo_source_url <> '') AS has_filename
+            FROM matches
+            GROUP BY left(match_date, 4), match_mode
+            ORDER BY yr, mode
+        """)
+        by = [dict(r) for r in cur.fetchall()]
+        cur.execute("""SELECT count(*) AS total,
+                              count(*) FILTER (WHERE hub_game_id IS NOT NULL) AS with_hub,
+                              count(*) FILTER (WHERE hub_game_id IS NULL) AS without_hub,
+                              count(*) FILTER (WHERE match_id < 0) AS negative_id,
+                              count(*) FILTER (WHERE hub_game_id IS NULL
+                                  AND demo_source_url IS NOT NULL AND demo_source_url <> '') AS recoverable
+                       FROM matches""")
+        tot = dict(cur.fetchone())
+    return {"totals": tot, "by_year_mode": by}
+
+
 @app.get("/api/admin/player-cards")
 def admin_player_cards(authorization: str | None = Header(default=None),
                        mode: str = "1on1"):
