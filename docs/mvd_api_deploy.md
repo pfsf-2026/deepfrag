@@ -151,4 +151,12 @@ ENTRYPOINT ["/mvd-api", "serve", "--addr", ":8080"]
   missing field almost always means the image was built from an older schema —
   rebuild. (This is exactly what blocked view angles: package had v31, image was older.)
 - **`match_id` ≠ `hub_game_id`** for old rows — always address demos by hub gameId.
+- **BSP file permissions (nonroot runtime).** The build runs as root; the image is
+  `distroless:nonroot` (uid 65532). `curl`/`mktemp`/`cp` leave files mode **0600**
+  (root-only) while `gunzip > file` lands **0644** — so without `chmod -R a+rX
+  /out/bsps` in the Dockerfile, nonroot gets EACCES on the raw-fetched (community)
+  maps → `mapbsp.LoadBytes` returns nil → **height/liquid silently absent on
+  exactly those maps** while id maps work. Symptom of "file exists + valid bytes
+  but acts missing" = check `ls -l` / perms FIRST. (Cost me a long debug on
+  2026-06-13.) The chmod line is in the Dockerfile (§7-equivalent build stage).
 - **CORS:** the service allows browser callers; DeepFrag's backend calls it server-side.

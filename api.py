@@ -4721,6 +4721,151 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
             "players": out}
 
 
+def _metric_card_for_games(C, rows, display, win=13):
+    """Full metric bucket for one player across a list of {gid,pname} games:
+    MOVEMENT (bunnyhop/percentiles), AIR (airborne % from BSP height), COUPLING
+    (view-yaw vs heading during air-strafe), ECONOMY_STACK (via match_metrics).
+    Native 13ms window so coupling is frame-level and speeds are true per-frame."""
+    import math
+    dt = win / 1000.0
+    def _mean(xs):
+        xs = [x for x in xs if x is not None]
+        return round(sum(xs) / len(xs), 1) if xs else None
+    def _angdiff(a, b):
+        return (a - b + 180) % 360 - 180
+    def _pearson(xs, ys):
+        n = len(xs)
+        if n < 30:
+            return None
+        mx, my = sum(xs) / n, sum(ys) / n
+        sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+        sxx = sum((x - mx) ** 2 for x in xs)
+        syy = sum((y - my) ** 2 for y in ys)
+        if sxx <= 0 or syy <= 0:
+            return None
+        return sxy / (sxx ** 0.5 * syy ** 0.5)
+
+    speeds, games_ok, mm_list, cpl_h, cpl_v = [], 0, [], [], []
+    air_frames = alive_frames = 0
+    for gr in rows:
+        try:
+            b = C._get(f"/v1/demos/gameId:{gr['gid']}/buckets?windowMs={win}&layout=column&fields=pos,view,hgt")
+            if b and "players" in b:
+                key = C._resolve_player_key(gr["pname"], list(b["players"].keys()))
+                if key:
+                    me = b["players"][key]
+                    X, Y, alive = me.get("x") or [], me.get("y") or [], me.get("alive") or []
+                    vya, hgt = me.get("vya") or [], me.get("hgt") or []
+                    if X:
+                        games_ok += 1
+                        ph = pv = None
+                        for i in range(len(X) - 1):
+                            if not (i + 1 < len(alive) and alive[i] and alive[i + 1]
+                                    and X[i] is not None and X[i + 1] is not None):
+                                ph = pv = None
+                                continue
+                            dx, dy = X[i + 1] - X[i], Y[i + 1] - Y[i]
+                            spd = math.hypot(dx, dy) / dt
+                            if spd < 2500:
+                                speeds.append(spd)
+                            if spd > 320 and i < len(vya):
+                                head = math.degrees(math.atan2(dy, dx))
+                                vy = vya[i] * 360.0 / 65536.0
+                                if ph is not None:
+                                    cpl_h.append(_angdiff(head, ph))
+                                    cpl_v.append(_angdiff(vy, pv))
+                                ph, pv = head, vy
+                            else:
+                                ph = pv = None
+                        for i in range(len(alive)):
+                            if alive[i] and i < len(hgt) and hgt[i] is not None:
+                                alive_frames += 1
+                                if hgt[i] > 20:  # clearly off the floor (jump/airborne)
+                                    air_frames += 1
+            mm = C.match_metrics(gr["gid"], gr["pname"])
+            if mm:
+                mm_list.append(mm)
+        except Exception as e:
+            continue
+
+    card = {"games": games_ok}
+    if speeds:
+        speeds.sort()
+        nn = len(speeds)
+        pct = lambda p: round(speeds[min(nn - 1, int(p * nn))], 1)
+        card["MOVEMENT"] = {
+            "bunnyhop_pct": round(100.0 * sum(1 for s in speeds if s > 320) / nn, 1),
+            "pct_over_400": round(100.0 * sum(1 for s in speeds if s > 400) / nn, 1),
+            "speed_p50": pct(0.50), "speed_p95": pct(0.95), "speed_p99": pct(0.99),
+        }
+    if alive_frames:
+        card["AIR"] = {"airborne_pct": round(100.0 * air_frames / alive_frames, 1), "alive_frames": alive_frames}
+    if mm_list:
+        def ra_share(kind):
+            mine = sum((m.get("item_control", {}).get(kind, {}) or {}).get("mine", 0) for m in mm_list)
+            tot = sum((m.get("item_control", {}).get(kind, {}) or {}).get("total", 0) for m in mm_list)
+            return round(mine / tot, 3) if tot else None
+        sk, ek = _mean([m["stack_at_kill"] for m in mm_list]), _mean([m["enemy_stack_at_my_kill"] for m in mm_list])
+        card["ECONOMY_STACK"] = {
+            "avg_stack": _mean([m["avg_stack"] for m in mm_list]),
+            "ra_control_held": ra_share("ra"), "mh_control_held": ra_share("mh"),
+            "mega_latency_sec": _mean([m["mh_latency"] for m in mm_list]),
+            "stack_at_kill": sk, "stack_at_death": _mean([m["stack_at_death"] for m in mm_list]),
+            "stack_discipline_lead": (round(sk - ek, 1) if sk is not None and ek is not None else None),
+        }
+    coup = _pearson(cpl_h, cpl_v)
+    if coup is not None:
+        card["COUPLING"] = {"view_move_corr": round(coup, 3), "airstrafe_samples": len(cpl_h)}
+    return card
+
+
+@app.get("/api/debug/movement-bymap")
+def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
+                         maps: str = "aerowalk,ztndm3,bravado,metron,dm2,dm4,skull,dm6,pocket",
+                         per_map: int = 5):
+    """TEMP (no auth): full metric bucket per player PER MAP, N most-recent 1on1
+    games each, on the BSP build (view angles + airborne height live). Call one
+    name at a time to keep each request bounded (~per_map*len(maps) parses)."""
+    import coaching as C
+    map_list = [m.strip().lower() for m in maps.split(",") if m.strip()]
+    out = {}
+    with pg() as conn:
+        cur = conn.cursor()
+        for name in [n.strip() for n in names.split(",") if n.strip()]:
+            norm = "".join(c for c in name.lower() if c.isalnum())
+            cur.execute("""SELECT pc.canonical_id, pc.display_name,
+                                  (regexp_replace(lower(pc.display_name), '[^a-z0-9]', '', 'g') = %s
+                                   OR regexp_replace(lower(pc.canonical_id), '[^a-z0-9]', '', 'g') = %s) AS exact,
+                                  count(p.match_id) AS games
+                           FROM players_canonical pc
+                           LEFT JOIN players p ON p.canonical_id = pc.canonical_id
+                           WHERE (regexp_replace(lower(pc.display_name), '[^a-z0-9]', '', 'g') LIKE %s
+                                  OR regexp_replace(lower(pc.canonical_id), '[^a-z0-9]', '', 'g') LIKE %s)
+                             AND NOT COALESCE(pc.hidden, FALSE)
+                           GROUP BY pc.canonical_id, pc.display_name
+                           ORDER BY exact DESC, games DESC, length(pc.display_name) ASC
+                           LIMIT 1""", (norm, norm, norm + "%", norm + "%"))
+            row = cur.fetchone()
+            if not row:
+                out[name] = {"error": "player not found"}
+                continue
+            cid, display = row["canonical_id"], row["display_name"]
+            per_map_cards = {}
+            for mp in map_list:
+                cur.execute("""SELECT m.hub_game_id AS gid, p.player_name AS pname
+                               FROM players p JOIN matches m ON m.match_id = p.match_id
+                               WHERE p.canonical_id = %s AND m.match_mode = '1on1'
+                                 AND lower(m.match_map) = %s AND m.hub_game_id IS NOT NULL
+                               ORDER BY m.match_date DESC LIMIT %s""", (cid, mp, per_map))
+                rows = cur.fetchall()
+                if not rows:
+                    per_map_cards[mp] = {"games": 0, "note": "no games in corpus"}
+                    continue
+                per_map_cards[mp] = _metric_card_for_games(C, rows, display, win=13)
+            out[display] = {"canonical_id": cid, "maps": per_map_cards}
+    return {"window_ms": 13, "per_map": per_map, "maps_requested": map_list, "players": out}
+
+
 @app.get("/api/admin/player-cards")
 def admin_player_cards(authorization: str | None = Header(default=None),
                        mode: str = "1on1"):
