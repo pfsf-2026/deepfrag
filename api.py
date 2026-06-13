@@ -606,7 +606,13 @@ def support_create(authorization: str | None = Header(default=None),
         conn.commit()
     try:
         import notify
-        who = (u.get("global_name") or u.get("username")) if u else (email or "anonymous")
+        # NEVER send the submitter's email (PII) to Discord. Use the Discord
+        # display name when logged in; otherwise a non-PII placeholder that just
+        # signals an email is on file (admins read the actual address in the panel).
+        if u:
+            who = u.get("global_name") or u.get("username")
+        else:
+            who = "anonymous (email on file)" if email else "anonymous"
         notify.support_ticket(num, area, title.strip(), who)
     except Exception:
         pass
