@@ -4750,8 +4750,10 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
     pitch = []                  # signed view-pitch degrees (vertical aim)
     bw = {"lg": 0, "rl": 0}     # per-weapon damage output
     sa = {"fast": 0, "total": 0, "b1": 0, "b2": 0, "b3": 0, "b4": 0}  # strafe-aim + speed bands
-    react = []     # reaction v1: ms from taking a hit to returning fire on that attacker
-    react_v2 = []  # reaction v2: target-acquisition ms (enemy enters FOV -> crosshair on)
+    react = []          # reaction v1: ms from taking a hit to returning fire on that attacker
+    react_v2_raw = []   # reaction v2 raw: target-acquisition ms (enemy enters FOV -> crosshair)
+    react_v2_adj = []   # reaction v2 ping-adjusted: raw - ping(RTT) - tick, per game
+    pings = []          # per-game player ping (RTT, ms)
     dmg_acc = {k: 0 for k in ("given", "taken", "ewep",
                               "enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")}
     Kbase = max(1, round(50.0 / win))
@@ -4759,6 +4761,20 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
     for gr in rows:
         try:
             VX = VY = []  # velocity track for this game (used by coupling + strafe-aim)
+            # per-game ping (RTT) for reaction correction — varies by game (e.g. yeti
+            # AUS->NA ~140ms vs local ~50ms). From /demoinfo players[].ping.
+            ping_g = None
+            di = C._get(f"/v1/demos/gameId:{gr['gid']}/demoinfo")
+            if di and di.get("players"):
+                dnames = [p.get("name", "") for p in di["players"]]
+                pk = (C._resolve_player_key(gr["pname"], dnames)
+                      or (C._resolve_player_key(cid, dnames) if cid else None))
+                for p in di["players"]:
+                    if p.get("name") == pk:
+                        ping_g = p.get("ping")
+                        break
+                if isinstance(ping_g, (int, float)):
+                    pings.append(ping_g)
             b = C._get(f"/v1/demos/gameId:{gr['gid']}/buckets?windowMs={win}&layout=column&fields=pos,view,vel,hgt")
             if b and "players" in b:
                 key = (C._resolve_player_key(gr["pname"], list(b["players"].keys()))
@@ -4833,7 +4849,10 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
                                     acq = i  # enemy just appeared on-screen, not yet aimed
                                 if acq is not None:
                                     if off < 5:
-                                        react_v2.append((i - acq) * win)
+                                        raw = (i - acq) * win
+                                        react_v2_raw.append(raw)
+                                        if isinstance(ping_g, (int, float)):
+                                            react_v2_adj.append(max(0, raw - ping_g - win))  # - RTT - tick
                                         acq = None
                                     elif (i - acq) * win > 1000:
                                         acq = None  # gave up / enemy left
@@ -4954,10 +4973,16 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
     if react:
         react.sort()
         card["REACTION"] = {"median_ms": int(react[len(react) // 2]), "samples": len(react)}  # v1 counter-fire
-    if react_v2:
-        react_v2.sort()
-        card["REACTION_V2"] = {"acq_median_ms": int(react_v2[len(react_v2) // 2]),
-                               "samples": len(react_v2), "fov": fov}  # spot-to-crosshair
+    if react_v2_raw:
+        react_v2_raw.sort()
+        rv = {"acq_median_ms_raw": int(react_v2_raw[len(react_v2_raw) // 2]),
+              "samples": len(react_v2_raw), "fov": fov}
+        if pings:
+            rv["avg_ping_ms"] = round(sum(pings) / len(pings))
+        if react_v2_adj:
+            react_v2_adj.sort()
+            rv["acq_median_ms_ping_adj"] = int(react_v2_adj[len(react_v2_adj) // 2])  # raw - RTT - tick
+        card["REACTION_V2"] = rv
     coup_out = {}
     for K, (hh, vv) in cpl.items():
         c = _pearson(hh, vv)
