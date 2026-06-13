@@ -4745,8 +4745,10 @@ def _metric_card_for_games(C, rows, display, win=13):
             return None
         return sxy / (sxx ** 0.5 * syy ** 0.5)
 
-    speeds, games_ok, mm_list, cpl_h, cpl_v = [], 0, [], [], []
+    speeds, games_ok, mm_list = [], 0, []
     air_frames = alive_frames = 0
+    Kbase = max(1, round(50.0 / win))
+    cpl = {1: ([], []), Kbase: ([], [])}  # stride(frames) -> (heading_rates, view_rates)
     for gr in rows:
         try:
             b = C._get(f"/v1/demos/gameId:{gr['gid']}/buckets?windowMs={win}&layout=column&fields=pos,view,hgt")
@@ -4758,25 +4760,34 @@ def _metric_card_for_games(C, rows, display, win=13):
                     vya, hgt = me.get("vya") or [], me.get("hgt") or []
                     if X:
                         games_ok += 1
-                        ph = pv = None
+                        # native per-frame speeds (true peaks at 13ms)
                         for i in range(len(X) - 1):
-                            if not (i + 1 < len(alive) and alive[i] and alive[i + 1]
+                            if (i + 1 < len(alive) and alive[i] and alive[i + 1]
                                     and X[i] is not None and X[i + 1] is not None):
-                                ph = pv = None
-                                continue
-                            dx, dy = X[i + 1] - X[i], Y[i + 1] - Y[i]
-                            spd = math.hypot(dx, dy) / dt
-                            if spd < 2500:
-                                speeds.append(spd)
-                            if spd > 320 and i < len(vya):
-                                head = math.degrees(math.atan2(dy, dx))
-                                vy = vya[i] * 360.0 / 65536.0
-                                if ph is not None:
-                                    cpl_h.append(_angdiff(head, ph))
-                                    cpl_v.append(_angdiff(vy, pv))
-                                ph, pv = head, vy
-                            else:
-                                ph = pv = None
+                                spd = math.hypot(X[i + 1] - X[i], Y[i + 1] - Y[i]) / dt
+                                if spd < 2500:
+                                    speeds.append(spd)
+                        # COUPLING: correlate heading-turn-rate vs view-yaw-turn-rate
+                        # during air-strafe. Computed at BOTH strides (no downsampling,
+                        # every 13ms frame used): K=1 = pure frame-to-frame; K=Kbase =
+                        # heading measured over ~50ms so it's a real direction not
+                        # quantization noise. Air-strafe gate: speed over the stride > 320.
+                        for K, (hh, vv) in cpl.items():
+                            for i in range(2 * K, len(X)):
+                                if i >= len(vya):
+                                    break
+                                if not all(j < len(alive) and alive[j] and X[j] is not None
+                                           for j in range(i - 2 * K, i + 1)):
+                                    continue
+                                dx1, dy1 = X[i] - X[i - K], Y[i] - Y[i - K]
+                                if math.hypot(dx1, dy1) / (K * dt) <= 320:
+                                    continue
+                                dx0, dy0 = X[i - K] - X[i - 2 * K], Y[i - K] - Y[i - 2 * K]
+                                hh.append(_angdiff(math.degrees(math.atan2(dy1, dx1)),
+                                                   math.degrees(math.atan2(dy0, dx0))))
+                                vv.append(_angdiff(vya[i] * 360.0 / 65536.0,
+                                                   vya[i - K] * 360.0 / 65536.0))
+                        # airborne fraction from BSP floor-height (native 13ms)
                         for i in range(len(alive)):
                             if alive[i] and i < len(hgt) and hgt[i] is not None:
                                 alive_frames += 1
@@ -4813,16 +4824,22 @@ def _metric_card_for_games(C, rows, display, win=13):
             "stack_at_kill": sk, "stack_at_death": _mean([m["stack_at_death"] for m in mm_list]),
             "stack_discipline_lead": (round(sk - ek, 1) if sk is not None and ek is not None else None),
         }
-    coup = _pearson(cpl_h, cpl_v)
-    if coup is not None:
-        card["COUPLING"] = {"view_move_corr": round(coup, 3), "airstrafe_samples": len(cpl_h)}
+    coup_out = {}
+    for K, (hh, vv) in cpl.items():
+        c = _pearson(hh, vv)
+        if c is not None:
+            label = "frame_to_frame_13ms" if K == 1 else f"heading_{K}frame_~{int(K * win)}ms_baseline"
+            coup_out[label] = {"view_move_corr": round(c, 3), "airstrafe_samples": len(hh)}
+    if coup_out:
+        coup_out["read"] = "1.0 = view yaw turns WITH the strafe (human air-strafe); ~0 = view independent (joystick/bot)"
+        card["COUPLING"] = coup_out
     return card
 
 
 @app.get("/api/debug/movement-bymap")
 def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                          maps: str = "aerowalk,ztndm3,bravado,metron,dm2,dm4,skull,dm6,pocket",
-                         per_map: int = 5, win: int = 50):
+                         per_map: int = 5, win: int = 13):
     """TEMP (no auth): full metric bucket per player PER MAP, N most-recent 1on1
     games each, on the BSP build (view angles + airborne height live). Call one
     name at a time to keep each request bounded (~per_map*len(maps) parses).
