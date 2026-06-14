@@ -135,10 +135,10 @@ Addressed by **hub gameId** (`gameId:N`; use `hub_game_id`, never `match_id`).
 | `/v1/version`, `/healthz` | build tag, health | ops | ✅ |
 
 ## Schema version history (what each added)
-v6 GL+ammo+region-control · v7 streams canonical · v8 int32-ms times · v9–10 visibility-aware loc (BSP PVS) · v11 columnar buckets · v14 static map-entity corpus + map endpoints · v19 corrected scoreboard (kills-based) · **v20 per-hit damage + EWep** · v23 wall-clock timing · **v24–v30 floor height / airgibs / movers / liquids** · **v31 view direction (vp/vya)** · **v32 velocity (vx/vy/vz, central diff)**.
+v6 GL+ammo+region-control · v7 streams canonical · v8 int32-ms times · v9–10 visibility-aware loc (BSP PVS) · v11 columnar buckets · v14 static map-entity corpus + map endpoints · v19 corrected scoreboard (kills-based) · **v20 per-hit damage + EWep** · v23 wall-clock timing · **v24–v30 floor height / airgibs / movers / liquids** · **v31 view direction (vp/vya)** · **v32 velocity (vx/vy/vz, central diff)** · **v33 pos/vel/height now `float32`** (true sub-unit precision — kills the integer-quantization noise in coupling/speed/distance dials).
 
-## Deployed status (2026-06-13)
-- Built from branch **`dev`** (`/v1/version` tag `dev`), schema **v32**. Revision `deepfrag-mvd-api-00007-jzq`.
+## Deployed status (2026-06-14)
+- Built from branch **`dev`** (commit `af49a03c`), schema **v33** (float32 pos/vel/h). Revision `deepfrag-mvd-api-00008-5hn`. (`/v1/version` tag is always `dev` — distinguish by checking `x` is decimal not int.)
 - **31 BSPs baked** (chmod a+rX — see [[feedback_file_perms_size_baseline]]); height/liquid live on the competitive pool.
 - Open branch `read-dmg` exists but damage (v20) is already merged to main/dev.
 - Everything in the endpoint table above returns 200 with real data on our revision.
