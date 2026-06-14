@@ -34,10 +34,10 @@ exists, not yet computed.
 | **strafe_aim** | `/damage` events × `vel` (dmg landed while \|v\|>320) | aim-while-mobile model | **built** — the "fly in & frag at speed" elite skill; pairs with coupling + reaction |
 | lg_accuracy | `/damage` byWeapon lg + time-held | `accuracy` (lg) | built |
 | rl_accuracy | `/damage` byWeapon rl, direct hits | `accuracy` (rl) | built |
-| **aim_under_fire** | `/damage` `ewep` / given | `prediction_error` | **gap #1 (building now)** |
-| **reaction_v2** | `vya` × enemy `pos`, FOV-gated (default 120) → spot-to-crosshair | `reaction_time` | **built** — true target acquisition; v1 (counter-fire from `/damage` ts) also available |
-| airshot_aim | rl hits on `hgt`>0 victims | rl-vs-airborne | gap |
-| vertical_aim | `view` `vp` tracking | aim pitch | gap |
+| **reaction_v2** | `vya` × enemy `pos`, FOV-gated → spot-to-crosshair, **engagement-confirmed** (only acquisitions that led to a hit ≤1s) + per-game ping-adjusted | `reaction_time` | **built (provisional)** — true geometric BSP-LOS would need an mvd-api visibility primitive (ask Nexus) |
+| **airshot_aim** | RL/GL hits while victim `hgt`>45 (airborne) | rl-vs-airborne | **built** (replaces vertical_aim) |
+| ~~vertical_aim~~ | `vp` pitch stdev | — | **dropped** — non-discriminating (~15° for all; QW is horizontal). Vertical skill = airshots. |
+| ~~aim_under_fire / EWep~~ | `/damage` `ewep`/given + vs-SG | `prediction_error` | **4on4 ONLY** — saturates/inverts in 1on1 (weaponstay on → everyone armed; the *controlled* player scores highest). Removed from 1on1 cards. |
 | tracking_consistency | lg sustained dmg variance | aim steadiness | gap |
 
 **MOVEMENT (5)**
@@ -68,13 +68,16 @@ exists, not yet computed.
 | aggression | region + dmg-output cadence | aggression dials | gap |
 | spawn_control | `sp` + frag positions | spawn pressure | gap |
 
-**WEAPON / COMBAT (4)**
-| weapon_preference | `/weapon-pickups` rl vs lg | `rl_preference`/`lg_preference` | gap |
-| weapon_efficiency | `/weapon-pickups` kills-before-death | weapon choice | gap |
+**WEAPON / COMBAT**
+| weapon_preference (RL:LG) | `/damage` byWeapon dmg ratio (script-immune) | `rl_preference`/`lg_preference` | **built** (1on1+4on4) |
+| weapon_selection_IQ | weapon × distance-at-hit (RL close / LG range) | weapon-by-range logic | **built** (1on1) |
+| damage_efficiency | `/damage` given/taken | survivability | **built** (1on1) |
 | frag_efficiency | `/frags` K/D adjusted | skill scalar | built |
-| damage_efficiency | `/damage` given/taken | survivability | **gap #1 (building now)** |
+| **sg_skill (SG%)** | SG dmg share / EWep vs-SG | **`sg_preference`** (elite bots 50–60%, mediocre 35–45%) | **4on4 ONLY** (weaponstay off) |
+| weapon_efficiency (kills/pickup) | `/weapon-pickups` kills-before-death | weapon commitment | gap — **4on4 ONLY** |
+| pack_denial | `/backpacks` enemy drops taken | greed/denial | gap — **4on4 ONLY** |
 
-= **30 ratings.** ~10 built, ~20 in the GAPS pipeline below.
+= ~**30 dials.** ~13 built (1on1), the rest in GAPS / parked as **4on4-ONLY** (aim-under-fire, EWep, SG%, weapon-efficiency, pack-denial, powerups).
 
 ---
 

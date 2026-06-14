@@ -4799,8 +4799,8 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
 
     speeds, games_ok, mm_list = [], 0, []
     air_frames = alive_frames = 0
-    pitch = []                  # signed view-pitch degrees (vertical aim)
     bw = {"lg": 0, "rl": 0}     # per-weapon damage output
+    airshot = {"rl_air": 0, "rl_tot": 0, "gl_air": 0, "gl_tot": 0}  # RL/GL hits on airborne enemies
     sa = {"fast": 0, "total": 0, "b1": 0, "b2": 0, "b3": 0, "b4": 0}  # strafe-aim + speed bands
     react = []          # reaction v1: ms from taking a hit to returning fire on that attacker
     react_v2_raw = []   # reaction v2 raw: target-acquisition ms (enemy enters FOV -> crosshair)
@@ -4815,7 +4815,7 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
         try:
             VX = VY = []  # velocity track for this game (used by coupling + strafe-aim)
             pos_me = pos_en = None  # (x,y,z) tracks for me / the 1on1 opponent
-            en_name = None
+            en_name, en_hgt, acqs = None, [], []  # opponent name/height + reaction acquisition candidates
             # per-game ping (RTT) for reaction correction — varies by game (e.g. yeti
             # AUS->NA ~140ms vs local ~50ms). From /demoinfo players[].ping.
             ping_g = None
@@ -4838,14 +4838,14 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
                     me = b["players"][key]
                     alive = me.get("alive") or []
                     vya, hgt = me.get("vya") or [], me.get("hgt") or []
-                    VX, VY = me.get("vx") or [], me.get("vy") or []  # Nexus's velocity vector (v32, central diff)
-                    VP = me.get("vp") or []  # view pitch (angle16) — vertical aim
+                    VX, VY = me.get("vx") or [], me.get("vy") or []  # Nexus's velocity vector (central diff, float32 v33)
                     # position tracks for weapon-IQ distance (me + the single 1on1 opponent)
                     pos_me = (me.get("x") or [], me.get("y") or [], me.get("z") or [])
                     _oth = [k for k in b["players"] if k != key]
                     if len(_oth) == 1:
                         _en = b["players"][_oth[0]]
                         pos_en = (_en.get("x") or [], _en.get("y") or [], _en.get("z") or [])
+                        en_hgt = _en.get("hgt") or []
                         en_name = _oth[0]
                     if VX:
                         games_ok += 1
@@ -4876,15 +4876,10 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
                                                    vya[i - K] * 360.0 / 65536.0))
                         # airborne fraction from BSP floor-height (native 13ms)
                         for i in range(len(alive)):
-                            if not (i < len(alive) and alive[i]):
-                                continue
-                            if i < len(hgt) and hgt[i] is not None:
+                            if i < len(alive) and alive[i] and i < len(hgt) and hgt[i] is not None:
                                 alive_frames += 1
                                 if hgt[i] > 20:  # clearly off the floor (jump/airborne)
                                     air_frames += 1
-                            if i < len(VP) and VP[i] is not None:
-                                pd_ = VP[i] * 360.0 / 65536.0
-                                pitch.append(pd_ - 360.0 if pd_ > 180 else pd_)  # signed: + down, - up
                         # REACTION v2: target acquisition. Time from the enemy entering
                         # your FOV (in range) to your crosshair landing on them (<5deg).
                         # Correlates view-yaw (vya) with the enemy's position. FOV-gated
@@ -4911,10 +4906,7 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
                                     acq = i  # enemy just appeared on-screen, not yet aimed
                                 if acq is not None:
                                     if off < 5:
-                                        raw = (i - acq) * win
-                                        react_v2_raw.append(raw)
-                                        if isinstance(ping_g, (int, float)):
-                                            react_v2_adj.append(max(0, raw - ping_g - win))  # - RTT - tick
+                                        acqs.append(((i - acq) * win, i * win))  # (raw_ms, complete_ms) — confirmed later
                                         acq = None
                                     elif (i - acq) * win > 1000:
                                         acq = None  # gave up / enemy left
@@ -4995,6 +4987,32 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
                             if j < len(mz) and j < len(ez) and mz[j] is not None and ez[j] is not None:
                                 d2 = math.hypot(d2, mz[j] - ez[j])
                             wiq[w].append(d2)
+                    # AIRSHOTS: RL/GL hits while the VICTIM is airborne (their hgt high at
+                    # hit time — the spectacular mid-air frag). Excludes the NoFloor
+                    # sentinel (large negative). GL airshots tracked but noisy/luck-ish.
+                    for ev in evs:
+                        if ev.get("attacker") != dk or ev.get("isSelf") or ev.get("victim") != en_name:
+                            continue
+                        w = ev.get("weapon")
+                        if w not in ("rl", "gl"):
+                            continue
+                        airshot[w + "_tot"] += 1
+                        j = int(round((ev.get("time", 0) or 0) / win))
+                        if 0 <= j < len(en_hgt) and en_hgt[j] is not None and 45 < en_hgt[j] < 5000:
+                            airshot[w + "_air"] += 1
+                    # REACTION (engagement-confirmed): keep only acquisitions that led to
+                    # the player landing a hit on the enemy within 1s — filters through-wall
+                    # "ghost" acquisitions that have no true line of sight. (True geometric
+                    # BSP-LOS would need an mvd-api visibility primitive, not yet exposed.)
+                    import bisect as _bi
+                    hit_times = sorted(ev.get("time", 0) or 0 for ev in evs
+                                       if ev.get("attacker") == dk and ev.get("victim") == en_name and not ev.get("isSelf"))
+                    for raw, comp in acqs:
+                        k = _bi.bisect_left(hit_times, comp)
+                        if k < len(hit_times) and hit_times[k] <= comp + 1000:
+                            react_v2_raw.append(raw)
+                            if isinstance(ping_g, (int, float)):
+                                react_v2_adj.append(max(0, raw - ping_g - win))
         except Exception:
             continue
 
@@ -5010,11 +5028,11 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
         }
     if alive_frames:
         card["AIR"] = {"airborne_pct": round(100.0 * air_frames / alive_frames, 1), "alive_frames": alive_frames}
-    if pitch:
-        import statistics as _st
-        card["AIM"] = {
-            "vertical_activity_deg": round(_st.pstdev(pitch), 1) if len(pitch) > 1 else 0.0,
-            "pct_aim_up": round(100.0 * sum(1 for p in pitch if p < -10) / len(pitch), 1),  # >10deg up
+    if airshot["rl_tot"] or airshot["gl_tot"]:
+        card["AIRSHOT"] = {
+            "rl_airshots": airshot["rl_air"], "rl_hits": airshot["rl_tot"],
+            "rl_airshot_pct": round(100.0 * airshot["rl_air"] / airshot["rl_tot"], 1) if airshot["rl_tot"] else None,
+            "gl_airshots": airshot["gl_air"], "gl_hits": airshot["gl_tot"],  # GL = noisy/luck-ish
         }
     if mm_list:
         def ra_share(kind):
@@ -5030,15 +5048,14 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
             "stack_discipline_lead": (round(sk - ek, 1) if sk is not None and ek is not None else None),
         }
     if dmg_acc["given"] > 0:
-        g_, t_, e_ = dmg_acc["given"], dmg_acc["taken"], dmg_acc["ewep"]
+        g_, t_ = dmg_acc["given"], dmg_acc["taken"]
+        # NOTE: aim_under_fire / EWep / vs-SG are 4on4-ONLY dials (weaponstay off) —
+        # in 1on1 everyone's always armed so they saturate/invert. Not emitted here.
         card["DAMAGE"] = {
             "given": g_, "taken": t_,
             "efficiency": round(g_ / t_, 2) if t_ else None,    # >1 = winning trades
-            "aim_under_fire_pct": round(100.0 * e_ / g_, 1),    # % of dmg landed on rl/lg-armed enemies
             "lg_dmg": bw["lg"], "rl_dmg": bw["rl"],
             "rl_lg_ratio": round(bw["rl"] / bw["lg"], 2) if bw["lg"] else None,  # weapon preference proxy
-            "vs_armed": {k.replace("enemyVs", "").lower(): dmg_acc[k]
-                         for k in ("enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")},
         }
     if wiq["lg"] or wiq["rl"]:
         def _med(xs):
