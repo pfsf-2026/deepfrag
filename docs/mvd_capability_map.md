@@ -62,7 +62,8 @@ exists, not yet computed.
 | ring/pent_control | `r`/`pe` intervals | powerup desire | gap — **4on4 ONLY** (~5min → ~4/match) |
 
 **POSITION / DECISION (5)**
-| map_control | `/region-control` your-team control % of RA/RL/LG/QUAD/MH zones | territory/aggression | **built** |
+| map/zone_control | `/region-control` team control % of zones | territory | **built, 4on4 ONLY** — NOT a duel concept (zone control isn't a thing in 1on1). Gated off for 1on1. |
+| item_control (duel) | ECONOMY_STACK: RA/MH control + mega timing | item desire/timing | **built (1on1)** — duel "control" IS item control: RA → +MH → elite cycle RA/YA+MH. Enrichment: add YA control + a cycle-sophistication composite. |
 | route_efficiency | `/loc-graph` transitions | navigation | gap — hard to define "good routing" quantitatively |
 | item_cycle_timing | `/items` + `/map-entities` | `lookahead_time` | gap |
 | aggression | region + dmg-output cadence | aggression dials | gap |

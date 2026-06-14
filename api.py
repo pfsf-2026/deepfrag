@@ -4784,7 +4784,7 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
             "players": out}
 
 
-def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450, fov=120):
+def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450, fov=120, mode="1on1"):
     """Full metric bucket for one player across a list of {gid,pname} games:
     MOVEMENT (bunnyhop/percentiles), AIR (airborne % from BSP height), COUPLING
     (view-yaw vs heading during air-strafe), ECONOMY_STACK (via match_metrics).
@@ -5019,26 +5019,27 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
                             react_v2_raw.append(raw)
                             if isinstance(ping_g, (int, float)):
                                 react_v2_adj.append(max(0, raw - ping_g - win))
-            # MAP CONTROL (decision/territory): your team's control % of the key
-            # zones (RA/RL/LG/QUAD/MH) from /region-control. Broader than item
-            # pickups — "do you hold space". In 1on1 teamA/teamB = the two players.
-            rc = C._get(f"/v1/demos/gameId:{gr['gid']}/region-control?windowMs=10000")
-            if rc and rc.get("stats"):
-                stats, tA, tB = rc["stats"], rc.get("teamA"), rc.get("teamB")
-                myteam = None
-                for reg in stats.values():
-                    bp = reg.get("byPlayer", {})
-                    pk = (C._resolve_player_key(gr["pname"], list(bp.keys()))
-                          or (C._resolve_player_key(cid, list(bp.keys())) if cid else None))
-                    if pk and pk in bp:
-                        myteam = bp[pk].get("team")
-                        break
-                side = "teamA" if myteam == tA else "teamB" if myteam == tB else None
-                if side:
-                    ctrls = [(stats[r].get(side + "Control", 0) or 0) + 0.5 * (stats[r].get(side + "WeakControl", 0) or 0)
-                             for r in ("RA", "RL", "LG", "QUAD", "MH") if r in stats]
-                    if ctrls:
-                        mc_vals.append(sum(ctrls) / len(ctrls))
+            # MAP/ZONE CONTROL — a 4on4 concept (hold space). NOT a duel thing: in
+            # 1on1, "control" = ITEM control (RA → +MH → elite cycle RA/YA+MH), which
+            # the ECONOMY_STACK dials already capture. So only compute for team modes.
+            if mode != "1on1":
+                rc = C._get(f"/v1/demos/gameId:{gr['gid']}/region-control?windowMs=10000")
+                if rc and rc.get("stats"):
+                    stats, tA, tB = rc["stats"], rc.get("teamA"), rc.get("teamB")
+                    myteam = None
+                    for reg in stats.values():
+                        bp = reg.get("byPlayer", {})
+                        pk = (C._resolve_player_key(gr["pname"], list(bp.keys()))
+                              or (C._resolve_player_key(cid, list(bp.keys())) if cid else None))
+                        if pk and pk in bp:
+                            myteam = bp[pk].get("team")
+                            break
+                    side = "teamA" if myteam == tA else "teamB" if myteam == tB else None
+                    if side:
+                        ctrls = [(stats[r].get(side + "Control", 0) or 0) + 0.5 * (stats[r].get(side + "WeakControl", 0) or 0)
+                                 for r in ("RA", "RL", "LG", "QUAD", "MH") if r in stats]
+                        if ctrls:
+                            mc_vals.append(sum(ctrls) / len(ctrls))
         except Exception:
             continue
 
@@ -5174,7 +5175,7 @@ def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                     per_map_cards[mp] = {"games": 0, "note": "no games in corpus"}
                     continue
                 per_map_cards[mp] = _metric_card_for_games(C, rows, display, win=win, cid=cid,
-                                                           strafe_speed=strafe_speed, fov=fov)
+                                                           strafe_speed=strafe_speed, fov=fov, mode=mode)
             out[display] = {"canonical_id": cid, "maps": per_map_cards}
     return {"mode": mode, "window_ms": win, "per_map": per_map, "maps_requested": map_list, "players": out}
 
