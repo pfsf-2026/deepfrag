@@ -5211,6 +5211,34 @@ def debug_hub_coverage():
     return {"totals": tot, "by_year_mode": by}
 
 
+@app.get("/api/debug/bot-games")
+def debug_bot_games(limit: int = Query(80, ge=1, le=400), mode: str = "", server: str = ""):
+    """Find likely BOT games for baseline calibration: a player with ping 0 (bots
+    have no netchan; real players are >=12 even on LAN) OR a demo filename
+    containing 'bot'. Returns gid/map/mode/players(+ping)/source-server so we can
+    pick frogbot duels. Optional: mode (1on1/2on2/4on4), server substring (e.g. an IP)."""
+    srvlike = f"%{server}%" if server else "%"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT m.hub_game_id AS gid, m.match_map AS map, m.match_mode AS mode,
+                   left(m.match_date, 16) AS dt, m.demo_source_url AS demo,
+                   bool_or(p.player_ping = 0) AS has_ping0,
+                   bool_or(m.demo_source_url ILIKE '%%bot%%') AS name_bot,
+                   json_agg(json_build_object('name', p.player_name, 'ping', p.player_ping)) AS players
+            FROM matches m JOIN players p ON p.match_id = m.match_id
+            WHERE m.hub_game_id IS NOT NULL
+              AND (%(mode)s = '' OR m.match_mode = %(mode)s)
+              AND m.demo_source_url ILIKE %(srv)s
+            GROUP BY m.hub_game_id, m.match_map, m.match_mode, m.match_date, m.demo_source_url
+            HAVING bool_or(p.player_ping = 0) OR bool_or(m.demo_source_url ILIKE '%%bot%%')
+            ORDER BY m.match_date DESC
+            LIMIT %(lim)s
+        """, {"mode": mode, "srv": srvlike, "lim": limit})
+        rows = [dict(r) for r in cur.fetchall()]
+    return {"count": len(rows), "games": rows}
+
+
 @app.get("/api/debug/player-game-list")
 def debug_player_game_list(name: str,
                            maps: str = "aerowalk,ztndm3,bravado,metron,dm2,dm4,skull,dm6,pocket",
