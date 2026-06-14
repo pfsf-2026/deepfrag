@@ -396,7 +396,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <li><strong>Forfeit</strong> (no game within a week) → the challenged team drops a rung.</li>
             <li>Best of 3 — three games count toward stats; the Bo3 result (first to 2) sets the ladder W/L. Winners may challenge again immediately.</li>
             <li><strong>Withdraw:</strong> the <strong>challenging</strong> team can pull a challenge any time <strong>before it's scheduled</strong> (no agreed time yet) — this frees both teams. The challenged team can't withdraw; only the side that issued it.</li>
-            <li><strong>After a loss</strong> your team <strong>can't issue challenges for a week</strong> — you can still be challenged. (A live countdown shows on your row.)</li>
+            <li><strong>After a loss</strong> your team <strong>can't issue challenges for 3 days</strong> — you can still be challenged. (A live countdown shows on your row.)</li>
             <li><strong>Win a defense, lift the cooldown:</strong> if a team in cooldown is challenged and <strong>wins</strong>, the cooldown clears <strong>immediately</strong> and they can challenge again right away.</li>
           </ul>
         </section>
@@ -425,9 +425,9 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
                 <li><strong>SmackDrive is not permitted.</strong></li></ul>
               <h4>Maps &amp; picks (Bo3)</h4>
               <ul><li>Pool: Aerowalk · ztndm3 · DM2 · DM4 · Bravado · Nova · Shifter.</li>
-                <li><code>rnd team1 team2</code> decides who picks first.</li>
-                <li>Team A picks map 1 → Team B picks map 2.</li>
-                <li>If it's 1–1, the team that picked 2nd tosses first for the decider.</li>
+                <li><code>rnd team1 team2</code> decides the first-pick team (<strong>Team A</strong>; the other is Team B).</li>
+                <li><strong>Game 1:</strong> Team A picks. <strong>Game 2:</strong> Team B picks.</li>
+                <li><strong>Decider (Game 3, only if 1–1):</strong> from the 5 remaining maps, <strong>Team B tosses 1</strong>, then <strong>Team A tosses 3</strong> — the <strong>last remaining map</strong> is the decider.</li>
                 <li>No map is played twice.</li></ul>
               <h4>Servers &amp; ping</h4>
               <ul><li><strong>NA servers only</strong> (a Brazil-vs-Brazil match may use a BR server).</li>
