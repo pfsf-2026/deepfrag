@@ -45,7 +45,7 @@ exists, not yet computed.
 | bunnyhop_sustain | `vel` %>320 | air-strafe | built |
 | coupling | `vel` heading vs `view` yaw | movement-vs-facing tie | built |
 | air_control | `hgt` airborne % + efficiency | air control | built |
-| rocketjump_usage | `hgt` jumps + self-dmg | `use_rocketjumps` | gap |
+| rocketjump_usage | self-RL hit → real liftoff (`hgt`>60, airborne ≥6 ticks; not splash-knock) | `use_rocketjumps` | **built** |
 
 **ECONOMY / CONTROL (7)**
 | stack_discipline | match_metrics kill vs death stack | risk model | built |
@@ -70,7 +70,7 @@ exists, not yet computed.
 
 **WEAPON / COMBAT**
 | weapon_preference (RL:LG) | `/damage` byWeapon dmg ratio (script-immune) | `rl_preference`/`lg_preference` | **built** (1on1+4on4) |
-| weapon_selection_IQ | weapon × distance-at-hit (RL close / LG range) | weapon-by-range logic | **built** (1on1) |
+| ~~weapon_selection_IQ~~ | weapon × distance-at-hit | — | **dropped** — LG is a close weapon too; RL-vs-LG range gap is style, not a skill axis. Use preference + per-weapon accuracy instead. |
 | damage_efficiency | `/damage` given/taken | survivability | **built** (1on1) |
 | frag_efficiency | `/frags` K/D adjusted | skill scalar | built |
 | **sg_skill (SG%)** | SG dmg share / EWep vs-SG | **`sg_preference`** (elite bots 50–60%, mediocre 35–45%) | **4on4 ONLY** (weaponstay off) |

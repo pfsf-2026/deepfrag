@@ -4817,14 +4817,15 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
     react_v2_raw = []   # reaction v2 raw: target-acquisition ms (enemy enters FOV -> crosshair)
     react_v2_adj = []   # reaction v2 ping-adjusted: raw - ping(RTT) - tick, per game
     pings = []          # per-game player ping (RTT, ms)
-    wiq = {"lg": [], "rl": []}  # weapon selection IQ: distance-to-enemy per LG/RL hit
+    rj_total = 0          # rocket jumps (self-RL hit followed by a real liftoff)
+    total_secs = 0.0      # total alive demo time (for rocket-jumps-per-minute)
     dmg_acc = {k: 0 for k in ("given", "taken", "ewep",
                               "enemyVsSg", "enemyVsMid", "enemyVsLg", "enemyVsRl", "enemyVsBoth")}
     Kbase = max(1, round(50.0 / win))
     cpl = {1: ([], []), Kbase: ([], [])}  # stride(frames) -> (heading_rates, view_rates)
     for gr in rows:
         try:
-            VX = VY = []  # velocity track for this game (used by coupling + strafe-aim)
+            VX = VY = hgt = []  # velocity + my height tracks for this game
             pos_me = pos_en = None  # (x,y,z) tracks for me / the 1on1 opponent
             en_name, en_hgt, acqs = None, [], []  # opponent name/height + reaction acquisition candidates
             # per-game ping (RTT) for reaction correction — varies by game (e.g. yeti
@@ -4978,26 +4979,19 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
                             if ev2.get("attacker") == dk and ev2.get("victim") == atk:
                                 react.append(t2 - t0)
                                 break
-                    # WEAPON SELECTION IQ: distance to the enemy at each LG/RL hit. Right
-                    # tool for the range — LG close, RL mid/long. Uses what FIRED (damage
-                    # weapon), so immune to cl_weapon hide-scripts. 1on1: victim=opponent.
-                    if pos_en is not None and en_name is not None:
-                        mx, my, mz = pos_me
-                        ex, ey, ez = pos_en
+                    # ROCKET-JUMP usage: a self-RL hit followed by a real LIFTOFF — the
+                    # player's height rises to a launch peak (>60) and stays airborne
+                    # (>20) for >=6 ticks in the ~200ms after. Filters mere splash-knockback
+                    # (which bumps height for ~1 tick then lands). Thresholds tunable.
+                    if hgt:
+                        total_secs += len(hgt) * win / 1000.0
                         for ev in evs:
-                            if ev.get("attacker") != dk or ev.get("isSelf"):
-                                continue
-                            w = ev.get("weapon")
-                            if w not in ("lg", "rl") or ev.get("victim") != en_name:
+                            if not (ev.get("isSelf") and ev.get("weapon") == "rl" and ev.get("attacker") == dk):
                                 continue
                             j = int(round((ev.get("time", 0) or 0) / win))
-                            if not (0 <= j < len(mx) and j < len(ex)
-                                    and mx[j] is not None and ex[j] is not None):
-                                continue
-                            d2 = math.hypot(mx[j] - ex[j], my[j] - ey[j])
-                            if j < len(mz) and j < len(ez) and mz[j] is not None and ez[j] is not None:
-                                d2 = math.hypot(d2, mz[j] - ez[j])
-                            wiq[w].append(d2)
+                            window = [h for h in hgt[j:j + 15] if h is not None and -100 < h < 5000]
+                            if window and max(window) > 60 and sum(1 for h in window if h > 20) >= 6:
+                                rj_total += 1
                     # AIRSHOTS: RL/GL hits while the VICTIM is airborne (their hgt high at
                     # hit time — the spectacular mid-air frag). Excludes the NoFloor
                     # sentinel (large negative). GL airshots tracked but noisy/luck-ish.
@@ -5068,15 +5062,10 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
             "lg_dmg": bw["lg"], "rl_dmg": bw["rl"],
             "rl_lg_ratio": round(bw["rl"] / bw["lg"], 2) if bw["lg"] else None,  # weapon preference proxy
         }
-    if wiq["lg"] or wiq["rl"]:
-        def _med(xs):
-            xs = sorted(xs)
-            return int(xs[len(xs) // 2]) if xs else None
-        lgm, rlm = _med(wiq["lg"]), _med(wiq["rl"])
-        card["WEAPON_IQ"] = {  # LG should be close, RL mid/long; positive gap = good selection
-            "lg_median_dist": lgm, "lg_hits": len(wiq["lg"]),
-            "rl_median_dist": rlm, "rl_hits": len(wiq["rl"]),
-            "rl_minus_lg_dist": (rlm - lgm) if (lgm is not None and rlm is not None) else None,
+    if total_secs > 0:
+        card["ROCKET_JUMP"] = {
+            "count": rj_total,
+            "per_min": round(rj_total / (total_secs / 60.0), 2),  # rocket jumps per minute
         }
     if sa["total"] > 0:
         tot = sa["total"]
