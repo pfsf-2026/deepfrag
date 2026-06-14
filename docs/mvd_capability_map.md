@@ -57,8 +57,9 @@ exists, not yet computed.
 | pack_denial | `/backpacks` RL/LG drops taken | greed/denial | gap |
 
 **POWERUP (2)**
-| quad_control | `q` intervals + `/items` | powerup desire | gap |
-| quad_efficiency | frags-per-quad (`q` × `/frags`) | powerup aggression | gap |
+| quad_control | `q` intervals + `/items` | powerup desire | gap — **4on4 ONLY** (quad ~60s) |
+| quad_efficiency | frags-per-quad (`q` × `/frags`) | powerup aggression | gap — **4on4 ONLY** |
+| ring/pent_control | `r`/`pe` intervals | powerup desire | gap — **4on4 ONLY** (~5min → ~4/match) |
 
 **POSITION / DECISION (5)**
 | map_control | `/region-control` | territory | partial |

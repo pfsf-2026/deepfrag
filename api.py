@@ -3066,7 +3066,7 @@ def ladder_detail(ladder_id: int, response: Response):
         # countdown + disable that team's challenge buttons. A win since that loss
         # clears it (winning a defense lifts cooldown) — so only count it when the
         # team's latest decisive result is a loss.
-        cd_days = (lad.get("rules") or {}).get("loss_cooldown_days", 7)
+        cd_days = (lad.get("rules") or {}).get("loss_cooldown_days", 3)
         cur.execute("""SELECT t.id,
                               max(m.played_at) FILTER (WHERE m.winner_id IS NOT NULL AND m.winner_id <> t.id) AS last_loss,
                               max(m.played_at) FILTER (WHERE m.winner_id = t.id) AS last_win
@@ -3795,7 +3795,7 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
         # CHALLENGED side, so if they then WIN that defense their most recent
         # decisive match is a win → cooldown lifts immediately. So cooldown is
         # active only when the team's latest decisive result is a loss.
-        cooldown_days = (lad.get("rules") or {}).get("loss_cooldown_days", 7)
+        cooldown_days = (lad.get("rules") or {}).get("loss_cooldown_days", 3)
         cur.execute("""SELECT max(played_at) FILTER (WHERE winner_id <> %s) AS last_loss,
                               max(played_at) FILTER (WHERE winner_id = %s)  AS last_win
                        FROM ladder_matches
