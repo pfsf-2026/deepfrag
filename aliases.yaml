@@ -124,3 +124,12 @@ dusty:
   variants:
     - dusty
     - pierre
+
+nico:
+  # Merged 2026-06-14: Venator is Nico (per Cronus). His ZD frags were dropping
+  # off team totals because "venator" wasn't linked to the "nico" canonical.
+  display: Nico
+  login: ""
+  variants:
+    - nico
+    - venator

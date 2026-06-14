@@ -4260,6 +4260,52 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
     return {"match_id": match_id, "winner_id": winner_id, "moves": moves}
 
 
+@app.post("/api/admin/ladder/match/{match_id}/recompute")
+def admin_ladder_match_recompute(match_id: int, authorization: str | None = Header(default=None)):
+    """Re-derive a stored match's per-map frags from its hub_game_ids using the two
+    teams' current rosters (canonical_id match) — fixes results where a player's
+    frags were dropped because an alias was missing at submit time (e.g. Venator
+    not yet linked to Nico). Updates maps a_frags/b_frags + Bo3 score; winner_id
+    is NOT changed (Bo3 game-wins are unaffected by a missing teammate's frags,
+    and we don't want to silently flip a recorded outcome)."""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, team_a_id, team_b_id, maps, winner_id FROM ladder_matches WHERE id=%s", (match_id,))
+        m = cur.fetchone()
+        if not m:
+            raise HTTPException(404, "match not found")
+        cur.execute("SELECT id, members FROM ladder_teams WHERE id = ANY(%s)", ([m["team_a_id"], m["team_b_id"]],))
+        rost = {r["id"]: list(r["members"] or []) for r in cur.fetchall()}
+        a_ros, b_ros = rost.get(m["team_a_id"], []), rost.get(m["team_b_id"], [])
+        maps = m["maps"] if isinstance(m["maps"], list) else json.loads(m["maps"])
+        new_maps, aw, bw, changed = [], 0, 0, []
+        for mp in maps:
+            gid = mp.get("hub_game_id")
+            af, bf = mp.get("a_frags"), mp.get("b_frags")
+            if gid and a_ros and b_ros:
+                cur.execute("""SELECT
+                        SUM(CASE WHEN p.canonical_id = ANY(%(a)s) THEN p.player_frags ELSE 0 END) AS a,
+                        SUM(CASE WHEN p.canonical_id = ANY(%(b)s) THEN p.player_frags ELSE 0 END) AS b
+                    FROM matches mt JOIN players p ON p.match_id = mt.match_id
+                    WHERE mt.hub_game_id = %(g)s""", {"a": a_ros, "b": b_ros, "g": gid})
+                r = cur.fetchone()
+                naf, nbf = int(r["a"] or 0), int(r["b"] or 0)
+                if (naf, nbf) != (af, bf):
+                    changed.append({"map": mp.get("map"), "from": [af, bf], "to": [naf, nbf]})
+                af, bf = naf, nbf
+            mp2 = dict(mp); mp2["a_frags"], mp2["b_frags"] = af, bf
+            new_maps.append(mp2)
+            if af is not None and bf is not None:
+                if af > bf: aw += 1
+                elif bf > af: bw += 1
+        cur.execute("UPDATE ladder_matches SET maps=%s, score_a=%s, score_b=%s WHERE id=%s",
+                    (json.dumps(new_maps), aw, bw, match_id))
+        conn.commit()
+    return {"match_id": match_id, "score": [aw, bw], "winner_id": m["winner_id"],
+            "changed": changed, "maps": new_maps}
+
+
 @app.post("/api/admin/ladder/challenge/{challenge_id}/cancel")
 def admin_ladder_cancel(challenge_id: int, authorization: str | None = Header(default=None)):
     """Cancel a challenge (ladder-admin) — no ladder movement, just clears it so
