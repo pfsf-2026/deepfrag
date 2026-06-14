@@ -4306,6 +4306,17 @@ def admin_ladder_match_recompute(match_id: int, authorization: str | None = Head
             "changed": changed, "maps": new_maps}
 
 
+@app.post("/api/admin/notify")
+def admin_notify(authorization: str | None = Header(default=None),
+                 content: str = Body(..., embed=True)):
+    """Admin: post a plain message to the ladder Discord channel (notify.send →
+    DISCORD_WEBHOOK_URL). For corrections / announcements that aren't tied to an
+    auto-fired event."""
+    _check_ladder_admin(authorization)
+    import notify
+    return {"sent": notify.send(content=content)}
+
+
 @app.post("/api/admin/ladder/challenge/{challenge_id}/cancel")
 def admin_ladder_cancel(challenge_id: int, authorization: str | None = Header(default=None)):
     """Cancel a challenge (ladder-admin) — no ladder movement, just clears it so
