@@ -62,8 +62,8 @@ exists, not yet computed.
 | ring/pent_control | `r`/`pe` intervals | powerup desire | gap — **4on4 ONLY** (~5min → ~4/match) |
 
 **POSITION / DECISION (5)**
-| map_control | `/region-control` | territory | partial |
-| route_efficiency | `/loc-graph` transitions | navigation | gap |
+| map_control | `/region-control` your-team control % of RA/RL/LG/QUAD/MH zones | territory/aggression | **built** |
+| route_efficiency | `/loc-graph` transitions | navigation | gap — hard to define "good routing" quantitatively |
 | item_cycle_timing | `/items` + `/map-entities` | `lookahead_time` | gap |
 | aggression | region + dmg-output cadence | aggression dials | gap |
 | spawn_control | `sp` + frag positions | spawn pressure | gap |
