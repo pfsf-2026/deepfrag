@@ -5107,12 +5107,14 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
 @app.get("/api/debug/movement-bymap")
 def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                          maps: str = "aerowalk,ztndm3,bravado,metron,dm2,dm4,skull,dm6,pocket",
-                         per_map: int = 5, win: int = 13, strafe_speed: int = 450, fov: int = 120):
-    """TEMP (no auth): full metric bucket per player PER MAP, N most-recent 1on1
-    games each, on the BSP build (view angles + airborne height live). Call one
-    name at a time to keep each request bounded (~per_map*len(maps) parses).
-    win=50ms by default: coupling needs the coarser window for a stable
-    position-derived heading (13ms heading is too noisy → false-low coupling)."""
+                         per_map: int = 5, win: int = 13, strafe_speed: int = 450, fov: int = 120,
+                         mode: str = "1on1"):
+    """TEMP (no auth): full metric bucket per player PER MAP for a given match mode
+    (1on1 / 2on2 / 4on4). Players differ hugely by mode (duel specialist vs 4on4
+    main), so cards should be built per-mode. NOTE: reaction/airshots assume a
+    single opponent (1on1) and skip when the demo has >2 players; coupling/speed/
+    movement/economy work in any mode. 4on4-only dials (SG%, EWep, packs, powerups)
+    are separate builds. Native 13ms; call one name at a time."""
     import coaching as C
     map_list = [m.strip().lower() for m in maps.split(",") if m.strip()]
     out = {}
@@ -5141,9 +5143,9 @@ def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
             for mp in map_list:
                 cur.execute("""SELECT m.hub_game_id AS gid, p.player_name AS pname
                                FROM players p JOIN matches m ON m.match_id = p.match_id
-                               WHERE p.canonical_id = %s AND m.match_mode = '1on1'
+                               WHERE p.canonical_id = %s AND m.match_mode = %s
                                  AND lower(m.match_map) = %s AND m.hub_game_id IS NOT NULL
-                               ORDER BY m.match_date DESC LIMIT %s""", (cid, mp, per_map))
+                               ORDER BY m.match_date DESC LIMIT %s""", (cid, mode, mp, per_map))
                 rows = cur.fetchall()
                 if not rows:
                     per_map_cards[mp] = {"games": 0, "note": "no games in corpus"}
@@ -5151,7 +5153,7 @@ def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                 per_map_cards[mp] = _metric_card_for_games(C, rows, display, win=win, cid=cid,
                                                            strafe_speed=strafe_speed, fov=fov)
             out[display] = {"canonical_id": cid, "maps": per_map_cards}
-    return {"window_ms": win, "per_map": per_map, "maps_requested": map_list, "players": out}
+    return {"mode": mode, "window_ms": win, "per_map": per_map, "maps_requested": map_list, "players": out}
 
 
 @app.get("/api/debug/hub-coverage")
