@@ -1,0 +1,7 @@
+# vendored parser binary (18MB) — rebuild from ~/Projects/mvd_analyzer
+qw-analyze
+# generated run data + rendered evidence
+runs/
+out/
+__pycache__/
+*.pyc

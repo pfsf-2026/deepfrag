@@ -1,0 +1,95 @@
+{
+  "schema": "fragbot.knobs.v1",
+  "note": "Tunable knobs for FragBot. Each knob is a server cvar (the substrate is komodo's KTX moveprobe patch + KTX frogbot), mapped to the DeepFrag dial it moves and the human band we want to hit. `exists:false` knobs are NEW MOVEMENT CODE FragBot must add — no KTX cvar produces them today (that's the whole point: aim is solved, movement is the frontier). Sweep these with the komodo mode-sweep harness; score each run with score_bot.py (NOT raw bunnyhop speed).",
+  "substrate": {
+    "movement_brain": "komodobots experiments/ktx_moveprobe/frogbot-moveprobe.patch (modes 0-25; mode 23 = live hybrid bunnyhop). Per-slot cvars: <cvar>_s<N>.",
+    "aim_brain": "KTX frogbot src/bot_botimp.c setSkillAttributes (linear skill/20 table). See qw-stats/docs/bot_dials_and_calibration.md sec 6.",
+    "match_harness": "komodobots scripts/run_frobodm2_lab.py (1v1) / run_4v4_validation_lab.py (4on4) on servexeri."
+  },
+  "groups": {
+    "movement": "THE FRONTIER. Moves coupling/RJ/airborne/strafe-aim. Where FragBot earns its difference.",
+    "aim": "SOLVED by KTX skill. For realism, dial DOWN to the human band, do not max.",
+    "behavior": "weapon/dodge/routing preferences."
+  },
+  "knobs": [
+    {
+      "id": "moveprobe_mode", "group": "movement", "cvar": "k_fb_moveprobe_mode",
+      "type": "int", "default": 23, "range": [0, 25], "exists": true,
+      "targets": ["coupling_52ms", "airborne_pct", "strafe_aim_fast"],
+      "notes": "Selects the movement controller. 0=stock frogbot (coupling ~0). 23=hybrid bunnyhop (komodo live). FragBot will add its own mode that COUPLES view to strafe."
+    },
+    {
+      "id": "coupling_gain", "group": "movement", "cvar": "k_fb_fragbot_coupling_gain",
+      "type": "float", "default": 0.0, "range": [0.0, 1.0], "exists": false,
+      "targets": ["coupling_52ms"], "human_target": "0.29-0.47",
+      "notes": "NEW CODE. How strongly the bot turns its view WITH the strafe heading during air-accel. The single most important human-likeness knob; no KTX cvar exists. 0 = robotic (current), ~0.35 = human."
+    },
+    {
+      "id": "use_rocketjumps", "group": "movement", "cvar": "k_fb_use_rocketjumps",
+      "type": "bool", "default": 0, "exists": true,
+      "targets": ["rocketjumps_min"], "human_target": "1.0-2.0 /min",
+      "notes": "OFF in default skill mode -> frogbot ~0.14 RJ/min. Turn on, but frequency also needs movement competence."
+    },
+    {
+      "id": "rj_mobility_rate", "group": "movement", "cvar": "k_fb_fragbot_rj_rate",
+      "type": "float", "default": 0.0, "range": [0.0, 3.0], "exists": false,
+      "targets": ["rocketjumps_min"], "human_target": "1.0-2.0 /min",
+      "notes": "NEW CODE. Target rocket-jumps-per-minute for MAP MOBILITY (not just combat). Humans RJ to move; frogbots don't."
+    },
+    {
+      "id": "s23_pass_r", "group": "movement", "cvar": "k_fb_moveprobe_s23_pass_r",
+      "type": "float", "default": 130.0, "range": [100, 170], "exists": true,
+      "targets": ["airborne_pct", "strafe_aim_fast"],
+      "notes": "Mode-23 carrot pass radius (komodo LawParams). Sweepable via mode23_sweep.py."
+    },
+    {
+      "id": "s23_accel_numerator", "group": "movement", "cvar": "k_fb_moveprobe_accel_numerator",
+      "type": "float", "default": 9.0, "range": [5, 26], "exists": true,
+      "targets": ["speed_median", "strafe_aim_fast"],
+      "notes": "Mode-23 acceleration aggressiveness (komodo LawParams)."
+    },
+    {
+      "id": "s23_swing", "group": "movement", "cvar": "k_fb_moveprobe_s21_swing",
+      "type": "float", "default": 12.0, "range": [6, 24], "exists": true,
+      "targets": ["coupling_52ms", "airborne_pct"],
+      "notes": "Mode-23 weave swing magnitude (komodo LawParams)."
+    },
+    {
+      "id": "fight_at_speed", "group": "movement", "cvar": "k_fb_fragbot_fight_speed_min",
+      "type": "float", "default": 0.0, "range": [0, 600], "exists": false,
+      "targets": ["strafe_aim_fast"], "human_target": ">=25% of dmg above 450 qu/s",
+      "notes": "NEW CODE. Bias the bot to keep moving while firing instead of planting. Frogbot deals 87% of damage slow."
+    },
+    {
+      "id": "aim_skill", "group": "aim", "cvar": "k_fb_skill",
+      "type": "int", "default": 10, "range": [0, 20], "exists": true,
+      "targets": ["sg_pct", "lg_pct", "rl_pct", "reaction_acq_ms"],
+      "human_target": "SG 10-18, LG 20-30, RL ~7 (strong-human band)",
+      "notes": "Linear skill/20 sets aim error + volatility + reaction. WARNING: even skill 10 OUT-AIMS strong humans. For realism set LOWER (~3-6) or override the aim cvars directly. Don't max."
+    },
+    {
+      "id": "yaw_max_error", "group": "aim", "cvar": "k_fb_aim_yaw_max_error",
+      "type": "float", "default": 3.75, "range": [3.0, 6.0], "exists": true,
+      "targets": ["lg_pct", "sg_pct"],
+      "notes": "Direct aim-error override (KTX FB_CVAR_YAW_MAX_ERROR). Higher = worse aim = more human. Use when skill granularity is too coarse."
+    },
+    {
+      "id": "reaction_time", "group": "aim", "cvar": "k_fb_reaction_time",
+      "type": "float", "default": 0.525, "range": [0.3, 1.5], "exists": true,
+      "targets": ["reaction_acq_ms"], "human_target": "~200ms acq / human ping-adj 156-233",
+      "notes": "KTX FB_CVAR_REACTION_TIME (awareness/fire delay). Skill 10=0.525s, skill 20=0.30s."
+    },
+    {
+      "id": "opp_midair_volatility", "group": "aim", "cvar": "k_fb_opp_midair_volatility",
+      "type": "float", "default": 0.5, "range": [0.0, 1.0], "exists": true,
+      "targets": ["airshot_rl"],
+      "notes": "Aim penalty vs airborne targets. 0 (skill 20) = perfect airshot tracking. RAISE for human-like (humans miss airborne targets)."
+    },
+    {
+      "id": "lg_preference", "group": "behavior", "cvar": "k_fb_lg_preference",
+      "type": "float", "default": 0.6, "range": [0.0, 1.0], "exists": true,
+      "targets": ["lg_pct"],
+      "notes": "How much the bot favors LG. Skill 0=0.2, skill 20=1.0."
+    }
+  ]
+}
