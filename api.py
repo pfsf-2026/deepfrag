@@ -4784,7 +4784,7 @@ def debug_movement(names: str = "sane,Blood_Dog", games: int = 18):
             "players": out}
 
 
-def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450, fov=120, mode="1on1"):
+def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450, fov=100, mode="1on1"):
     """Full metric bucket for one player across a list of {gid,pname} games:
     MOVEMENT (bunnyhop/percentiles), AIR (airborne % from BSP height), COUPLING
     (view-yaw vs heading during air-strafe), ECONOMY_STACK (via match_metrics).
@@ -4898,6 +4898,13 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
                         # Correlates view-yaw (vya) with the enemy's position. FOV-gated
                         # (LOS approximated by FOV+range; true BSP line-of-sight is the
                         # refinement). 1on1: enemy = the single other player.
+                        # FOV is a client cvar NOT in the MVD, so we can't know each
+                        # player's exact FOV. We gate at fov=100 (half=50deg) — the floor
+                        # of the player base (nobody runs below 100). At 50deg off-axis
+                        # EVERY real FOV (100-130) already has the enemy on screen, so no
+                        # one is charged "dead time" for an enemy they couldn't see yet.
+                        # (BD's concern: a fixed 120/60deg cone charged sub-120-FOV players
+                        # for unseen frames; the 100-floor removes that asymmetry.)
                         MX, MY = me.get("x") or [], me.get("y") or []
                         others = [k for k in b["players"] if k != key]
                         if len(others) == 1 and MX:
@@ -5131,7 +5138,7 @@ def _metric_card_for_games(C, rows, display, win=13, cid=None, strafe_speed=450,
 @app.get("/api/debug/movement-bymap")
 def debug_movement_bymap(names: str = "sane,blood_dog,yeti,bogojoker",
                          maps: str = "aerowalk,ztndm3,bravado,metron,dm2,dm4,skull,dm6,pocket",
-                         per_map: int = 5, win: int = 13, strafe_speed: int = 450, fov: int = 120,
+                         per_map: int = 5, win: int = 13, strafe_speed: int = 450, fov: int = 100,
                          mode: str = "1on1"):
     """TEMP (no auth): full metric bucket per player PER MAP for a given match mode
     (1on1 / 2on2 / 4on4). Players differ hugely by mode (duel specialist vs 4on4
@@ -5212,31 +5219,35 @@ def debug_hub_coverage():
 
 
 @app.get("/api/debug/bot-games")
-def debug_bot_games(limit: int = Query(80, ge=1, le=400), mode: str = "", server: str = ""):
-    """Find likely BOT games for baseline calibration: a player with ping 0 (bots
-    have no netchan; real players are >=12 even on LAN) OR a demo filename
-    containing 'bot'. Returns gid/map/mode/players(+ping)/source-server so we can
-    pick frogbot duels. Optional: mode (1on1/2on2/4on4), server substring (e.g. an IP)."""
+def debug_bot_games(limit: int = Query(80, ge=1, le=400), mode: str = "", server: str = "",
+                    q: str = "bot"):
+    """Find likely BOT games for baseline calibration. Matches search term `q`
+    (default 'bot'; KTX frogbot demos on Denver are tagged 'bro') in EITHER the
+    demo filename/URL OR any player name. Also flags ping-0 players. Returns
+    gid/map/mode/players(+ping)/source-server so we can pick frogbot duels.
+    Optional: mode (1on1/2on2/4on4), server substring (e.g. an IP)."""
     srvlike = f"%{server}%" if server else "%"
+    qlike = f"%{q}%"
     with pg() as conn:
         cur = conn.cursor()
         cur.execute("""
             SELECT m.hub_game_id AS gid, m.match_map AS map, m.match_mode AS mode,
                    left(m.match_date, 16) AS dt, m.demo_source_url AS demo,
                    bool_or(p.player_ping = 0) AS has_ping0,
-                   bool_or(m.demo_source_url ILIKE '%%bot%%') AS name_bot,
+                   bool_or(m.demo_source_url ILIKE %(q)s) AS demo_match,
+                   bool_or(p.player_name ILIKE %(q)s) AS name_match,
                    json_agg(json_build_object('name', p.player_name, 'ping', p.player_ping)) AS players
             FROM matches m JOIN players p ON p.match_id = m.match_id
             WHERE m.hub_game_id IS NOT NULL
               AND (%(mode)s = '' OR m.match_mode = %(mode)s)
               AND m.demo_source_url ILIKE %(srv)s
             GROUP BY m.hub_game_id, m.match_map, m.match_mode, m.match_date, m.demo_source_url
-            HAVING bool_or(p.player_ping = 0) OR bool_or(m.demo_source_url ILIKE '%%bot%%')
+            HAVING bool_or(m.demo_source_url ILIKE %(q)s) OR bool_or(p.player_name ILIKE %(q)s)
             ORDER BY m.match_date DESC
             LIMIT %(lim)s
-        """, {"mode": mode, "srv": srvlike, "lim": limit})
+        """, {"mode": mode, "srv": srvlike, "lim": limit, "q": qlike})
         rows = [dict(r) for r in cur.fetchall()]
-    return {"count": len(rows), "games": rows}
+    return {"count": len(rows), "q": q, "games": rows}
 
 
 @app.get("/api/debug/player-game-list")
