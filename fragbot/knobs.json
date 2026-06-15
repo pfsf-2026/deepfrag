@@ -25,6 +25,18 @@
       "notes": "NEW CODE. How strongly the bot turns its view WITH the strafe heading during air-accel. The single most important human-likeness knob; no KTX cvar exists. 0 = robotic (current), ~0.35 = human."
     },
     {
+      "id": "swing_deg", "group": "movement", "cvar": "k_fb_fragbot_swing_deg",
+      "type": "float", "default": 35.0, "range": [10, 60], "exists": false,
+      "targets": ["coupling_52ms", "airborne_pct"],
+      "notes": "Mode 30. Peak view offset from heading per air-strafe weave. With coupling_gain, sets how much the view leads the strafe."
+    },
+    {
+      "id": "swing_period", "group": "movement", "cvar": "k_fb_fragbot_swing_period",
+      "type": "float", "default": 0.45, "range": [0.2, 1.0], "exists": false,
+      "targets": ["coupling_52ms"],
+      "notes": "Mode 30. Seconds per weave half (strafe-side flip). Too short = jittery; too long = wide arcs off the nav line."
+    },
+    {
       "id": "use_rocketjumps", "group": "movement", "cvar": "k_fb_use_rocketjumps",
       "type": "bool", "default": 0, "exists": true,
       "targets": ["rocketjumps_min"], "human_target": "1.0-2.0 /min",

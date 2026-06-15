@@ -42,6 +42,11 @@ nuxt/public/rankings.json
 .env.local
 .env.*.local
 
+# Fleet infra notes — contain server IPs + KTX admincode; repo is PUBLIC.
+# CLAUDE.md still auto-loads locally (Claude Code reads it from disk, committed or not).
+CLAUDE.md
+docs/qw_server_fleet.md
+
 # Editor
 .vscode/
 .idea/
