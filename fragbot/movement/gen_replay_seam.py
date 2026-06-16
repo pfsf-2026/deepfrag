@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""FragBot REPLAY seam generator — MULTI-MAP puppet playback.
+"""FragBot REPLAY seam generator — multi-map puppet playback with auto-rotation.
 
-Reads a JSON config {map: [[cmds, demo], ...]} and emits per-map trace arrays plus
-a dispatch keyed on `mapname`, so the bot auto-plays the right map's tricks on map
-load. Per map, several human .qwd routes are strung (setorigin teleports between).
-Each frame the bot is puppeted to the human's exact origin+velocity+view, given all
-weapons + ammo + invuln (loops forever), replays attack+weapon impulse (RL/LG jumps
-fire), plays the jump sound on jump rising edge, and sets the model angles so the
-body leans/faces correctly in 3rd person (not a stick figure).
+JSON config {map: [[cmds,demo],...]} -> per-map trace arrays + a mapname dispatch.
+Each frame the bot is puppeted to the human's exact origin+velocity+view, armed +
+invuln, replays attack+weapon impulse (RL/LG fire), sets model angles (3rd-person
+lean), and plays the jump sound on the actual upward LAUNCH (vz crossing positive,
+so it's aligned with takeoff, not the button). Runs each map's tricks TWICE then
+changelevels to the next map in the config order. Per-map state resets on load.
 
 Usage: gen_replay_seam.py <out_seam.c> <MODE_INT> <config.json>
 """
@@ -18,6 +17,7 @@ import qwd_usercmd as q
 
 out_path, mode, cfg_path = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 cfg = json.load(open(cfg_path))
+maps = list(cfg.keys())
 def fl(x): return repr(float(x)) + "f"
 
 def build_rows(pairs):
@@ -28,47 +28,71 @@ def build_rows(pairs):
         for i in range(min(len(cmds), len(uc))):
             c = cmds[i]; b = int(c[13])
             rows.append((c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8],
-                         1 if b & 1 else 0, int(uc[i].impulse), 1 if b & 2 else 0))
+                         1 if b & 1 else 0, int(uc[i].impulse)))
     return rows
 
-arrays, dispatch, summary = [], [], []
-for mp, pairs in cfg.items():
-    rows = build_rows(pairs)
-    n = len(rows)
-    arr = ",\n".join("  {%s,%d,%d,%d}" % (",".join(fl(v) for v in r[:8]), r[8], r[9], r[10]) for r in rows)
-    arrays.append(f"#define FRAGBOT_N_{mp} {n}\nstatic const float fragbot_replay_{mp}[FRAGBOT_N_{mp}][11] = {{\n{arr}\n}};")
+arrays, dispatch, nextmap, summary = [], [], [], []
+for idx, mp in enumerate(maps):
+    rows = build_rows(cfg[mp]); n = len(rows)
+    arr = ",\n".join("  {%s,%d,%d}" % (",".join(fl(v) for v in r[:8]), r[8], r[9]) for r in rows)
+    arrays.append(f"#define FRAGBOT_N_{mp} {n}\nstatic const float fragbot_replay_{mp}[FRAGBOT_N_{mp}][10] = {{\n{arr}\n}};")
     dispatch.append(f'\tif (streq(mapname, "{mp}")) {{ *count = FRAGBOT_N_{mp}; return fragbot_replay_{mp}; }}')
+    nextmap.append(f'\tif (streq(mapname, "{mp}")) return "{maps[(idx + 1) % len(maps)]}";')
     summary.append(f"{mp}({n})")
 
-seam = f"""/* FragBot REPLAY seam (generated). Multi-map puppet playback: {' '.join(summary)}.
- * Auto-dispatches by mapname; puppets origin+vel+view; armed+invuln; replays
- * fire+impulse; jump sound; sets model angles for a non-stick-figure body. */
+seam = f"""/* FragBot REPLAY seam (generated). Multi-map puppet playback w/ auto-rotation:
+ * {' '.join(summary)}. Puppets origin+vel+view; armed+invuln; fire+impulse; jump
+ * sound on launch; model lean; 2 loops per map then changelevels to the next. */
 
 /* ===== FRAGBOT_BLOCK ===== */
 #define FRAGBOT_REPLAY_MODE {mode}
+#define FRAGBOT_LOOPS_PER_MAP 2
 {chr(10).join(arrays)}
-static int fragbot_rframe[MAX_CLIENTS];
-static int fragbot_lastjump[MAX_CLIENTS];
+static int   fragbot_rframe[MAX_CLIENTS];
+static int   fragbot_loops[MAX_CLIENTS];
+static float fragbot_lastvz[MAX_CLIENTS];
+static char  fragbot_lastmap[64];
 
-static const float (*FragBot_TraceForMap(int *count))[11]
+static const float (*FragBot_TraceForMap(int *count))[10]
 {{
 {chr(10).join(dispatch)}
-	*count = 0;
-	return (const float (*)[11]) 0;
+	*count = 0; return (const float (*)[10]) 0;
+}}
+static char *FragBot_NextMap(void)
+{{
+{chr(10).join(nextmap)}
+	return "{maps[0]}";
 }}
 
 static void FragBot_Replay(gedict_t *self, vec3_t direction, qbool *jumping,
                            qbool *firing, int *impulse_out)
 {{
 	int slot = NUM_FOR_EDICT(self) - 1;
-	int f, count, jmp;
-	const float (*tr)[11];
+	int f, count, k;
+	float vz;
+	const float (*tr)[10];
 	vec3_t o, v;
 	if (slot < 0 || slot >= MAX_CLIENTS) return;
+
+	/* reset all per-slot replay state when the map changes */
+	if (!streq(fragbot_lastmap, mapname)) {{
+		for (k = 0; k < MAX_CLIENTS; k++) {{ fragbot_rframe[k] = 0; fragbot_loops[k] = 0; fragbot_lastvz[k] = 0; }}
+		strlcpy(fragbot_lastmap, mapname, sizeof(fragbot_lastmap));
+	}}
 	tr = FragBot_TraceForMap(&count);
-	if (!tr || count <= 0) return;          /* no tricks for this map -> stock bot */
+	if (!tr || count <= 0) return;
+	if (fragbot_loops[slot] < 0) return;            /* map change pending */
 	f = fragbot_rframe[slot];
-	if (f < 0 || f >= count) {{ f = 0; fragbot_lastjump[slot] = 0; }}
+	if (f >= count) {{                                /* finished a loop */
+		fragbot_loops[slot] += 1;
+		if (fragbot_loops[slot] >= FRAGBOT_LOOPS_PER_MAP) {{
+			fragbot_loops[slot] = -1;
+			changelevel(FragBot_NextMap());
+			return;
+		}}
+		f = 0; fragbot_lastvz[slot] = 0;
+	}}
+	if (f < 0) f = 0;
 
 	self->s.v.items = ((int) self->s.v.items) | 127;
 	self->s.v.ammo_shells = 200; self->s.v.ammo_nails = 200;
@@ -79,19 +103,18 @@ static void FragBot_Replay(gedict_t *self, vec3_t direction, qbool *jumping,
 	v[0] = tr[f][3]; v[1] = tr[f][4]; v[2] = tr[f][5];
 	setorigin(self, PASSVEC3(o));
 	VectorCopy(v, self->s.v.velocity);
-	/* cmd view (POV) */
 	self->fb.desired_angle[PITCH] = tr[f][6];
 	self->fb.desired_angle[YAW]   = tr[f][7];
 	self->fb.desired_angle[ROLL]  = 0;
-	/* model angles (3rd-person body lean/facing) */
 	self->s.v.angles[0] = tr[f][6];
 	self->s.v.angles[1] = tr[f][7];
 	self->s.v.angles[2] = 0;
 
-	jmp = (int) tr[f][10];
-	if (jmp && !fragbot_lastjump[slot])
+	/* jump sound on the actual upward LAUNCH (aligned with takeoff) */
+	vz = tr[f][5];
+	if (vz > 150.0f && fragbot_lastvz[slot] <= 150.0f)
 		sound(self, CHAN_BODY, "player/plyrjmp8.wav", 1, ATTN_NORM);
-	fragbot_lastjump[slot] = jmp;
+	fragbot_lastvz[slot] = vz;
 
 	VectorClear(direction);
 	*jumping = false;
@@ -110,4 +133,4 @@ static void FragBot_Replay(gedict_t *self, vec3_t direction, qbool *jumping,
 /* ===== /FRAGBOT_CALL ===== */
 """
 open(out_path, "w").write(seam)
-print(f"wrote {out_path}: {' '.join(summary)}")
+print(f"wrote {out_path}: {' '.join(summary)} | rotate 2x/map")
