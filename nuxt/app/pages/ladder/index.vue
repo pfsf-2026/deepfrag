@@ -307,6 +307,9 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
           <section class="card">
             <h3>✅ Recent results <button class="exp" @click="setTab('stats')">all →</button></h3>
             <div v-if="!recentMatches.length" class="muted small">No matches reported yet.</div>
+            <div v-if="recentMatches.length" class="res res-head">
+              <span class="res-t">Challenger</span><span class="res-s"></span><span class="res-t right">Challenged</span>
+            </div>
             <button v-for="m in recentMatches.slice(0, 5)" :key="m.id" class="res" @click="openMatchId = m.id">
               <span class="res-t">{{ m.a_name }}</span>
               <span class="res-s"><b :class="{ w: m.winner_id === m.team_a_id }">{{ m.score_a }}</b>–<b :class="{ w: m.winner_id === m.team_b_id }">{{ m.score_b }}</b></span>

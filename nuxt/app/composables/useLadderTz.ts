@@ -47,10 +47,21 @@ export const TZ_OPTIONS: Array<[string, string]> = [
 
 const FALLBACK = 'America/New_York'
 
-export function resolveTz(user: any): string {
-  return user?.timezone || STATE_TZ[user?.state] || FALLBACK
+// The viewer's actual zone from the browser (client only). This is almost always
+// correct, so it's a far better fallback than ET for non-NA players (e.g. an AU
+// player with no profile tz should see AEST, not EDT). SSR returns null → ET.
+function browserTz(): string | null {
+  try {
+    if (typeof Intl === 'undefined' || typeof window === 'undefined') return null
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null
+  } catch { return null }
 }
-// True when we actually know the zone (vs falling back to ET).
+
+export function resolveTz(user: any): string {
+  return user?.timezone || STATE_TZ[user?.state] || browserTz() || FALLBACK
+}
+// True when we have a confident zone: explicit profile, state mapping, or the
+// browser's own detected zone. (Only an SSR/locked-down browser falls back to ET.)
 export function tzKnown(user: any): boolean {
-  return !!(user?.timezone || STATE_TZ[user?.state])
+  return !!(user?.timezone || STATE_TZ[user?.state] || browserTz())
 }

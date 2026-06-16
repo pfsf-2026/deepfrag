@@ -112,6 +112,9 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
           <h2>Match reports</h2>
           <div v-if="!matches.length" class="muted small">No matches reported yet.</div>
           <div class="reports">
+            <div v-if="matches.length" class="rep-head">
+              <span class="rt">Challenger</span><span class="rs"></span><span class="rt right">Challenged</span><span class="rd"></span>
+            </div>
             <button v-for="m in matches" :key="m.id" class="rep" @click="openMatchId = m.id">
               <span class="rt"><img v-if="m.a_logo" :src="logoUrl(m.team_a_id)" class="lg" alt=""> {{ m.a_name }}</span>
               <span class="rs"><b :class="{ w: m.winner_id === m.team_a_id }">{{ m.score_a }}</b>–<b :class="{ w: m.winner_id === m.team_b_id }">{{ m.score_b }}</b></span>
@@ -168,6 +171,10 @@ table.stats tbody tr:hover { background: var(--panel-2); }
 .mrow .v { font-family: 'JetBrains Mono', monospace; font-weight: 700; } .mrow .v small { color: var(--fg-3); font-weight: 400; }
 .mrow.match .k { font-family: system-ui, sans-serif; font-size: 11px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reports { display: flex; flex-direction: column; gap: 7px; }
+.rep-head { display: flex; align-items: center; gap: 9px; padding: 0 12px 1px; }
+.rep-head .rt { flex: 1; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--fg-3); font-weight: 800; }
+.rep-head .rt.right { justify-content: flex-end; text-align: right; }
+.rep-head .rs { min-width: 30px; text-align: center; } .rep-head .rd { width: 44px; }
 .rep { display: flex; align-items: center; gap: 9px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; font-size: 13px; cursor: pointer; color: var(--fg); font-family: inherit; text-align: left; }
 .rep:hover { border-color: var(--accent); }
 .rep .rt { display: flex; align-items: center; gap: 7px; flex: 1; } .rep .rt.right { justify-content: flex-end; }
