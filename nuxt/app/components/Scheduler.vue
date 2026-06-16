@@ -37,6 +37,8 @@ const proposerName = computed(() => proposedByLocal.value ? teamName(proposedByL
 // 7pm → 2am ET, hourly. The 12/1/2am slots belong to the SAME evening (they roll
 // to the next ET calendar day). Slots stored as UTC ISO; labelled in ET.
 const HOURS_ET = [19, 20, 21, 22, 23, 0, 1, 2]
+// 30-min granularity: each prime hour split into :00 and :30 (16 slots/evening).
+const SLOTS_ET = HOURS_ET.flatMap((h) => [h, h + 0.5])
 const ET = 'America/New_York'
 // UTC instant for wall-clock h:00 ET on (y, mo, d), DST-correct AND independent
 // of the viewer's browser timezone. We get ET's offset by formatting the same
@@ -44,8 +46,8 @@ const ET = 'America/New_York'
 // cancels in the difference, leaving ET's true offset. (The previous version
 // subtracted only the ET-parsed value, so it silently baked in the browser's
 // offset and mis-placed every slot for non-UTC users.)
-function etToUtcISO(y, mo, d, h) {
-  const asUTC = Date.UTC(y, mo, d, h, 0, 0)
+function etToUtcISO(y, mo, d, h, mi) {
+  const asUTC = Date.UTC(y, mo, d, h, mi || 0, 0)
   const inst = new Date(asUTC)
   const etMs = new Date(inst.toLocaleString('en-US', { timeZone: ET })).getTime()
   const utcMs = new Date(inst.toLocaleString('en-US', { timeZone: 'UTC' })).getTime()
@@ -60,12 +62,13 @@ const days = computed(() => {
   for (let off = 0; off < 7; off++) {
     const base = new Date(nowET); base.setDate(nowET.getDate() + off)
     const y = base.getFullYear(), mo = base.getMonth(), d = base.getDate()
-    const slots = HOURS_ET.map((h) => {
+    const slots = SLOTS_ET.map((hf) => {
+      const h = Math.floor(hf), mi = (hf - h) * 60
       const dd = h < 7 ? d + 1 : d   // 12/1/2am ET roll to next ET day
-      const iso = etToUtcISO(y, mo, dd, h)
-      // Anchored to ET, but LABELLED in the viewer's resolved zone (7pm ET shows
-      // as 4pm for a Pacific player, etc).
-      return { iso, label: new Date(iso).toLocaleTimeString('en-US', { timeZone: tz.value, hour: 'numeric' }), past: new Date(iso).getTime() < Date.now() }
+      const iso = etToUtcISO(y, mo, dd, h, mi)
+      // Anchored to ET, labelled in the viewer's zone. Compact: "7pm" / "7:30pm".
+      const label = new Date(iso).toLocaleTimeString('en-US', { timeZone: tz.value, hour: 'numeric', minute: '2-digit' }).replace(':00', '').replace(' ', '').toLowerCase()
+      return { iso, label, past: new Date(iso).getTime() < Date.now() }
     })
     // Row date = that evening's first (7pm ET) slot, in the viewer's zone.
     out.push({ label: new Date(slots[0].iso).toLocaleDateString('en-US', { timeZone: tz.value, weekday: 'short', month: 'short', day: 'numeric' }), slots })
@@ -306,12 +309,12 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
 .x { background: none; border: 0; color: var(--fg-3); font-size: 18px; cursor: pointer; }
 .lede { color: var(--fg-2); font-size: 13px; margin: 6px 0 16px; }
 .grid-scroll { overflow-x: auto; }
-.grid { display: flex; flex-direction: column; gap: 8px; min-width: 540px; }
+.grid { display: flex; flex-direction: column; gap: 8px; min-width: 560px; }
 .day { display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center; }
 .day-lbl { font-size: 12px; color: var(--fg-2); font-weight: 700; white-space: nowrap; }
-/* 8 equal slots, always one line (the grid-scroll wrapper handles tiny screens). */
-.slots { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; }
-.slot { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg-2); border-radius: 6px; padding: 5px 4px; font-size: 12px; cursor: pointer; font-family: 'JetBrains Mono', monospace; white-space: nowrap; text-align: center; position: relative; }
+/* 16 half-hour slots -> 2 rows of 8 (the grid-scroll wrapper handles tiny screens). */
+.slots { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.slot { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg-2); border-radius: 6px; padding: 5px 3px; font-size: 11px; cursor: pointer; font-family: 'JetBrains Mono', monospace; white-space: nowrap; text-align: center; position: relative; }
 .slot.on { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 700; }
 .slot.past { opacity: 0.3; cursor: not-allowed; }
 .slot:not(.past):hover { border-color: var(--accent); }
