@@ -407,7 +407,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
           <ul>
             <li><strong>NA servers</strong> for any match involving a North American team. This is a North American tournament.</li>
             <li><strong>Exception — Brazil vs Brazil:</strong> two Brazilian teams may play on a BR server. DeepFrag picks it automatically.</li>
-            <li><strong>No ping-ups.</strong> We get average ping as close as possible between both teams on one server.</li>
+            <li><strong>Ping-ups optional (not required).</strong> We match average ping as closely as possible on one server. Players may optionally even up — for NA, target a max of <strong>50ms</strong> with <code>cl_delay_packet_target 50</code>.</li>
             <li>Brazil vs NA plays the <strong>closest-proximity NA server</strong> (e.g. Brazil on Miami, ~100–130ms).</li>
             <li><strong>DeepFrag suggests the server automatically</strong> from both teams' player locations.</li>
             <li>Pool: Denver · Miami · Chicago · Dallas · New York · LA · Iowa · Washington.</li>
@@ -431,7 +431,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
                 <li>No map is played twice.</li></ul>
               <h4>Servers &amp; ping</h4>
               <ul><li><strong>NA servers only</strong> (a Brazil-vs-Brazil match may use a BR server).</li>
-                <li>Even pings on the closest-proximity NA server. <strong>No ping-ups / delay commands.</strong></li>
+                <li>Even pings on the closest-proximity NA server. <strong>Ping-ups optional</strong> (not required) — NA recommended max <strong>50ms</strong> via <code>cl_delay_packet_target 50</code>.</li>
                 <li>Proxy / routing allowed. Disputes: agree on a server, else an admin picks — refusing is a forfeit.</li></ul>
               <h4>Client integrity</h4>
               <ul><li>unEzQuake must pass the ruleset check (<strong>CLEAR</strong>).</li>
