@@ -394,7 +394,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <li><strong>Win a 1-rung challenge</strong> → swap places.</li>
             <li><strong>Win a 2-rung challenge</strong> → jump up 2; the teams you passed each drop one.</li>
             <li><strong>Forfeit</strong> (no game within a week) → the challenged team drops a rung.</li>
-            <li>Best of 3 — three games count toward stats; the Bo3 result (first to 2) sets the ladder W/L. Winners may challenge again immediately.</li>
+            <li>Best of 3 (first to 2) sets the ladder W/L. Natural Bo3 only — a 2–0 is two games, a 2–1 is three; only those games count toward stats, no extra/dead-rubber games. Winners may challenge again immediately.</li>
             <li><strong>Withdraw:</strong> the <strong>challenging</strong> team can pull a challenge any time <strong>before it's scheduled</strong> (no agreed time yet) — this frees both teams. The challenged team can't withdraw; only the side that issued it.</li>
             <li><strong>After a loss</strong> your team <strong>can't issue challenges for 3 days</strong> — you can still be challenged. (A live countdown shows on your row.)</li>
             <li><strong>Win a defense, lift the cooldown:</strong> if a team in cooldown is challenged and <strong>wins</strong>, the cooldown clears <strong>immediately</strong> and they can challenge again right away.</li>
