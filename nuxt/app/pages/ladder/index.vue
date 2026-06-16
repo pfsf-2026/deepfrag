@@ -95,6 +95,18 @@ async function doWithdraw(c) {
   } catch (e) { challengeErr.value = e?.data?.detail || e?.message || 'Could not withdraw challenge' }
   finally { withdrawingId.value = null }
 }
+const reschedulingId = ref(null)
+async function doReschedule(c) {
+  if (!confirm('Reschedule this match? The agreed time is cleared and both teams re-pick new times.')) return
+  reschedulingId.value = c.id
+  challengeErr.value = ''
+  try {
+    await $fetch(`${base}/api/ladder/challenge/${c.id}/reschedule`, { method: 'POST', headers: useAuth().authHeader() })
+    await load()
+    schedulerChallenge.value = challenges.value.find(x => x.id === c.id) || null   // reopen in propose mode
+  } catch (e) { challengeErr.value = e?.data?.detail || e?.message || 'Could not reschedule' }
+  finally { reschedulingId.value = null }
+}
 async function onScheduled() { schedulerChallenge.value = null; await load() }
 function editTeam(t) { editingTeam.value = t }
 async function onTeamAdded(name) { showAddTeam.value = false; editingTeam.value = null; teamSubmitted.value = name; await load() }
@@ -339,6 +351,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
               <div class="ym-status">{{ challengeStatus(myOpenChallenge) }}</div>
               <div class="ym-actions">
                 <button class="rail-btn" @click="schedulerChallenge = myOpenChallenge">{{ myChallengeAction(myOpenChallenge) }}</button>
+                <button v-if="myOpenChallenge.agreed_at" class="rail-btn ghost" :disabled="reschedulingId === myOpenChallenge.id" @click="doReschedule(myOpenChallenge)">{{ reschedulingId === myOpenChallenge.id ? 'Reopening…' : 'Reschedule' }}</button>
                 <button v-if="canWithdraw(myOpenChallenge)" class="rail-btn ghost" :disabled="withdrawingId === myOpenChallenge.id" @click="doWithdraw(myOpenChallenge)">{{ withdrawingId === myOpenChallenge.id ? 'Withdrawing…' : 'Withdraw' }}</button>
               </div>
             </template>

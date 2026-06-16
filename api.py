@@ -4179,6 +4179,44 @@ def ladder_challenge_withdraw(challenge_id: int, authorization: str | None = Hea
     return {"challenge_id": challenge_id, "status": "cancelled"}
 
 
+@app.post("/api/ladder/challenge/{challenge_id}/reschedule")
+def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = Header(default=None)):
+    """Either team in the match (or an admin) reopens an already-scheduled match
+    for re-negotiation: clears the agreed time + offered slots and returns the
+    challenge to the propose/pick flow. Posts a Discord notice so both sides know.
+    (Admins can instead set a specific new time via /api/admin/.../reschedule.)"""
+    import ladder as _ladder
+    user = _current_user(authorization, required=True)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT c.status, c.challenger_id, c.challenged_id,
+                              ca.name AS a, cd.name AS b
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] != "scheduled":
+            raise HTTPException(409, "only a scheduled match can be rescheduled")
+        on_team = _user_on_team(cur, user, ch["challenger_id"]) or _user_on_team(cur, user, ch["challenged_id"])
+        if not on_team and not (user or {}).get("is_admin"):
+            raise HTTPException(403, "only a team in this match can reschedule it")
+        cur.execute("""UPDATE ladder_challenges
+                       SET agreed_at=NULL, server=NULL, proposed='[]'::jsonb, proposed_by=NULL,
+                           status='open', reminded_soon=FALSE, reminded_10m=FALSE, reminded_24h=FALSE
+                       WHERE id=%s""", (challenge_id,))
+        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
+        conn.commit()
+    try:
+        import notify
+        notify.send(content=f"{mention}\n🔄 **{ch['a']}** vs **{ch['b']}** is rescheduling — the agreed time was cleared, new times needed.")
+    except Exception:
+        pass
+    return {"challenge_id": challenge_id, "status": "open"}
+
+
 def _detect_bo3(cur, a_roster, b_roster, agreed_at):
     """Find candidate 2on2 hub games involving BOTH rosters around the scheduled
     time, then walk them in time order into the decisive Bo3 set (first to 2).
