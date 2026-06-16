@@ -105,6 +105,11 @@ def ensure_schema(cur):
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS reminded_soon BOOLEAN NOT NULL DEFAULT FALSE")  # ~1h
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS reminded_10m BOOLEAN NOT NULL DEFAULT FALSE")   # ~10m
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS overdue_flagged BOOLEAN NOT NULL DEFAULT FALSE")
+    cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS reminded_unsched_3d BOOLEAN NOT NULL DEFAULT FALSE")
+    # Per-individual scheduling: each CHALLENGED player picks the offered slots they
+    # can do -> {canonical_id: [iso, ...]}. When both have picked, the match
+    # auto-schedules at the earliest slot common to both.
+    cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS picks JSONB NOT NULL DEFAULT '{}'::jsonb")
 
 
 def standings(cur, ladder_id):

@@ -97,7 +97,32 @@ async function saveAvailability() {
   } catch (e) { err.value = e?.data?.detail || e?.message || 'Could not save' } finally { saving.value = false }
 }
 
-// ── pick a slot (challenged) ────────────────────────────────────────────────
+// ── per-individual picks (challenged team) ──────────────────────────────────
+// Each challenged player selects ALL offered slots they can play; when both have
+// submitted, the backend auto-schedules at the earliest common slot.
+const amChallenged = computed(() => props.userTeamId && props.userTeamId === c.challenged_id)
+const myCanon = computed(() => user.value?.canonical_id)
+const myPicks = ref(new Set((c.picks && myCanon.value && c.picks[myCanon.value]) || []))
+const picksStatus = ref('')
+function toggleMyPick(iso) {
+  myPicks.value.has(iso) ? myPicks.value.delete(iso) : myPicks.value.add(iso)
+  myPicks.value = new Set(myPicks.value)
+}
+async function submitMyPicks() {
+  if (!myPicks.value.size) { err.value = 'Pick at least one time you can play'; return }
+  saving.value = true; err.value = ''
+  try {
+    const r = await $fetch(`${base}/api/ladder/challenge/${c.id}/my-picks`, {
+      method: 'POST', headers: authHeader(), body: { slots: [...myPicks.value] }
+    })
+    emit('saved')
+    if (r.scheduled) { emit('done') }                       // both picked → auto-scheduled
+    else if (r.no_common) { picksStatus.value = '⚠️ Submitted — but you and your teammate have no overlapping time. Coordinate, or suggest different times below.' }
+    else { picksStatus.value = '✓ Submitted — waiting on your teammate to pick their times.' }
+  } catch (e) { err.value = e?.data?.detail || e?.message || 'Could not submit your times' } finally { saving.value = false }
+}
+
+// ── pick a slot (challenger, after a counter) ───────────────────────────────
 const pick = ref('')
 const server = ref(c.server || user.value?.favorite_server || '')
 // Server suggestions from both teams' real ping history.
@@ -245,6 +270,26 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
 
       <!-- pick a slot (or counter with different times) -->
       <template v-else-if="view === 'act'">
+        <!-- per-individual: each challenged player ticks every offered slot they can play -->
+        <template v-if="amChallenged">
+          <p class="lede"><strong>{{ proposerName }}</strong> offered these times — tick <strong>every slot you can play</strong>. When both teammates submit, the match auto-schedules at your earliest common time.</p>
+          <div class="tz-note">🕒 Times in <strong>{{ tz }}</strong>.</div>
+          <div class="picklist">
+            <label v-for="iso in proposedLocal" :key="iso" class="pickrow" :class="{ on: myPicks.has(iso) }">
+              <input type="checkbox" :checked="myPicks.has(iso)" @change="toggleMyPick(iso)">
+              <span class="pl-time">{{ fmtLocal(iso) }}</span>
+              <span v-if="freeCount(iso)" class="pl-free"><span class="fdot" :class="{ allfree: freeCount(iso) === overlayMeta.withAvail }">{{ freeCount(iso) }}</span></span>
+            </label>
+          </div>
+          <button class="link-btn" @click="countering = true">None of these work — suggest different times →</button>
+          <p v-if="picksStatus" class="muted small">{{ picksStatus }}</p>
+          <p v-if="err" class="err">{{ err }}</p>
+          <div class="m-actions">
+            <button class="btn ghost" @click="emit('close')">Cancel</button>
+            <button class="btn" :disabled="saving || !myPicks.size" @click="submitMyPicks">{{ saving ? 'Submitting…' : `Submit my ${myPicks.size} time${myPicks.size === 1 ? '' : 's'}` }}</button>
+          </div>
+        </template>
+        <template v-else>
         <p class="lede"><strong>{{ proposerName }}</strong> proposed these times — pick one, or suggest different times.</p>
         <div class="tz-note">
           🕒 Times in <strong>{{ tz }}</strong>.
@@ -288,6 +333,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
           <button class="btn ghost" @click="emit('close')">Cancel</button>
           <button class="btn" :disabled="saving" @click="confirmSlot">{{ saving ? 'Scheduling…' : 'Confirm match' }}</button>
         </div>
+        </template>
       </template>
 
       <!-- waiting states -->

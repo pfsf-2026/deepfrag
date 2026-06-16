@@ -739,7 +739,8 @@ def _ladder_tick(cur):
     import notify
     _ladder.ensure_schema(cur)
     now = datetime.now(timezone.utc)
-    counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0, "bo3_normalized": 0, "auto_resolved": 0}
+    counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0, "bo3_normalized": 0,
+              "auto_resolved": 0, "nudged_3d": 0, "auto_forfeited": 0}
 
     # Self-heal: enforce Bo3-only. A match's maps = the DECISIVE set up to the
     # clinching 2nd win; games after that are "for fun" and don't count. Trim
@@ -884,17 +885,71 @@ def _ladder_tick(cur):
             cur.execute("UPDATE ladder_challenges SET reminded_10m=TRUE WHERE id=%s", (r["id"],))
             counts["reminded_10m"] += 1
 
-    # Open challenges past their play-by deadline → flag once for admins.
-    cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.deadline, ca.name AS a, cd.name AS b
+    # ── 3-day nudge: still-unscheduled challenges (it's on the challenged team) ──
+    cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.deadline,
+                          ca.name AS a, cd.name AS b
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
                    JOIN ladder_teams cd ON cd.id=c.challenged_id
-                   WHERE c.status='open' AND c.deadline < now() AND NOT c.overdue_flagged""")
+                   WHERE c.status='open' AND NOT c.reminded_unsched_3d
+                     AND c.created_at < now() - interval '3 days' AND c.deadline > now()""")
     for r in cur.fetchall():
-        notify.challenge_overdue(r["a"], r["b"], r["deadline"].isoformat() if r["deadline"] else None,
-                                 mention=_mentions(cur, r["challenger_id"], r["challenged_id"]))
-        cur.execute("UPDATE ladder_challenges SET overdue_flagged=TRUE WHERE id=%s", (r["id"],))
-        counts["overdue"] += 1
+        try:
+            dl = r["deadline"].astimezone(timezone.utc) if r["deadline"] else None
+            left = f"<t:{int(dl.timestamp())}:R>" if dl else "soon"
+            notify.send(content=(f"{_mentions(cur, r['challenger_id'], r['challenged_id'])}\n"
+                                 f"⏳ **{r['a']}** vs **{r['b']}** still isn't scheduled. It's on **{r['b']}** "
+                                 f"(challenged) to lock a time — deadline {left}, or they auto-forfeit their "
+                                 f"ladder position to **{r['a']}**."))
+        except Exception:
+            pass
+        cur.execute("UPDATE ladder_challenges SET reminded_unsched_3d=TRUE WHERE id=%s", (r["id"],))
+        counts["nudged_3d"] += 1
+
+    # ── 7-day deadline on UNSCHEDULED challenges → AUTO-FORFEIT: the challenged
+    # team loses its ladder position TO THE CHALLENGER (a swap, like a loss).
+    # Gated per-ladder by rules.auto_forfeit (default ON); off → flag for admins.
+    cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.deadline,
+                          c.overdue_flagged, l.rules, ca.name AS a, cd.name AS b
+                   FROM ladder_challenges c
+                   JOIN ladder_teams ca ON ca.id=c.challenger_id
+                   JOIN ladder_teams cd ON cd.id=c.challenged_id
+                   JOIN ladders l ON l.id=c.ladder_id
+                   WHERE c.status='open' AND c.deadline < now()""")
+    for r in cur.fetchall():
+        if not (r["rules"] or {}).get("auto_forfeit", True):
+            if not r["overdue_flagged"]:
+                notify.challenge_overdue(r["a"], r["b"], r["deadline"].isoformat() if r["deadline"] else None,
+                                         mention=_mentions(cur, r["challenger_id"], r["challenged_id"]))
+                cur.execute("UPDATE ladder_challenges SET overdue_flagged=TRUE WHERE id=%s", (r["id"],))
+                counts["overdue"] += 1
+            continue
+        moves = _ladder.apply_win(cur, r["ladder_id"], r["challenger_id"], r["challenged_id"])
+        cur.execute("UPDATE ladder_challenges SET status='forfeited', resolved_at=now() WHERE id=%s", (r["id"],))
+        counts["auto_forfeited"] += 1
+        try:
+            all_ids = list({r["challenger_id"], r["challenged_id"], *moves.keys()})
+            cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)", (all_ids,))
+            names = {x["id"]: x["name"] for x in cur.fetchall()}
+            new_koth = next((tid for tid, rk in moves.items() if rk == 1), None)
+            movement = None
+            if moves:
+                parts = []
+                wr = moves.get(r["challenger_id"])
+                if wr is not None:
+                    parts.append(f"📈 **{names.get(r['challenger_id'])}** moved up to #{wr} on the KOTH ladder")
+                for tid, rk in moves.items():
+                    if tid == r["challenger_id"]:
+                        continue
+                    parts.append(f"{'⬇️' if tid == r['challenged_id'] else '↘️'} **{names.get(tid, tid)}** → #{rk}")
+                movement = "\n".join(parts)
+            notify.send(content=(f"{_mentions(cur, r['challenger_id'], r['challenged_id'])}\n"
+                                 f"🏳️ **{r['b']}** failed to schedule by the deadline — **auto-forfeit**. "
+                                 f"**{r['a']}** takes their ladder position." + (f"\n{movement}" if movement else "")))
+            if new_koth:
+                notify.koth_changed(names.get(new_koth))
+        except Exception:
+            pass
     return counts
 
 
@@ -4133,6 +4188,72 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
     except Exception:
         pass
     return {"challenge_id": challenge_id, "agreed_at": slot, "server": server, "status": "scheduled"}
+
+
+@app.post("/api/ladder/challenge/{challenge_id}/my-picks")
+def ladder_challenge_my_picks(challenge_id: int, authorization: str | None = Header(default=None),
+                              slots: list[str] = Body(..., embed=True)):
+    """Per-individual scheduling: a CHALLENGED-team player submits the offered slots
+    THEY can play. When BOTH challenged players have submitted, the match
+    auto-schedules at the earliest slot common to both (within the challenger's
+    proposed times). The challenger still proposes the slots (team-level)."""
+    import ladder as _ladder
+    user = _current_user(authorization, required=True)
+    me = (user or {}).get("canonical_id")
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.proposed, c.status, c.picks,
+                              ca.name AS challenger, cd.name AS challenged, cd.members AS members
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] != "open":
+            raise HTTPException(409, "challenge is already scheduled or resolved")
+        proposed = ch["proposed"] or []
+        if not proposed:
+            raise HTTPException(400, "no times have been proposed yet")
+        if not _user_on_team(cur, user, ch["challenged_id"]):
+            raise HTTPException(403, "only the challenged team's players pick their times here")
+        if not me:
+            raise HTTPException(400, "no player identity on your account")
+        mine = [s for s in (slots or []) if s in proposed]
+        if not mine:
+            raise HTTPException(400, "pick at least one of the offered slots")
+        picks = dict(ch["picks"] or {})
+        picks[me] = mine
+        members = list(ch["members"] or [])
+        both = bool(members) and all(picks.get(m) for m in members)
+        agreed = None
+        if both:
+            common = set(picks[members[0]])
+            for m in members[1:]:
+                common &= set(picks.get(m) or [])
+            common = sorted(common)   # ISO strings sort chronologically → earliest first
+            agreed = common[0] if common else None
+        if agreed:
+            cur.execute("""UPDATE ladder_challenges SET picks=%s, agreed_at=%s, status='scheduled' WHERE id=%s""",
+                        (json.dumps(picks), agreed, challenge_id))
+        else:
+            cur.execute("UPDATE ladder_challenges SET picks=%s WHERE id=%s", (json.dumps(picks), challenge_id))
+        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
+        a_name, b_name = ch["challenger"], ch["challenged"]
+        no_common = both and not agreed
+        waiting = [m for m in members if not picks.get(m)]
+        conn.commit()
+    try:
+        import notify
+        if agreed:
+            notify.game_scheduled(a_name, b_name, agreed, None, mention=mention)
+        elif no_common:
+            notify.send(content=f"{mention}\n⚠️ **{b_name}**'s two players have no overlapping time among the offered slots — coordinate, or have **{a_name}** suggest different times.")
+    except Exception:
+        pass
+    return {"challenge_id": challenge_id, "scheduled": bool(agreed), "agreed_at": agreed,
+            "no_common": no_common, "waiting_on": waiting, "picks": picks}
 
 
 @app.post("/api/ladder/challenge/{challenge_id}/withdraw")
