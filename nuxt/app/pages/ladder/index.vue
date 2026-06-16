@@ -427,7 +427,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
               <ul><li>Pool: Aerowalk · ztndm3 · DM2 · DM4 · Bravado · Nova · Shifter.</li>
                 <li><code>rnd team1 team2</code> decides the first-pick team (<strong>Team A</strong>; the other is Team B).</li>
                 <li><strong>Game 1:</strong> Team A picks. <strong>Game 2:</strong> Team B picks.</li>
-                <li><strong>Decider (Game 3, only if 1–1):</strong> from the 5 remaining maps, <strong>Team B tosses 1</strong>, then <strong>Team A tosses 3</strong> — the <strong>last remaining map</strong> is the decider.</li>
+                <li><strong>Decider (Game 3, only if 1–1):</strong> from the 5 remaining maps, <strong>Team B tosses first</strong>, then teams <strong>alternate tossing</strong> (B, A, B, A) until <strong>one map remains</strong> — that's the decider.</li>
                 <li>No map is played twice.</li></ul>
               <h4>Servers &amp; ping</h4>
               <ul><li><strong>NA servers only</strong> (a Brazil-vs-Brazil match may use a BR server).</li>
