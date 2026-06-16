@@ -5,3 +5,5 @@ runs/
 out/
 __pycache__/
 *.pyc
+movement/fragbot_replay_seam.c
+*.cmds
