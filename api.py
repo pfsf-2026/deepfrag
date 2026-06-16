@@ -739,7 +739,7 @@ def _ladder_tick(cur):
     import notify
     _ladder.ensure_schema(cur)
     now = datetime.now(timezone.utc)
-    counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0, "bo3_normalized": 0}
+    counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0, "bo3_normalized": 0, "auto_resolved": 0}
 
     # Self-heal: enforce Bo3-only. A match's maps = the DECISIVE set up to the
     # clinching 2nd win; games after that are "for fun" and don't count. Trim
@@ -785,6 +785,81 @@ def _ladder_tick(cur):
                     (json.dumps(decisive), na, nb, winner, json.dumps(hub_ids), pa,
                      r["id"], len(decisive), na, nb, pa, pa))
         counts["bo3_normalized"] += cur.rowcount
+
+    # ── AUTO-RESOLVE: scheduled challenges whose decisive Bo3 is complete ──────
+    # Same detection the admin has been accepting (proven over the first matches),
+    # now run unattended. Gated per-ladder by rules.auto_resolve (default ON). A
+    # Discord result post fires for every auto-resolution so it stays auditable.
+    cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.agreed_at,
+                          ca.members AS a_members, cd.members AS b_members, l.rules AS rules
+                   FROM ladder_challenges c
+                   JOIN ladder_teams ca ON ca.id=c.challenger_id
+                   JOIN ladder_teams cd ON cd.id=c.challenged_id
+                   JOIN ladders l ON l.id=c.ladder_id
+                   WHERE c.status='scheduled'""")
+    for ch in cur.fetchall():
+        if not (ch["rules"] or {}).get("auto_resolve", True):
+            continue
+        det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"))
+        if not det["complete"]:
+            continue
+        # Settle guard: clinching game must have ended >10 min ago, so every
+        # decisive game is ingested (don't resolve a series still uploading).
+        try:
+            lastp = datetime.fromisoformat(str(det["last_played"]).replace("Z", "+00:00"))
+            if lastp.tzinfo is None:
+                lastp = lastp.replace(tzinfo=timezone.utc)
+            if (now - lastp).total_seconds() < 600:
+                continue
+        except Exception:
+            pass
+        maps = [{"map": d["map"], "a_frags": d["a_frags"], "b_frags": d["b_frags"],
+                 "hub_game_id": d["hub_game_id"]} for d in det["decisive"]]
+        aw, bw = det["aw"], det["bw"]
+        winner_id = ch["challenger_id"] if aw > bw else ch["challenged_id"]
+        loser_id = ch["challenged_id"] if winner_id == ch["challenger_id"] else ch["challenger_id"]
+        hub_ids = [m["hub_game_id"] for m in maps if m.get("hub_game_id")]
+        pa = None
+        if hub_ids:
+            cur.execute("SELECT max(match_date) AS m FROM matches WHERE hub_game_id = ANY(%s)",
+                        ([int(x) for x in hub_ids],))
+            mm = cur.fetchone()
+            pa = mm["m"] if mm and mm["m"] else None
+        cur.execute("""INSERT INTO ladder_matches
+                       (ladder_id, challenge_id, team_a_id, team_b_id, maps, score_a, score_b, winner_id, hub_game_ids, played_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, COALESCE(%s::timestamptz, now())) RETURNING id""",
+                    (ch["ladder_id"], ch["id"], ch["challenger_id"], ch["challenged_id"],
+                     json.dumps(maps), aw, bw, winner_id, json.dumps(hub_ids), pa))
+        match_id = cur.fetchone()["id"]
+        moves = {}
+        if winner_id == ch["challenger_id"]:
+            moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
+        cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now() WHERE id=%s", (ch["id"],))
+        counts["auto_resolved"] += 1
+        try:
+            all_ids = list({winner_id, loser_id, *moves.keys()})
+            cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)", (all_ids,))
+            names = {r["id"]: r["name"] for r in cur.fetchall()}
+            new_koth = next((tid for tid, rk in moves.items() if rk == 1), None)
+            maps_line = " · ".join(f"{m['map']} {m['a_frags']}-{m['b_frags']}" for m in maps)
+            movement = None
+            if moves:
+                parts = []
+                wr = moves.get(winner_id)
+                if wr is not None:
+                    parts.append(f"📈 **{names.get(winner_id, winner_id)}** moved up to #{wr} on the KOTH ladder")
+                for tid, rk in moves.items():
+                    if tid == winner_id:
+                        continue
+                    parts.append(f"{'⬇️' if tid == loser_id else '↘️'} **{names.get(tid, tid)}** → #{rk}")
+                movement = "\n".join(parts)
+            notify.result_posted(names.get(winner_id, f"#{winner_id}"), names.get(loser_id, f"#{loser_id}"),
+                                 maps_line=maps_line, movement=movement, score=f"{aw}-{bw}",
+                                 mention=_mentions(cur, winner_id, loser_id))
+            if new_koth:
+                notify.koth_changed(names.get(new_koth))
+        except Exception:
+            pass
 
     # Scheduled matches → reminders. Two tiers: ~1 hour out and ~10 minutes out.
     # Windows are sized so the */5 cron always lands at least one tick inside them
@@ -4104,6 +4179,56 @@ def ladder_challenge_withdraw(challenge_id: int, authorization: str | None = Hea
     return {"challenge_id": challenge_id, "status": "cancelled"}
 
 
+def _detect_bo3(cur, a_roster, b_roster, agreed_at):
+    """Find candidate 2on2 hub games involving BOTH rosters around the scheduled
+    time, then walk them in time order into the decisive Bo3 set (first to 2).
+    Shared by the admin candidate-games view AND the cron auto-resolver so they
+    always agree. Returns candidates (all, each tagged .suggested), the decisive
+    set, the score, whether it's complete, and the last decisive game's time."""
+    if not a_roster or not b_roster:
+        return {"candidates": [], "decisive": [], "aw": 0, "bw": 0, "complete": False, "last_played": None}
+    if agreed_at:
+        lo = (agreed_at - timedelta(hours=18)).isoformat()
+        hi = (agreed_at + timedelta(hours=30)).isoformat()
+    else:
+        lo = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+        hi = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    cur.execute("""SELECT mt.hub_game_id, mt.match_map, mt.match_date,
+                          SUM(CASE WHEN p.canonical_id = ANY(%(a)s) THEN p.player_frags ELSE 0 END) AS a_frags,
+                          SUM(CASE WHEN p.canonical_id = ANY(%(b)s) THEN p.player_frags ELSE 0 END) AS b_frags
+                   FROM matches mt JOIN players p ON p.match_id = mt.match_id
+                   WHERE mt.match_mode='2on2' AND mt.hub_game_id IS NOT NULL
+                     AND mt.match_date > %(lo)s AND mt.match_date < %(hi)s
+                   GROUP BY mt.hub_game_id, mt.match_map, mt.match_date
+                   HAVING COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(a)s)) >= 1
+                      AND COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(b)s)) >= 1
+                   ORDER BY mt.match_date""",
+                {"a": a_roster, "b": b_roster, "lo": lo, "hi": hi})
+    cands = []
+    for r in cur.fetchall():
+        a, b = r["a_frags"] or 0, r["b_frags"] or 0
+        cands.append({"hub_game_id": r["hub_game_id"], "map": r["match_map"],
+                      "played_at": str(r["match_date"]), "a_frags": a, "b_frags": b,
+                      "winner": "a" if a > b else "b" if b > a else "tie"})
+    aw = bw = 0
+    decisive = []
+    done = False
+    for c in cands:
+        if done or c["winner"] == "tie":
+            c["suggested"] = False
+            continue
+        c["suggested"] = True
+        decisive.append(c)
+        if c["winner"] == "a":
+            aw += 1
+        else:
+            bw += 1
+        if aw == 2 or bw == 2:
+            done = True
+    return {"candidates": cands, "decisive": decisive, "aw": aw, "bw": bw,
+            "complete": done, "last_played": decisive[-1]["played_at"] if decisive else None}
+
+
 @app.get("/api/admin/ladder/challenge/{challenge_id}/candidate-games")
 def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = Header(default=None)):
     """Ingested 2on2 hub games involving BOTH teams' rostered players, around the
@@ -4128,55 +4253,12 @@ def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = 
         b_roster = list(ch["b_members"] or [])
         if not a_roster or not b_roster:
             return {"challenge_id": challenge_id, "candidates": [], "note": "rosters not fully linked yet"}
-        # Time window: ±~18h around the agreed time if set, else last 3 days. (Plays
-        # often drift from the scheduled slot.) match_date is ISO text → lexical compare.
-        if ch.get("agreed_at"):
-            lo = (ch["agreed_at"] - timedelta(hours=18)).isoformat()
-            hi = (ch["agreed_at"] + timedelta(hours=30)).isoformat()
-        else:
-            lo = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
-            hi = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-        cur.execute("""SELECT mt.hub_game_id, mt.match_map, mt.match_date,
-                              SUM(CASE WHEN p.canonical_id = ANY(%(a)s) THEN p.player_frags ELSE 0 END) AS a_frags,
-                              SUM(CASE WHEN p.canonical_id = ANY(%(b)s) THEN p.player_frags ELSE 0 END) AS b_frags,
-                              COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(a)s)) AS a_n,
-                              COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(b)s)) AS b_n
-                       FROM matches mt JOIN players p ON p.match_id = mt.match_id
-                       WHERE mt.match_mode='2on2' AND mt.hub_game_id IS NOT NULL
-                         AND mt.match_date > %(lo)s AND mt.match_date < %(hi)s
-                       GROUP BY mt.hub_game_id, mt.match_map, mt.match_date
-                       HAVING COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(a)s)) >= 1
-                          AND COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(b)s)) >= 1
-                       ORDER BY mt.match_date""",
-                    {"a": a_roster, "b": b_roster, "lo": lo, "hi": hi})
-        cands = []
-        for r in cur.fetchall():
-            a, b = r["a_frags"] or 0, r["b_frags"] or 0
-            cands.append({"hub_game_id": r["hub_game_id"], "map": r["match_map"],
-                          "played_at": str(r["match_date"]), "a_frags": a, "b_frags": b,
-                          "winner": "a" if a > b else "b" if b > a else "tie"})
-    # Auto-detect the decisive Bo3 set: walk games in time order, counting map
-    # wins, until one team reaches 2. Those are `suggested` (pre-ticked in the UI);
-    # extra games (warm-ups, post-decider) are left off. Same logic the future
-    # fully-auto resolver will use.
-    aw = bw = 0
-    done = False
-    for c in cands:
-        if done or c["winner"] == "tie":
-            c["suggested"] = False
-            continue
-        c["suggested"] = True
-        if c["winner"] == "a":
-            aw += 1
-        else:
-            bw += 1
-        if aw == 2 or bw == 2:
-            done = True
+        det = _detect_bo3(cur, a_roster, b_roster, ch.get("agreed_at"))
     return {"challenge_id": challenge_id, "a_name": ch["a_name"], "b_name": ch["b_name"],
             "challenger_id": ch["challenger_id"], "challenged_id": ch["challenged_id"],
-            "candidates": cands,
-            "suggested_score": {"a": aw, "b": bw},
-            "suggested_complete": (aw == 2 or bw == 2)}
+            "candidates": det["candidates"],
+            "suggested_score": {"a": det["aw"], "b": det["bw"]},
+            "suggested_complete": det["complete"]}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/result")
