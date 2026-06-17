@@ -792,6 +792,7 @@ def _ladder_tick(cur):
     # now run unattended. Gated per-ladder by rules.auto_resolve (default ON). A
     # Discord result post fires for every auto-resolution so it stays auditable.
     cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.agreed_at,
+                          c.flagged_review,
                           ca.members AS a_members, cd.members AS b_members, l.rules AS rules
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -803,6 +804,28 @@ def _ladder_tick(cur):
             continue
         det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"))
         if not det["complete"]:
+            continue
+        # SAFETY GATE: only auto-resolve when EVERY decisive game had all four
+        # rostered players matched. If a player's in-game name didn't canonicalize
+        # to their roster id, their frags are silently undercounted → wrong winner
+        # (the WoD/SD bug). In that case DON'T auto-resolve — flag once for an
+        # admin to fix the roster + report manually.
+        if not det.get("full_match"):
+            if not ch.get("flagged_review"):   # post the warning once, not every tick
+                try:
+                    cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)",
+                                ([ch["challenger_id"], ch["challenged_id"]],))
+                    nm = {r["id"]: r["name"] for r in cur.fetchall()}
+                    bad = [f"{d['map']} (matched {d['a_n']}v{d['b_n']})" for d in det["decisive"] if not d["full"]]
+                    notify.send(content=(f"⚠️ **Needs manual review** — {nm.get(ch['challenger_id'], ch['challenger_id'])} vs "
+                                         f"{nm.get(ch['challenged_id'], ch['challenged_id'])}: the Bo3 looks complete but not all 4 "
+                                         f"players matched in: {', '.join(bad)}. A roster id is likely wrong "
+                                         f"(an in-game name didn't link to a profile) — fix the roster, then re-resolve. "
+                                         f"Auto-resolve skipped."))
+                except Exception:
+                    pass
+                cur.execute("UPDATE ladder_challenges SET flagged_review=TRUE WHERE id=%s", (ch["id"],))
+                counts["flagged_review"] = counts.get("flagged_review", 0) + 1
             continue
         # Settle guard: clinching game must have ended >10 min ago, so every
         # decisive game is ingested (don't resolve a series still uploading).
@@ -4345,7 +4368,7 @@ def _detect_bo3(cur, a_roster, b_roster, agreed_at):
     always agree. Returns candidates (all, each tagged .suggested), the decisive
     set, the score, whether it's complete, and the last decisive game's time."""
     if not a_roster or not b_roster:
-        return {"candidates": [], "decisive": [], "aw": 0, "bw": 0, "complete": False, "last_played": None}
+        return {"candidates": [], "decisive": [], "aw": 0, "bw": 0, "complete": False, "full_match": False, "last_played": None}
     if agreed_at:
         lo = (agreed_at - timedelta(hours=18)).isoformat()
         hi = (agreed_at + timedelta(hours=30)).isoformat()
@@ -4354,7 +4377,9 @@ def _detect_bo3(cur, a_roster, b_roster, agreed_at):
         hi = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
     cur.execute("""SELECT mt.hub_game_id, mt.match_map, mt.match_date,
                           SUM(CASE WHEN p.canonical_id = ANY(%(a)s) THEN p.player_frags ELSE 0 END) AS a_frags,
-                          SUM(CASE WHEN p.canonical_id = ANY(%(b)s) THEN p.player_frags ELSE 0 END) AS b_frags
+                          SUM(CASE WHEN p.canonical_id = ANY(%(b)s) THEN p.player_frags ELSE 0 END) AS b_frags,
+                          COUNT(DISTINCT p.canonical_id) FILTER (WHERE p.canonical_id = ANY(%(a)s)) AS a_n,
+                          COUNT(DISTINCT p.canonical_id) FILTER (WHERE p.canonical_id = ANY(%(b)s)) AS b_n
                    FROM matches mt JOIN players p ON p.match_id = mt.match_id
                    WHERE mt.match_mode='2on2' AND mt.hub_game_id IS NOT NULL
                      AND mt.match_date > %(lo)s AND mt.match_date < %(hi)s
@@ -4366,8 +4391,14 @@ def _detect_bo3(cur, a_roster, b_roster, agreed_at):
     cands = []
     for r in cur.fetchall():
         a, b = r["a_frags"] or 0, r["b_frags"] or 0
+        an, bn = r["a_n"] or 0, r["b_n"] or 0
+        # full = BOTH players of BOTH rosters matched in this game. If a roster
+        # player's in-game name didn't canonicalize to their roster id, an/bn < 2
+        # → that team's frags are undercounted → unsafe to auto-resolve (the
+        # WoD/SD bug: wd.char→wdchar ≠ roster 'char', so char's frags vanished).
         cands.append({"hub_game_id": r["hub_game_id"], "map": r["match_map"],
                       "played_at": str(r["match_date"]), "a_frags": a, "b_frags": b,
+                      "a_n": an, "b_n": bn, "full": an >= 2 and bn >= 2,
                       "winner": "a" if a > b else "b" if b > a else "tie"})
     aw = bw = 0
     decisive = []
@@ -4384,8 +4415,12 @@ def _detect_bo3(cur, a_roster, b_roster, agreed_at):
             bw += 1
         if aw == 2 or bw == 2:
             done = True
+    # full_match = every decisive game had all 4 rostered players matched. Only
+    # then is the frag count trustworthy enough to AUTO-resolve unattended.
+    full_match = bool(decisive) and all(c["full"] for c in decisive)
     return {"candidates": cands, "decisive": decisive, "aw": aw, "bw": bw,
-            "complete": done, "last_played": decisive[-1]["played_at"] if decisive else None}
+            "complete": done, "full_match": full_match,
+            "last_played": decisive[-1]["played_at"] if decisive else None}
 
 
 @app.get("/api/admin/ladder/challenge/{challenge_id}/candidate-games")
@@ -4417,7 +4452,8 @@ def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = 
             "challenger_id": ch["challenger_id"], "challenged_id": ch["challenged_id"],
             "candidates": det["candidates"],
             "suggested_score": {"a": det["aw"], "b": det["bw"]},
-            "suggested_complete": det["complete"]}
+            "suggested_complete": det["complete"],
+            "full_match": det["full_match"]}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/result")
@@ -4499,6 +4535,94 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
     except Exception:
         pass
     return {"match_id": match_id, "winner_id": winner_id, "moves": moves}
+
+
+@app.post("/api/admin/ladder/challenge/{challenge_id}/reresolve")
+def admin_ladder_reresolve(challenge_id: int, authorization: str | None = Header(default=None)):
+    """Fix a mis-resolved challenge in place. Reverses the existing match's ladder
+    movement (restoring each touched team's pre-match rung), deletes the old match,
+    re-detects the decisive Bo3 with the CURRENT rosters, and re-records + re-applies
+    movement. Use after correcting a roster (e.g. the WoD/SD wd.char→wdchar fix).
+    Refuses if the corrected detection isn't a complete, fully-matched Bo3."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.agreed_at,
+                              ca.members AS a_members, cd.members AS b_members
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"))
+        if not det["complete"]:
+            raise HTTPException(409, "corrected detection is not a complete Bo3 — fix rosters first")
+        if not det.get("full_match"):
+            bad = [f"{d['map']} ({d['a_n']}v{d['b_n']})" for d in det["decisive"] if not d["full"]]
+            raise HTTPException(409, f"not all 4 players match in: {', '.join(bad)} — fix the roster id, then re-resolve")
+        # Reverse the old match's standings: restore each moved team's pre-match rung.
+        cur.execute("SELECT id FROM ladder_matches WHERE challenge_id=%s ORDER BY id DESC LIMIT 1", (challenge_id,))
+        old = cur.fetchone()
+        if old:
+            cur.execute("""SELECT team_id, from_rung FROM ladder_movements
+                           WHERE match_id=%s AND from_rung IS NOT NULL ORDER BY id DESC""", (old["id"],))
+            for mv in cur.fetchall():
+                cur.execute("UPDATE ladder_teams SET rung=%s WHERE id=%s", (mv["from_rung"], mv["team_id"]))
+            cur.execute("DELETE FROM ladder_movements WHERE match_id=%s", (old["id"],))
+            cur.execute("DELETE FROM ladder_matches WHERE id=%s", (old["id"],))
+        # Re-record from the corrected decisive set.
+        maps = [{"map": d["map"], "a_frags": d["a_frags"], "b_frags": d["b_frags"],
+                 "hub_game_id": d["hub_game_id"]} for d in det["decisive"]]
+        aw, bw = det["aw"], det["bw"]
+        winner_id = ch["challenger_id"] if aw > bw else ch["challenged_id"]
+        loser_id = ch["challenged_id"] if winner_id == ch["challenger_id"] else ch["challenger_id"]
+        hub_ids = [m["hub_game_id"] for m in maps if m.get("hub_game_id")]
+        pa = None
+        if hub_ids:
+            cur.execute("SELECT max(match_date) AS m FROM matches WHERE hub_game_id = ANY(%s)",
+                        ([int(x) for x in hub_ids],))
+            mm = cur.fetchone(); pa = mm["m"] if mm and mm["m"] else None
+        cur.execute("""INSERT INTO ladder_matches
+                       (ladder_id, challenge_id, team_a_id, team_b_id, maps, score_a, score_b, winner_id, hub_game_ids, played_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, COALESCE(%s::timestamptz, now())) RETURNING id""",
+                    (ch["ladder_id"], challenge_id, ch["challenger_id"], ch["challenged_id"],
+                     json.dumps(maps), aw, bw, winner_id, json.dumps(hub_ids), pa))
+        match_id = cur.fetchone()["id"]
+        moves = {}
+        if winner_id == ch["challenger_id"]:
+            moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
+        cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now(), flagged_review=FALSE WHERE id=%s", (challenge_id,))
+        all_ids = list({winner_id, loser_id, *moves.keys()})
+        cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)", (all_ids,))
+        names = {r["id"]: r["name"] for r in cur.fetchall()}
+        new_koth = next((tid for tid, r in moves.items() if r == 1), None)
+        maps_line = " · ".join(f"{m['map']} {m['a_frags']}-{m['b_frags']}" for m in maps)
+        movement = None
+        if moves:
+            parts = []
+            wr = moves.get(winner_id)
+            if wr is not None:
+                parts.append(f"📈 **{names.get(winner_id, winner_id)}** moved up to #{wr} on the KOTH ladder")
+            for tid, rk in moves.items():
+                if tid == winner_id:
+                    continue
+                parts.append(f"{'⬇️' if tid == loser_id else '↘️'} **{names.get(tid, tid)}** → #{rk}")
+            movement = "\n".join(parts)
+        mention = _mentions(cur, winner_id, loser_id)
+        conn.commit()
+    try:
+        import notify
+        notify.send(content="🛠️ **Result corrected** (re-resolved after a roster fix).")
+        notify.result_posted(names.get(winner_id, f"#{winner_id}"), names.get(loser_id, f"#{loser_id}"),
+                             maps_line=maps_line, movement=movement, score=f"{aw}-{bw}", mention=mention)
+        if new_koth:
+            notify.koth_changed(names.get(new_koth))
+    except Exception:
+        pass
+    return {"match_id": match_id, "winner_id": winner_id, "score": f"{aw}-{bw}", "moves": moves}
 
 
 @app.post("/api/admin/ladder/match/{match_id}/recompute")
