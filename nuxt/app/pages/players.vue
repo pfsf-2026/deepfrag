@@ -1,9 +1,12 @@
 <script setup>
 const { indexUrl } = useDeepFrag()
+const isBrowser = typeof window !== 'undefined'
+const apiBase = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 const idx = ref(null)
 const pending = ref(true)
 const search = ref('')
-const sortBy = ref('matches') // 'matches' | 'recent' | 'name'
+const apiHits = ref([])           // authoritative backend search results (no index threshold)
+const sortBy = ref('matches')     // 'matches' | 'recent' | 'name'
 
 onMounted(async () => {
   try {
@@ -16,11 +19,39 @@ onMounted(async () => {
   }
 })
 
+// The index only includes players above an activity threshold, so a pure
+// client-side filter can miss low-match or just-added players (e.g. a player
+// whose name only just got linked). Query the backend /api/search — which
+// searches EVERY canonical player by display + id — and fold those in.
+let searchTimer = null
+watch(search, (val) => {
+  const q = (val || '').trim()
+  if (searchTimer) clearTimeout(searchTimer)
+  if (q.length < 2) { apiHits.value = []; return }
+  searchTimer = setTimeout(async () => {
+    try {
+      const r = await $fetch(`${apiBase}/api/search`, { params: { q, limit: 100 } })
+      apiHits.value = r.results || []
+    } catch { apiHits.value = [] }
+  }, 200)
+})
+
 const filtered = computed(() => {
   if (!idx.value?.players) return []
   const q = search.value.trim().toLowerCase()
   let list = idx.value.players
-  if (q) list = list.filter(p => p.display.toLowerCase().includes(q) || p.canonical_id.toLowerCase().includes(q))
+  if (q) {
+    const byId = new Map(list.map(p => [p.canonical_id, p]))
+    const seen = new Set(); const out = []
+    const push = (p) => { if (p && !seen.has(p.canonical_id)) { seen.add(p.canonical_id); out.push(p) } }
+    // instant client-side substring matches first…
+    list.filter(p => p.display.toLowerCase().includes(q) || p.canonical_id.toLowerCase().includes(q)).forEach(push)
+    // …then authoritative backend hits (enriched with index dates when known)
+    for (const r of apiHits.value) {
+      push(byId.get(r.canonical_id) || { canonical_id: r.canonical_id, display: r.display || r.canonical_id, matches: r.matches || 0, first_seen: null, last_seen: null })
+    }
+    list = out
+  }
   if (sortBy.value === 'matches') list = [...list].sort((a, b) => b.matches - a.matches)
   else if (sortBy.value === 'recent') list = [...list].sort((a, b) => (b.last_seen || '').localeCompare(a.last_seen || ''))
   else list = [...list].sort((a, b) => a.display.localeCompare(b.display))

@@ -202,6 +202,15 @@ const scheduledMatches = computed(() => challenges.value.filter(c => c.agreed_at
 const openChallengeCount = computed(() => challenges.value.length)
 function fmtMatchTime(iso) { return new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
 function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '' }
+// Recent results are shown WINNER-first (⚔ marks the challenger) so a row never
+// reads "A def B 0-2" — winner's name + score come first. (BloodDog feedback.)
+function orientMatch(m) {
+  const bWon = m.winner_id != null && m.winner_id === m.team_b_id
+  const A = { id: m.team_a_id, name: m.a_name, score: m.score_a }
+  const B = { id: m.team_b_id, name: m.b_name, score: m.score_b }
+  const w = bWon ? B : A, l = bWon ? A : B
+  return { w, l, wIsChallenger: w.id === m.team_a_id }
+}
 function myChallengeAction(c) {
   if (c.agreed_at) return 'View match'
   const amChallenger = myTeam.value && c.challenger_id === myTeam.value.id
@@ -320,12 +329,14 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <h3>✅ Recent results <button class="exp" @click="setTab('stats')">all →</button></h3>
             <div v-if="!recentMatches.length" class="muted small">No matches reported yet.</div>
             <div v-if="recentMatches.length" class="res res-head">
-              <span class="res-t">Challenger</span><span class="res-s"></span><span class="res-t right">Challenged</span>
+              <span class="res-t">Winner</span><span class="res-s"></span><span class="res-t right">Loser</span>
             </div>
             <button v-for="m in recentMatches.slice(0, 5)" :key="m.id" class="res" @click="openMatchId = m.id">
-              <span class="res-t">{{ m.a_name }}</span>
-              <span class="res-s"><b :class="{ w: m.winner_id === m.team_a_id }">{{ m.score_a }}</b>–<b :class="{ w: m.winner_id === m.team_b_id }">{{ m.score_b }}</b></span>
-              <span class="res-t right">{{ m.b_name }}</span>
+              <template v-for="o in [orientMatch(m)]" :key="'o'+m.id">
+                <span class="res-t">{{ o.w.name }}<span v-if="o.wIsChallenger" class="chal" title="Challenger">⚔</span></span>
+                <span class="res-s"><b class="w">{{ o.w.score }}</b>–<b>{{ o.l.score }}</b></span>
+                <span class="res-t right"><span v-if="!o.wIsChallenger" class="chal" title="Challenger">⚔</span>{{ o.l.name }}</span>
+              </template>
             </button>
           </section>
 
@@ -563,6 +574,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .res:last-child { border-bottom: 0; } .res:hover { background: var(--panel-2); }
 .res-t { flex: 1; } .res-t.right { text-align: right; }
 .res-s { font-family: 'JetBrains Mono', monospace; font-weight: 800; } .res-s b { color: var(--fg-3); } .res-s b.w { color: var(--accent); }
+.chal { font-size: 10px; opacity: .5; margin: 0 3px; cursor: help; }
 .kpi { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: 13px; }
 .kpi b { font-family: 'JetBrains Mono', monospace; color: var(--accent-2, #5eead4); }
 .more .soon { margin-left: auto; color: var(--fg-3); font-weight: 400; text-transform: none; font-size: 11px; }

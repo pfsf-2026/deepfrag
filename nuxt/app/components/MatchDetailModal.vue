@@ -9,7 +9,12 @@ const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 const detail = ref(null)
 const loading = ref(true)
 function logoUrl(id) { return `${base}/api/ladder/team/${id}/logo` }
-function mapWinner(m) { return (m.a_frags ?? 0) > (m.b_frags ?? 0) ? 'a' : (m.b_frags ?? 0) > (m.a_frags ?? 0) ? 'b' : null }
+// Orient the whole modal WINNER-first (match winner's team on the left, their
+// score/frags first on every map) so it reads "winner X–Y loser" consistently.
+const flip = computed(() => detail.value && detail.value.winner_id != null && detail.value.winner_id === detail.value.b_id)
+function wf(mp) { return flip.value ? mp.b_frags : mp.a_frags }   // winner-side frags
+function lf(mp) { return flip.value ? mp.a_frags : mp.b_frags }   // loser-side frags
+function mapWonByWinner(mp) { return (wf(mp) ?? 0) > (lf(mp) ?? 0) }  // did the match-winner take this map?
 onMounted(async () => {
   try { detail.value = await $fetch(`${base}/api/ladder/match/${props.matchId}`) }
   catch { /* ignore */ } finally { loading.value = false }
@@ -23,16 +28,16 @@ onMounted(async () => {
       <div v-else-if="!detail" class="muted pad">Match not found.</div>
       <template v-else>
         <div class="md-head">
-          <span class="md-team"><img v-if="detail.a_logo" :src="logoUrl(detail.a_id)" class="lg" alt=""> {{ detail.a_name }}</span>
-          <span class="md-sc"><b :class="{ w: detail.winner_id === detail.a_id }">{{ detail.score_a }}</b> – <b :class="{ w: detail.winner_id === detail.b_id }">{{ detail.score_b }}</b></span>
-          <span class="md-team right">{{ detail.b_name }} <img v-if="detail.b_logo" :src="logoUrl(detail.b_id)" class="lg" alt=""></span>
+          <span class="md-team"><img v-if="flip ? detail.b_logo : detail.a_logo" :src="logoUrl(flip ? detail.b_id : detail.a_id)" class="lg" alt=""> {{ flip ? detail.b_name : detail.a_name }}</span>
+          <span class="md-sc"><b class="w">{{ flip ? detail.score_b : detail.score_a }}</b> – <b>{{ flip ? detail.score_a : detail.score_b }}</b></span>
+          <span class="md-team right">{{ flip ? detail.a_name : detail.b_name }} <img v-if="flip ? detail.a_logo : detail.b_logo" :src="logoUrl(flip ? detail.a_id : detail.b_id)" class="lg" alt=""></span>
           <button class="x" @click="emit('close')">✕</button>
         </div>
         <div class="md-maps">
-          <span v-for="(mp, i) in detail.maps" :key="i" class="m" :class="{ w: mapWinner(mp) }">{{ mp.map }} <b>{{ mp.a_frags }}–{{ mp.b_frags }}</b></span>
+          <span v-for="(mp, i) in detail.maps" :key="i" class="m" :class="{ w: mapWonByWinner(mp) }">{{ mp.map }} <b>{{ wf(mp) }}–{{ lf(mp) }}</b></span>
         </div>
         <div v-for="(mp, i) in detail.maps" :key="'t'+i" class="md-block">
-          <div class="md-map-h">{{ mp.map }} <span class="muted small">{{ mp.a_frags }}–{{ mp.b_frags }}</span></div>
+          <div class="md-map-h">{{ mp.map }} <span class="muted small">{{ wf(mp) }}–{{ lf(mp) }}</span></div>
           <div v-if="!mp.players.length" class="muted small">No per-player stats linked.</div>
           <table v-else class="pl">
             <thead><tr><th class="l">Player</th><th>F</th><th>D</th><th>Eff</th><th>RL%</th><th>LG%</th><th>RA</th><th>Q</th><th>Dmg</th></tr></thead>

@@ -24,6 +24,17 @@ async function load() {
 }
 onMounted(load)
 
+// Results are shown WINNER-first (not challenger-first) so a row always reads
+// "winner  X–Y  loser" — never the contradictory "A def B 0-2" (BloodDog).
+// ⚔ marks whichever side was the challenger, preserving that context.
+function oriented(m) {
+  const bWon = m.winner_id != null && m.winner_id === m.team_b_id
+  const A = { id: m.team_a_id, name: m.a_name, logo: m.a_logo, score: m.score_a }
+  const B = { id: m.team_b_id, name: m.b_name, logo: m.b_logo, score: m.score_b }
+  const w = bWon ? B : A, l = bWon ? A : B
+  return { w, l, wIsChallenger: w.id === m.team_a_id }
+}
+
 const COLS = [
   { k: 'eff', l: 'Eff', pct: true, cls: 'eff' }, { k: 'frags', l: 'F' }, { k: 'deaths', l: 'D' },
   { k: 'suicides', l: '☠' }, { k: 'tk', l: 'TK' },
@@ -113,12 +124,14 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
           <div v-if="!matches.length" class="muted small">No matches reported yet.</div>
           <div class="reports">
             <div v-if="matches.length" class="rep-head">
-              <span class="rt">Challenger</span><span class="rs"></span><span class="rt right">Challenged</span><span class="rd"></span>
+              <span class="rt">Winner</span><span class="rs"></span><span class="rt right">Loser</span><span class="rd"></span>
             </div>
             <button v-for="m in matches" :key="m.id" class="rep" @click="openMatchId = m.id">
-              <span class="rt"><img v-if="m.a_logo" :src="logoUrl(m.team_a_id)" class="lg" alt=""> {{ m.a_name }}</span>
-              <span class="rs"><b :class="{ w: m.winner_id === m.team_a_id }">{{ m.score_a }}</b>–<b :class="{ w: m.winner_id === m.team_b_id }">{{ m.score_b }}</b></span>
-              <span class="rt right">{{ m.b_name }} <img v-if="m.b_logo" :src="logoUrl(m.team_b_id)" class="lg" alt=""></span>
+              <template v-for="o in [oriented(m)]" :key="'o'+m.id">
+                <span class="rt"><img v-if="o.w.logo" :src="logoUrl(o.w.id)" class="lg" alt=""> {{ o.w.name }}<span v-if="o.wIsChallenger" class="chal" title="Challenger">⚔</span></span>
+                <span class="rs"><b class="w">{{ o.w.score }}</b>–<b>{{ o.l.score }}</b></span>
+                <span class="rt right"><span v-if="!o.wIsChallenger" class="chal" title="Challenger">⚔</span>{{ o.l.name }} <img v-if="o.l.logo" :src="logoUrl(o.l.id)" class="lg" alt=""></span>
+              </template>
               <span class="rd">{{ fmtDate(m.played_at) }}</span>
             </button>
           </div>
@@ -180,4 +193,5 @@ table.stats tbody tr:hover { background: var(--panel-2); }
 .rep .rt { display: flex; align-items: center; gap: 7px; flex: 1; } .rep .rt.right { justify-content: flex-end; }
 .rep .rs { font-family: 'JetBrains Mono', monospace; font-weight: 800; } .rep .rs b { color: var(--fg-3); } .rep .rs b.w { color: var(--accent); }
 .rep .rd { color: var(--fg-3); font-size: 11px; width: 44px; text-align: right; }
+.chal { font-size: 10px; opacity: .5; margin: 0 3px; cursor: help; }
 </style>

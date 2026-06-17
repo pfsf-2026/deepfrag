@@ -4905,15 +4905,21 @@ def search(q: str = Query(..., min_length=1, max_length=64), limit: int = Query(
     pattern = f"%{q.lower()}%"
     with pg() as conn:
         cur = conn.cursor()
+        # Match on display name, canonical id, OR any KNOWN ALIAS (raw in-game
+        # name) of the profile — so a clan-tagged name like "wd.char" still
+        # resolves to its merged profile ("char") even though that tag's own
+        # profile was merged away.
         cur.execute("""
             SELECT pc.canonical_id, pc.display_name AS display,
                    (SELECT COUNT(*) FROM players p WHERE p.canonical_id = pc.canonical_id) AS matches
             FROM players_canonical pc
-            WHERE (LOWER(pc.display_name) LIKE %s OR pc.canonical_id LIKE %s)
+            WHERE (LOWER(pc.display_name) LIKE %(q)s OR pc.canonical_id LIKE %(q)s
+                   OR pc.canonical_id IN (SELECT canonical_id FROM player_name_map
+                                          WHERE LOWER(raw_name) LIKE %(q)s))
               AND NOT COALESCE(pc.hidden, FALSE)
             ORDER BY matches DESC
-            LIMIT %s
-        """, (pattern, pattern, limit))
+            LIMIT %(limit)s
+        """, {"q": pattern, "limit": limit})
         return {"q": q, "results": cur.fetchall()}
 
 
