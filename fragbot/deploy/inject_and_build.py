@@ -38,9 +38,18 @@ else:
     if anchor_fn not in text:
         sys.exit("anchor 'void BotSetCommand' not found")
     text = text.replace(anchor_fn, block + "\n" + anchor_fn, 1)
+    # Default anchor injects the call near the end of BotSetCommand (fine for the
+    # replay/puppet seam). A seam can override it (e.g. the pathing seam needs to
+    # run BEFORE the move-projection) via argv[4] or a `// FRAGBOT_ANCHOR: <text>`
+    # line in the seam file.
     anchor_call = "\tbuttons |= (firing ? 1 : 0);"
+    m_anchor = re.search(r"//\s*FRAGBOT_ANCHOR:\s*(.+)", seam)
+    if len(sys.argv) > 4:
+        anchor_call = sys.argv[4]
+    elif m_anchor:
+        anchor_call = "\t" + m_anchor.group(1).strip()
     if anchor_call not in text:
-        sys.exit("anchor 'buttons |= (firing ? 1 : 0);' not found")
+        sys.exit(f"anchor {anchor_call!r} not found")
     text = text.replace(anchor_call, call + anchor_call, 1)
     bm.write_text(text)
     print("[2/4] injected FragBot block + call")
