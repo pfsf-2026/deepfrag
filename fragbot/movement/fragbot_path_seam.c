@@ -1,42 +1,43 @@
-/* FragBot PHASE 2 seam — value routing + see-only targeting + event-driven
- * hearing + human aim model (mode 32). See docs/bot_pathing_methodology.md.
+/* FragBot PHASE 2 seam — value routing + see/hear awareness + human aim (mode 32).
+ * See docs/bot_pathing_methodology.md.
  *
- *  (1) VALUE ROUTING: tune native marker routing via desire_* (not fixed_goal).
- *  (2) ROAM-AIM: face dir_move_ when not fighting (full-speed move projection).
- *  (3) SEE-ONLY TARGETING: native BotsPickBestEnemy is omniscient -> wallhack.
- *      Gate aim/fire on visible() (clear line-of-sight). No fire at unseen foes.
- *  (4) HEARING (event-driven, NOT speed): running is silent in QW; only discrete
- *      sounds carry — item pickups, weapon fire, jumps, pain. sound() calls
- *      BotsSoundMadeEvent(emitter), so we hook it: when a PLAYER makes a sound
- *      within k_fb_hear_range, nearby enemy bots remember that position for
- *      k_fb_hear_mem sec and TURN TOWARD it (yaw only — localize direction, not
- *      height), holding fire, until they actually see someone.
- *  (5) HUMAN AIM: reaction delay on first SIGHT (k_fb_react) + critically-damped
- *      smoothing (accelerate->settle). Lower k_fb_smooth_aim / raise
- *      k_fb_aim_maxspeed for higher LG accuracy at top skill.
+ *  (1) VALUE ROUTING via desire_* (not fixed_goal), modulated by COMBAT CONTEXT
+ *      and NEED: weapons cut hard in a fight (don't bolt), survival items (armor/
+ *      health/mega) kept attractive; health desire scales with how hurt we are.
+ *  (2) ROAM-AIM: face dir_move_ when idle (full-speed move projection).
+ *  (3) SEE-ONLY TARGETING: gate aim/fire on visible() (no wallhack).
+ *  (4) HEARING (event-driven, audibility-correct): hook sound() — for each PLAYER
+ *      sound, the audible range is ~1000/att (real QW attenuation), and only bots
+ *      that CAN'T already see the source remember it + do a BRIEF glance (gated by
+ *      a cooldown so it's a quick head-check, not a stare that wrecks pathing).
+ *  (5) HUMAN AIM: reaction delay on first SIGHT + critically-damped smoothing.
  *
- * Injected before trap_makevectors(desired_angle); the hearing hook is a second
- * injection into BotsSoundMadeEvent. */
+ * cvars: k_fb_react k_fb_smooth_aim k_fb_smooth_roam k_fb_aim_maxspeed
+ *        k_fb_hear_scale k_fb_glance_dur k_fb_glance_cd k_fb_mem k_fb_combat_itemcut
+ *
+ * Injected before trap_makevectors(desired_angle); hearing hook into sound(). */
 // FRAGBOT_ANCHOR: trap_makevectors(self->fb.desired_angle);
-// FRAGBOT_FILE2: bot_botenemy.c
-// FRAGBOT_ANCHOR2: if (entity && entity->ct == ctPlayer)
+// FRAGBOT_FILE2: g_utils.c
+// FRAGBOT_ANCHOR2: trap_sound(NUM_FOR_EDICT(ed), channel, samp, vol, att);
 
 /* ===== FRAGBOT_BLOCK ===== */
 #define FRAGBOT_PATH_MODE 32
 extern float visible(gedict_t *targ);
+extern qbool Visible_360(gedict_t *self, gedict_t *visible_object);
 
 static vec3_t fragbot_view[MAX_CLIENTS];        /* smoothed current view */
 static vec3_t fragbot_vel[MAX_CLIENTS];         /* angular velocity (deg/s) */
 static int    fragbot_init[MAX_CLIENTS];
 static int    fragbot_saw[MAX_CLIENTS];         /* could see an enemy last frame */
 static float  fragbot_react_until[MAX_CLIENTS];
-static vec3_t fragbot_mem_pos[MAX_CLIENTS];     /* belief: last heard/seen enemy spot */
+static vec3_t fragbot_mem_pos[MAX_CLIENTS];     /* belief: last heard enemy spot */
 static float  fragbot_mem_until[MAX_CLIENTS];   /* memory expiry (anticipation) */
 static float  fragbot_glance_until[MAX_CLIENTS];/* brief look-toward-sound window */
 static float  fragbot_glance_cd[MAX_CLIENTS];   /* cooldown between glances */
 
 static float fb_cvar(char *n, float def) { float v = cvar(n); return (v != 0) ? v : def; }
 static float fb_adelta(float a) { while (a > 180) a -= 360; while (a < -180) a += 360; return a; }
+static float fb_clamp(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 /* Unity-style critically-damped smoothing toward target (no oscillation). */
 static float fb_smoothdamp(float cur, float target, float *vel, float smoothTime,
@@ -56,9 +57,10 @@ static float fb_smoothdamp(float cur, float target, float *vel, float smoothTime
 	return (cur - change) + (change + temp) * ex;
 }
 
-/* Hearing hook — called from BotsSoundMadeEvent for EVERY emitted sound. Records
- * the sound position for nearby enemy bots (NON-static: linked from bot_botenemy.c). */
-void FragBot_HeardSound(gedict_t *emitter)
+/* Hearing hook — called from sound() for EVERY emitted sound, with attenuation.
+ * NON-static (linked from g_utils.c). Audible range tracks real QW attenuation;
+ * a bot that can already SEE the source doesn't "hear" it (it knows). */
+void FragBot_HeardSound(gedict_t *emitter, float att)
 {
 	gedict_t *plr;
 	float range;
@@ -66,7 +68,8 @@ void FragBot_HeardSound(gedict_t *emitter)
 		return;
 	if (!emitter || emitter->ct != ctPlayer)
 		return;
-	range = fb_cvar("k_fb_hear_range", 800.0f);
+	/* QW nominal clip distance ~1000 at ATTN_NORM(1); audible ~ 1000/att */
+	range = (att > 0.0f ? 1000.0f / att : 100000.0f) * fb_cvar("k_fb_hear_scale", 1.0f);
 	for (plr = world; (plr = find_plr(plr));)
 	{
 		int slot;
@@ -74,16 +77,14 @@ void FragBot_HeardSound(gedict_t *emitter)
 			continue;
 		if (VectorDistance(plr->s.v.origin, emitter->s.v.origin) > range)
 			continue;
+		if (Visible_360(plr, emitter))     /* already sees the source — not "heard" */
+			continue;
 		slot = NUM_FOR_EDICT(plr) - 1;
 		if (slot < 0 || slot >= MAX_CLIENTS)
 			continue;
-		/* update belief (memory) — persists for anticipation */
 		VectorCopy(emitter->s.v.origin, fragbot_mem_pos[slot]);
 		fragbot_mem_until[slot] = g_globalvars.time + fb_cvar("k_fb_mem", 4.0f);
-		/* trigger only a BRIEF glance, and only if the cooldown has elapsed, so
-		   the bot does a quick "what was that" instead of staring (which hijacks
-		   pathing and gets it stuck) */
-		if (g_globalvars.time > fragbot_glance_cd[slot])
+		if (g_globalvars.time > fragbot_glance_cd[slot])   /* brief glance, not a stare */
 		{
 			fragbot_glance_until[slot] = g_globalvars.time + fb_cvar("k_fb_glance_dur", 0.4f);
 			fragbot_glance_cd[slot]    = g_globalvars.time + fb_cvar("k_fb_glance_cd", 2.0f);
@@ -96,37 +97,41 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	int slot = NUM_FOR_EDICT(self) - 1;
 	vec3_t ang, tgt, d;
 	int en, canSee, glancing, reacting, j;
-	float dt, smoothTime, maxspeed, cf;
+	float dt, smoothTime, maxspeed, cfw, cfs, hp, hneed, mneed;
 
 	if (slot < 0 || slot >= MAX_CLIENTS)
 		return;
 
-	/* (3) see-only: gate the omniscient native enemy on real line-of-sight */
+	/* (3) see-only + (4) hearing-glance */
 	en = (int) self->s.v.enemy;
 	canSee = (en >= 1 && en < MAX_EDICTS && visible(&g_edicts[en])) ? 1 : 0;
-	/* (4) hearing: a brief glance toward a remembered sound, only while blind */
 	glancing = (!canSee && g_globalvars.time < fragbot_glance_until[slot]) ? 1 : 0;
 
-	/* (1) value weights, modulated by COMBAT CONTEXT: when we can see an enemy,
-	   don't blindly abandon the fight for an item. Cut item pull hard if we're
-	   well-stacked with a launcher (fight!), softly if low (still grab survival). */
-	cf = 1.0f;
+	/* (1) desire weights — combat-context + need scaled.
+	   weapons cut hard in a fight; survival items stay attractive; health scales
+	   with how hurt we are (goal_health0 has no native need-scaling). */
+	cfw = cfs = 1.0f;
 	if (canSee)
 	{
 		int stacked = ((self->s.v.health + self->s.v.armorvalue) > 150.0f)
 		              && ((int) self->s.v.items & IT_ROCKET_LAUNCHER);
-		cf = stacked ? fb_cvar("k_fb_combat_itemcut", 0.20f) : 0.70f;
+		cfw = stacked ? fb_cvar("k_fb_combat_itemcut", 0.20f) : 0.60f;  /* weapons */
+		cfs = stacked ? 0.50f : 0.85f;                                  /* survival */
 	}
+	hp = self->s.v.health;
+	hneed = fb_clamp((100.0f - hp) / 100.0f, 0.0f, 1.0f);    /* h25 wanted only when hurt */
+	mneed = fb_clamp((250.0f - hp) / 200.0f, 0.2f, 1.0f);    /* mega: buffer up to 250 */
 	self->fb.fixed_goal = NULL;
-	self->fb.desire_mega_health     = 100.0f * cf;
-	self->fb.desire_armorInv        =  95.0f * cf;
-	self->fb.desire_armor2          =  60.0f * cf;
-	self->fb.desire_armor1          =  30.0f * cf;
-	self->fb.desire_rocketlauncher  =  85.0f * cf;
-	self->fb.desire_lightning       =  70.0f * cf;
-	self->fb.desire_grenadelauncher =  35.0f * cf;
-	self->fb.desire_supernailgun    =  30.0f * cf;
-	self->fb.desire_supershotgun    =  25.0f * cf;
+	self->fb.desire_health0         =  70.0f * hneed * cfs;
+	self->fb.desire_mega_health     = 100.0f * mneed * cfs;
+	self->fb.desire_armorInv        =  95.0f * cfs;
+	self->fb.desire_armor2          =  60.0f * cfs;
+	self->fb.desire_armor1          =  30.0f * cfs;
+	self->fb.desire_rocketlauncher  =  85.0f * cfw;
+	self->fb.desire_lightning       =  70.0f * cfw;
+	self->fb.desire_grenadelauncher =  35.0f * cfw;
+	self->fb.desire_supernailgun    =  30.0f * cfw;
+	self->fb.desire_supershotgun    =  25.0f * cfw;
 
 	/* (5a) reaction delay on FIRST sight */
 	if (canSee && !fragbot_saw[slot])
@@ -134,7 +139,6 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	fragbot_saw[slot] = canSee;
 	reacting = canSee && (g_globalvars.time < fragbot_react_until[slot]);
 
-	/* never aim/fire at something we can't see, or during the recognition beat */
 	if (!canSee || reacting)
 		self->fb.firing = false;
 
@@ -207,5 +211,5 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 /* ===== /FRAGBOT_CALL ===== */
 
 /* ===== FRAGBOT_CALL2 ===== */
-	{ extern void FragBot_HeardSound(gedict_t *e_); FragBot_HeardSound(entity); }
+	{ extern void FragBot_HeardSound(gedict_t *e_, float a_); FragBot_HeardSound(ed, att); }
 /* ===== /FRAGBOT_CALL2 ===== */
