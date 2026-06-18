@@ -860,7 +860,7 @@ def _ladder_tick(cur):
             moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
         cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now() WHERE id=%s", (ch["id"],))
         counts["auto_resolved"] += 1
-        _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, aw, bw, moves)
+        _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, aw, bw, moves, match_id=match_id)
 
     # Scheduled matches → reminders. Two tiers: ~1 hour out and ~10 minutes out.
     # Windows are sized so the */5 cron always lands at least one tick inside them
@@ -4104,7 +4104,7 @@ def _team_mentions(cur, team_id):
     return " ".join(f"<@{by[c]}>" for c in cids if c in by)
 
 
-def _notify_result(cur, challenger_id, challenged_id, winner_id, maps, aw, bw, moves, preview=False):
+def _notify_result(cur, challenger_id, challenged_id, winner_id, maps, aw, bw, moves, match_id=None, preview=False):
     """Post a WINNER-first game report with players grouped + pinged by team.
     aw/bw are challenger/challenged scores; we orient everything to winner/loser."""
     import notify
@@ -4123,17 +4123,39 @@ def _notify_result(cur, challenger_id, challenged_id, winner_id, maps, aw, bw, m
         return f"{m.get('map', '?')} {wf}-{lf}"
     maps_line = " · ".join(ms(m) for m in maps) if maps else None
 
-    movement = None
-    if moves:
-        parts = []
-        wr = moves.get(winner_id)
-        if wr is not None:
-            parts.append(f"📈 **{names.get(winner_id, winner_id)}** moved up to #{wr} on the KOTH ladder")
-        for tid, rk in moves.items():
-            if tid == winner_id:
-                continue
-            parts.append(f"{'⬇️' if tid == loser_id else '↘️'} **{names.get(tid, tid)}** → #{rk}")
-        movement = "\n".join(parts)
+    # Movement: ladder_movements has from->to rungs, so we can say "moved up N
+    # rungs to #X" / "dropped to #Y" with team names. Always show the resulting
+    # ranks (incl. "stays at #N" when nothing moved).
+    mv = []
+    if match_id:
+        cur.execute("SELECT team_id, from_rung, to_rung FROM ladder_movements WHERE match_id=%s", (match_id,))
+        mv = cur.fetchall()
+    if mv:
+        mids = [r["team_id"] for r in mv]
+        cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)", (mids,))
+        for r in cur.fetchall():
+            names[r["id"]] = r["name"]
+        # winner first, then by resulting rank
+        mv = sorted(mv, key=lambda r: (r["team_id"] != winner_id, r["to_rung"] if r["to_rung"] is not None else 99))
+        lines = []
+        for r in mv:
+            nm = names.get(r["team_id"], f"#{r['team_id']}")
+            fr, to = r["from_rung"], r["to_rung"]
+            if fr is not None and to is not None and fr != to:
+                d = fr - to
+                if d > 0:
+                    lines.append(f"📈 **{nm}** moved up {d} rung{'s' if d != 1 else ''} to #{to}")
+                else:
+                    lines.append(f"⬇️ **{nm}** dropped {-d} rung{'s' if -d != 1 else ''} to #{to}")
+            elif to is not None:
+                lines.append(f"**{nm}** → #{to}")
+        movement = "\n".join(lines)
+    else:
+        # nothing moved (e.g. challenged team held) — show both teams holding rank
+        cur.execute("SELECT id, rung FROM ladder_teams WHERE id = ANY(%s)", ([winner_id, loser_id],))
+        rk = {r["id"]: r["rung"] for r in cur.fetchall()}
+        movement = (f"Ranks unchanged — **{names.get(winner_id, '?')}** stays #{rk.get(winner_id, '?')}, "
+                    f"**{names.get(loser_id, '?')}** stays #{rk.get(loser_id, '?')}")
 
     try:
         notify.result_grouped(names.get(winner_id, f"#{winner_id}"), _team_mentions(cur, winner_id),
@@ -4533,7 +4555,7 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
             moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
         # challenged win → ranks unchanged (challenger simply failed to climb)
         cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now() WHERE id=%s", (challenge_id,))
-        _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, score_a, score_b, moves)
+        _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, score_a, score_b, moves, match_id=match_id)
         conn.commit()
     return {"match_id": match_id, "winner_id": winner_id, "moves": moves}
 
@@ -4601,7 +4623,7 @@ def admin_ladder_reresolve(challenge_id: int, authorization: str | None = Header
             notify.send(content="🛠️ **Result corrected** (re-resolved after a roster fix).")
         except Exception:
             pass
-        _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, aw, bw, moves)
+        _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, aw, bw, moves, match_id=match_id)
         conn.commit()
     return {"match_id": match_id, "winner_id": winner_id, "score": f"{aw}-{bw}", "moves": moves}
 
@@ -4618,7 +4640,7 @@ def admin_ladder_repost_report(match_id: int, authorization: str | None = Header
         if not m:
             raise HTTPException(404, "match not found")
         _notify_result(cur, m["team_a_id"], m["team_b_id"], m["winner_id"],
-                       list(m["maps"] or []), m["score_a"], m["score_b"], {}, preview=True)
+                       list(m["maps"] or []), m["score_a"], m["score_b"], {}, match_id=match_id, preview=True)
     return {"reposted": match_id, "winner_id": m["winner_id"]}
 
 
