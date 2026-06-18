@@ -54,7 +54,7 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 {
 	int slot = NUM_FOR_EDICT(self) - 1;
 	vec3_t ang, tgt;
-	int en, canSee, reacting, j;
+	int en, canSee, canHear, reacting, j;
 	float dt, smoothTime, maxspeed;
 
 	/* (1) value weights — native marker routing picks the best value/sec item */
@@ -72,9 +72,20 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	if (slot < 0 || slot >= MAX_CLIENTS)
 		return;
 
-	/* (3) see-only: gate the omniscient native enemy on real line-of-sight */
+	/* (3) see-only: gate the omniscient native enemy on real line-of-sight.
+	   HEARING: if we can't see them but they're nearby AND moving (audible),
+	   we can still localize the SOUND direction and turn toward it (no fire). */
 	en = (int) self->s.v.enemy;
-	canSee = (en >= 1 && en < MAX_EDICTS && visible(&g_edicts[en])) ? 1 : 0;
+	canSee = canHear = 0;
+	if (en >= 1 && en < MAX_EDICTS)
+	{
+		gedict_t *e = &g_edicts[en];
+		if (visible(e))
+			canSee = 1;
+		else if (VectorDistance(self->s.v.origin, e->s.v.origin) < fb_cvar("k_fb_hear_range", 800.0f)
+		         && VectorLength(e->s.v.velocity) > fb_cvar("k_fb_hear_minspeed", 150.0f))
+			canHear = 1;
+	}
 
 	/* (4a) reaction delay on FIRST sight */
 	if (canSee && !fragbot_saw[slot])
@@ -95,6 +106,15 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	else if (reacting)
 	{
 		VectorCopy(fragbot_view[slot], tgt);              /* hold look (notice beat) */
+		smoothTime = fb_cvar("k_fb_smooth_roam", 0.22f);
+	}
+	else if (canHear)
+	{
+		vec3_t d;                                          /* turn toward the SOUND */
+		VectorSubtract(g_edicts[en].s.v.origin, self->s.v.origin, d);
+		d[2] = 0;                                          /* yaw only — localize dir, not height */
+		vectoangles(d, ang);
+		tgt[0] = 0; tgt[1] = ang[1]; tgt[2] = 0;
 		smoothTime = fb_cvar("k_fb_smooth_roam", 0.22f);
 	}
 	else if (VectorLength(self->fb.dir_move_) > 0.01f)
