@@ -133,8 +133,16 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	self->fb.desire_armorInv        =  95.0f * cfs;
 	self->fb.desire_armor2          =  60.0f * cfs;
 	self->fb.desire_armor1          =  30.0f * cfs;
-	self->fb.desire_rocketlauncher  =  85.0f * cfw;
-	self->fb.desire_lightning       =  70.0f * cfw;
+	/* RL control is mode-dependent. deathmatch==1 = weapons removed on pickup
+	   (standard comp / 4on4): controlling+DENYING the RL is top priority, so it
+	   outranks RA — and goal_rocketlauncher2 keeps wanting it even if we already
+	   hold one (denial). Weaponstay (deathmatch!=1): the native fn zeros a 2nd RL,
+	   and we don't over-prioritize it. */
+	{
+		int weaponstay = (deathmatch != 1);
+		self->fb.desire_rocketlauncher = (weaponstay ? 70.0f : 115.0f) * cfw;
+		self->fb.desire_lightning      = (weaponstay ? 70.0f :  90.0f) * cfw;
+	}
 	self->fb.desire_grenadelauncher =  35.0f * cfw;
 	self->fb.desire_supernailgun    =  30.0f * cfw;
 	self->fb.desire_supershotgun    =  25.0f * cfw;
