@@ -110,19 +110,25 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	/* (1) desire weights — combat-context + need scaled.
 	   weapons cut hard in a fight; survival items stay attractive; health scales
 	   with how hurt we are (goal_health0 has no native need-scaling). */
+	/* Only cut WEAPON greed in combat. Survival items (armor/health/mega) keep
+	   full desire so the bot still TIMES and grabs them mid-fight — cutting them
+	   was making it abandon a perfectly-timed RA right before respawn. Native
+	   route-time already prevents cross-map detours. */
 	cfw = cfs = 1.0f;
 	if (canSee)
 	{
 		int stacked = ((self->s.v.health + self->s.v.armorvalue) > 150.0f)
 		              && ((int) self->s.v.items & IT_ROCKET_LAUNCHER);
-		cfw = stacked ? fb_cvar("k_fb_combat_itemcut", 0.20f) : 0.60f;  /* weapons */
-		cfs = stacked ? 0.50f : 0.85f;                                  /* survival */
+		cfw = stacked ? fb_cvar("k_fb_combat_itemcut", 0.20f) : 0.60f;  /* weapons only */
 	}
 	hp = self->s.v.health;
 	hneed = fb_clamp((100.0f - hp) / 100.0f, 0.0f, 1.0f);    /* h25 wanted only when hurt */
 	mneed = fb_clamp((250.0f - hp) / 200.0f, 0.2f, 1.0f);    /* mega: buffer up to 250 */
 	self->fb.fixed_goal = NULL;
-	self->fb.desire_health0         =  70.0f * hneed * cfs;
+	/* health base high enough that when genuinely hurt it OUTSCORES RA(95)/mega
+	   and becomes the goal -> the bot detours to it (15hp~136, 30hp~112, 50hp~80,
+	   70hp~48). goal_health0 has no native need-scaling, so we do it here. */
+	self->fb.desire_health0         = 160.0f * hneed * cfs;
 	self->fb.desire_mega_health     = 100.0f * mneed * cfs;
 	self->fb.desire_armorInv        =  95.0f * cfs;
 	self->fb.desire_armor2          =  60.0f * cfs;
