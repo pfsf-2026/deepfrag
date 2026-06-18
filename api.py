@@ -860,30 +860,7 @@ def _ladder_tick(cur):
             moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
         cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now() WHERE id=%s", (ch["id"],))
         counts["auto_resolved"] += 1
-        try:
-            all_ids = list({winner_id, loser_id, *moves.keys()})
-            cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)", (all_ids,))
-            names = {r["id"]: r["name"] for r in cur.fetchall()}
-            new_koth = next((tid for tid, rk in moves.items() if rk == 1), None)
-            maps_line = " · ".join(f"{m['map']} {m['a_frags']}-{m['b_frags']}" for m in maps)
-            movement = None
-            if moves:
-                parts = []
-                wr = moves.get(winner_id)
-                if wr is not None:
-                    parts.append(f"📈 **{names.get(winner_id, winner_id)}** moved up to #{wr} on the KOTH ladder")
-                for tid, rk in moves.items():
-                    if tid == winner_id:
-                        continue
-                    parts.append(f"{'⬇️' if tid == loser_id else '↘️'} **{names.get(tid, tid)}** → #{rk}")
-                movement = "\n".join(parts)
-            notify.result_posted(names.get(winner_id, f"#{winner_id}"), names.get(loser_id, f"#{loser_id}"),
-                                 maps_line=maps_line, movement=movement, score=f"{aw}-{bw}",
-                                 mention=_mentions(cur, winner_id, loser_id))
-            if new_koth:
-                notify.koth_changed(names.get(new_koth))
-        except Exception:
-            pass
+        _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, aw, bw, moves)
 
     # Scheduled matches → reminders. Two tiers: ~1 hour out and ~10 minutes out.
     # Windows are sized so the */5 cron always lands at least one tick inside them
@@ -4111,6 +4088,64 @@ def _mentions(cur, *team_ids):
     return " ".join(f"<@{r['discord_id']}>" for r in cur.fetchall())
 
 
+def _team_mentions(cur, team_id):
+    """@-mentions for ONE team's linked players, in roster order (so reports can
+    group players by team)."""
+    if not team_id:
+        return ""
+    cur.execute("SELECT members FROM ladder_teams WHERE id=%s", (team_id,))
+    r = cur.fetchone()
+    cids = list((r and r["members"]) or [])
+    if not cids:
+        return ""
+    cur.execute("SELECT canonical_id, discord_id FROM users WHERE canonical_id = ANY(%s) AND discord_id IS NOT NULL",
+                (cids,))
+    by = {row["canonical_id"]: row["discord_id"] for row in cur.fetchall()}
+    return " ".join(f"<@{by[c]}>" for c in cids if c in by)
+
+
+def _notify_result(cur, challenger_id, challenged_id, winner_id, maps, aw, bw, moves, preview=False):
+    """Post a WINNER-first game report with players grouped + pinged by team.
+    aw/bw are challenger/challenged scores; we orient everything to winner/loser."""
+    import notify
+    loser_id = challenged_id if winner_id == challenger_id else challenger_id
+    win_is_challenger = (winner_id == challenger_id)
+    wscore, lscore = (aw, bw) if win_is_challenger else (bw, aw)
+    cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)",
+                (list({winner_id, loser_id, *moves.keys()}),))
+    names = {r["id"]: r["name"] for r in cur.fetchall()}
+
+    def ms(m):
+        a, b = m.get("a_frags"), m.get("b_frags")
+        if a is None or b is None:
+            return m.get("map", "?")
+        wf, lf = (a, b) if win_is_challenger else (b, a)   # winner's frags first
+        return f"{m.get('map', '?')} {wf}-{lf}"
+    maps_line = " · ".join(ms(m) for m in maps) if maps else None
+
+    movement = None
+    if moves:
+        parts = []
+        wr = moves.get(winner_id)
+        if wr is not None:
+            parts.append(f"📈 **{names.get(winner_id, winner_id)}** moved up to #{wr} on the KOTH ladder")
+        for tid, rk in moves.items():
+            if tid == winner_id:
+                continue
+            parts.append(f"{'⬇️' if tid == loser_id else '↘️'} **{names.get(tid, tid)}** → #{rk}")
+        movement = "\n".join(parts)
+
+    try:
+        notify.result_grouped(names.get(winner_id, f"#{winner_id}"), _team_mentions(cur, winner_id),
+                              names.get(loser_id, f"#{loser_id}"), _team_mentions(cur, loser_id),
+                              score=f"{wscore}-{lscore}", maps_line=maps_line, movement=movement, preview=preview)
+        new_koth = next((tid for tid, r in moves.items() if r == 1), None)
+        if new_koth and not preview:
+            notify.koth_changed(names.get(new_koth))
+    except Exception:
+        pass
+
+
 def _turn_team(ch):
     """Whose turn it is to act. No slots on the table → the challenger proposes
     first. Otherwise the team that did NOT post the current slots picks (or
@@ -4498,42 +4533,8 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
             moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
         # challenged win → ranks unchanged (challenger simply failed to climb)
         cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now() WHERE id=%s", (challenge_id,))
-        # Names for every team touched (winner/loser + any shifted by a 2-rung jump).
-        loser_id = ch["challenged_id"] if winner_id == ch["challenger_id"] else ch["challenger_id"]
-        all_ids = list({winner_id, loser_id, *moves.keys()})
-        cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)", (all_ids,))
-        names = {r["id"]: r["name"] for r in cur.fetchall()}
-        # KotH change = a team newly at rung 1 (only the climbing challenger can be).
-        new_koth = next((tid for tid, r in moves.items() if r == 1), None)
-        koth_name = names.get(new_koth)
-        # Per-map scoreline + human movement summary for the notification.
-        def _ms(m):
-            mp, a, b = m.get("map", "?"), m.get("a_frags"), m.get("b_frags")
-            return f"{mp} {a}-{b}" if a is not None and b is not None else mp
-        maps_line = " · ".join(_ms(m) for m in maps) if maps else None
-        movement = None
-        if moves:
-            wr = moves.get(winner_id)
-            parts = []
-            if wr is not None:
-                parts.append(f"📈 **{names.get(winner_id, winner_id)}** moved up to #{wr} on the KOTH ladder")
-            for tid, rk in moves.items():
-                if tid == winner_id:
-                    continue
-                arrow = "⬇️" if tid == loser_id else "↘️"
-                parts.append(f"{arrow} **{names.get(tid, tid)}** → #{rk}")
-            movement = "\n".join(parts)
-        mention = _mentions(cur, winner_id, loser_id)
+        _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, score_a, score_b, moves)
         conn.commit()
-    try:
-        import notify
-        score = f"{score_a}-{score_b}" if score_a is not None and score_b is not None else None
-        notify.result_posted(names.get(winner_id, f"#{winner_id}"), names.get(loser_id, f"#{loser_id}"),
-                             maps_line=maps_line, movement=movement, score=score, mention=mention)
-        if koth_name:
-            notify.koth_changed(koth_name)
-    except Exception:
-        pass
     return {"match_id": match_id, "winner_id": winner_id, "moves": moves}
 
 
@@ -4595,34 +4596,30 @@ def admin_ladder_reresolve(challenge_id: int, authorization: str | None = Header
         if winner_id == ch["challenger_id"]:
             moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
         cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now(), flagged_review=FALSE WHERE id=%s", (challenge_id,))
-        all_ids = list({winner_id, loser_id, *moves.keys()})
-        cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)", (all_ids,))
-        names = {r["id"]: r["name"] for r in cur.fetchall()}
-        new_koth = next((tid for tid, r in moves.items() if r == 1), None)
-        maps_line = " · ".join(f"{m['map']} {m['a_frags']}-{m['b_frags']}" for m in maps)
-        movement = None
-        if moves:
-            parts = []
-            wr = moves.get(winner_id)
-            if wr is not None:
-                parts.append(f"📈 **{names.get(winner_id, winner_id)}** moved up to #{wr} on the KOTH ladder")
-            for tid, rk in moves.items():
-                if tid == winner_id:
-                    continue
-                parts.append(f"{'⬇️' if tid == loser_id else '↘️'} **{names.get(tid, tid)}** → #{rk}")
-            movement = "\n".join(parts)
-        mention = _mentions(cur, winner_id, loser_id)
+        try:
+            import notify
+            notify.send(content="🛠️ **Result corrected** (re-resolved after a roster fix).")
+        except Exception:
+            pass
+        _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, aw, bw, moves)
         conn.commit()
-    try:
-        import notify
-        notify.send(content="🛠️ **Result corrected** (re-resolved after a roster fix).")
-        notify.result_posted(names.get(winner_id, f"#{winner_id}"), names.get(loser_id, f"#{loser_id}"),
-                             maps_line=maps_line, movement=movement, score=f"{aw}-{bw}", mention=mention)
-        if new_koth:
-            notify.koth_changed(names.get(new_koth))
-    except Exception:
-        pass
     return {"match_id": match_id, "winner_id": winner_id, "score": f"{aw}-{bw}", "moves": moves}
+
+
+@app.post("/api/admin/ladder/match/{match_id}/repost-report")
+def admin_ladder_repost_report(match_id: int, authorization: str | None = Header(default=None)):
+    """Re-post a match's Discord result in the winner-first, team-grouped format
+    (a preview / re-send; changes no data). Ladder-admin."""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT team_a_id, team_b_id, winner_id, maps, score_a, score_b FROM ladder_matches WHERE id=%s", (match_id,))
+        m = cur.fetchone()
+        if not m:
+            raise HTTPException(404, "match not found")
+        _notify_result(cur, m["team_a_id"], m["team_b_id"], m["winner_id"],
+                       list(m["maps"] or []), m["score_a"], m["score_b"], {}, preview=True)
+    return {"reposted": match_id, "winner_id": m["winner_id"]}
 
 
 @app.post("/api/admin/ladder/match/{match_id}/recompute")

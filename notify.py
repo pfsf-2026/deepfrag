@@ -157,6 +157,25 @@ def result_posted(winner: str, loser: str, maps_line: str | None = None,
     return send(content=mention or None, embed=_embed("🏆 Game result", "\n".join(parts), COLOR_WIN))
 
 
+def result_grouped(winner: str, winner_ping: str, loser: str, loser_ping: str,
+                   score: str | None = None, maps_line: str | None = None,
+                   movement: str | None = None, preview: bool = False):
+    """Bo3 result, WINNER-first, players grouped + pinged BY TEAM:
+        🏆 Winner (@a @b) def. Loser (@c @d) — 2-0
+    Pings live in `content` (Discord embeds don't trigger mentions); the embed
+    carries the per-map + movement breakdown. score/maps must already be
+    winner-first (the caller orients them)."""
+    wp = f" ({winner_ping})" if winner_ping else ""
+    lp = f" ({loser_ping})" if loser_ping else ""
+    head = f"**{winner}**{wp} def. **{loser}**{lp}" + (f" — **{score}**" if score else "")
+    content = ("🧪 *result format preview*\n" if preview else "") + "🏆 " + head
+    desc = []
+    if maps_line:
+        desc.append(maps_line)
+    desc.append(movement or "Ranks unchanged.")
+    return send(content=content, embed=_embed("🏆 Game result", "\n".join(desc), COLOR_WIN))
+
+
 def forfeit_posted(challenged: str):
     return send(embed=_embed(
         "⏳ Forfeit",
