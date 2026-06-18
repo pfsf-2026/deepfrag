@@ -49,7 +49,7 @@ static float fb_smoothdamp(float cur, float target, float *vel, float smoothTime
 	omega = 2.0f / smoothTime;
 	x = omega * dt;
 	ex = 1.0f / (1.0f + x + 0.48f * x * x + 0.235f * x * x * x);
-	change = fb_adelta(cur - target);
+	change = cur - target;        /* caller passes target already unwrapped near cur */
 	maxchange = maxspeed * smoothTime;
 	if (change > maxchange)  change = maxchange;
 	if (change < -maxchange) change = -maxchange;
@@ -126,33 +126,33 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	hneed = fb_clamp((100.0f - hp) / 100.0f, 0.0f, 1.0f);    /* h25 wanted only when hurt */
 	mneed = fb_clamp((250.0f - hp) / 200.0f, 0.2f, 1.0f);    /* mega: buffer up to 250 */
 	self->fb.fixed_goal = NULL;
-	/* health base high enough that when genuinely hurt it OUTSCORES RA(95)/mega
-	   and becomes the goal -> the bot detours to it (15hp~136, 30hp~112, 50hp~80,
-	   70hp~48). goal_health0 has no native need-scaling, so we do it here. */
-	self->fb.desire_health0         = 160.0f * hneed * cfs;
-	self->fb.desire_mega_health     = 100.0f * mneed * cfs;
-	/* armor desire is NEED-scaled (goal_armor* has no native need-scaling): GA/YA
-	   only count up to the armor they grant, so a 0-armor bot strongly wants GA
-	   instead of walking past it; RA always wanted (best armor). */
+	/* All weights LIVE-TUNABLE (cvar with default) so we can converge the item
+	   balance without rebuilds. RA/mega are premier on dm6 — kept high enough to
+	   pull the bot across the map vs the nearby-item bias of the native scoring. */
+	self->fb.desire_health0         = fb_cvar("k_fb_des_health", 160.0f) * hneed * cfs;
+	self->fb.desire_mega_health     = fb_cvar("k_fb_des_mega", 120.0f) * mneed * cfs;
 	{
 		float av = self->s.v.armorvalue;
-		self->fb.desire_armorInv = 95.0f * cfs;                                       /* RA */
-		self->fb.desire_armor2   = 80.0f * fb_clamp((150.0f - av) / 150.0f, 0, 1) * cfs; /* YA */
-		self->fb.desire_armor1   = 90.0f * fb_clamp((100.0f - av) / 100.0f, 0, 1) * cfs; /* GA */
+		self->fb.desire_armorInv = fb_cvar("k_fb_des_ra", 130.0f) * cfs;                                  /* RA */
+		self->fb.desire_armor2   = fb_cvar("k_fb_des_ya", 80.0f) * fb_clamp((150.0f - av) / 150.0f, 0, 1) * cfs; /* YA */
+		self->fb.desire_armor1   = fb_cvar("k_fb_des_ga", 60.0f) * fb_clamp((100.0f - av) / 100.0f, 0, 1) * cfs; /* GA */
 	}
-	/* RL control is mode-dependent. deathmatch==1 = weapons removed on pickup
-	   (standard comp / 4on4): controlling+DENYING the RL is top priority, so it
-	   outranks RA — and goal_rocketlauncher2 keeps wanting it even if we already
-	   hold one (denial). Weaponstay (deathmatch!=1): the native fn zeros a 2nd RL,
-	   and we don't over-prioritize it. */
 	{
-		int weaponstay = (deathmatch != 1);
-		self->fb.desire_rocketlauncher = (weaponstay ? 70.0f : 115.0f) * cfw;
-		self->fb.desire_lightning      = (weaponstay ? 70.0f :  90.0f) * cfw;
+		int weaponstay = (deathmatch != 1);   /* dm1 = weapons removed -> control/deny RL */
+		self->fb.desire_rocketlauncher = fb_cvar("k_fb_des_rl", weaponstay ? 70.0f : 120.0f) * cfw;
+		self->fb.desire_lightning      = fb_cvar("k_fb_des_lg", weaponstay ? 70.0f :  90.0f) * cfw;
 	}
 	self->fb.desire_grenadelauncher =  35.0f * cfw;
 	self->fb.desire_supernailgun    =  30.0f * cfw;
 	self->fb.desire_supershotgun    =  25.0f * cfw;
+	/* lookahead floor: native skill lookahead is short, so far items (RA across
+	   the map) never qualify -> the bot loops the nearby cluster. Raise the floor
+	   so it commits to crossing for premier items. */
+	{
+		float la = fb_cvar("k_fb_min_lookahead", 16.0f);
+		if (self->fb.skill.lookahead_time < la)
+			self->fb.skill.lookahead_time = la;
+	}
 
 	/* CAMP & WAIT: if our goal is an item about to respawn and we're on the spot,
 	   stand still and wait for it (perfect timing + a human pause to listen)
@@ -226,11 +226,13 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	}
 	for (j = 0; j < 2; j++)        /* PITCH=0, YAW=1 */
 	{
-		float c = fb_smoothdamp(fragbot_view[slot][j], tgt[j], &fragbot_vel[slot][j],
-		                        smoothTime, maxspeed, dt);
-		while (c > 180) c -= 360;
-		while (c < -180) c += 360;
-		fragbot_view[slot][j] = c;
+		float cur = fragbot_view[slot][j];
+		/* unwrap target into cur's continuous frame so the turn is ALWAYS the
+		   shortest way (no ±180 boundary jump that reads as a 270° spin). Keep
+		   the stored value continuous; the engine wraps mod 360 for render/move. */
+		float t = cur + fb_adelta(tgt[j] - cur);
+		fragbot_view[slot][j] = fb_smoothdamp(cur, t, &fragbot_vel[slot][j],
+		                                      smoothTime, maxspeed, dt);
 	}
 	self->fb.desired_angle[PITCH] = fragbot_view[slot][0];
 	self->fb.desired_angle[YAW]   = fragbot_view[slot][1];
