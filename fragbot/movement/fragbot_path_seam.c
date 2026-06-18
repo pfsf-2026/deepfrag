@@ -24,6 +24,7 @@
 #define FRAGBOT_PATH_MODE 32
 extern float visible(gedict_t *targ);
 extern qbool Visible_360(gedict_t *self, gedict_t *visible_object);
+extern qbool WaitingToRespawn(gedict_t *ent);
 
 static vec3_t fragbot_view[MAX_CLIENTS];        /* smoothed current view */
 static vec3_t fragbot_vel[MAX_CLIENTS];         /* angular velocity (deg/s) */
@@ -130,9 +131,15 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	   70hp~48). goal_health0 has no native need-scaling, so we do it here. */
 	self->fb.desire_health0         = 160.0f * hneed * cfs;
 	self->fb.desire_mega_health     = 100.0f * mneed * cfs;
-	self->fb.desire_armorInv        =  95.0f * cfs;
-	self->fb.desire_armor2          =  60.0f * cfs;
-	self->fb.desire_armor1          =  30.0f * cfs;
+	/* armor desire is NEED-scaled (goal_armor* has no native need-scaling): GA/YA
+	   only count up to the armor they grant, so a 0-armor bot strongly wants GA
+	   instead of walking past it; RA always wanted (best armor). */
+	{
+		float av = self->s.v.armorvalue;
+		self->fb.desire_armorInv = 95.0f * cfs;                                       /* RA */
+		self->fb.desire_armor2   = 80.0f * fb_clamp((150.0f - av) / 150.0f, 0, 1) * cfs; /* YA */
+		self->fb.desire_armor1   = 90.0f * fb_clamp((100.0f - av) / 100.0f, 0, 1) * cfs; /* GA */
+	}
 	/* RL control is mode-dependent. deathmatch==1 = weapons removed on pickup
 	   (standard comp / 4on4): controlling+DENYING the RL is top priority, so it
 	   outranks RA — and goal_rocketlauncher2 keeps wanting it even if we already
@@ -146,6 +153,20 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	self->fb.desire_grenadelauncher =  35.0f * cfw;
 	self->fb.desire_supernailgun    =  30.0f * cfw;
 	self->fb.desire_supershotgun    =  25.0f * cfw;
+
+	/* CAMP & WAIT: if our goal is an item about to respawn and we're on the spot,
+	   stand still and wait for it (perfect timing + a human pause to listen)
+	   instead of pacing away. Zeroing dir_move_ stops the move projection. */
+	{
+		int g = (int) self->s.v.goalentity;
+		if (!canSee && g >= 1 && g < MAX_EDICTS && WaitingToRespawn(&g_edicts[g]))
+		{
+			float resp = g_edicts[g].s.v.nextthink - g_globalvars.time;
+			if (VectorDistance(self->s.v.origin, g_edicts[g].s.v.origin) < fb_cvar("k_fb_camp_dist", 130.0f)
+			    && resp > 0.0f && resp < fb_cvar("k_fb_camp_window", 3.0f))
+				VectorClear(self->fb.dir_move_);
+		}
+	}
 
 	/* (5a) reaction delay on FIRST sight */
 	if (canSee && !fragbot_saw[slot])
