@@ -54,6 +54,24 @@ else:
     bm.write_text(text)
     print("[2/4] injected FragBot block + call")
 
+    # Optional SECOND injection into another file (e.g. a hearing hook in
+    # BotsSoundMadeEvent). Declared in the seam via:
+    #   // FRAGBOT_FILE2: bot_botenemy.c
+    #   // FRAGBOT_ANCHOR2: if (entity && entity->ct == ctPlayer)
+    #   /* ===== FRAGBOT_CALL2 ===== */ ... /* ===== /FRAGBOT_CALL2 ===== */
+    m_file2 = re.search(r"//\s*FRAGBOT_FILE2:\s*(.+)", seam)
+    m_anchor2 = re.search(r"//\s*FRAGBOT_ANCHOR2:\s*(.+)", seam)
+    if m_file2 and m_anchor2 and "FRAGBOT_CALL2" in seam:
+        call2 = section("FRAGBOT_CALL2")
+        f2 = dst_ktx / "src" / m_file2.group(1).strip()
+        a2 = "\t" + m_anchor2.group(1).strip()
+        t2 = f2.read_text()
+        if a2 not in t2:
+            sys.exit(f"anchor2 {a2!r} not found in {f2.name}")
+        t2 = t2.replace(a2, call2 + a2, 1)
+        f2.write_text(t2)
+        print(f"[2b/4] injected CALL2 into {f2.name}")
+
 print("[3/4] build linux-amd64 ...")
 r = subprocess.run(["bash", "build_cmake.sh", "linux-amd64"], cwd=dst_ktx,
                    env={"BUILDDIR": "build-fragbot", "PATH": "/usr/bin:/bin:/usr/local/bin"},

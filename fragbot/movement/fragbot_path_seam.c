@@ -1,23 +1,25 @@
-/* FragBot PHASE 2 seam — value routing + see-only targeting + human aim model
- * (mode 32). See docs/bot_pathing_methodology.md.
+/* FragBot PHASE 2 seam — value routing + see-only targeting + event-driven
+ * hearing + human aim model (mode 32). See docs/bot_pathing_methodology.md.
  *
  *  (1) VALUE ROUTING: tune native marker routing via desire_* (not fixed_goal).
  *  (2) ROAM-AIM: face dir_move_ when not fighting (full-speed move projection).
- *  (3) SEE-ONLY TARGETING: native BotsPickBestEnemy is OMNISCIENT (picks any
- *      player by marker route-distance, no line-of-sight) -> wallhack / turning
- *      into spawns. We gate combat on visible(): the bot only aims/fires at an
- *      enemy it can trace a clear line to. (Memory/anticipation = later.)
- *  (4) HUMAN AIM MODEL:
- *      - REACTION DELAY on first SIGHT (not on omniscient acquire): hold the look
- *        + hold fire for k_fb_react sec, then flick. Kills instant-shoot-on-sight.
- *      - CRITICALLY-DAMPED SMOOTHING (smoothdamp): accelerate -> settle, velocity-
- *        continuous. Slower smoothTime roaming (calm scan) than in combat.
- *      Live cvars: k_fb_react (0.28) k_fb_smooth_roam (0.22) k_fb_smooth_aim (0.09)
- *                  k_fb_aim_maxspeed (1400).  Lower smooth_aim / raise maxspeed for
- *                  higher LG accuracy at top skill (smoothness<->accuracy tradeoff).
+ *  (3) SEE-ONLY TARGETING: native BotsPickBestEnemy is omniscient -> wallhack.
+ *      Gate aim/fire on visible() (clear line-of-sight). No fire at unseen foes.
+ *  (4) HEARING (event-driven, NOT speed): running is silent in QW; only discrete
+ *      sounds carry — item pickups, weapon fire, jumps, pain. sound() calls
+ *      BotsSoundMadeEvent(emitter), so we hook it: when a PLAYER makes a sound
+ *      within k_fb_hear_range, nearby enemy bots remember that position for
+ *      k_fb_hear_mem sec and TURN TOWARD it (yaw only — localize direction, not
+ *      height), holding fire, until they actually see someone.
+ *  (5) HUMAN AIM: reaction delay on first SIGHT (k_fb_react) + critically-damped
+ *      smoothing (accelerate->settle). Lower k_fb_smooth_aim / raise
+ *      k_fb_aim_maxspeed for higher LG accuracy at top skill.
  *
- * Injected before trap_makevectors(desired_angle). */
+ * Injected before trap_makevectors(desired_angle); the hearing hook is a second
+ * injection into BotsSoundMadeEvent. */
 // FRAGBOT_ANCHOR: trap_makevectors(self->fb.desired_angle);
+// FRAGBOT_FILE2: bot_botenemy.c
+// FRAGBOT_ANCHOR2: if (entity && entity->ct == ctPlayer)
 
 /* ===== FRAGBOT_BLOCK ===== */
 #define FRAGBOT_PATH_MODE 32
@@ -28,6 +30,8 @@ static vec3_t fragbot_vel[MAX_CLIENTS];         /* angular velocity (deg/s) */
 static int    fragbot_init[MAX_CLIENTS];
 static int    fragbot_saw[MAX_CLIENTS];         /* could see an enemy last frame */
 static float  fragbot_react_until[MAX_CLIENTS];
+static vec3_t fragbot_heard_pos[MAX_CLIENTS];   /* last heard sound position */
+static float  fragbot_heard_until[MAX_CLIENTS]; /* hearing memory expiry */
 
 static float fb_cvar(char *n, float def) { float v = cvar(n); return (v != 0) ? v : def; }
 static float fb_adelta(float a) { while (a > 180) a -= 360; while (a < -180) a += 360; return a; }
@@ -50,10 +54,36 @@ static float fb_smoothdamp(float cur, float target, float *vel, float smoothTime
 	return (cur - change) + (change + temp) * ex;
 }
 
+/* Hearing hook — called from BotsSoundMadeEvent for EVERY emitted sound. Records
+ * the sound position for nearby enemy bots (NON-static: linked from bot_botenemy.c). */
+void FragBot_HeardSound(gedict_t *emitter)
+{
+	gedict_t *plr;
+	float range;
+	if ((int) cvar("k_fb_fragbot_mode") != FRAGBOT_PATH_MODE)
+		return;
+	if (!emitter || emitter->ct != ctPlayer)
+		return;
+	range = fb_cvar("k_fb_hear_range", 800.0f);
+	for (plr = world; (plr = find_plr(plr));)
+	{
+		int slot;
+		if (!plr->isBot || plr == emitter || SameTeam(plr, emitter))
+			continue;
+		if (VectorDistance(plr->s.v.origin, emitter->s.v.origin) > range)
+			continue;
+		slot = NUM_FOR_EDICT(plr) - 1;
+		if (slot < 0 || slot >= MAX_CLIENTS)
+			continue;
+		VectorCopy(emitter->s.v.origin, fragbot_heard_pos[slot]);
+		fragbot_heard_until[slot] = g_globalvars.time + fb_cvar("k_fb_hear_mem", 1.5f);
+	}
+}
+
 static void FragBot_Path(gedict_t *self, int cmd_msec)
 {
 	int slot = NUM_FOR_EDICT(self) - 1;
-	vec3_t ang, tgt;
+	vec3_t ang, tgt, d;
 	int en, canSee, canHear, reacting, j;
 	float dt, smoothTime, maxspeed;
 
@@ -72,22 +102,13 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	if (slot < 0 || slot >= MAX_CLIENTS)
 		return;
 
-	/* (3) see-only: gate the omniscient native enemy on real line-of-sight.
-	   HEARING: if we can't see them but they're nearby AND moving (audible),
-	   we can still localize the SOUND direction and turn toward it (no fire). */
+	/* (3) see-only: gate the omniscient native enemy on real line-of-sight */
 	en = (int) self->s.v.enemy;
-	canSee = canHear = 0;
-	if (en >= 1 && en < MAX_EDICTS)
-	{
-		gedict_t *e = &g_edicts[en];
-		if (visible(e))
-			canSee = 1;
-		else if (VectorDistance(self->s.v.origin, e->s.v.origin) < fb_cvar("k_fb_hear_range", 800.0f)
-		         && VectorLength(e->s.v.velocity) > fb_cvar("k_fb_hear_minspeed", 150.0f))
-			canHear = 1;
-	}
+	canSee = (en >= 1 && en < MAX_EDICTS && visible(&g_edicts[en])) ? 1 : 0;
+	/* (4) hearing: remembered sound position, only while we can't see anyone */
+	canHear = (!canSee && g_globalvars.time < fragbot_heard_until[slot]) ? 1 : 0;
 
-	/* (4a) reaction delay on FIRST sight */
+	/* (5a) reaction delay on FIRST sight */
 	if (canSee && !fragbot_saw[slot])
 		fragbot_react_until[slot] = g_globalvars.time + fb_cvar("k_fb_react", 0.28f);
 	fragbot_saw[slot] = canSee;
@@ -110,11 +131,17 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	}
 	else if (canHear)
 	{
-		vec3_t d;                                          /* turn toward the SOUND */
-		VectorSubtract(g_edicts[en].s.v.origin, self->s.v.origin, d);
-		d[2] = 0;                                          /* yaw only — localize dir, not height */
-		vectoangles(d, ang);
-		tgt[0] = 0; tgt[1] = ang[1]; tgt[2] = 0;
+		VectorSubtract(fragbot_heard_pos[slot], self->s.v.origin, d);
+		d[2] = 0;                                          /* yaw only — localize direction */
+		if (VectorLength(d) > 0.01f)
+		{
+			vectoangles(d, ang);
+			tgt[0] = 0; tgt[1] = ang[1]; tgt[2] = 0;
+		}
+		else
+		{
+			VectorCopy(fragbot_view[slot], tgt);
+		}
 		smoothTime = fb_cvar("k_fb_smooth_roam", 0.22f);
 	}
 	else if (VectorLength(self->fb.dir_move_) > 0.01f)
@@ -129,7 +156,7 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 		smoothTime = fb_cvar("k_fb_smooth_roam", 0.22f);
 	}
 
-	/* (4b) critically-damped smoothing of the view toward the target */
+	/* (5b) critically-damped smoothing of the view toward the target */
 	dt = (cmd_msec > 0 ? cmd_msec : 13) / 1000.0f;
 	maxspeed = fb_cvar("k_fb_aim_maxspeed", 1400.0f);
 	if (!fragbot_init[slot])
@@ -158,3 +185,7 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 		FragBot_Path(self, cmd_msec);
 	}
 /* ===== /FRAGBOT_CALL ===== */
+
+/* ===== FRAGBOT_CALL2 ===== */
+	{ extern void FragBot_HeardSound(gedict_t *e_); FragBot_HeardSound(entity); }
+/* ===== /FRAGBOT_CALL2 ===== */
