@@ -30,8 +30,10 @@ static vec3_t fragbot_vel[MAX_CLIENTS];         /* angular velocity (deg/s) */
 static int    fragbot_init[MAX_CLIENTS];
 static int    fragbot_saw[MAX_CLIENTS];         /* could see an enemy last frame */
 static float  fragbot_react_until[MAX_CLIENTS];
-static vec3_t fragbot_heard_pos[MAX_CLIENTS];   /* last heard sound position */
-static float  fragbot_heard_until[MAX_CLIENTS]; /* hearing memory expiry */
+static vec3_t fragbot_mem_pos[MAX_CLIENTS];     /* belief: last heard/seen enemy spot */
+static float  fragbot_mem_until[MAX_CLIENTS];   /* memory expiry (anticipation) */
+static float  fragbot_glance_until[MAX_CLIENTS];/* brief look-toward-sound window */
+static float  fragbot_glance_cd[MAX_CLIENTS];   /* cooldown between glances */
 
 static float fb_cvar(char *n, float def) { float v = cvar(n); return (v != 0) ? v : def; }
 static float fb_adelta(float a) { while (a > 180) a -= 360; while (a < -180) a += 360; return a; }
@@ -75,8 +77,17 @@ void FragBot_HeardSound(gedict_t *emitter)
 		slot = NUM_FOR_EDICT(plr) - 1;
 		if (slot < 0 || slot >= MAX_CLIENTS)
 			continue;
-		VectorCopy(emitter->s.v.origin, fragbot_heard_pos[slot]);
-		fragbot_heard_until[slot] = g_globalvars.time + fb_cvar("k_fb_hear_mem", 1.5f);
+		/* update belief (memory) — persists for anticipation */
+		VectorCopy(emitter->s.v.origin, fragbot_mem_pos[slot]);
+		fragbot_mem_until[slot] = g_globalvars.time + fb_cvar("k_fb_mem", 4.0f);
+		/* trigger only a BRIEF glance, and only if the cooldown has elapsed, so
+		   the bot does a quick "what was that" instead of staring (which hijacks
+		   pathing and gets it stuck) */
+		if (g_globalvars.time > fragbot_glance_cd[slot])
+		{
+			fragbot_glance_until[slot] = g_globalvars.time + fb_cvar("k_fb_glance_dur", 0.4f);
+			fragbot_glance_cd[slot]    = g_globalvars.time + fb_cvar("k_fb_glance_cd", 2.0f);
+		}
 	}
 }
 
@@ -84,20 +95,8 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 {
 	int slot = NUM_FOR_EDICT(self) - 1;
 	vec3_t ang, tgt, d;
-	int en, canSee, canHear, reacting, j;
-	float dt, smoothTime, maxspeed;
-
-	/* (1) value weights — native marker routing picks the best value/sec item */
-	self->fb.fixed_goal = NULL;
-	self->fb.desire_mega_health     = 100.0f;
-	self->fb.desire_armorInv        =  95.0f;
-	self->fb.desire_armor2          =  60.0f;
-	self->fb.desire_armor1          =  30.0f;
-	self->fb.desire_rocketlauncher  =  85.0f;
-	self->fb.desire_lightning       =  70.0f;
-	self->fb.desire_grenadelauncher =  35.0f;
-	self->fb.desire_supernailgun    =  30.0f;
-	self->fb.desire_supershotgun    =  25.0f;
+	int en, canSee, glancing, reacting, j;
+	float dt, smoothTime, maxspeed, cf;
 
 	if (slot < 0 || slot >= MAX_CLIENTS)
 		return;
@@ -105,8 +104,29 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	/* (3) see-only: gate the omniscient native enemy on real line-of-sight */
 	en = (int) self->s.v.enemy;
 	canSee = (en >= 1 && en < MAX_EDICTS && visible(&g_edicts[en])) ? 1 : 0;
-	/* (4) hearing: remembered sound position, only while we can't see anyone */
-	canHear = (!canSee && g_globalvars.time < fragbot_heard_until[slot]) ? 1 : 0;
+	/* (4) hearing: a brief glance toward a remembered sound, only while blind */
+	glancing = (!canSee && g_globalvars.time < fragbot_glance_until[slot]) ? 1 : 0;
+
+	/* (1) value weights, modulated by COMBAT CONTEXT: when we can see an enemy,
+	   don't blindly abandon the fight for an item. Cut item pull hard if we're
+	   well-stacked with a launcher (fight!), softly if low (still grab survival). */
+	cf = 1.0f;
+	if (canSee)
+	{
+		int stacked = ((self->s.v.health + self->s.v.armorvalue) > 150.0f)
+		              && ((int) self->s.v.items & IT_ROCKET_LAUNCHER);
+		cf = stacked ? fb_cvar("k_fb_combat_itemcut", 0.20f) : 0.70f;
+	}
+	self->fb.fixed_goal = NULL;
+	self->fb.desire_mega_health     = 100.0f * cf;
+	self->fb.desire_armorInv        =  95.0f * cf;
+	self->fb.desire_armor2          =  60.0f * cf;
+	self->fb.desire_armor1          =  30.0f * cf;
+	self->fb.desire_rocketlauncher  =  85.0f * cf;
+	self->fb.desire_lightning       =  70.0f * cf;
+	self->fb.desire_grenadelauncher =  35.0f * cf;
+	self->fb.desire_supernailgun    =  30.0f * cf;
+	self->fb.desire_supershotgun    =  25.0f * cf;
 
 	/* (5a) reaction delay on FIRST sight */
 	if (canSee && !fragbot_saw[slot])
@@ -129,9 +149,9 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 		VectorCopy(fragbot_view[slot], tgt);              /* hold look (notice beat) */
 		smoothTime = fb_cvar("k_fb_smooth_roam", 0.22f);
 	}
-	else if (canHear)
+	else if (glancing)
 	{
-		VectorSubtract(fragbot_heard_pos[slot], self->s.v.origin, d);
+		VectorSubtract(fragbot_mem_pos[slot], self->s.v.origin, d);
 		d[2] = 0;                                          /* yaw only — localize direction */
 		if (VectorLength(d) > 0.01f)
 		{
