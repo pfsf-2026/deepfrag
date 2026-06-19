@@ -871,14 +871,13 @@ def _ladder_tick(cur):
                      AND c.agreed_at > now() - interval '1 hour'""")
     for r in cur.fetchall():
         d = r["agreed_at"] - now
+        cn, cp = _team_np(cur, r["challenger_id"]); dn, dp = _team_np(cur, r["challenged_id"])
         if not r["reminded_soon"] and timedelta(minutes=12) < d <= timedelta(minutes=70):
-            notify.match_reminder(_team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"]),
-                                  r["agreed_at"].isoformat(), r["server"], kind="1h")
+            notify.match_reminder(cn, cp, dn, dp, r["agreed_at"].isoformat(), r["server"], kind="1h")
             cur.execute("UPDATE ladder_challenges SET reminded_soon=TRUE WHERE id=%s", (r["id"],))
             counts["reminded_1h"] += 1
         if not r["reminded_10m"] and timedelta(0) < d <= timedelta(minutes=12):
-            notify.match_reminder(_team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"]),
-                                  r["agreed_at"].isoformat(), r["server"], kind="10m")
+            notify.match_reminder(cn, cp, dn, dp, r["agreed_at"].isoformat(), r["server"], kind="10m")
             cur.execute("UPDATE ladder_challenges SET reminded_10m=TRUE WHERE id=%s", (r["id"],))
             counts["reminded_10m"] += 1
 
@@ -963,20 +962,44 @@ def cron_ladder_tick(authorization: str | None = Header(default=None)):
     return {"ok": True, **counts}
 
 
-def _scheduled_lines(cur):
-    """Lines for all UPCOMING scheduled matches, in the unified team-labeled format
-    (challenger first, players @-mentioned in parens, time in ET)."""
-    import notify as _n
+def _team_np(cur, team_id):
+    """(name, ping) for a team — name + its players @-mentioned, for the 2-line
+    'name vs name / pings vs pings' announce style."""
+    cur.execute("SELECT name FROM ladder_teams WHERE id=%s", (team_id,))
+    r = cur.fetchone()
+    return ((r and r["name"]) or f"#{team_id}", _team_mentions(cur, team_id))
+
+
+def _digest_content(cur):
+    """Daily digest as an aligned monospace table (clean to scan; no @pings — code
+    blocks don't notify, which is fine for an overview; the day-of reminders ping)."""
+    from zoneinfo import ZoneInfo
     cur.execute("""SELECT challenger_id, challenged_id, agreed_at, server
                    FROM ladder_challenges
                    WHERE status='scheduled' AND agreed_at IS NOT NULL AND agreed_at > now()
                    ORDER BY agreed_at""")
-    lines = []
-    for r in cur.fetchall():
-        srv = f" · 🖥️ {r['server']}" if r["server"] else ""
-        lines.append(f"• {_team_label(cur, r['challenger_id'])} vs {_team_label(cur, r['challenged_id'])}"
-                     f" — 🗓️ {_n.fmt_et(r['agreed_at'].isoformat())}{srv}")
-    return lines
+    rows = cur.fetchall()
+    if not rows:
+        return "📅 No matches currently scheduled."
+
+    def nm(tid):
+        cur.execute("SELECT name FROM ladder_teams WHERE id=%s", (tid,))
+        r = cur.fetchone()
+        n = (r and r["name"]) or f"#{tid}"
+        return n if len(n) <= 16 else n[:15] + "…"
+
+    items = []
+    for r in rows:
+        try:
+            et = r["agreed_at"].astimezone(ZoneInfo("America/New_York"))
+            when = et.strftime("%a %b %-d  %-I:%M%p").replace("AM", "am").replace("PM", "pm")
+        except Exception:
+            when = str(r["agreed_at"])[:16]
+        items.append((when, nm(r["challenger_id"]), nm(r["challenged_id"]), r["server"] or ""))
+    cw = max(len(i[1]) for i in items)
+    dw = max(len(i[2]) for i in items)
+    lines = [f"{w}   {c:<{cw}} vs {d:<{dw}}   {s}".rstrip() for (w, c, d, s) in items]
+    return "📅 **Upcoming scheduled matches**\n```\n" + "\n".join(lines) + "\n```"
 
 
 @app.post("/api/cron/ladder-digest")
@@ -988,11 +1011,9 @@ def cron_ladder_digest(authorization: str | None = Header(default=None)):
     import notify
     with pg() as conn:
         cur = conn.cursor()
-        lines = _scheduled_lines(cur)
-    content = ("📅 **Upcoming scheduled matches**\n" + "\n".join(lines)) if lines \
-              else "📅 No matches currently scheduled."
+        content = _digest_content(cur)
     notify.send(content=content)
-    return {"posted": len(lines)}
+    return {"posted": 1 if "```" in content else 0}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/notify-scheduled")
@@ -1007,7 +1028,8 @@ def admin_ladder_notify_scheduled(challenge_id: int, authorization: str | None =
         ch = cur.fetchone()
         if not ch:
             raise HTTPException(404, "challenge not found")
-        notify.game_scheduled(_team_label(cur, ch["challenger_id"]), _team_label(cur, ch["challenged_id"]),
+        cn, cp = _team_np(cur, ch["challenger_id"]); dn, dp = _team_np(cur, ch["challenged_id"])
+        notify.game_scheduled(cn, cp, dn, dp,
                               ch["agreed_at"].isoformat() if ch["agreed_at"] else None, ch["server"])
     return {"notified": challenge_id}
 
@@ -4318,12 +4340,12 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
         cur.execute("""UPDATE ladder_challenges
                        SET agreed_at=%s, server=%s, status='scheduled' WHERE id=%s""",
                     (slot, (server or "").strip() or None, challenge_id))
-        a_lbl = _team_label(cur, ch["challenger_id"])
-        b_lbl = _team_label(cur, ch["challenged_id"])
+        cn, cp = _team_np(cur, ch["challenger_id"])
+        dn, dp = _team_np(cur, ch["challenged_id"])
         conn.commit()
     try:
         import notify
-        notify.game_scheduled(a_lbl, b_lbl, slot, (server or "").strip() or None)
+        notify.game_scheduled(cn, cp, dn, dp, slot, (server or "").strip() or None)
     except Exception:
         pass
     return {"challenge_id": challenge_id, "agreed_at": slot, "server": server, "status": "scheduled"}
@@ -4378,15 +4400,17 @@ def ladder_challenge_my_picks(challenge_id: int, authorization: str | None = Hea
                         (json.dumps(picks), agreed, challenge_id))
         else:
             cur.execute("UPDATE ladder_challenges SET picks=%s WHERE id=%s", (json.dumps(picks), challenge_id))
-        a_lbl = _team_label(cur, ch["challenger_id"])
-        b_lbl = _team_label(cur, ch["challenged_id"])
+        cn, cp = _team_np(cur, ch["challenger_id"])
+        dn, dp = _team_np(cur, ch["challenged_id"])
+        a_lbl = f"**{cn}**" + (f" ({cp})" if cp else "")
+        b_lbl = f"**{dn}**" + (f" ({dp})" if dp else "")
         no_common = both and not agreed
         waiting = [m for m in members if not picks.get(m)]
         conn.commit()
     try:
         import notify
         if agreed:
-            notify.game_scheduled(a_lbl, b_lbl, agreed, None)
+            notify.game_scheduled(cn, cp, dn, dp, agreed, None)
         elif no_common:
             notify.send(content=f"⚠️ {b_lbl}'s two players have no overlapping time among the offered slots — coordinate, or have {a_lbl} suggest different times.")
     except Exception:

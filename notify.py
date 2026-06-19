@@ -135,11 +135,14 @@ def match_proposal(proposer: str, other: str, slots_iso: list, *, initial: bool,
     return send(content=content)
 
 
-def game_scheduled(team_a: str, team_b: str, when: str | None, server: str | None,
-                   mention: str | None = None):
-    """Match scheduled. team_a/team_b are LABELS, challenger (team_a) first."""
-    extra = f"\n🖥️ {server}" if server else ""
-    return send(content=f"📅 {team_a} vs {team_b}\n🗓️ {fmt_et(when)}{extra}")
+def game_scheduled(a_name: str, a_ping: str, b_name: str, b_ping: str,
+                   when: str | None, server: str | None = None, mention: str | None = None):
+    """Match scheduled (challenger first). Clean two-line: names+time, then pings."""
+    meta = fmt_et(when) + (f" · {server}" if server else "")
+    out = f"🆚 **{a_name}** vs **{b_name}** — {meta}"
+    if a_ping or b_ping:
+        out += f"\n{a_ping or '—'}  vs  {b_ping or '—'}"
+    return send(content=out)
 
 
 def result_posted(winner: str, loser: str, maps_line: str | None = None,
@@ -185,12 +188,16 @@ def challenge_withdrawn(challenger: str, challenged: str, mention: str | None = 
                         f"Both teams are free again.")
 
 
-def match_reminder(team_a: str, team_b: str, when: str | None, server: str | None,
-                   kind: str = "1h", mention: str | None = None):
-    """Upcoming-match reminder. team_a/team_b are LABELS, challenger first."""
-    head = "🔴 Match in ~10 minutes" if kind == "10m" else "🔔 Match in ~1 hour"
-    extra = f"\n🖥️ {server}" if server else ""
-    return send(content=f"{head}\n{team_a} vs {team_b}\n🗓️ {fmt_et(when)}{extra}")
+def match_reminder(a_name: str, a_ping: str, b_name: str, b_ping: str,
+                   when: str | None, server: str | None = None, kind: str = "1h",
+                   mention: str | None = None):
+    """Upcoming-match reminder (challenger first). Day-of @ping cadence."""
+    head = "🔴 Starting in ~10 min" if kind == "10m" else "🔔 Match in ~1 hour"
+    meta = fmt_et(when) + (f" · {server}" if server else "")
+    out = f"{head} — **{a_name}** vs **{b_name}** · {meta}"
+    if a_ping or b_ping:
+        out += f"\n{a_ping or '—'}  vs  {b_ping or '—'}"
+    return send(content=out)
 
 
 def match_rescheduled(team_a: str, team_b: str, when: str | None, server: str | None,
