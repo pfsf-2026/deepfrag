@@ -963,6 +963,55 @@ def cron_ladder_tick(authorization: str | None = Header(default=None)):
     return {"ok": True, **counts}
 
 
+def _scheduled_lines(cur):
+    """Lines for all UPCOMING scheduled matches, in the unified team-labeled format
+    (challenger first, players @-mentioned in parens, time in ET)."""
+    import notify as _n
+    cur.execute("""SELECT challenger_id, challenged_id, agreed_at, server
+                   FROM ladder_challenges
+                   WHERE status='scheduled' AND agreed_at IS NOT NULL AND agreed_at > now()
+                   ORDER BY agreed_at""")
+    lines = []
+    for r in cur.fetchall():
+        srv = f" · 🖥️ {r['server']}" if r["server"] else ""
+        lines.append(f"• {_team_label(cur, r['challenger_id'])} vs {_team_label(cur, r['challenged_id'])}"
+                     f" — 🗓️ {_n.fmt_et(r['agreed_at'].isoformat())}{srv}")
+    return lines
+
+
+@app.post("/api/cron/ladder-digest")
+def cron_ladder_digest(authorization: str | None = Header(default=None)):
+    """Daily upcoming-matches digest (Cloud Scheduler, 10am ET). Auth: SYNC/CRON secret."""
+    expected = {os.environ.get("SYNC_SECRET"), os.environ.get("CRON_SECRET")} - {None, ""}
+    if not expected or (authorization or "").removeprefix("Bearer ") not in expected:
+        raise HTTPException(401, "bad cron token")
+    import notify
+    with pg() as conn:
+        cur = conn.cursor()
+        lines = _scheduled_lines(cur)
+    content = ("📅 **Upcoming scheduled matches**\n" + "\n".join(lines)) if lines \
+              else "📅 No matches currently scheduled."
+    notify.send(content=content)
+    return {"posted": len(lines)}
+
+
+@app.post("/api/admin/ladder/challenge/{challenge_id}/notify-scheduled")
+def admin_ladder_notify_scheduled(challenge_id: int, authorization: str | None = Header(default=None)):
+    """(Re)post the 'game scheduled' notice for one challenge in the new format."""
+    _check_ladder_admin(authorization)
+    import notify
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT challenger_id, challenged_id, agreed_at, server FROM ladder_challenges WHERE id=%s",
+                    (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        notify.game_scheduled(_team_label(cur, ch["challenger_id"]), _team_label(cur, ch["challenged_id"]),
+                              ch["agreed_at"].isoformat() if ch["agreed_at"] else None, ch["server"])
+    return {"notified": challenge_id}
+
+
 def _evaluate_freshness(conn):
     """Data-freshness watchdog core: flag stale ingestion / behind canonicalize,
     alert to Discord (throttled 3h via monitor_state). Returns a verdict dict.
