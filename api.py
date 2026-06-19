@@ -3636,6 +3636,39 @@ def admin_ladder_team_reject(team_id: int, authorization: str | None = Header(de
     return {"team_id": team_id, "status": "rejected"}
 
 
+@app.post("/api/admin/ladder/team/{team_id}/remove")
+def admin_ladder_team_remove(team_id: int, authorization: str | None = Header(default=None)):
+    """Remove an ACTIVE team from the ladder: deactivate it, COMPACT the rungs
+    (every active team below moves up one to close the gap), and cancel its open/
+    scheduled challenges. Keeps the row (matches/history reference it). Ladder-admin."""
+    import ladder as _ladder
+    import notify
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT ladder_id, name, rung FROM ladder_teams WHERE id=%s AND active", (team_id,))
+        t = cur.fetchone()
+        if not t:
+            raise HTTPException(404, "no active team with that id")
+        ladder_id, name, rung = t["ladder_id"], t["name"], t["rung"]
+        cur.execute("UPDATE ladder_teams SET active=FALSE, status='withdrawn', rung=NULL WHERE id=%s", (team_id,))
+        if rung is not None:
+            cur.execute("UPDATE ladder_teams SET rung=rung-1 WHERE ladder_id=%s AND active AND rung > %s",
+                        (ladder_id, rung))
+        cur.execute("""UPDATE ladder_challenges SET status='cancelled', resolved_at=now()
+                       WHERE (challenger_id=%s OR challenged_id=%s) AND status IN ('open','scheduled')
+                       RETURNING id""", (team_id, team_id))
+        cancelled = [r["id"] for r in cur.fetchall()]
+        conn.commit()
+    try:
+        notify.send(content=(f"🚫 **{name}** has been removed from the KOTH ladder — teams below shift up one rung."
+                             + (f" ({len(cancelled)} open challenge(s) cancelled.)" if cancelled else "")))
+    except Exception:
+        pass
+    return {"removed": team_id, "name": name, "was_rung": rung, "cancelled_challenges": cancelled}
+
+
 @app.get("/api/ladder/team/{team_id}")
 def ladder_team_get(team_id: int):
     """Single team (enriched members + tag + has_logo + status). Public — used to
