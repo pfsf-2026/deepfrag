@@ -813,12 +813,9 @@ def _ladder_tick(cur):
         if not det.get("full_match"):
             if not ch.get("flagged_review"):   # post the warning once, not every tick
                 try:
-                    cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)",
-                                ([ch["challenger_id"], ch["challenged_id"]],))
-                    nm = {r["id"]: r["name"] for r in cur.fetchall()}
                     bad = [f"{d['map']} (matched {d['a_n']}v{d['b_n']})" for d in det["decisive"] if not d["full"]]
-                    notify.send(content=(f"⚠️ **Needs manual review** — {nm.get(ch['challenger_id'], ch['challenger_id'])} vs "
-                                         f"{nm.get(ch['challenged_id'], ch['challenged_id'])}: the Bo3 looks complete but not all 4 "
+                    notify.send(content=(f"⚠️ **Needs manual review** — {_team_label(cur, ch['challenger_id'])} vs "
+                                         f"{_team_label(cur, ch['challenged_id'])}: the Bo3 looks complete but not all 4 "
                                          f"players matched in: {', '.join(bad)}. A roster id is likely wrong "
                                          f"(an in-game name didn't link to a profile) — fix the roster, then re-resolve. "
                                          f"Auto-resolve skipped."))
@@ -875,13 +872,13 @@ def _ladder_tick(cur):
     for r in cur.fetchall():
         d = r["agreed_at"] - now
         if not r["reminded_soon"] and timedelta(minutes=12) < d <= timedelta(minutes=70):
-            notify.match_reminder(r["a"], r["b"], r["agreed_at"].isoformat(), r["server"], kind="1h",
-                                  mention=_mentions(cur, r["challenger_id"], r["challenged_id"]))
+            notify.match_reminder(_team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"]),
+                                  r["agreed_at"].isoformat(), r["server"], kind="1h")
             cur.execute("UPDATE ladder_challenges SET reminded_soon=TRUE WHERE id=%s", (r["id"],))
             counts["reminded_1h"] += 1
         if not r["reminded_10m"] and timedelta(0) < d <= timedelta(minutes=12):
-            notify.match_reminder(r["a"], r["b"], r["agreed_at"].isoformat(), r["server"], kind="10m",
-                                  mention=_mentions(cur, r["challenger_id"], r["challenged_id"]))
+            notify.match_reminder(_team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"]),
+                                  r["agreed_at"].isoformat(), r["server"], kind="10m")
             cur.execute("UPDATE ladder_challenges SET reminded_10m=TRUE WHERE id=%s", (r["id"],))
             counts["reminded_10m"] += 1
 
@@ -897,10 +894,10 @@ def _ladder_tick(cur):
         try:
             dl = r["deadline"].astimezone(timezone.utc) if r["deadline"] else None
             left = f"<t:{int(dl.timestamp())}:R>" if dl else "soon"
-            notify.send(content=(f"{_mentions(cur, r['challenger_id'], r['challenged_id'])}\n"
-                                 f"⏳ **{r['a']}** vs **{r['b']}** still isn't scheduled. It's on **{r['b']}** "
+            cl, cd = _team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"])
+            notify.send(content=(f"⏳ {cl} vs {cd} still isn't scheduled. It's on {cd} "
                                  f"(challenged) to lock a time — deadline {left}, or they auto-forfeit their "
-                                 f"ladder position to **{r['a']}**."))
+                                 f"ladder position to {cl}."))
         except Exception:
             pass
         cur.execute("UPDATE ladder_challenges SET reminded_unsched_3d=TRUE WHERE id=%s", (r["id"],))
@@ -919,8 +916,8 @@ def _ladder_tick(cur):
     for r in cur.fetchall():
         if not (r["rules"] or {}).get("auto_forfeit", True):
             if not r["overdue_flagged"]:
-                notify.challenge_overdue(r["a"], r["b"], r["deadline"].isoformat() if r["deadline"] else None,
-                                         mention=_mentions(cur, r["challenger_id"], r["challenged_id"]))
+                notify.challenge_overdue(_team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"]),
+                                         r["deadline"].isoformat() if r["deadline"] else None)
                 cur.execute("UPDATE ladder_challenges SET overdue_flagged=TRUE WHERE id=%s", (r["id"],))
                 counts["overdue"] += 1
             continue
@@ -943,11 +940,11 @@ def _ladder_tick(cur):
                         continue
                     parts.append(f"{'⬇️' if tid == r['challenged_id'] else '↘️'} **{names.get(tid, tid)}** → #{rk}")
                 movement = "\n".join(parts)
-            notify.send(content=(f"{_mentions(cur, r['challenger_id'], r['challenged_id'])}\n"
-                                 f"🏳️ **{r['b']}** failed to schedule by the deadline — **auto-forfeit**. "
-                                 f"**{r['a']}** takes their ladder position." + (f"\n{movement}" if movement else "")))
+            notify.send(content=(f"🏳️ {_team_label(cur, r['challenged_id'])} failed to schedule by the deadline — "
+                                 f"**auto-forfeit**. {_team_label(cur, r['challenger_id'])} takes their ladder position."
+                                 + (f"\n{movement}" if movement else "")))
             if new_koth:
-                notify.koth_changed(names.get(new_koth))
+                notify.koth_changed(_team_label(cur, new_koth))
         except Exception:
             pass
     return counts
@@ -4104,6 +4101,18 @@ def _team_mentions(cur, team_id):
     return " ".join(f"<@{by[c]}>" for c in cids if c in by)
 
 
+def _team_label(cur, team_id):
+    """'**Team Name** (@p1 @p2)' — name + its players @-mentioned in parens. The
+    unified Discord building block (pings only fire from message content)."""
+    if not team_id:
+        return "?"
+    cur.execute("SELECT name FROM ladder_teams WHERE id=%s", (team_id,))
+    r = cur.fetchone()
+    name = (r and r["name"]) or f"#{team_id}"
+    ping = _team_mentions(cur, team_id)
+    return f"**{name}**" + (f" ({ping})" if ping else "")
+
+
 def _notify_result(cur, challenger_id, challenged_id, winner_id, maps, aw, bw, moves, match_id=None, preview=False):
     """Post a WINNER-first game report with players grouped + pinged by team.
     aw/bw are challenger/challenged scores; we orient everything to winner/loser."""
@@ -4163,7 +4172,7 @@ def _notify_result(cur, challenger_id, challenged_id, winner_id, maps, aw, bw, m
                               score=f"{wscore}-{lscore}", maps_line=maps_line, movement=movement, preview=preview)
         new_koth = next((tid for tid, r in moves.items() if r == 1), None)
         if new_koth and not preview:
-            notify.koth_changed(names.get(new_koth))
+            notify.koth_changed(_team_label(cur, new_koth))
     except Exception:
         pass
 
@@ -4210,19 +4219,19 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
         clean = sorted(clean)   # chronological in the Discord message + pick list
         cur.execute("UPDATE ladder_challenges SET proposed=%s, proposed_by=%s WHERE id=%s",
                     (json.dumps(clean), turn, challenge_id))
-        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
+        cl_lbl = _team_label(cur, ch["challenger_id"])
+        cd_lbl = _team_label(cur, ch["challenged_id"])
         conn.commit()
-    proposer = ch["challenger"] if turn == ch["challenger_id"] else ch["challenged"]
-    other = ch["challenged"] if turn == ch["challenger_id"] else ch["challenger"]
+    proposer = cl_lbl if turn == ch["challenger_id"] else cd_lbl
+    other = cd_lbl if turn == ch["challenger_id"] else cl_lbl
     try:
         import notify
         if clean:
             notify.match_proposal(
                 proposer, other, clean, initial=is_initial,
-                challenger=ch["challenger"], challenged=ch["challenged"],
+                challenger=cl_lbl, challenged=cd_lbl,
                 rungs_up=ch.get("rungs_up"),
-                deadline_iso=(ch["deadline"].isoformat() if ch.get("deadline") else None),
-                mention=mention)
+                deadline_iso=(ch["deadline"].isoformat() if ch.get("deadline") else None))
     except Exception:
         pass
     return {"challenge_id": challenge_id, "slots": clean, "proposed_by": turn}
@@ -4260,11 +4269,12 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
         cur.execute("""UPDATE ladder_challenges
                        SET agreed_at=%s, server=%s, status='scheduled' WHERE id=%s""",
                     (slot, (server or "").strip() or None, challenge_id))
-        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
+        a_lbl = _team_label(cur, ch["challenger_id"])
+        b_lbl = _team_label(cur, ch["challenged_id"])
         conn.commit()
     try:
         import notify
-        notify.game_scheduled(ch["challenger"], ch["challenged"], slot, (server or "").strip() or None, mention=mention)
+        notify.game_scheduled(a_lbl, b_lbl, slot, (server or "").strip() or None)
     except Exception:
         pass
     return {"challenge_id": challenge_id, "agreed_at": slot, "server": server, "status": "scheduled"}
@@ -4319,17 +4329,17 @@ def ladder_challenge_my_picks(challenge_id: int, authorization: str | None = Hea
                         (json.dumps(picks), agreed, challenge_id))
         else:
             cur.execute("UPDATE ladder_challenges SET picks=%s WHERE id=%s", (json.dumps(picks), challenge_id))
-        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
-        a_name, b_name = ch["challenger"], ch["challenged"]
+        a_lbl = _team_label(cur, ch["challenger_id"])
+        b_lbl = _team_label(cur, ch["challenged_id"])
         no_common = both and not agreed
         waiting = [m for m in members if not picks.get(m)]
         conn.commit()
     try:
         import notify
         if agreed:
-            notify.game_scheduled(a_name, b_name, agreed, None, mention=mention)
+            notify.game_scheduled(a_lbl, b_lbl, agreed, None)
         elif no_common:
-            notify.send(content=f"{mention}\n⚠️ **{b_name}**'s two players have no overlapping time among the offered slots — coordinate, or have **{a_name}** suggest different times.")
+            notify.send(content=f"⚠️ {b_lbl}'s two players have no overlapping time among the offered slots — coordinate, or have {a_lbl} suggest different times.")
     except Exception:
         pass
     return {"challenge_id": challenge_id, "scheduled": bool(agreed), "agreed_at": agreed,
@@ -4368,13 +4378,14 @@ def ladder_challenge_withdraw(challenge_id: int, authorization: str | None = Hea
         cur.execute("""UPDATE ladder_challenges SET status='cancelled', resolved_at=now()
                        WHERE id=%s AND status='open' RETURNING id""", (challenge_id,))
         row = cur.fetchone()
-        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
+        cl_lbl = _team_label(cur, ch["challenger_id"])
+        cd_lbl = _team_label(cur, ch["challenged_id"])
         conn.commit()
     if not row:
         raise HTTPException(409, "challenge is no longer open")
     try:
         import notify
-        notify.challenge_withdrawn(ch["challenger"], ch["challenged"], mention=mention)
+        notify.challenge_withdrawn(cl_lbl, cd_lbl)
     except Exception:
         pass
     return {"challenge_id": challenge_id, "status": "cancelled"}
@@ -4408,11 +4419,12 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
                        SET agreed_at=NULL, server=NULL, proposed='[]'::jsonb, proposed_by=NULL,
                            status='open', reminded_soon=FALSE, reminded_10m=FALSE, reminded_24h=FALSE
                        WHERE id=%s""", (challenge_id,))
-        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
+        cl_lbl = _team_label(cur, ch["challenger_id"])
+        cd_lbl = _team_label(cur, ch["challenged_id"])
         conn.commit()
     try:
         import notify
-        notify.send(content=f"{mention}\n🔄 **{ch['a']}** vs **{ch['b']}** is rescheduling — the agreed time was cleared, new times needed.")
+        notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} is rescheduling — the agreed time was cleared, new times needed.")
     except Exception:
         pass
     return {"challenge_id": challenge_id, "status": "open"}
@@ -4752,11 +4764,12 @@ def admin_ladder_reschedule(challenge_id: int, authorization: str | None = Heade
                        SET agreed_at=%s, server=%s,
                            reminded_soon=FALSE, reminded_10m=FALSE, reminded_24h=FALSE
                        WHERE id=%s""", (dt, new_server, challenge_id))
-        mention = _mentions(cur, ch["challenger_id"], ch["challenged_id"])
+        cl_lbl = _team_label(cur, ch["challenger_id"])
+        cd_lbl = _team_label(cur, ch["challenged_id"])
         conn.commit()
     try:
         import notify
-        notify.match_rescheduled(ch["a"], ch["b"], dt.isoformat(), new_server, mention=mention)
+        notify.match_rescheduled(cl_lbl, cd_lbl, dt.isoformat(), new_server)
     except Exception:
         pass
     return {"challenge_id": challenge_id, "agreed_at": dt.isoformat(), "server": new_server}
@@ -4779,22 +4792,16 @@ def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(d
             raise HTTPException(409, "challenge already resolved")
         moves = _ladder.apply_forfeit(cur, ch["ladder_id"], ch["challenged_id"])
         cur.execute("UPDATE ladder_challenges SET status='forfeited', resolved_at=now() WHERE id=%s", (challenge_id,))
-        cur.execute("SELECT name FROM ladder_teams WHERE id=%s", (ch["challenged_id"],))
-        row = cur.fetchone()
-        chd_name = row["name"] if row else f"#{ch['challenged_id']}"
+        chd_lbl = _team_label(cur, ch["challenged_id"])
         # A forfeit can promote the team below into rung 1.
         new_koth = next((tid for tid, r in moves.items() if r == 1 and tid != ch["challenged_id"]), None)
-        koth_name = None
-        if new_koth:
-            cur.execute("SELECT name FROM ladder_teams WHERE id=%s", (new_koth,))
-            r = cur.fetchone()
-            koth_name = r["name"] if r else None
+        koth_lbl = _team_label(cur, new_koth) if new_koth else None
         conn.commit()
     try:
         import notify
-        notify.forfeit_posted(chd_name)
-        if koth_name:
-            notify.koth_changed(koth_name)
+        notify.forfeit_posted(chd_lbl)
+        if koth_lbl:
+            notify.koth_changed(koth_lbl)
     except Exception:
         pass
     return {"forfeited": True, "moves": moves}

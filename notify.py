@@ -84,12 +84,11 @@ def _embed(title: str, description: str, color: int) -> dict:
 
 def challenge_issued(challenger: str, challenged: str, rungs_up: int, deadline_iso: str | None,
                      mention: str | None = None):
-    by = f"in by **{deadline_iso[:10]}**" if deadline_iso else "soon"
-    return send(content=mention or None, embed=_embed(
-        "⚔️ New challenge",
-        f"**{challenger}** challenged **{challenged}** "
-        f"({rungs_up} rung{'s' if rungs_up != 1 else ''} up).\nPlay {by}.",
-        COLOR_CHALLENGE))
+    """challenger/challenged are team LABELS ('**Name** (@p1 @p2)'), challenger
+    first. Pings live in content."""
+    by = f" Play by **{deadline_iso[:10]}**." if deadline_iso else ""
+    ups = f" ({rungs_up} rung{'s' if rungs_up != 1 else ''} up)"
+    return send(content=f"⚔️ {challenger} challenged {challenged}{ups}.{by}")
 
 
 def ladder_signup(player: str):
@@ -123,27 +122,24 @@ def match_proposal(proposer: str, other: str, slots_iso: list, *, initial: bool,
     times = "\n".join(f"• {fmt_et(s)}" for s in shown)
     if len(slots_iso) > len(shown):
         times += f"\n…and {len(slots_iso) - len(shown)} more"
+    # proposer/other/challenger/challenged are team LABELS (name + parens pings)
     if initial:
         ups = f" ({rungs_up} rung{'s' if rungs_up != 1 else ''} up)" if rungs_up else ""
-        by = f"\nPlay by **{deadline_iso[:10]}**." if deadline_iso else ""
-        title = "⚔️ New challenge"
-        desc = (f"**{challenger}** challenged **{challenged}**{ups}.{by}\n\n"
-                f"**{challenger}** can play:\n{times}\n\n"
-                f"**{challenged}** — pick a time (or suggest your own) on the ladder.")
+        by = f" Play by **{deadline_iso[:10]}**." if deadline_iso else ""
+        content = (f"⚔️ {challenger} challenged {challenged}{ups}.{by}\n\n"
+                   f"{challenger} can play:\n{times}\n\n"
+                   f"{challenged} — pick a time (or suggest your own) on the ladder.")
     else:
-        title = "🔄 New times suggested"
-        desc = (f"**{proposer}** suggested different times vs **{other}**:\n{times}\n\n"
-                f"**{other}** — pick one (or counter) on the ladder.")
-    return send(content=mention or None, embed=_embed(title, desc, COLOR_CHALLENGE))
+        content = (f"🔄 {proposer} suggested new times vs {other}:\n{times}\n\n"
+                   f"{other} — pick one (or counter) on the ladder.")
+    return send(content=content)
 
 
 def game_scheduled(team_a: str, team_b: str, when: str | None, server: str | None,
                    mention: str | None = None):
-    """A match was scheduled. Time shown in US Eastern (NA ladder)."""
-    bits = [f"**{team_a}** vs **{team_b}**", f"🗓️ {fmt_et(when)}"]
-    if server:
-        bits.append(f"🖥️ {server}")
-    return send(content=mention or None, embed=_embed("📅 Game scheduled", "\n".join(bits), COLOR_CHALLENGE))
+    """Match scheduled. team_a/team_b are LABELS, challenger (team_a) first."""
+    extra = f"\n🖥️ {server}" if server else ""
+    return send(content=f"📅 {team_a} vs {team_b}\n🗓️ {fmt_et(when)}{extra}")
 
 
 def result_posted(winner: str, loser: str, maps_line: str | None = None,
@@ -176,49 +172,38 @@ def result_grouped(winner: str, winner_ping: str, loser: str, loser_ping: str,
     return send(content=content, embed=_embed("🏆 Game result", "\n".join(desc), COLOR_WIN))
 
 
-def forfeit_posted(challenged: str):
-    return send(embed=_embed(
-        "⏳ Forfeit",
-        f"**{challenged}** didn't play in time and drops a rung.",
-        COLOR_WARN))
+def forfeit_posted(challenged: str, challenger: str | None = None):
+    """challenged/challenger are LABELS. Challenged drops; challenger takes it."""
+    tail = f" — {challenger} takes the position." if challenger else " and drops a rung."
+    return send(content=f"⏳ {challenged} didn't play in time{tail}")
 
 
 def challenge_withdrawn(challenger: str, challenged: str, mention: str | None = None):
-    """The challenger pulled their (not-yet-scheduled) challenge. Both teams free."""
-    return send(content=mention or None, embed=_embed(
-        "↩️ Challenge withdrawn",
-        f"**{challenger}** withdrew their challenge against **{challenged}**. "
-        f"Both teams are free again.",
-        COLOR_WARN))
+    """The challenger pulled their (not-yet-scheduled) challenge. Both teams free.
+    challenger/challenged are LABELS, challenger first."""
+    return send(content=f"↩️ {challenger} withdrew their challenge against {challenged}. "
+                        f"Both teams are free again.")
 
 
 def match_reminder(team_a: str, team_b: str, when: str | None, server: str | None,
                    kind: str = "1h", mention: str | None = None):
-    """Upcoming-match reminder. kind: '1h' (~1 hour out) or '10m' (starting in
-    ~10 min). Time shown in US Eastern."""
+    """Upcoming-match reminder. team_a/team_b are LABELS, challenger first."""
     head = "🔴 Match in ~10 minutes" if kind == "10m" else "🔔 Match in ~1 hour"
-    bits = [f"**{team_a}** vs **{team_b}**", f"🗓️ {fmt_et(when)}"]
-    if server:
-        bits.append(f"🖥️ {server}")
-    return send(content=mention or None, embed=_embed(head, "\n".join(bits), COLOR_CHALLENGE))
+    extra = f"\n🖥️ {server}" if server else ""
+    return send(content=f"{head}\n{team_a} vs {team_b}\n🗓️ {fmt_et(when)}{extra}")
 
 
 def match_rescheduled(team_a: str, team_b: str, when: str | None, server: str | None,
                       mention: str | None = None):
-    """An admin moved a scheduled match to a new time. Time in US Eastern."""
-    bits = [f"**{team_a}** vs **{team_b}**", f"🗓️ New time: **{fmt_et(when)}**"]
-    if server:
-        bits.append(f"🖥️ {server}")
-    return send(content=mention or None, embed=_embed("🔁 Match rescheduled", "\n".join(bits), COLOR_WARN))
+    """An admin moved a scheduled match. team_a/team_b are LABELS, challenger first."""
+    extra = f"\n🖥️ {server}" if server else ""
+    return send(content=f"🔁 Match rescheduled\n{team_a} vs {team_b}\n🗓️ New time: **{fmt_et(when)}**{extra}")
 
 
 def challenge_overdue(team_a: str, team_b: str, deadline: str | None, mention: str | None = None):
-    """A challenge blew past its play-by deadline — flag for admins."""
-    return send(content=mention or None, embed=_embed(
-        "⏳ Challenge overdue",
-        f"**{team_a}** vs **{team_b}** wasn't played by {fmt_et(deadline)}.\n"
-        f"Admins — review (forfeit the challenged team, or extend).",
-        COLOR_WARN))
+    """A challenge blew past its play-by deadline. team_a/team_b are LABELS."""
+    return send(content=f"⏳ Challenge overdue — {team_a} vs {team_b} wasn't played by "
+                        f"{fmt_et(deadline)}.\nAdmins — review (forfeit the challenged team, or extend).")
 
 
 def data_health_alert(problems: list, latest: str | None):
@@ -240,7 +225,5 @@ def support_ticket(num: int, area: str | None, title: str, who: str | None):
 
 
 def koth_changed(team: str):
-    return send(embed=_embed(
-        "👑 New King of the Hill",
-        f"**{team}** takes the top of the ladder!",
-        COLOR))
+    """team is a LABEL ('**Name** (@p1 @p2)')."""
+    return send(content=f"👑 {team} takes the top of the ladder — new King of the Hill!")
