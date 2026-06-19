@@ -182,6 +182,17 @@ static void FragBot_Path(gedict_t *self, int cmd_msec)
 	{
 		VectorCopy(self->fb.desired_angle, tgt);          /* native enemy aim */
 		smoothTime = fb_cvar("k_fb_smooth_aim", 0.09f);
+		/* LG tracking: when holding the LG and already roughly on-target, track
+		   much snappier (wiggle to stay on a hard-strafing enemy) so smoothing
+		   doesn't fall 1-3s behind. Only within a rough FOV — big acquisitions
+		   still use the normal smooth flick, so VYA/human-feel is preserved. */
+		if ((int) self->s.v.weapon == IT_LIGHTNING)
+		{
+			float ae = fb_adelta(tgt[1] - fragbot_view[slot][1]);
+			if (ae < 0) ae = -ae;
+			if (ae < fb_cvar("k_fb_lg_fov", 35.0f))
+				smoothTime = fb_cvar("k_fb_smooth_lg", 0.05f);
+		}
 	}
 	else if (reacting)
 	{
