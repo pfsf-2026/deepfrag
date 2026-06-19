@@ -17,6 +17,20 @@
  * instead of using invuln. FB_CVAR_FREEZE_PREWAR must be 0 (its default) or the
  * matchless server zeroes firing/jumping before the cmd is sent (bot_movement.c). */
 // FRAGBOT_ANCHOR: trap_makevectors(self->fb.desired_angle);
+//
+// LAB-ONLY second injection: disable ezcsqc on this build. The 1.48 ezcsqc
+// client draws players via a per-client CSQC weapon-prediction handshake that a
+// bot (no real client connection) can never complete, so bots render invisible.
+// The lab only needs to SEE bots, not client-side antilag, so we advertise
+// qwm_ezcsqc 0 -> the client falls back to standard player rendering -> bots
+// are visible again. (Fleet servers keep stock ezcsqc; this only affects the
+// fragbot gamedir's qwprogs.so.)
+// FRAGBOT_FILE2: g_main.c
+// FRAGBOT_ANCHOR2: sv_extensions = cvar("sv_mod_extensions");
+
+/* ===== FRAGBOT_CALL2 ===== */
+	cvar_set("qwm_ezcsqc", "0"); /* FragBot lab: standard rendering so bots are visible */
+/* ===== /FRAGBOT_CALL2 ===== */
 
 /* ===== FRAGBOT_BLOCK ===== */
 #define FRAGBOT_RJ_MODE 33
