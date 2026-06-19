@@ -1,21 +1,23 @@
-/* FragBot REAL rocket-jump executor seam. Mode 33.
+/* FragBot rocket-jump demonstrator seam. Mode 33.  STABLE / PINNED design.
  *
- * NO replay / NO teleport. The bot actually equips the RL, looks down at its
- * feet (or down-forward at a step), and presses JUMP + ATTACK on the SAME tick.
- * The ENGINE fires a real rocket -> real launch sound, real splash, real
- * self-damage knockback that throws the bot up exactly like a human RJ. Normal
- * player physics carries the whole arc. Cycles 3 jump styles forever so the set
- * can be watched on aerowalk:
- *   style 0 — vertical pop   : stand still, look straight down, jump+fire
- *   style 1 — long jump      : sprint forward to build speed, then down-forward jump+fire (air-steer)
- *   style 2 — short stair    : small forward, look down-forward, jump+fire
+ * Goal: let you WATCH a real rocket jump, reliably, without the bot wandering off
+ * or wedging itself in geometry. Earlier versions drove the bot horizontally
+ * (long/stair jumps) with no navigation, so it flung itself across aerowalk and
+ * got stuck floating. This version does ONE thing well:
+ *
+ *   - equip the RL, look straight DOWN at its feet, press JUMP + ATTACK together
+ *   - the ENGINE fires a real rocket -> real launch sound, splash, self-damage
+ *     knockback -> the bot pops STRAIGHT UP and lands on the SAME spot
+ *   - because there is no horizontal input, it cannot drift, wander, or wedge
+ *   - SELF-RECOVERY: if it is ever airborne too long (wedged), it snaps back to
+ *     its home spot on the ground and resumes. So it can never stay stuck.
  *
  * Native primitive reference: BotPerformRocketJump() in bot_botjump.c
- *   (SetRocketJumpAngles default pitch 78.25, desired_weapon_impulse=7, fb.firing=true).
+ *   (SetRocketJumpAngles pitch 78.25, desired_weapon_impulse=7, fb.firing=true).
  * Knockback only applies while takedamage is ON (combat.c T_Damage early-returns
- * on DAMAGE_NO), so we KEEP takedamage normal and just top health up each cycle
- * instead of using invuln. FB_CVAR_FREEZE_PREWAR must be 0 (its default) or the
- * matchless server zeroes firing/jumping before the cmd is sent (bot_movement.c). */
+ * on DAMAGE_NO) so we keep takedamage normal and top health up each tick.
+ * FB_CVAR_FREEZE_PREWAR must be 0 (default) or the matchless server zeroes
+ * firing/jumping before the cmd is sent (bot_movement.c). */
 // FRAGBOT_ANCHOR: trap_makevectors(self->fb.desired_angle);
 //
 // LAB-ONLY second injection: disable ezcsqc on this build. The 1.48 ezcsqc
@@ -39,49 +41,39 @@
 #define IT_ROCKET_LAUNCHER 32
 #endif
 
-/* per-style: aim pitch when firing (down = +), forward run-up frames before fire */
-static const float fragbot_rj_pitch[3] = { 80.0f, 50.0f, 68.0f };
-static const int   fragbot_rj_run[3]   = { 0,     14,    4     };
+#define FRAGBOT_RJ_PITCH      88.0f   /* look (almost) straight down at the feet */
+#define FRAGBOT_RJ_STUCK_AIR  180     /* ~2.3s airborne -> treat as wedged, recover */
+#define FRAGBOT_RJ_PAUSE      55      /* ~0.7s on the ground between jumps          */
 
-static int   fragbot_rj_phase[MAX_CLIENTS];   /* 0 wait/run, 1 fire, 2 air, 3 pause */
+static int   fragbot_rj_phase[MAX_CLIENTS];    /* 0 wait, 1 fire, 2 air, 3 pause */
 static int   fragbot_rj_timer[MAX_CLIENTS];
-static int   fragbot_rj_style[MAX_CLIENTS];
-static float fragbot_rj_yaw[MAX_CLIENTS];     /* locked facing for this jump */
+static float fragbot_rj_home[MAX_CLIENTS][3];  /* the spot it jumps from / returns to */
+static int   fragbot_rj_homeset[MAX_CLIENTS];
 static int   fragbot_rj_init[MAX_CLIENTS];
-
-/* Set dir_move_ to a horizontal unit vector in the locked yaw, using the
- * engine's own angle->vector conversion (pitch 0 -> level forward). Avoids any
- * trig here; the real trap_makevectors(desired_angle) right after recomputes
- * the globals for the actual cmd, so clobbering them here is harmless. */
-static void FragBot_RJ_Forward(gedict_t *self, float yaw)
-{
-	vec3_t a;
-	a[0] = 0; a[1] = yaw; a[2] = 0;
-	trap_makevectors(a);
-	self->fb.dir_move_[0] = g_globalvars.v_forward[0];
-	self->fb.dir_move_[1] = g_globalvars.v_forward[1];
-	self->fb.dir_move_[2] = 0;
-}
 
 static void FragBot_RJ(gedict_t *self)
 {
 	int slot = NUM_FOR_EDICT(self) - 1;
-	int st, onground;
+	int onground;
 
 	if (slot < 0 || slot >= MAX_CLIENTS) return;
+
 	if (!fragbot_rj_init[slot]) {
-		fragbot_rj_phase[slot] = 0;
-		fragbot_rj_timer[slot] = 0;
-		fragbot_rj_style[slot] = 0;
-		fragbot_rj_yaw[slot]   = self->fb.desired_angle[YAW];
-		fragbot_rj_init[slot]  = 1;
+		fragbot_rj_phase[slot]   = 0;
+		fragbot_rj_timer[slot]   = 0;
+		fragbot_rj_homeset[slot] = 0;
+		fragbot_rj_init[slot]    = 1;
 	}
 
-	st = fragbot_rj_style[slot];
-	if (st < 0 || st > 2) st = 0;
 	onground = (int) self->s.v.flags & FL_ONGROUND;
 
-	/* keep it alive + armed every tick (real RJ damage still launches it) */
+	/* home = the first ground spot we see; that is where every pop starts/returns */
+	if (!fragbot_rj_homeset[slot] && onground) {
+		VectorCopy(self->s.v.origin, fragbot_rj_home[slot]);
+		fragbot_rj_homeset[slot] = 1;
+	}
+
+	/* keep alive + armed every tick (real RJ damage still launches it) */
 	self->s.v.items = ((int) self->s.v.items) | IT_ROCKET_LAUNCHER;
 	if (self->s.v.ammo_rockets < 5) self->s.v.ammo_rockets = 50;
 	if (self->s.v.health < 150) self->s.v.health = 250;
@@ -89,58 +81,49 @@ static void FragBot_RJ(gedict_t *self)
 	self->s.v.currentammo = self->s.v.ammo_rockets;
 	self->fb.desired_weapon_impulse = 7;          /* RL; matches BotUsingCorrectWeapon */
 
-	/* default: no input this tick; keep a stable facing so it doesn't spin */
-	self->fb.firing = false;
+	/* default every tick: NO movement input at all (this is why it can't drift),
+	 * no firing/jumping, flat view aim straight down. */
+	self->fb.firing  = false;
 	self->fb.jumping = false;
 	VectorClear(self->fb.dir_move_);
-	self->fb.desired_angle[YAW]  = fragbot_rj_yaw[slot];
-	self->fb.desired_angle[ROLL] = 0;
+	self->fb.desired_angle[PITCH] = FRAGBOT_RJ_PITCH;
+	self->fb.desired_angle[ROLL]  = 0;
 
 	switch (fragbot_rj_phase[slot]) {
-	case 0: /* WAIT / RUN-UP: aim down, optionally sprint to build speed, then fire */
-		self->fb.desired_angle[PITCH] = fragbot_rj_pitch[st];
-		if (fragbot_rj_timer[slot] < fragbot_rj_run[st]) {
-			FragBot_RJ_Forward(self, fragbot_rj_yaw[slot]);
-			self->fb.desired_angle[PITCH] = 10.0f;       /* look ahead while running */
-			fragbot_rj_timer[slot] += 1;
-			break;
-		}
-		/* launch only when grounded, RL ready, and attack off cooldown */
+	case 0: /* WAIT: on the ground, RL ready, attack off cooldown -> fire */
 		if (onground && self->attack_finished < self->client_time) {
 			fragbot_rj_phase[slot] = 1;
 		}
 		break;
 
-	case 1: /* FIRE: jump + rocket at the feet on the SAME tick */
-		self->fb.desired_angle[PITCH] = fragbot_rj_pitch[st];
-		if (fragbot_rj_run[st] > 0) FragBot_RJ_Forward(self, fragbot_rj_yaw[slot]);
+	case 1: /* FIRE: jump + rocket at the feet on the SAME tick -> straight-up pop */
 		self->fb.firing  = true;
 		self->fb.jumping = true;
 		fragbot_rj_phase[slot] = 2;
 		fragbot_rj_timer[slot] = 0;
 		break;
 
-	case 2: /* AIR: real physics carries the arc; air-steer the long jump */
-		if (fragbot_rj_run[st] > 0) {
-			FragBot_RJ_Forward(self, fragbot_rj_yaw[slot]);
-			self->fb.desired_angle[PITCH] = 10.0f;
-		}
+	case 2: /* AIR: physics carries the straight-up arc; detect landing or wedge */
 		fragbot_rj_timer[slot] += 1;
-		/* landed (after actually leaving the ground) or safety timeout */
-		if ((fragbot_rj_timer[slot] > 6 && onground) || fragbot_rj_timer[slot] > 250) {
+		if (fragbot_rj_timer[slot] > 6 && onground) {
 			fragbot_rj_phase[slot] = 3;
-			fragbot_rj_timer[slot] = 60;                 /* ~0.8s to show the landing */
+			fragbot_rj_timer[slot] = FRAGBOT_RJ_PAUSE;
+		}
+		else if (fragbot_rj_timer[slot] > FRAGBOT_RJ_STUCK_AIR && fragbot_rj_homeset[slot]) {
+			/* wedged / never came down -> recover to home spot on the ground */
+			setorigin(self, PASSVEC3(fragbot_rj_home[slot]));
+			VectorClear(self->s.v.velocity);
+			fragbot_rj_phase[slot] = 3;
+			fragbot_rj_timer[slot] = FRAGBOT_RJ_PAUSE;
 		}
 		break;
 
-	case 3: /* PAUSE on the ground, then advance to the next style */
-		self->fb.desired_angle[PITCH] = 15.0f;
+	case 3: /* PAUSE: stand on the ground a beat so the landing reads, then repeat */
+		self->fb.desired_angle[PITCH] = 12.0f;   /* look up a little between pops */
 		fragbot_rj_timer[slot] -= 1;
 		if (fragbot_rj_timer[slot] <= 0) {
-			fragbot_rj_style[slot] = (st + 1) % 3;
 			fragbot_rj_phase[slot] = 0;
 			fragbot_rj_timer[slot] = 0;
-			fragbot_rj_yaw[slot]   = self->fb.desired_angle[YAW]; /* re-lock facing */
 		}
 		break;
 	}
