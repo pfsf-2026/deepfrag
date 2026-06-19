@@ -373,8 +373,12 @@ class ParseState:
         self.viewentity = None       # entity# of the recorder (svc_setview)
         self.self_player = None      # player slot of the recorder
         self.stats = {}              # current stat values (last seen)
+        # most recent view angles decoded from the POV delta usercmd
+        # (CM_ANGLE1 -> pitch, CM_ANGLE2 -> yaw), in degrees [-180,180].
+        self.last_pitch = 0.0
+        self.last_yaw = 0.0
         # time series for the recorder (POV) player:
-        # list of (time, x, y, z, vx, vy, vz, have_vel)
+        # list of (time, x, y, z, vx, vy, vz, have_vel, pitch, yaw)
         self.samples = []
         # stat events: list of (time, stat_index, value)
         self.stat_events = []
@@ -464,9 +468,17 @@ def parse_delta_usercmd(r: MsgReader, st: ParseState):
             r.read_byte()
     else:
         if bits & CM_ANGLE1:
-            r.read_short()
+            raw = r.read_short() & 0xffff
+            ang = raw * 360.0 / 65536.0
+            if ang >= 180.0:
+                ang -= 360.0
+            st.last_pitch = ang
         if bits & CM_ANGLE2:
-            r.read_short()
+            raw = r.read_short() & 0xffff
+            ang = raw * 360.0 / 65536.0
+            if ang >= 180.0:
+                ang -= 360.0
+            st.last_yaw = ang
         if bits & CM_ANGLE3:
             r.read_short()
         if bits & CM_FORWARD:
@@ -561,7 +573,8 @@ def parse_playerinfo(r: MsgReader, st: ParseState):
     is_self = (st.self_player is None) or (num == st.self_player)
     if is_self:
         st.samples.append(
-            (st.demotime, ox, oy, oz, vx, vy, vz, have_vel)
+            (st.demotime, ox, oy, oz, vx, vy, vz, have_vel,
+             st.last_pitch, st.last_yaw)
         )
 
 
@@ -1081,7 +1094,7 @@ def derive_velocity(samples):
     else finite-differenced origin."""
     out = []
     for i, s in enumerate(samples):
-        t, x, y, z, vx, vy, vz, have_vel = s
+        t, x, y, z, vx, vy, vz, have_vel = s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]
         if not have_vel and i > 0:
             tp, xp, yp, zp = samples[i - 1][0], samples[i - 1][1], samples[i - 1][2], samples[i - 1][3]
             dt = t - tp
@@ -1162,6 +1175,70 @@ def segment_attempts(samples, stat_events):
 
 
 # --------------------------------------------------------------------------- #
+# Trace export (successful RJ jump windows for the FragBot puppet seam)
+# --------------------------------------------------------------------------- #
+EXPORT_PRE = 0.3      # s before launch to start a trace
+EXPORT_POST = 1.6     # s after launch to end a trace
+
+
+def export_traces(st: ParseState, demo_label: str, name_prefix: str):
+    """For each SUCCESSFUL attempt (reached_RA), slice the per-frame samples from
+    (launch - 0.3s) to (launch + 1.6s) into a trace of
+    [msec, ox,oy,oz, vx,vy,vz, pitch, yaw] frames. msec is the per-frame demo-time
+    delta in ms; origins/velocities are the (velocity-derived) floats; angles deg.
+    """
+    import bisect
+
+    attempts = segment_attempts(st.samples, st.stat_events)
+    track = derive_velocity(st.samples)        # [(t,x,y,z,vx,vy,vz), ...]
+    times = [p[0] for p in track]
+
+    traces = []
+    idx = 0
+    for a in attempts:
+        if not a["reached_RA"]:
+            continue
+        idx += 1
+        t_launch = a["time_s"]
+        lo = bisect.bisect_left(times, t_launch - EXPORT_PRE)
+        hi = bisect.bisect_right(times, t_launch + EXPORT_POST)
+        win = list(range(lo, hi))
+        if not win:
+            continue
+
+        frames = []
+        prev_t = None
+        for si in win:
+            t = track[si][0]
+            x, y, z = track[si][1], track[si][2], track[si][3]
+            vx, vy, vz = track[si][4], track[si][5], track[si][6]
+            # angles live on the raw sample tuple at indices 8,9
+            pitch = st.samples[si][8]
+            yaw = st.samples[si][9]
+            if prev_t is None:
+                msec = 13     # nominal first-frame delta (~77Hz)
+            else:
+                msec = int(round((t - prev_t) * 1000.0))
+                if msec <= 0:
+                    msec = 1
+            prev_t = t
+            frames.append([
+                msec,
+                float(x), float(y), float(z),
+                float(vx), float(vy), float(vz),
+                float(pitch), float(yaw),
+            ])
+
+        traces.append({
+            "name": f"{name_prefix}_{idx}",
+            "demo": demo_label,
+            "self_damage": a["self_damage"],
+            "frames": frames,
+        })
+    return traces
+
+
+# --------------------------------------------------------------------------- #
 # Output
 # --------------------------------------------------------------------------- #
 def report(path, st: ParseState):
@@ -1211,12 +1288,30 @@ def main(argv=None):
     )
     ap.add_argument("demo", help="Path to a first-person QuakeWorld .qwd demo")
     ap.add_argument("--json", action="store_true", help="Emit JSON only")
+    ap.add_argument(
+        "--export", metavar="OUT.json",
+        help="Export successful-RJ jump-window traces (puppet seam input) to JSON",
+    )
     args = ap.parse_args(argv)
 
     with open(args.demo, "rb") as f:
         data = f.read()
 
     st = parse_qwd(data)
+
+    if args.export:
+        import os
+        stem = os.path.splitext(os.path.basename(args.demo))[0]
+        prefix = stem[3:] if stem.startswith("rj_") else stem
+        traces = export_traces(st, demo_label=stem, name_prefix=prefix)
+        with open(args.export, "w") as f:
+            json.dump({"traces": traces}, f, indent=2)
+        print(
+            f"{args.demo}: exported {len(traces)} successful trace(s) -> "
+            f"{args.export}"
+        )
+        return 0
+
     md, summary = report(args.demo, st)
 
     if args.json:
