@@ -50,6 +50,7 @@ static int   fragbot_rj_timer[MAX_CLIENTS];
 static float fragbot_rj_home[MAX_CLIENTS][3];  /* the spot it jumps from / returns to */
 static int   fragbot_rj_homeset[MAX_CLIENTS];
 static int   fragbot_rj_init[MAX_CLIENTS];
+static int   fragbot_rj_dbgtick[MAX_CLIENTS];  /* telemetry throttle */
 
 static void FragBot_RJ(gedict_t *self)
 {
@@ -67,10 +68,37 @@ static void FragBot_RJ(gedict_t *self)
 
 	onground = (int) self->s.v.flags & FL_ONGROUND;
 
+	/* TELEMETRY (gated on k_fb_rj_debug): dump pos/onground/phase to the server
+	 * console (-> screen log) ~2x/sec so the harness can trace the trajectory and
+	 * see exactly where a bot spawns and where/if it gets stuck. */
+	if ((int) cvar("k_fb_rj_debug")) {
+		if (++fragbot_rj_dbgtick[slot] >= 38) {
+			fragbot_rj_dbgtick[slot] = 0;
+			G_bprint(PRINT_HIGH, "RJ s%d ph%d og%d hp%d vz%d xyz %d %d %d home %d %d %d\n",
+				slot, fragbot_rj_phase[slot], onground, (int) self->s.v.health,
+				(int) self->s.v.velocity[2],
+				(int) self->s.v.origin[0], (int) self->s.v.origin[1], (int) self->s.v.origin[2],
+				(int) fragbot_rj_home[slot][0], (int) fragbot_rj_home[slot][1], (int) fragbot_rj_home[slot][2]);
+		}
+	}
+
 	/* home = the first ground spot we see; that is where every pop starts/returns */
 	if (!fragbot_rj_homeset[slot] && onground) {
 		VectorCopy(self->s.v.origin, fragbot_rj_home[slot]);
 		fragbot_rj_homeset[slot] = 1;
+	}
+
+	/* HARD HORIZONTAL PIN: lock x,y to home every tick (keep real z). This makes
+	 * the pop perfectly vertical AND corrects any drift from a NEIGHBOUR bot's
+	 * rocket splash (cross-splash pushes a bot one frame before velocity-zero can
+	 * catch it; with many bots that cascades into 700+ unit wander). Pinning x,y
+	 * keeps every bot on its own spawn so they never drift into each other. */
+	if (fragbot_rj_homeset[slot]) {
+		vec3_t p;
+		p[0] = fragbot_rj_home[slot][0];
+		p[1] = fragbot_rj_home[slot][1];
+		p[2] = self->s.v.origin[2];   /* keep the real vertical position */
+		setorigin(self, PASSVEC3(p));
 	}
 
 	/* keep alive + armed every tick (real RJ damage still launches it) */
@@ -81,13 +109,20 @@ static void FragBot_RJ(gedict_t *self)
 	self->s.v.currentammo = self->s.v.ammo_rockets;
 	self->fb.desired_weapon_impulse = 7;          /* RL; matches BotUsingCorrectWeapon */
 
-	/* default every tick: NO movement input at all (this is why it can't drift),
-	 * no firing/jumping, flat view aim straight down. */
+	/* default every tick: NO movement input at all, no firing/jumping, aim down. */
 	self->fb.firing  = false;
 	self->fb.jumping = false;
 	VectorClear(self->fb.dir_move_);
 	self->fb.desired_angle[PITCH] = FRAGBOT_RJ_PITCH;
 	self->fb.desired_angle[ROLL]  = 0;
+
+	/* HORIZONTAL PIN: zero any horizontal velocity every tick. The rocket pop's
+	 * sideways splash component (and any slide) is cancelled, so the bot launches
+	 * PURELY vertical and never drifts/wanders off its spawn spot. Vertical
+	 * velocity (the actual launch) is untouched. This is the real fix for the
+	 * "drifts around / ends up in a weird spot" behavior. */
+	self->s.v.velocity[0] = 0;
+	self->s.v.velocity[1] = 0;
 
 	switch (fragbot_rj_phase[slot]) {
 	case 0: /* WAIT: on the ground, RL ready, attack off cooldown -> fire */
