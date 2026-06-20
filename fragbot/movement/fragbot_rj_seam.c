@@ -43,7 +43,7 @@
 
 #define FRAGBOT_RJ_PITCH      88.0f   /* look (almost) straight down at the feet */
 #define FRAGBOT_RJ_STUCK_AIR  180     /* ~2.3s airborne -> treat as wedged, recover */
-#define FRAGBOT_RJ_PAUSE      55      /* ~0.7s on the ground between jumps          */
+#define FRAGBOT_RJ_PAUSE      150     /* ~2s on the ground between jumps (clear cadence) */
 
 static int   fragbot_rj_phase[MAX_CLIENTS];    /* 0 wait, 1 fire, 2 air, 3 pause */
 static int   fragbot_rj_timer[MAX_CLIENTS];
