@@ -76,6 +76,21 @@ static void FragBot_CoupledAirStrafe(gedict_t *self)
 	self->fb.desired_angle[YAW]   = anglemod(base_yaw + amp * tri);
 	self->fb.desired_angle[ROLL]  = 0;
 
+	/* AIR CONTROL (regression fix for KTX 1.48): the native frogbot now leaves
+	 * dir_move_ = 0 while airborne, so the weaving view had nothing to project ->
+	 * the bot just coasted ballistically (floated) while the view panned. Set
+	 * dir_move_ forward (base heading) ourselves while airborne so the weave turns
+	 * it into real air-strafe acceleration. On the ground we leave dir_move_ alone
+	 * so the native wall-aware navigation still drives the path. */
+	if (!on_ground) {
+		vec3_t a;
+		a[0] = 0; a[1] = base_yaw; a[2] = 0;
+		trap_makevectors(a);
+		self->fb.dir_move_[0] = g_globalvars.v_forward[0];
+		self->fb.dir_move_[1] = g_globalvars.v_forward[1];
+		self->fb.dir_move_[2] = 0;
+	}
+
 	/* JUMP only once we've built near ground-max speed, so the hop carries real
 	 * distance and can be chained into a bunnyhop. Jumping from a standstill =
 	 * useless little hops. Release in the air -> fresh press on every landing. */
@@ -83,6 +98,18 @@ static void FragBot_CoupledAirStrafe(gedict_t *self)
 	if (jump_min <= 0) jump_min = 300.0f;
 	self->fb.jumping = (on_ground && speed >= jump_min) ? true : false;
 	self->fb.firing  = false;  /* movement-only demonstrator */
+
+	/* DEBUG (k_fb_dbg): is it navigating (nav>0, horizontal progress) or stuck/
+	 * floating (og0, nav0, no xy change)? + spawn z. ~2x/sec. */
+	{
+		static int fb_dbgtick[MAX_CLIENTS];
+		if ((int) cvar("k_fb_dbg") && ++fb_dbgtick[slot] >= 38) {
+			fb_dbgtick[slot] = 0;
+			G_bprint(2, "FB s%d og%d spd%d move%d xyz %d %d %d\n", slot, on_ground,
+				(int) speed, (int) (VectorLength(self->fb.dir_move_) * 100),
+				(int) self->s.v.origin[0], (int) self->s.v.origin[1], (int) self->s.v.origin[2]);
+		}
+	}
 }
 /* ===== /FRAGBOT_BLOCK ===== */
 
