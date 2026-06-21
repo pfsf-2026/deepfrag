@@ -30,6 +30,8 @@
 static float fragbot_phase[MAX_CLIENTS];
 static float fragbot_base[MAX_CLIENTS];      /* low-passed base heading (deg) */
 static int   fragbot_base_init[MAX_CLIENTS];
+static int   fragbot_grounded[MAX_CLIENTS];  /* has touched ground at least once */
+static int   fragbot_spawnf[MAX_CLIENTS];    /* frames since spawn (spawn telemetry) */
 
 static void FragBot_CoupledAirStrafe(gedict_t *self)
 {
@@ -56,12 +58,22 @@ static void FragBot_CoupledAirStrafe(gedict_t *self)
 	else                                     raw_yaw = self->s.v.angles[YAW];
 
 	/* LOW-PASS the base heading so combat/stuck thrash doesn't whip the view */
-	if (!fragbot_base_init[slot]) { fragbot_base[slot] = raw_yaw; fragbot_base_init[slot] = 1; }
+	if (!fragbot_base_init[slot]) { fragbot_base[slot] = raw_yaw; fragbot_base_init[slot] = 1; fragbot_spawnf[slot] = 0; fragbot_grounded[slot] = 0; }
 	d = anglemod(raw_yaw - fragbot_base[slot] + 180.0f) - 180.0f;
 	fragbot_base[slot] = anglemod(fragbot_base[slot] + 0.20f * d);
 	base_yaw = fragbot_base[slot];
 
 	on_ground = ((int)self->s.v.flags & FL_ONGROUND) ? 1 : 0;
+	if (on_ground) fragbot_grounded[slot] = 1;
+
+	/* SPAWN TRACE (k_fb_dbg): unthrottled for the first ~2s so we SEE the spawn
+	 * tick + whether it falls to ground. z is origin Z; gr=touched-ground-yet. */
+	if (fragbot_spawnf[slot] < 150) {
+		fragbot_spawnf[slot]++;
+		if ((int) cvar("k_fb_dbg") && (fragbot_spawnf[slot] <= 6 || fragbot_spawnf[slot] % 10 == 0))
+			G_bprint(2, "SPAWN s%d f%d og%d z%d gr%d\n", slot, fragbot_spawnf[slot],
+				on_ground, (int) self->s.v.origin[2], fragbot_grounded[slot]);
+	}
 
 	/* On the GROUND: run STRAIGHT (no weave) to build up to ~ground-max speed.
 	 * In the AIR: weave to air-strafe. Air-strafe is an airborne technique, and
@@ -82,7 +94,7 @@ static void FragBot_CoupledAirStrafe(gedict_t *self)
 	 * dir_move_ forward (base heading) ourselves while airborne so the weave turns
 	 * it into real air-strafe acceleration. On the ground we leave dir_move_ alone
 	 * so the native wall-aware navigation still drives the path. */
-	if (!on_ground) {
+	if (!on_ground && fragbot_grounded[slot]) {  /* only after it has landed once -> a spawn-airborne bot falls naturally first */
 		vec3_t a;
 		a[0] = 0; a[1] = base_yaw; a[2] = 0;
 		trap_makevectors(a);
