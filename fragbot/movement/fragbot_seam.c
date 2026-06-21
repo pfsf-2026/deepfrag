@@ -13,6 +13,18 @@
  * together = human-like coupling. Smooth ramp (not a 2-position toggle) fixes the
  * snap-snap. Bunnyhop needs pm_ktjump 1 (auto-hop on held jump).
  * Self-contained; uses only stock KTX/frogbot fields. No komodo dependency. */
+// FRAGBOT_ANCHOR: trap_makevectors(self->fb.desired_angle);
+//
+// Second injection: disable ezcsqc on this lab build so bots are VISIBLE. KTX
+// 1.48 added a per-client CSQC handshake bots can't complete -> bots render
+// invisible on ezcsqc servers. The lab only needs to watch movement, so advertise
+// qwm_ezcsqc 0 -> standard rendering. (Fleet keeps stock ezcsqc.)
+// FRAGBOT_FILE2: g_main.c
+// FRAGBOT_ANCHOR2: sv_extensions = cvar("sv_mod_extensions");
+
+/* ===== FRAGBOT_CALL2 ===== */
+	cvar_set("qwm_ezcsqc", "0"); /* FragBot lab: standard rendering so bots are visible */
+/* ===== /FRAGBOT_CALL2 ===== */
 
 /* ===== FRAGBOT_BLOCK ===== */
 static float fragbot_phase[MAX_CLIENTS];
