@@ -17,6 +17,7 @@
 
 /* ===== FRAGBOT_CALL2 ===== */
 	cvar_set("qwm_ezcsqc", "0"); /* FragBot lab: standard rendering so bots are visible */
+	localcmd("serverinfo fragbot_build \"@@FRAGBOT_BUILD@@\"\n"); /* deploy stamps this */
 /* ===== /FRAGBOT_CALL2 ===== */
 
 /* ===== FRAGBOT_BLOCK ===== */

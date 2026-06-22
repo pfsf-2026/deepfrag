@@ -24,6 +24,10 @@
 
 /* ===== FRAGBOT_CALL2 ===== */
 	cvar_set("qwm_ezcsqc", "0"); /* FragBot lab: standard rendering so bots are visible */
+	/* BUILD STAMP: deploy script rewrites @@FRAGBOT_BUILD@@ to a unique id per build,
+	 * baked into THIS .so and advertised in serverinfo so we can query the LIVE
+	 * server and confirm exactly which build is loaded (catches stale .so in mem). */
+	localcmd("serverinfo fragbot_build \"@@FRAGBOT_BUILD@@\"\n");
 /* ===== /FRAGBOT_CALL2 ===== */
 
 /* ===== FRAGBOT_BLOCK ===== */
