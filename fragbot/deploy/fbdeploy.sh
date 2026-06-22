@@ -38,6 +38,10 @@ cp "$SO" $NQ/fragbot/qwprogs.so
 cd $NQ
 sed -i "s/^set k_fb_fragbot_mode .*/set k_fb_fragbot_mode $MODE/" fragbot/port_29001.cfg
 sed -i "s/^set k_defmap .*/set k_defmap $MAP/" fragbot/port_29001.cfg
+# keep mode+map across matchless level cycles (this cfg is re-exec'd each cycle,
+# and otherwise resets them -> bot reverts to the wrong mode/map)
+MC=fragbot/configs/usermodes/matchless/default.cfg
+[ -f "$MC" ] && sed -i "s/^set k_fb_fragbot_mode .*/set k_fb_fragbot_mode $MODE/g; s/^set k_ml_0 .*/set k_ml_0 $MAP/g; s/^set k_ml_1 .*/set k_ml_1 \"\"/g; s/^set k_ml_2 .*/set k_ml_2 \"\"/g; s/^set k_ml_3 .*/set k_ml_3 \"\"/g" "$MC"
 : > "$LOG"
 screen -L -Logfile "$LOG" -dmS qw_29001 ./mvdsv -port 29001 -mem 64 -game fragbot +exec port_29001.cfg
 sleep 4; screen -S qw_29001 -p 0 -X stuff "map $MAP$(printf \\r)"; sleep 3

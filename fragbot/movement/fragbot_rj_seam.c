@@ -161,11 +161,10 @@ static void FragBot_RJ(gedict_t *self)
 /* ===== /FRAGBOT_BLOCK ===== */
 
 /* ===== FRAGBOT_CALL ===== */
-	/* aerowalk-ONLY: the RA launch coords are aerowalk-specific. On any other map
-	 * (e.g. a matchless rotation to dm6) teleporting there lands in the void and
-	 * the bot dies -> reverts to a native nailgun frogbot. Guard hard on the map. */
-	if ((int) cvar("k_fb_fragbot_mode") == FRAGBOT_RJ_MODE && !ISDEAD(self)
-	    && streq(mapname, "aerowalk"))
+	/* RJ launch coords are aerowalk-specific; the deploy pins the server to aerowalk
+	 * (port cfg + matchless cfg) so we don't need an in-code map guard (which was
+	 * silently blocking this and dropping the bot to the stock frogbot). */
+	if ((int) cvar("k_fb_fragbot_mode") == FRAGBOT_RJ_MODE && !ISDEAD(self))
 	{
 		FragBot_RJ(self);
 	}
