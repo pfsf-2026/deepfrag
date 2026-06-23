@@ -37,6 +37,117 @@ static int   fragbot_base_init[MAX_CLIENTS];
 static int   fragbot_grounded[MAX_CLIENTS];  /* has touched ground at least once */
 static int   fragbot_spawnf[MAX_CLIENTS];    /* frames since spawn (spawn telemetry) */
 
+/* ---- mode 31 (human aim smoothing / anti-snap) per-bot state ---- */
+static float fragbot_aim_yaw[MAX_CLIENTS];    /* current SMOOTHED yaw the bot is "looking" */
+static float fragbot_aim_pitch[MAX_CLIENTS];  /* current SMOOTHED pitch */
+static int   fragbot_aim_init[MAX_CLIENTS];   /* state initialised for this slot */
+static float fragbot_aim_react[MAX_CLIENTS];  /* reaction-latency hold timer, seconds remaining */
+static float fragbot_aim_lasttgt[MAX_CLIENTS];/* last target yaw seen (to detect big reacquire) */
+
+/* MODE 31 — AIM SMOOTHING ONLY (anti-snap). Layered on top of native fighting +
+ * native waypoint navigation. Native frogbot keeps doing target-selection,
+ * waypoint nav, firing AND movement. This function ONLY filters the VIEW ANGLE:
+ * native has already set self->fb.desired_angle to point at the current target
+ * (we run right before trap_makevectors). We slew a smoothed yaw/pitch toward
+ * that target at a capped human turn rate (shortest angular path) and write the
+ * smoothed angles BACK into desired_angle so native's makevectors + firing use
+ * the human-tracked aim instead of a 1-frame teleport-snap.
+ *
+ * It does NOT touch dir_move_, jumping, or firing -> movement/nav/trigger stay
+ * 100% native. Because the body moves along native pathing while the view turns
+ * smoothly toward enemies, aim/look stay coherent with movement (proper VYA),
+ * with NO decoupled spinning and NO bunnyhop.
+ *
+ * Cvars (tune live):
+ *   k_fb_aim_yaw_rate    deg/s, max yaw slew     (default 320; 180 flick ~0.56s)
+ *   k_fb_aim_pitch_rate  deg/s, max pitch slew   (default 220)
+ *   k_fb_aim_react_ms    ms hold on a big target jump (>~40 deg) before slewing
+ *                        toward the new target  (default 120; 0 disables latency) */
+static void FragBot_AimSmooth(gedict_t *self)
+{
+	int    slot = NUM_FOR_EDICT(self) - 1;
+	float  yaw_rate, pitch_rate, react_s, ft;
+	float  tgt_yaw, tgt_pitch, dy, dp, maxstep_yaw, maxstep_pitch, jump;
+
+	if (slot < 0 || slot >= MAX_CLIENTS) return;
+
+	ft = g_globalvars.frametime;
+	if (ft <= 0.0f) return;                 /* nothing to slew this tick */
+
+	yaw_rate = cvar("k_fb_aim_yaw_rate");
+	if (yaw_rate <= 0.0f) yaw_rate = 320.0f;
+	pitch_rate = cvar("k_fb_aim_pitch_rate");
+	if (pitch_rate <= 0.0f) pitch_rate = 220.0f;
+	react_s = cvar("k_fb_aim_react_ms") * 0.001f;   /* may be 0 -> latency off */
+
+	/* native target angle (already aimed at the current enemy / nav heading) */
+	tgt_yaw   = self->fb.desired_angle[YAW];
+	tgt_pitch = self->fb.desired_angle[PITCH];
+
+	/* init the smoothed aim to the current target on first run / after respawn */
+	if (!fragbot_aim_init[slot]) {
+		fragbot_aim_yaw[slot]     = tgt_yaw;
+		fragbot_aim_pitch[slot]   = tgt_pitch;
+		fragbot_aim_lasttgt[slot] = tgt_yaw;
+		fragbot_aim_react[slot]   = 0.0f;
+		fragbot_aim_init[slot]    = 1;
+	}
+
+	/* REACTION LATENCY: if the target yaw jumps a lot vs where we are looking
+	 * (new enemy / big reacquire), hold for react_s before resuming the slew. */
+	jump = anglemod(tgt_yaw - fragbot_aim_yaw[slot] + 180.0f) - 180.0f;  /* [-180,180] */
+	if (react_s > 0.0f && fabs(jump) > 40.0f) {
+		/* only (re)arm the timer when the target itself moved a lot since last
+		 * tick -- i.e. a genuine switch, not us merely being mid-turn toward it */
+		float tgtmove = anglemod(tgt_yaw - fragbot_aim_lasttgt[slot] + 180.0f) - 180.0f;
+		if (fabs(tgtmove) > 40.0f)
+			fragbot_aim_react[slot] = react_s;
+	}
+	fragbot_aim_lasttgt[slot] = tgt_yaw;
+
+	if (fragbot_aim_react[slot] > 0.0f) {
+		/* still reacting: don't move the aim, just count the timer down. Native
+		 * firing may still trigger, but aim is off-target so it mostly won't hit
+		 * -- a human-like "caught off guard" beat. */
+		fragbot_aim_react[slot] -= ft;
+		self->fb.desired_angle[YAW]   = fragbot_aim_yaw[slot];
+		self->fb.desired_angle[PITCH] = fragbot_aim_pitch[slot];
+		return;
+	}
+
+	maxstep_yaw   = yaw_rate   * ft;
+	maxstep_pitch = pitch_rate * ft;
+
+	/* YAW: slew toward target by at most maxstep, via shortest angular delta */
+	dy = anglemod(tgt_yaw - fragbot_aim_yaw[slot] + 180.0f) - 180.0f;
+	if (dy >  maxstep_yaw) dy =  maxstep_yaw;
+	if (dy < -maxstep_yaw) dy = -maxstep_yaw;
+	fragbot_aim_yaw[slot] = anglemod(fragbot_aim_yaw[slot] + dy);
+
+	/* PITCH: pitch is naturally [-90,90]; treat as shortest delta too */
+	dp = anglemod(tgt_pitch - fragbot_aim_pitch[slot] + 180.0f) - 180.0f;
+	if (dp >  maxstep_pitch) dp =  maxstep_pitch;
+	if (dp < -maxstep_pitch) dp = -maxstep_pitch;
+	fragbot_aim_pitch[slot] = fragbot_aim_pitch[slot] + dp;
+
+	/* write smoothed aim back so native makevectors + firing use it */
+	self->fb.desired_angle[YAW]   = anglemod(fragbot_aim_yaw[slot]);
+	self->fb.desired_angle[PITCH] = fragbot_aim_pitch[slot];
+	/* ROLL left untouched (native) */
+
+	/* DEBUG (k_fb_dbg): how far is the smoothed aim trailing the native target?
+	 * Big native snaps show up as a large gap that our slew is closing. ~2x/s. */
+	{
+		static int aim_dbgtick[MAX_CLIENTS];
+		if ((int) cvar("k_fb_dbg") && ++aim_dbgtick[slot] >= 38) {
+			aim_dbgtick[slot] = 0;
+			G_bprint(2, "AIM s%d tgtyaw%d aimyaw%d gap%d react%d\n", slot,
+				(int) tgt_yaw, (int) fragbot_aim_yaw[slot], (int) jump,
+				(int) (fragbot_aim_react[slot] * 1000));
+		}
+	}
+}
+
 static void FragBot_CoupledAirStrafe(gedict_t *self)
 {
 	int    slot = NUM_FOR_EDICT(self) - 1;
@@ -162,5 +273,17 @@ static void FragBot_CoupledAirStrafe(gedict_t *self)
 	    && !(match_in_progress != 2 && cvar(FB_CVAR_FREEZE_PREWAR)))
 	{
 		FragBot_CoupledAirStrafe(self);
+	}
+	/* MODE 31 — human aim smoothing (anti-snap) only. No bunnyhop, no view-weave,
+	 * no movement override: native drives fight/nav/fire/move, we filter the view. */
+	else if ((int)cvar("k_fb_fragbot_mode") == 31)
+	{
+		int aslot = NUM_FOR_EDICT(self) - 1;
+		if (ISDEAD(self)) {
+			/* dead: forget smoothed state so we re-init to the new aim on respawn */
+			if (aslot >= 0 && aslot < MAX_CLIENTS) fragbot_aim_init[aslot] = 0;
+		} else {
+			FragBot_AimSmooth(self);
+		}
 	}
 /* ===== /FRAGBOT_CALL ===== */
