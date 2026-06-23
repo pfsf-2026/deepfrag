@@ -3687,15 +3687,12 @@ def ladder_team_get(team_id: int):
     return t
 
 
-@app.get("/api/ladder/team/{team_id}/summary")
-def ladder_team_summary(team_id: int, response: Response):
-    """Full team home page (mirrors thebig4 Team Details): header + record +
-    match history (team-scoped, normalised to us/them) + per-map record +
-    aggregate team stats + per-player stats. All derived from ladder_matches +
-    the per-player KTX stats joined via each map's hub_game_id."""
+def _team_summary(team_id):
+    """Assemble a team's home-page summary (header + record + team-scoped match
+    history + per-map record + aggregate team stats + per-player stats). Shared by
+    the team page AND the match-preview endpoint. Returns None if no such team."""
     import ladder as _ladder
     from collections import defaultdict
-    response.headers["Cache-Control"] = "public, max-age=60"
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
@@ -3704,7 +3701,7 @@ def ladder_team_summary(team_id: int, response: Response):
                        FROM ladder_teams WHERE id=%s""", (team_id,))
         t = cur.fetchone()
         if not t:
-            raise HTTPException(404, "team not found")
+            return None
         team = _enrich_members(cur, [dict(t)])[0]
         ladder_id = t["ladder_id"]
         roster = list(t["members"] or [])
@@ -3821,11 +3818,142 @@ def ladder_team_summary(team_id: int, response: Response):
                                 "eff": _pct(sf, sf + sd), "frags": pa("f"), "deaths": pa("d"),
                                 "ya": pa("ya"), "ra": pa("ra"), "mh": pa("mh"),
                                 "sg": _pct(r["sgh"] or 0, r["sga"] or 0), "lg": _pct(r["lgh"] or 0, r["lga"] or 0),
-                                "rl": _pct(r["rlh"] or 0, r["rla"] or 0), "quad": pa("q"),
+                                # RL DIRECT HITS / map (not accuracy %) — see team-stats note
+                                "rl": pa("rlh"), "quad": pa("q"),
                                 "dmg_given": pa("gvn"), "dmg_taken": pa("tkn")})
             players.sort(key=lambda x: -(x["eff"] or 0))
     return {"team": team, "matches": matches, "map_stats": map_stats,
             "team_stats": team_stats, "players": players}
+
+
+@app.get("/api/ladder/team/{team_id}/summary")
+def ladder_team_summary(team_id: int, response: Response):
+    """Full team home page (mirrors thebig4 Team Details). See _team_summary."""
+    response.headers["Cache-Control"] = "public, max-age=60"
+    s = _team_summary(team_id)
+    if not s:
+        raise HTTPException(404, "team not found")
+    return s
+
+
+def _round5(x):
+    return int(round(x / 5.0) * 5)
+
+
+def _round_half(x):
+    return round(x * 2) / 2.0
+
+
+def _american_ml(w):
+    """American moneyline from win prob `w`, with a light two-sided vig so the
+    favourite/dog lines look like a real (for-fun) book."""
+    w = min(0.85, max(0.15, w))
+    if w >= 0.5:
+        return -_round5((w / (1 - w)) * 100 * 1.07)
+    return _round5(((1 - w) / w) * 100 * 0.90)
+
+
+@app.get("/api/ladder/challenge/{challenge_id}/preview")
+def ladder_challenge_preview(challenge_id: int, response: Response):
+    """Match preview + prediction for a scheduled/open challenge, built from the two
+    teams' ACTUAL 2v2 ladder results (head-to-head outcome, maps won, series frag
+    share) — NOT 1on1 ratings. Deliberately humble while data is thin: the win prob
+    is shrunk toward 50% for small samples and clamped to [15,85]%. Also returns
+    moneyline (both sides), a total-frags O/U, and first-pick predictions, plus both
+    full team summaries for the tale-of-the-tape + players tables."""
+    import ladder as _ladder
+    import math
+    response.headers["Cache-Control"] = "public, max-age=60"
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT id, ladder_id, challenger_id, challenged_id, status,
+                              agreed_at, deadline, rungs_up, server
+                       FROM ladder_challenges WHERE id=%s""", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+    # team summaries (each opens its own short-lived connection — sequential, safe)
+    A = _team_summary(ch["challenger_id"])   # challenger
+    B = _team_summary(ch["challenged_id"])   # defender
+    if not A or not B:
+        raise HTTPException(404, "team not found")
+
+    # ── head-to-head between these two teams (from challenger's match list) ──
+    h2h = [m for m in A["matches"] if m["opponent_id"] == ch["challenged_id"]]
+    maps_a = maps_b = frags_a = frags_b = series_a = series_b = 0
+    for m in h2h:
+        if m["won"]:
+            series_a += 1
+        elif m["our_score"] != m["their_score"]:
+            series_b += 1
+        for mp in m["maps"]:
+            of, tf = mp.get("our_frags"), mp.get("their_frags")
+            if of is None or tf is None:
+                continue
+            frags_a += of; frags_b += tf
+            if of > tf:
+                maps_a += 1
+            elif tf > of:
+                maps_b += 1
+    n_maps = maps_a + maps_b
+    total_h2h = frags_a + frags_b
+
+    # ── win probability for the challenger (A) ──
+    if n_maps > 0:
+        map_share = maps_a / n_maps
+        frag_share = frags_a / total_h2h if total_h2h else 0.5
+        raw = 0.5 * map_share + 0.5 * frag_share
+        shrink = n_maps / (n_maps + 4.0)              # regress to 0.5 for small n
+        prob_a = 0.5 + shrink * (raw - 0.5)
+        conf = "low" if n_maps <= 3 else ("medium" if n_maps <= 8 else "high")
+        basis = [f"head-to-head maps {maps_a}–{maps_b}",
+                 f"series frags {frags_a}–{frags_b}"]
+    else:
+        ts_a, ts_b = (A["team_stats"] or {}), (B["team_stats"] or {})
+        ea, eb = (ts_a.get("eff") or 50.0), (ts_b.get("eff") or 50.0)
+        fa, fb = (ts_a.get("frags") or 0), (ts_b.get("frags") or 0)
+        sig = (ea - eb) / 10.0 + (fa - fb) / 40.0
+        prob_a = 0.5 + 0.5 * (1.0 / (1.0 + math.exp(-0.4 * sig)) - 0.5)   # heavy shrink
+        conf = "low"
+        basis = ["no prior meeting", f"team efficiency {ea}% vs {eb}%"]
+    prob_a = min(0.85, max(0.15, prob_a))
+    prob_b = 1 - prob_a
+
+    # ── derived markets ──
+    p = max(prob_a, prob_b)
+    e_maps = 2 * (p * p + (1 - p) * (1 - p)) + 3 * (2 * p * (1 - p))   # Bo3 expected maps
+    per_map = (total_h2h / n_maps) if n_maps else \
+        (((A["team_stats"] or {}).get("frags") or 50) + ((B["team_stats"] or {}).get("frags") or 50))
+    total_line = _round_half(per_map * e_maps)
+
+    def first_pick(summary):
+        best = None
+        for ms in summary["map_stats"]:
+            bw = ms.get("biggest_w")
+            if bw and (best is None or bw["margin"] > best[1]):
+                best = (ms["map"], bw["margin"])
+        return best[0] if best else None
+
+    pick_team = A["team"] if prob_a >= prob_b else B["team"]
+    return {
+        "challenge": {"id": ch["id"], "status": ch["status"], "rungs_up": ch["rungs_up"],
+                      "server": ch["server"],
+                      "agreed_at": ch["agreed_at"].isoformat() if ch.get("agreed_at") else None},
+        "challenger": A, "defender": B,
+        "prediction": {
+            "win_prob_challenger": round(prob_a, 3), "win_prob_defender": round(prob_b, 3),
+            "pick": "challenger" if prob_a >= prob_b else "defender",
+            "pick_name": pick_team["name"], "pick_tag": pick_team["tag"],
+            "confidence": conf, "basis": basis,
+            "moneyline_challenger": _american_ml(prob_a),
+            "moneyline_defender": _american_ml(prob_b),
+            "total_frags_line": total_line, "expected_maps": round(e_maps, 1),
+            "first_pick_challenger": first_pick(A), "first_pick_defender": first_pick(B),
+            "h2h": {"played": n_maps > 0, "series_a": series_a, "series_b": series_b,
+                    "maps_a": maps_a, "maps_b": maps_b, "frags_a": frags_a, "frags_b": frags_b},
+        },
+    }
 
 
 @app.get("/api/ladder/team/{team_id}/logo")

@@ -197,6 +197,7 @@ function teamStatus(t) {
   return c.challenged_id === t.id ? `⚔ Challenged by ${other}` : `⚔ Challenging ${other}`
 }
 function teamName(id) { return teams.value.find(t => t.id === id)?.name || `#${id}` }
+function teamTag(id) { const t = teams.value.find(t => t.id === id); return t?.tag || t?.name || `#${id}` }
 function teamLabel(id) { const t = teams.value.find(x => x.id === id); return t ? (t.tag || t.name) : `#${id}` }
 const scheduledMatches = computed(() => challenges.value.filter(c => c.agreed_at).sort((a, b) => new Date(a.agreed_at) - new Date(b.agreed_at)))
 const openChallengeCount = computed(() => challenges.value.length)
@@ -319,9 +320,14 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
           <section class="card">
             <h3>📅 Upcoming <button class="exp" @click="setTab('schedule')">schedule →</button></h3>
             <div v-if="!scheduledMatches.length" class="muted small">Nothing scheduled yet.</div>
-            <div v-for="c in scheduledMatches.slice(0, 4)" :key="c.id" class="mrow">
-              <span class="mr-t">{{ teamName(c.challenger_id) }} vs {{ teamName(c.challenged_id) }}</span>
-              <span class="muted small">{{ fmtMatchTime(c.agreed_at) }}</span>
+            <div v-for="c in scheduledMatches.slice(0, 4)" :key="c.id" class="uprow">
+              <span class="up-teams">
+                <NuxtLink class="up-tag" :to="`/ladder/team/${c.challenger_id}`">{{ teamTag(c.challenger_id) }}</NuxtLink>
+                <span class="up-vs">vs</span>
+                <NuxtLink class="up-tag" :to="`/ladder/team/${c.challenged_id}`">{{ teamTag(c.challenged_id) }}</NuxtLink>
+              </span>
+              <span class="up-when muted small">{{ fmtMatchTime(c.agreed_at) }}</span>
+              <NuxtLink class="up-prev" :to="`/ladder/match/${c.id}`">Preview →</NuxtLink>
             </div>
           </section>
 
@@ -571,6 +577,16 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 /* small card rows */
 .mrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid rgba(43,54,80,.4); }
 .mrow:last-child { border-bottom: 0; } .mrow .mr-t { font-weight: 600; }
+/* Upcoming card row: team tags + nowrap time on one line, Preview link indented below */
+.uprow { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 10px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid rgba(43,54,80,.4); }
+.uprow:last-child { border-bottom: 0; }
+.up-teams { font-weight: 700; display: flex; align-items: center; gap: 7px; min-width: 0; }
+.up-tag { font-family: 'JetBrains Mono', monospace; color: var(--fg); text-decoration: none; }
+.up-tag:hover { color: var(--accent); }
+.up-vs { color: var(--fg-3); font-weight: 600; font-size: 12px; }
+.up-when { white-space: nowrap; text-align: right; justify-self: end; }
+.up-prev { grid-column: 1 / 2; margin-left: 4px; font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; }
+.up-prev:hover { text-decoration: underline; }
 .res { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; border-bottom: 1px solid rgba(43,54,80,.4); padding: 7px 4px; cursor: pointer; color: var(--fg); font-family: inherit; font-size: 13px; text-align: left; border-radius: 6px; }
 .res:last-child { border-bottom: 0; } .res:hover { background: var(--panel-2); }
 .res-t { flex: 1; } .res-t.right { text-align: right; }
