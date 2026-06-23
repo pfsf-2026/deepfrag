@@ -48,6 +48,11 @@ static void FragBot_CoupledAirStrafe(gedict_t *self)
 	int    on_ground;
 
 	if (slot < 0 || slot >= MAX_CLIENTS) return;
+	/* COMBAT-AWARE: when the bot has a player target it is aiming/fighting (native
+	 * sets desired_angle at the enemy). Yield entirely so we don't wobble its aim
+	 * or block its combat movement -- the smoothing/bunnyhop only shapes NAVIGATION
+	 * movement between fights. This is how the air-strafe coexists with the duel. */
+	if (self->fb.look_object && self->fb.look_object->ct == ctPlayer) return;
 	if (swing <= 0)  swing  = 35.0f;
 	if (period <= 0) period = 0.45f;
 
@@ -113,7 +118,8 @@ static void FragBot_CoupledAirStrafe(gedict_t *self)
 	jump_min = cvar("k_fb_fragbot_jump_speed");
 	if (jump_min <= 0) jump_min = 300.0f;
 	self->fb.jumping = (on_ground && speed >= jump_min) ? true : false;
-	self->fb.firing  = false;  /* movement-only demonstrator */
+	/* (no firing override -- native combat controls the trigger; we only run here
+	 *  when there is no player target, i.e. while navigating) */
 
 	/* DEBUG (k_fb_dbg): is it navigating (nav>0, horizontal progress) or stuck/
 	 * floating (og0, nav0, no xy change)? + spawn z. ~2x/sec. */
