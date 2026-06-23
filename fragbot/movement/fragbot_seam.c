@@ -45,14 +45,18 @@ static void FragBot_CoupledAirStrafe(gedict_t *self)
 	float  swing  = cvar("k_fb_fragbot_swing_deg");
 	float  period = cvar("k_fb_fragbot_swing_period");
 	float  raw_yaw, base_yaw, speed, cyc, tri, amp, d, jump_min;
-	int    on_ground;
+	int    on_ground, fighting = 0;
 
 	if (slot < 0 || slot >= MAX_CLIENTS) return;
-	/* COMBAT-AWARE: when the bot has a player target it is aiming/fighting (native
-	 * sets desired_angle at the enemy). Yield entirely so we don't wobble its aim
-	 * or block its combat movement -- the smoothing/bunnyhop only shapes NAVIGATION
-	 * movement between fights. This is how the air-strafe coexists with the duel. */
-	if (self->fb.look_object && self->fb.look_object->ct == ctPlayer) return;
+	/* COMBAT-AWARE: when the bot has a player target it is aiming at the enemy
+	 * (native sets desired_angle). We must NOT early-return here: KTX 1.48 leaves
+	 * dir_move_ = 0 on its own, so OUR seam is the only thing moving the bot. If we
+	 * bail the instant it acquires a target, the bot FREEZES on the spot -- and two
+	 * bots see each other immediately, so BOTH freeze at spawn (the
+	 * "botadds_messed_up" stuck-at-spawn bug). Instead: keep native AIM (skip only
+	 * our view weave) but still DRIVE movement -- toward the enemy when fighting so
+	 * it approaches/pressures, along nav otherwise -- and keep bunnyhopping. */
+	fighting = (self->fb.look_object && self->fb.look_object->ct == ctPlayer);
 	if (swing <= 0)  swing  = 35.0f;
 	if (period <= 0) period = 0.45f;
 
@@ -93,9 +97,13 @@ static void FragBot_CoupledAirStrafe(gedict_t *self)
 	tri = (cyc < 0.5f) ? (-1.0f + 4.0f * cyc) : (3.0f - 4.0f * cyc);
 	amp = on_ground ? 0.0f : (swing * gain);
 
-	self->fb.desired_angle[PITCH] = 0;
-	self->fb.desired_angle[YAW]   = anglemod(base_yaw + amp * tri);
-	self->fb.desired_angle[ROLL]  = 0;
+	/* VIEW: only weave when NOT fighting. When fighting, leave native desired_angle
+	 * (aimed at the enemy) untouched so we don't wobble its aim. */
+	if (!fighting) {
+		self->fb.desired_angle[PITCH] = 0;
+		self->fb.desired_angle[YAW]   = anglemod(base_yaw + amp * tri);
+		self->fb.desired_angle[ROLL]  = 0;
+	}
 
 	/* AIR CONTROL (regression fix for KTX 1.48): the native frogbot now leaves
 	 * dir_move_ = 0 while airborne, so the weaving view had nothing to project ->
@@ -103,7 +111,21 @@ static void FragBot_CoupledAirStrafe(gedict_t *self)
 	 * dir_move_ forward (base heading) ourselves while airborne so the weave turns
 	 * it into real air-strafe acceleration. On the ground we leave dir_move_ alone
 	 * so the native wall-aware navigation still drives the path. */
-	if (!on_ground && fragbot_grounded[slot]) {  /* only after it has landed once -> a spawn-airborne bot falls naturally first */
+	if (fighting) {
+		/* FIGHT MOVEMENT: native leaves dir_move_ = 0, so drive toward the enemy on
+		 * XY -> the bot closes/pressures instead of freezing. Native aim + fire does
+		 * the kill; the jump logic below lets it bunnyhop in. */
+		vec3_t e; float el;
+		e[0] = self->fb.look_object->s.v.origin[0] - self->s.v.origin[0];
+		e[1] = self->fb.look_object->s.v.origin[1] - self->s.v.origin[1];
+		e[2] = 0;
+		el = VectorLength(e);
+		if (el > 1.0f) {
+			self->fb.dir_move_[0] = e[0] / el;
+			self->fb.dir_move_[1] = e[1] / el;
+			self->fb.dir_move_[2] = 0;
+		}
+	} else if (!on_ground && fragbot_grounded[slot]) {  /* only after it has landed once -> a spawn-airborne bot falls naturally first */
 		vec3_t a;
 		a[0] = 0; a[1] = base_yaw; a[2] = 0;
 		trap_makevectors(a);
@@ -127,7 +149,7 @@ static void FragBot_CoupledAirStrafe(gedict_t *self)
 		static int fb_dbgtick[MAX_CLIENTS];
 		if ((int) cvar("k_fb_dbg") && ++fb_dbgtick[slot] >= 38) {
 			fb_dbgtick[slot] = 0;
-			G_bprint(2, "FB s%d og%d spd%d move%d xyz %d %d %d\n", slot, on_ground,
+			G_bprint(2, "FB s%d fight%d og%d spd%d move%d xyz %d %d %d\n", slot, fighting, on_ground,
 				(int) speed, (int) (VectorLength(self->fb.dir_move_) * 100),
 				(int) self->s.v.origin[0], (int) self->s.v.origin[1], (int) self->s.v.origin[2]);
 		}
