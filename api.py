@@ -3952,7 +3952,11 @@ def ladder_challenge_preview(challenge_id: int, response: Response):
     }
 
     # ── preview ARTICLE (LLM, grounded in the data; cached per challenge+inputs) ──
-    article, art_source = _ladder_preview_article(ch, A, B, prediction, prob_a, prob_b)
+    # Never let the article break the prediction — it's a nice-to-have on top.
+    try:
+        article, art_source = _ladder_preview_article(ch, A, B, prediction, prob_a, prob_b)
+    except Exception:
+        article, art_source = None, None
 
     return {
         "challenge": {"id": ch["id"], "status": ch["status"], "rungs_up": ch["rungs_up"],

@@ -22,7 +22,8 @@ COPY api.py tiers.py export_rankings.py profile_pg.py stats_pg.py \
      seed_map_geometry.py seed_player_configs.py backfill_hub_game_id.py \
      seed_map_entities.py extract_spawn_runs.py \
      coaching.py coaching_weakness.py coaching_narrate.py \
-     coaching_fso.py deep_analyze.py ladder.py auth.py notify.py ping_suggest.py aliases.yaml ./
+     coaching_fso.py deep_analyze.py ladder.py ladder_preview_narrate.py \
+     auth.py notify.py ping_suggest.py aliases.yaml ./
 COPY tests/ ./tests/
 
 ENV PORT=8080
