@@ -3687,6 +3687,144 @@ def ladder_team_get(team_id: int):
     return t
 
 
+@app.get("/api/ladder/team/{team_id}/summary")
+def ladder_team_summary(team_id: int, response: Response):
+    """Full team home page (mirrors thebig4 Team Details): header + record +
+    match history (team-scoped, normalised to us/them) + per-map record +
+    aggregate team stats + per-player stats. All derived from ladder_matches +
+    the per-player KTX stats joined via each map's hub_game_id."""
+    import ladder as _ladder
+    from collections import defaultdict
+    response.headers["Cache-Control"] = "public, max-age=60"
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT id, ladder_id, name, tag, members, rung, status,
+                              (logo IS NOT NULL) AS has_logo
+                       FROM ladder_teams WHERE id=%s""", (team_id,))
+        t = cur.fetchone()
+        if not t:
+            raise HTTPException(404, "team not found")
+        team = _enrich_members(cur, [dict(t)])[0]
+        ladder_id = t["ladder_id"]
+        roster = list(t["members"] or [])
+
+        # ── match history (this team only), normalised to us/them ──
+        cur.execute("""SELECT m.id, m.team_a_id, m.team_b_id, m.score_a, m.score_b, m.winner_id,
+                              m.maps, m.played_at, ta.name AS a_name, tb.name AS b_name,
+                              (ta.logo IS NOT NULL) AS a_logo, (tb.logo IS NOT NULL) AS b_logo
+                       FROM ladder_matches m
+                       JOIN ladder_teams ta ON ta.id=m.team_a_id
+                       JOIN ladder_teams tb ON tb.id=m.team_b_id
+                       WHERE m.ladder_id=%s AND (m.team_a_id=%s OR m.team_b_id=%s)
+                       ORDER BY m.played_at DESC NULLS LAST, m.id DESC""",
+                    (ladder_id, team_id, team_id))
+        matches = []
+        mw = ml = gw = gl = 0
+        map_rec = defaultdict(lambda: {"w": 0, "l": 0, "big_w": None, "big_l": None})
+        for r in cur.fetchall():
+            us_a = (r["team_a_id"] == team_id)
+            opp_name = r["b_name"] if us_a else r["a_name"]
+            opp_id = r["team_b_id"] if us_a else r["team_a_id"]
+            opp_logo = r["b_logo"] if us_a else r["a_logo"]
+            our_score = (r["score_a"] if us_a else r["score_b"]) or 0
+            their_score = (r["score_b"] if us_a else r["score_a"]) or 0
+            won = (r["winner_id"] == team_id)
+            if r["winner_id"]:
+                mw, ml = (mw + 1, ml) if won else (mw, ml + 1)
+            out_maps = []
+            for mp in (r["maps"] or []):
+                af, bf = mp.get("a_frags"), mp.get("b_frags")
+                ours = af if us_a else bf
+                theirs = bf if us_a else af
+                out_maps.append({"map": mp.get("map"), "our_frags": ours, "their_frags": theirs})
+                if ours is not None and theirs is not None:
+                    nm = mp.get("map") or "?"
+                    if ours > theirs:
+                        gw += 1; map_rec[nm]["w"] += 1; margin = ours - theirs
+                        if not map_rec[nm]["big_w"] or margin > map_rec[nm]["big_w"]["margin"]:
+                            map_rec[nm]["big_w"] = {"score": f"{ours}–{theirs}", "opp": opp_name, "margin": margin}
+                    elif theirs > ours:
+                        gl += 1; map_rec[nm]["l"] += 1; margin = theirs - ours
+                        if not map_rec[nm]["big_l"] or margin > map_rec[nm]["big_l"]["margin"]:
+                            map_rec[nm]["big_l"] = {"score": f"{ours}–{theirs}", "opp": opp_name, "margin": margin}
+            matches.append({
+                "id": r["id"], "opponent": opp_name, "opponent_id": opp_id, "opponent_logo": opp_logo,
+                "our_score": our_score, "their_score": their_score, "won": won, "maps": out_maps,
+                "played_at": r["played_at"].isoformat() if r.get("played_at") else None,
+            })
+        team["match_w"], team["match_l"], team["game_w"], team["game_l"] = mw, ml, gw, gl
+
+        map_stats = []
+        for nm, rec in map_rec.items():
+            tot = rec["w"] + rec["l"]
+            map_stats.append({"map": nm, "w": rec["w"], "l": rec["l"], "win_rate": _pct(rec["w"], tot),
+                              "biggest_w": rec["big_w"], "biggest_l": rec["big_l"]})
+        map_stats.sort(key=lambda x: -(x["w"] + x["l"]))
+
+        # ── hub_game_ids for this team's matches → KTX stat join ──
+        cur.execute("""SELECT hub_game_ids FROM ladder_matches
+                       WHERE ladder_id=%s AND (team_a_id=%s OR team_b_id=%s)""",
+                    (ladder_id, team_id, team_id))
+        hub_ids = set()
+        for r in cur.fetchall():
+            hub_ids.update(int(g) for g in (r["hub_game_ids"] or []) if g is not None)
+        hub_ids = list(hub_ids)
+
+        team_stats, players = {}, []
+        if roster and hub_ids:
+            cur.execute("""SELECT mt.hub_game_id AS g, SUM(p.player_frags) AS f, SUM(p.player_deaths) AS d,
+                                  SUM(p.player_suicides) AS sui, SUM(p.player_teamkills) AS tk,
+                                  SUM(p.player_damage_given) AS gvn, SUM(p.player_damage_taken) AS tkn,
+                                  SUM(p.player_ya_taken) AS ya, SUM(p.player_ra_taken) AS ra,
+                                  SUM(p.player_health100_taken) AS mh,
+                                  SUM(p.player_sg_hits) AS sgh, SUM(p.player_sg_attacks) AS sga,
+                                  SUM(p.player_lg_hits) AS lgh, SUM(p.player_lg_attacks) AS lga,
+                                  SUM(p.player_rl_directs) AS rlh, SUM(p.player_rl_attacks) AS rla,
+                                  SUM(p.player_quad_taken) AS q
+                           FROM players p JOIN matches mt ON mt.match_id=p.match_id
+                           WHERE mt.hub_game_id = ANY(%s) AND p.canonical_id = ANY(%s)
+                           GROUP BY mt.hub_game_id""", (hub_ids, roster))
+            g = cur.fetchall(); n = len(g)
+            if n:
+                def avg(k): return round(sum((x[k] or 0) for x in g) / n, 1)
+                sf = sum(x["f"] or 0 for x in g); sd = sum(x["d"] or 0 for x in g)
+                team_stats = {"maps": n, "eff": _pct(sf, sf + sd), "frags": avg("f"), "deaths": avg("d"),
+                              "suicides": avg("sui"), "tk": avg("tk"), "dmg_given": avg("gvn"), "dmg_taken": avg("tkn"),
+                              "ya": avg("ya"), "ra": avg("ra"), "mh": avg("mh"),
+                              "sg": _pct(sum(x["sgh"] or 0 for x in g), sum(x["sga"] or 0 for x in g)),
+                              "lg": _pct(sum(x["lgh"] or 0 for x in g), sum(x["lga"] or 0 for x in g)),
+                              "rl": _pct(sum(x["rlh"] or 0 for x in g), sum(x["rla"] or 0 for x in g)),
+                              "quad": avg("q")}
+            cur.execute("""SELECT p.canonical_id AS cid, COUNT(*) AS maps,
+                                  SUM(p.player_frags) AS f, SUM(p.player_deaths) AS d,
+                                  SUM(p.player_damage_given) AS gvn, SUM(p.player_damage_taken) AS tkn,
+                                  SUM(p.player_ya_taken) AS ya, SUM(p.player_ra_taken) AS ra,
+                                  SUM(p.player_health100_taken) AS mh,
+                                  SUM(p.player_sg_hits) AS sgh, SUM(p.player_sg_attacks) AS sga,
+                                  SUM(p.player_lg_hits) AS lgh, SUM(p.player_lg_attacks) AS lga,
+                                  SUM(p.player_rl_directs) AS rlh, SUM(p.player_rl_attacks) AS rla,
+                                  SUM(p.player_quad_taken) AS q,
+                                  COALESCE(pc.display_name, p.player_name) AS display
+                           FROM players p JOIN matches mt ON mt.match_id=p.match_id
+                           LEFT JOIN players_canonical pc ON pc.canonical_id=p.canonical_id
+                           WHERE mt.hub_game_id = ANY(%s) AND p.canonical_id = ANY(%s)
+                           GROUP BY p.canonical_id, display""", (hub_ids, roster))
+            for r in cur.fetchall():
+                nm = r["maps"] or 0
+                def pa(k): return round((r[k] or 0) / nm, 1) if nm else 0
+                sf = r["f"] or 0; sd = r["d"] or 0
+                players.append({"canonical_id": r["cid"], "name": r["display"], "maps": nm,
+                                "eff": _pct(sf, sf + sd), "frags": pa("f"), "deaths": pa("d"),
+                                "ya": pa("ya"), "ra": pa("ra"), "mh": pa("mh"),
+                                "sg": _pct(r["sgh"] or 0, r["sga"] or 0), "lg": _pct(r["lgh"] or 0, r["lga"] or 0),
+                                "rl": _pct(r["rlh"] or 0, r["rla"] or 0), "quad": pa("q"),
+                                "dmg_given": pa("gvn"), "dmg_taken": pa("tkn")})
+            players.sort(key=lambda x: -(x["eff"] or 0))
+    return {"team": team, "matches": matches, "map_stats": map_stats,
+            "team_stats": team_stats, "players": players}
+
+
 @app.get("/api/ladder/team/{team_id}/logo")
 def ladder_team_logo(team_id: int):
     """Serve a team's logo image (public). Long browser cache — logos rarely change."""

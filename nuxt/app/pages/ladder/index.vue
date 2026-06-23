@@ -281,7 +281,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
                 <img v-if="t.has_logo" :src="logoUrl(t.id)" class="tlogo" alt="">
                 <span v-else class="tlogo tlogo-ph">👑</span>
                 <span class="ttag">{{ t.tag || '—' }}</span>
-                <span class="tname">{{ t.name }}</span>
+                <NuxtLink class="tname tlink" :to="`/ladder/team/${t.id}`" title="View team page">{{ t.name }}</NuxtLink>
                 <button v-if="isMyTeam(t)" class="edit" title="Team settings" @click="editTeam(t)">✎</button>
               </span>
               <span class="c-members">
@@ -550,6 +550,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .tlogo-ph { display: inline-flex; align-items: center; justify-content: center; background: var(--panel-3); font-size: 12px; opacity: 0.55; }
 .ttag { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(20,230,192,0.12); border: 1px solid rgba(20,230,192,0.3); border-radius: 5px; padding: 1px 4px; flex: 0 0 auto; min-width: 42px; text-align: center; box-sizing: border-box; }
 .tname { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tlink { color: var(--fg); text-decoration: none; cursor: pointer; } .tlink:hover { color: var(--accent); text-decoration: underline; }
 .edit { background: none; border: 0; color: var(--fg-3); cursor: pointer; font-size: 13px; padding: 2px 4px; opacity: .7; } .edit:hover { color: var(--accent); opacity: 1; }
 .plink { color: var(--fg-2); text-decoration: none; } .plink:hover { color: var(--accent); text-decoration: underline; }
 .c-members { color: var(--fg-2); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .c-members .dot { color: var(--fg-3); }
