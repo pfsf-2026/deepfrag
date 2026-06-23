@@ -56,6 +56,14 @@ const tape = computed(() => {
     row('RL direct hits / map', a.rl, b.rl),
   ]
 })
+// preview article: render \n\n paragraphs + **bold** (escaped) to safe HTML
+function mdToHtml(s) {
+  if (!s) return ''
+  const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return s.split(/\n\n+/).map(p => '<p>' + esc(p).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') + '</p>').join('')
+}
+const articleHtml = computed(() => mdToHtml(d.value?.preview_article || ''))
+
 useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} · Preview · DeepFrag` : 'Match Preview · DeepFrag' }))
 </script>
 
@@ -119,6 +127,12 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
         <div class="ousub">each team's strongest map</div>
       </div>
     </div>
+
+    <!-- PREVIEW ARTICLE -->
+    <template v-if="d.preview_article">
+      <div class="h2">The Preview</div>
+      <div class="article" v-html="articleHtml"></div>
+    </template>
 
     <!-- THE MEETING -->
     <template v-if="meeting">
@@ -241,6 +255,10 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
 .plink{color:var(--fg,#e8edf5);text-decoration:none}.plink:hover{color:var(--accent,#14e6c0)}
 .tt{font-size:9.5px;font-weight:800;padding:1px 5px;border-radius:4px;margin-left:6px}
 .tt.a{background:#14e6c022;color:var(--accent,#14e6c0)}.tt.b{background:#f59e0b22;color:var(--draw,#f59e0b)}
+.article{background:var(--panel,#131820);border:1px solid var(--border,#2b3445);border-radius:14px;padding:18px 20px}
+.article :deep(p){margin:0 0 12px;color:#cfd8e6;line-height:1.6}
+.article :deep(p:last-child){margin-bottom:0}
+.article :deep(strong){color:var(--fg,#e8edf5);font-weight:700}
 .note{background:var(--panel-2,#1a2433);border:1px solid var(--border,#2b3445);border-left:3px solid var(--accent,#14e6c0);border-radius:10px;padding:13px 15px;color:var(--fg-2,#94a3b8);font-size:12.5px;margin-top:24px}
 .note b{color:var(--fg,#e8edf5)}
 </style>

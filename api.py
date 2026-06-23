@@ -3936,24 +3936,142 @@ def ladder_challenge_preview(challenge_id: int, response: Response):
         return best[0] if best else None
 
     pick_team = A["team"] if prob_a >= prob_b else B["team"]
+    a_team, b_team = A["team"], B["team"]
+    fp_a, fp_b = first_pick(A), first_pick(B)
+    prediction = {
+        "win_prob_challenger": round(prob_a, 3), "win_prob_defender": round(prob_b, 3),
+        "pick": "challenger" if prob_a >= prob_b else "defender",
+        "pick_name": pick_team["name"], "pick_tag": pick_team["tag"],
+        "confidence": conf, "basis": basis,
+        "moneyline_challenger": _american_ml(prob_a),
+        "moneyline_defender": _american_ml(prob_b),
+        "total_frags_line": total_line, "expected_maps": round(e_maps, 1),
+        "first_pick_challenger": fp_a, "first_pick_defender": fp_b,
+        "h2h": {"played": n_maps > 0, "series_a": series_a, "series_b": series_b,
+                "maps_a": maps_a, "maps_b": maps_b, "frags_a": frags_a, "frags_b": frags_b},
+    }
+
+    # ── preview ARTICLE (LLM, grounded in the data; cached per challenge+inputs) ──
+    article, art_source = _ladder_preview_article(ch, A, B, prediction, prob_a, prob_b)
+
     return {
         "challenge": {"id": ch["id"], "status": ch["status"], "rungs_up": ch["rungs_up"],
                       "server": ch["server"],
                       "agreed_at": ch["agreed_at"].isoformat() if ch.get("agreed_at") else None},
-        "challenger": A, "defender": B,
-        "prediction": {
-            "win_prob_challenger": round(prob_a, 3), "win_prob_defender": round(prob_b, 3),
-            "pick": "challenger" if prob_a >= prob_b else "defender",
-            "pick_name": pick_team["name"], "pick_tag": pick_team["tag"],
-            "confidence": conf, "basis": basis,
-            "moneyline_challenger": _american_ml(prob_a),
-            "moneyline_defender": _american_ml(prob_b),
-            "total_frags_line": total_line, "expected_maps": round(e_maps, 1),
-            "first_pick_challenger": first_pick(A), "first_pick_defender": first_pick(B),
-            "h2h": {"played": n_maps > 0, "series_a": series_a, "series_b": series_b,
-                    "maps_a": maps_a, "maps_b": maps_b, "frags_a": frags_a, "frags_b": frags_b},
-        },
+        "challenger": A, "defender": B, "prediction": prediction,
+        "preview_article": article, "article_source": art_source,
     }
+
+
+def _ladder_preview_article(ch, A, B, prediction, prob_a, prob_b):
+    """Build the structured context, generate the preview article (LLM w/ template
+    fallback), and cache it per (challenge, inputs-hash) so we only call the LLM when
+    the underlying data changes. Returns (text, source)."""
+    import ladder_preview_narrate as _narr
+    import hashlib
+    a_team, b_team = A["team"], B["team"]
+    a_ids = [m["id"] for m in (a_team.get("members") or [])]
+    b_ids = [m["id"] for m in (b_team.get("members") or [])]
+
+    # member 1on1 ratings + division (for storylines) + cache lookup
+    member_meta, cached = {}, None
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS ladder_match_previews (
+                         challenge_id BIGINT PRIMARY KEY, inputs_hash TEXT,
+                         article TEXT, source TEXT, created_at TIMESTAMPTZ DEFAULT now())""")
+        conn.commit()
+        try:
+            from tiers import tier_for
+            cutoffs = _get_tier_cutoffs(cur, "1on1")
+            if a_ids + b_ids:
+                cur.execute("""SELECT canonical_id, mu, conservative, wins, losses, avg_frag_diff
+                               FROM ratings WHERE mode='1on1' AND map='' AND canonical_id = ANY(%s)""",
+                            (a_ids + b_ids,))
+                for r in cur.fetchall():
+                    t = tier_for(r["conservative"], cutoffs)
+                    member_meta[r["canonical_id"]] = {
+                        "rating_mu": round(r["mu"]) if r["mu"] is not None else None,
+                        "division": (t or {}).get("name"),
+                        "career_wl": f'{r["wins"]}-{r["losses"]}',
+                        "avg_frag_diff": round(r["avg_frag_diff"], 1) if r["avg_frag_diff"] is not None else None,
+                    }
+        except Exception:
+            member_meta = {}
+        cur.execute("SELECT inputs_hash, article, source FROM ladder_match_previews WHERE challenge_id=%s",
+                    (ch["id"],))
+        cached = cur.fetchone()
+
+    def roster(team):
+        return [{"name": m["display"], **member_meta.get(m["id"], {})} for m in (team.get("members") or [])]
+
+    plines = []
+    for s, tg in ((A, a_team["tag"]), (B, b_team["tag"])):
+        for p in (s.get("players") or []):
+            plines.append({"name": p["name"], "team_tag": tg, "eff": p["eff"],
+                           "frags_per_map": p["frags"], "rl_directs_per_map": p["rl"]})
+    plines.sort(key=lambda x: -(x["frags_per_map"] or 0))
+
+    meeting = next((m for m in A["matches"] if m["opponent_id"] == b_team["id"]), None)
+    h2h_maps, result = [], None
+    if meeting:
+        for mp in meeting["maps"]:
+            of, tf = mp.get("our_frags"), mp.get("their_frags")
+            wt = a_team["tag"] if (of or 0) > (tf or 0) else b_team["tag"]
+            h2h_maps.append({"map": mp["map"], "A_frags": of, "B_frags": tf, "winner_tag": wt})
+        win_name = a_team["name"] if meeting["won"] else b_team["name"]
+        ws, ls = max(meeting["our_score"], meeting["their_score"]), min(meeting["our_score"], meeting["their_score"])
+        result = f"{win_name} won {ws}–{ls}" + (f" on {meeting['played_at'][:10]}" if meeting.get("played_at") else "")
+
+    h = prediction["h2h"]
+    ctx = {
+        "stakes": f"{a_team['name']} (rung {a_team['rung']}) challenges up to {b_team['name']} "
+                  f"(rung {b_team['rung']}); best-of-3; winner takes rung {b_team['rung']}",
+        "when": ch["agreed_at"].isoformat() if ch.get("agreed_at") else "TBD",
+        "prediction": {
+            "pick": prediction["pick_name"],
+            "pick_win_pct": round(max(prob_a, prob_b) * 100),
+            "underdog_win_pct": round(min(prob_a, prob_b) * 100),
+            "confidence": prediction["confidence"],
+            "moneyline": {a_team["tag"]: prediction["moneyline_challenger"],
+                          b_team["tag"]: prediction["moneyline_defender"]},
+            "total_frags_ou": prediction["total_frags_line"],
+            "first_picks": {a_team["tag"]: prediction["first_pick_challenger"],
+                            b_team["tag"]: prediction["first_pick_defender"]},
+        },
+        "teams": {
+            "challenger": {"name": a_team["name"], "tag": a_team["tag"], "rung": a_team["rung"],
+                           "ladder_record": f'{a_team["match_w"]}-{a_team["match_l"]} '
+                                            f'(maps {a_team["game_w"]}-{a_team["game_l"]})',
+                           "roster": roster(a_team), "team_stats_per_map": A["team_stats"]},
+            "defender": {"name": b_team["name"], "tag": b_team["tag"], "rung": b_team["rung"],
+                         "ladder_record": f'{b_team["match_w"]}-{b_team["match_l"]} '
+                                          f'(maps {b_team["game_w"]}-{b_team["game_l"]})',
+                         "roster": roster(b_team), "team_stats_per_map": B["team_stats"]},
+        },
+        "head_to_head": {"played": h["played"], "result": result, "maps": h2h_maps,
+                         "series_frags": {a_team["tag"]: h["frags_a"], b_team["tag"]: h["frags_b"]}},
+        "player_lines_from_meeting": plines,
+    }
+    inputs_hash = hashlib.sha256(json.dumps(ctx, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+    if cached and cached["inputs_hash"] == inputs_hash and cached["article"]:
+        return cached["article"], cached["source"]
+
+    out = _narr.narrate(ctx)   # LLM call — done OUTSIDE any pooled connection
+    try:
+        with pg() as conn:
+            cur = conn.cursor()
+            cur.execute("""INSERT INTO ladder_match_previews (challenge_id, inputs_hash, article, source)
+                           VALUES (%s,%s,%s,%s)
+                           ON CONFLICT (challenge_id) DO UPDATE SET
+                             inputs_hash=EXCLUDED.inputs_hash, article=EXCLUDED.article,
+                             source=EXCLUDED.source, created_at=now()""",
+                        (ch["id"], inputs_hash, out["text"], out["source"]))
+            conn.commit()
+    except Exception:
+        pass
+    return out["text"], out["source"]
 
 
 @app.get("/api/ladder/team/{team_id}/logo")
