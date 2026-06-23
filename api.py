@@ -4009,6 +4009,14 @@ def _ladder_preview_article(ch, A, B, prediction, prob_a, prob_b):
     def roster(team):
         return [{"name": m["display"], **member_meta.get(m["id"], {})} for m in (team.get("members") or [])]
 
+    def slim_stats(ts):
+        # Only feed the LLM clearly-labeled headline stats. Passing the full dict
+        # (ya/mh/sg/quad/dmg…) gives it stray numbers it cross-wires into the wrong
+        # stat (e.g. citing a team's ya as a player's RL directs).
+        if not ts:
+            return {}
+        return {k: ts.get(k) for k in ("maps", "eff", "frags", "deaths", "lg", "rl") if ts.get(k) is not None}
+
     plines = []
     for s, tg in ((A, a_team["tag"]), (B, b_team["tag"])):
         for p in (s.get("players") or []):
@@ -4047,18 +4055,18 @@ def _ladder_preview_article(ch, A, B, prediction, prob_a, prob_b):
             "challenger": {"name": a_team["name"], "tag": a_team["tag"], "rung": a_team["rung"],
                            "ladder_record": f'{a_team["match_w"]}-{a_team["match_l"]} '
                                             f'(maps {a_team["game_w"]}-{a_team["game_l"]})',
-                           "roster": roster(a_team), "team_stats_per_map": A["team_stats"]},
+                           "roster": roster(a_team), "team_stats_per_map": slim_stats(A["team_stats"])},
             "defender": {"name": b_team["name"], "tag": b_team["tag"], "rung": b_team["rung"],
                          "ladder_record": f'{b_team["match_w"]}-{b_team["match_l"]} '
                                           f'(maps {b_team["game_w"]}-{b_team["game_l"]})',
-                         "roster": roster(b_team), "team_stats_per_map": B["team_stats"]},
+                         "roster": roster(b_team), "team_stats_per_map": slim_stats(B["team_stats"])},
         },
         "head_to_head": {"played": h["played"], "result": result, "maps": h2h_maps,
                          "series_frags": {a_team["tag"]: h["frags_a"], b_team["tag"]: h["frags_b"]}},
         "player_lines_from_meeting": plines,
     }
     # "pv2" = prompt version — bump to bust cached articles when the prompt changes
-    inputs_hash = hashlib.sha256(("pv2|" + json.dumps(ctx, sort_keys=True, default=str)).encode()).hexdigest()[:16]
+    inputs_hash = hashlib.sha256(("pv3|" + json.dumps(ctx, sort_keys=True, default=str)).encode()).hexdigest()[:16]
 
     if cached and cached["inputs_hash"] == inputs_hash and cached["article"]:
         return cached["article"], cached["source"]
