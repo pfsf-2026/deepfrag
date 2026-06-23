@@ -3,9 +3,9 @@
 
 Rungs are integer positions, 1 = top. Rules (locked w/ Peter 2026-06-04):
   - Challenge 1 or 2 rungs up.
-  - Win, 1-rung challenge  → straight SWAP with the challenged team.
-  - Win, 2-rung challenge  → challenger moves UP 2 (takes challenged's rung); the
-    two teams it passed each drop 1.
+  - Win (1- OR 2-rung challenge) → straight FULL SWAP: the winning lower team and
+    the losing higher team exchange rungs; nothing in between moves (rung 5 beats
+    rung 3 → 5↔3, rung 4 untouched).
   - Forfeit (challenged doesn't play within the window) → challenged drops 1 rung
     (swaps with the team directly below), regardless of 1- or 2-rung challenge.
   - Loser waits 1 week before re-challenging; winner may re-challenge immediately.
@@ -135,30 +135,19 @@ def _set_rung(cur, team_id, rung, ladder_id, reason, match_id=None, from_rung=No
 
 def apply_win(cur, ladder_id, challenger_id, challenged_id, match_id=None):
     """Challenger (lower rung number is higher; challenger is BELOW = larger rung)
-    beat the challenged team. 1-rung gap → swap. 2-rung gap → challenger up 2,
-    the two passed teams each drop 1. Returns the affected {team_id: new_rung}."""
+    beat the challenged team → a STRAIGHT FULL SWAP between exactly the two teams
+    that played. The winning lower team takes the challenged team's rung and the
+    losing higher team takes the challenger's old rung; NO other team moves,
+    regardless of a 1- or 2-rung gap (e.g. rung 5 beats rung 3 → 5↔3, rung 4
+    untouched). Inactive / NULL-rung teams are never disturbed. Returns the
+    affected {team_id: new_rung}."""
     cr = _team(cur, challenger_id)["rung"]
     hr = _team(cur, challenged_id)["rung"]
-    gap = cr - hr  # positive: challenger is that many rungs below the challenged
-    moves = {}
-    if gap <= 1:
-        # straight swap
-        _set_rung(cur, challenger_id, hr, ladder_id, "win", match_id, cr)
-        _set_rung(cur, challenged_id, cr, ladder_id, "loss", match_id, hr)
-        moves = {challenger_id: hr, challenged_id: cr}
-    else:
-        # 2-rung jump: challenger takes hr; teams currently at hr..cr-1 each +1.
-        cur.execute("""SELECT id, rung FROM ladder_teams
-                       WHERE ladder_id=%s AND active AND rung >= %s AND rung < %s
-                       ORDER BY rung""", (ladder_id, hr, cr))
-        passed = cur.fetchall()  # includes the challenged team at hr
-        for t in passed:
-            _set_rung(cur, t["id"], t["rung"] + 1, ladder_id,
-                      "loss" if t["id"] == challenged_id else "shift", match_id, t["rung"])
-            moves[t["id"]] = t["rung"] + 1
-        _set_rung(cur, challenger_id, hr, ladder_id, "win", match_id, cr)
-        moves[challenger_id] = hr
-    return moves
+    # Straight two-team swap: winner (challenger) takes the challenged rung,
+    # loser (challenged) takes the challenger's old rung. Nothing in between moves.
+    _set_rung(cur, challenger_id, hr, ladder_id, "win", match_id, cr)
+    _set_rung(cur, challenged_id, cr, ladder_id, "loss", match_id, hr)
+    return {challenger_id: hr, challenged_id: cr}
 
 
 def apply_forfeit(cur, ladder_id, challenged_id, match_id=None):
