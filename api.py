@@ -4057,7 +4057,8 @@ def _ladder_preview_article(ch, A, B, prediction, prob_a, prob_b):
                          "series_frags": {a_team["tag"]: h["frags_a"], b_team["tag"]: h["frags_b"]}},
         "player_lines_from_meeting": plines,
     }
-    inputs_hash = hashlib.sha256(json.dumps(ctx, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    # "pv2" = prompt version — bump to bust cached articles when the prompt changes
+    inputs_hash = hashlib.sha256(("pv2|" + json.dumps(ctx, sort_keys=True, default=str)).encode()).hexdigest()[:16]
 
     if cached and cached["inputs_hash"] == inputs_hash and cached["article"]:
         return cached["article"], cached["source"]
