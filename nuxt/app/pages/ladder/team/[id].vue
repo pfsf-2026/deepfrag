@@ -121,8 +121,8 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
           <div class="mc-name">{{ ms.map }}</div>
           <div class="mc-row"><span>Record</span><b>{{ ms.w }}–{{ ms.l }}</b></div>
           <div class="mc-row"><span>Win Rate</span><b :class="ms.win_rate >= 50 ? 'good' : 'bad'">{{ ms.win_rate }}%</b></div>
-          <div class="mc-row"><span>Biggest W</span><b class="good">{{ ms.biggest_w ? ms.biggest_w.score : '—' }}<i v-if="ms.biggest_w"> v {{ ms.biggest_w.opp }}</i></b></div>
-          <div class="mc-row"><span>Biggest L</span><b class="bad">{{ ms.biggest_l ? ms.biggest_l.score : '—' }}<i v-if="ms.biggest_l"> v {{ ms.biggest_l.opp }}</i></b></div>
+          <div class="mc-row"><span>Biggest W</span><b class="good" :title="ms.biggest_w ? ms.biggest_w.score + ' v ' + ms.biggest_w.opp : ''">{{ ms.biggest_w ? ms.biggest_w.score : '—' }}<i v-if="ms.biggest_w"> v {{ ms.biggest_w.opp }}</i></b></div>
+          <div class="mc-row"><span>Biggest L</span><b class="bad" :title="ms.biggest_l ? ms.biggest_l.score + ' v ' + ms.biggest_l.opp : ''">{{ ms.biggest_l ? ms.biggest_l.score : '—' }}<i v-if="ms.biggest_l"> v {{ ms.biggest_l.opp }}</i></b></div>
         </div>
       </div>
     </section>
@@ -135,13 +135,13 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
           <thead><tr>
             <th>Eff</th><th>F</th><th>D</th><th>TK</th><th>Gvn</th><th>Tkn</th>
             <th class="ya">YA</th><th class="ra">RA</th><th class="mh">MH</th><th class="sg">SG</th>
-            <th class="lg">LG</th><th class="rl">RL</th><th class="q">Q</th>
+            <th class="lg">LG</th><th class="rl" title="RL direct hits / map">RLd</th><th class="q">Q</th>
           </tr></thead>
           <tbody><tr>
             <td class="hl">{{ teamStats.eff }}%</td><td>{{ teamStats.frags }}</td><td>{{ teamStats.deaths }}</td>
             <td>{{ teamStats.tk }}</td><td>{{ (teamStats.dmg_given/1000).toFixed(1) }}k</td><td>{{ (teamStats.dmg_taken/1000).toFixed(1) }}k</td>
             <td class="ya">{{ teamStats.ya }}</td><td class="ra">{{ teamStats.ra }}</td><td class="mh">{{ teamStats.mh }}</td>
-            <td class="sg">{{ teamStats.sg }}%</td><td class="lg">{{ teamStats.lg }}%</td><td class="rl">{{ teamStats.rl }}%</td><td class="q">{{ teamStats.quad }}</td>
+            <td class="sg">{{ teamStats.sg }}%</td><td class="lg">{{ teamStats.lg }}%</td><td class="rl">{{ teamStats.rl }}</td><td class="q">{{ teamStats.quad }}</td>
           </tr></tbody>
         </table>
       </div>
@@ -155,14 +155,14 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
           <thead><tr>
             <th class="lft">Player</th><th>Maps</th><th>Eff</th><th>F</th><th>D</th>
             <th class="ya">YA</th><th class="ra">RA</th><th class="mh">MH</th><th class="sg">SG</th>
-            <th class="lg">LG</th><th class="rl">RL</th><th class="q">Q</th>
+            <th class="lg">LG</th><th class="rl" title="RL direct hits / map">RLd</th><th class="q">Q</th>
           </tr></thead>
           <tbody>
             <tr v-for="p in players" :key="p.canonical_id">
               <td class="lft"><NuxtLink class="plink" :to="`/p/${p.canonical_id}`">{{ p.name }}</NuxtLink></td>
               <td>{{ p.maps }}</td><td class="hl">{{ p.eff }}%</td><td>{{ p.frags }}</td><td>{{ p.deaths }}</td>
               <td class="ya">{{ p.ya }}</td><td class="ra">{{ p.ra }}</td><td class="mh">{{ p.mh }}</td>
-              <td class="sg">{{ p.sg }}%</td><td class="lg">{{ p.lg }}%</td><td class="rl">{{ p.rl }}%</td><td class="q">{{ p.quad }}</td>
+              <td class="sg">{{ p.sg }}%</td><td class="lg">{{ p.lg }}%</td><td class="rl">{{ p.rl }}</td><td class="q">{{ p.quad }}</td>
             </tr>
           </tbody>
         </table>
@@ -209,8 +209,7 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
 .empty,.note{background:var(--panel,#131820);border:1px solid var(--border,#2b3445);border-radius:12px;padding:16px;color:var(--fg-2,#94a3b8);font-size:13px}
 .note{border-left:3px solid var(--accent,#14e6c0);margin-top:6px}
 
-.matchgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-@media(max-width:760px){.matchgrid{grid-template-columns:1fr}}
+.matchgrid{display:flex;flex-direction:column;gap:10px}
 .match{display:flex;align-items:center;gap:12px;background:var(--panel,#131820);border:1px solid var(--border,#2b3445);border-radius:10px;padding:11px 14px}
 .wl{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;flex:none}
 .wl.w{background:rgba(34,197,94,.15);color:var(--win,#22c55e)} .wl.l{background:rgba(239,68,68,.15);color:var(--loss,#ef4444)}
@@ -219,8 +218,9 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
 .opp:hover .oppname{color:var(--accent,#14e6c0)}
 .opplogo{width:20px;height:20px;border-radius:5px;object-fit:cover}
 .oppname{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.maps{display:flex;gap:5px;flex-wrap:wrap;flex:1;justify-content:flex-end}
-.mtag{font-size:10.5px;font-family:'JetBrains Mono',monospace;color:var(--fg-2,#94a3b8);background:#0e1420;border:1px solid var(--border,#2b3445);border-radius:5px;padding:1px 6px}
+.maps{display:flex;gap:5px;flex-wrap:nowrap;flex:1;justify-content:flex-end}
+@media(max-width:600px){.maps{flex-wrap:wrap}}
+.mtag{font-size:10.5px;font-family:'JetBrains Mono',monospace;color:var(--fg-2,#94a3b8);background:#0e1420;border:1px solid var(--border,#2b3445);border-radius:5px;padding:1px 6px;white-space:nowrap;flex:none}
 .mtag.mw{border-color:rgba(34,197,94,.3);color:#86efac} .mtag.ml{border-color:rgba(239,68,68,.3);color:#fca5a5}
 .mtag b{font-weight:700}
 .mdate{font-size:11px;color:var(--fg-3,#64748b);flex:none}
@@ -228,8 +228,9 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
 .mapcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
 .mapcard{background:var(--panel,#131820);border:1px solid var(--border,#2b3445);border-radius:12px;padding:14px}
 .mc-name{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:14px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border,#2b3445)}
-.mc-row{display:flex;justify-content:space-between;font-size:12px;padding:4px 0;color:var(--fg-2,#94a3b8)}
-.mc-row b{color:var(--fg,#e8edf5);font-family:'JetBrains Mono',monospace}
+.mc-row{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:4px 0;color:var(--fg-2,#94a3b8);white-space:nowrap}
+.mc-row>span{flex:none}
+.mc-row b{color:var(--fg,#e8edf5);font-family:'JetBrains Mono',monospace;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
 .mc-row b i{font-style:normal;color:var(--fg-3,#64748b);font-size:11px;font-family:inherit}
 .good{color:var(--win,#22c55e)!important} .bad{color:var(--loss,#ef4444)!important}
 

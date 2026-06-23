@@ -3794,7 +3794,10 @@ def ladder_team_summary(team_id: int, response: Response):
                               "ya": avg("ya"), "ra": avg("ra"), "mh": avg("mh"),
                               "sg": _pct(sum(x["sgh"] or 0 for x in g), sum(x["sga"] or 0 for x in g)),
                               "lg": _pct(sum(x["lgh"] or 0 for x in g), sum(x["lga"] or 0 for x in g)),
-                              "rl": _pct(sum(x["rlh"] or 0 for x in g), sum(x["rla"] or 0 for x in g)),
+                              # RL direct HITS / map (not accuracy %): in 2on2 weapon-stay is on,
+                              # so RL ammo is never scarce and RL% barely matters — direct-hit
+                              # volume is the meaningful signal. (RL% matters for 4on4 no-stay.)
+                              "rl": avg("rlh"),
                               "quad": avg("q")}
             cur.execute("""SELECT p.canonical_id AS cid, COUNT(*) AS maps,
                                   SUM(p.player_frags) AS f, SUM(p.player_deaths) AS d,
