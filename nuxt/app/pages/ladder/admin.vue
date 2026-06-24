@@ -122,6 +122,11 @@ async function addTeam() {
   } catch (e) { err.value = e?.data?.detail || 'add failed' }
 }
 function teamName(id) { return teams.value.find(t => t.id === id)?.name || `#${id}` }
+// Past-deadline & still unresolved → flag for an admin determination (we no longer
+// auto-forfeit; admins decide via Report/Forfeit/Reschedule/Cancel below).
+function isOverdue(c) {
+  return c.status === 'open' && c.deadline && new Date(c.deadline) < new Date()
+}
 const newChal = ref({ challenger: null, challenged: null })
 async function createChallenge() {
   if (!newChal.value.challenger || !newChal.value.challenged) return
@@ -316,10 +321,11 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
           <!-- Open challenges -->
           <section v-if="challenges.length" class="card">
             <h2>Open challenges</h2>
-            <div v-for="c in challenges" :key="c.id" class="prow">
+            <div v-for="c in challenges" :key="c.id" class="prow" :class="{ overdue: isOverdue(c) }">
               <strong>{{ teamName(c.challenger_id) }}</strong>
               <span class="muted">vs</span>
               <strong>{{ teamName(c.challenged_id) }}</strong>
+              <span v-if="isOverdue(c)" class="od-badge" title="Deadline passed — decide: Report the result, Forfeit, Reschedule, or Cancel">⚠ Overdue — needs your determination</span>
               <span class="muted small">{{ c.agreed_at ? ('📅 ' + new Date(c.agreed_at).toLocaleString()) : ((c.proposed||[]).length ? 'awaiting pick' : 'awaiting availability') }}</span>
               <span class="spacer" />
               <button class="btn sm" @click="schedulerC = c">Schedule</button>
@@ -453,6 +459,8 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
 </template>
 
 <style scoped>
+.prow.overdue { border-color: rgba(245,158,11,.5); background: rgba(245,158,11,.06); }
+.od-badge { font-size: 11px; font-weight: 700; color: var(--draw, #f59e0b); background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.35); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
 .wrap { max-width: 760px; margin: 0 auto; padding: 32px 24px 80px; }
 h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .gate { text-align: center; padding: 50px 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }

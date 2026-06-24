@@ -902,9 +902,13 @@ def _ladder_tick(cur):
         cur.execute("UPDATE ladder_challenges SET reminded_unsched_3d=TRUE WHERE id=%s", (r["id"],))
         counts["nudged_3d"] += 1
 
-    # ── 7-day deadline on UNSCHEDULED challenges → AUTO-FORFEIT: the challenged
-    # team loses its ladder position TO THE CHALLENGER (a swap, like a loss).
-    # Gated per-ladder by rules.auto_forfeit (default ON); off → flag for admins.
+    # ── 7-day deadline on UNSCHEDULED challenges → NOTIFY ADMINS for a manual
+    # determination (no automatic ladder movement). Default is notify-only
+    # (rules.auto_forfeit defaults FALSE as of 2026-06-24) — auto-forfeit was
+    # causing wrong swaps (e.g. forfeiting a team that actually played but whose
+    # demos hadn't fully canonicalized yet). Admins decide on /ladder/admin via the
+    # Forfeit / Report / Reschedule / Cancel buttons. A ladder can still opt INTO
+    # automatic forfeits by explicitly setting rules.auto_forfeit = true.
     cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.deadline,
                           c.overdue_flagged, l.rules, ca.name AS a, cd.name AS b
                    FROM ladder_challenges c
@@ -913,7 +917,7 @@ def _ladder_tick(cur):
                    JOIN ladders l ON l.id=c.ladder_id
                    WHERE c.status='open' AND c.deadline < now()""")
     for r in cur.fetchall():
-        if not (r["rules"] or {}).get("auto_forfeit", True):
+        if not (r["rules"] or {}).get("auto_forfeit", False):
             if not r["overdue_flagged"]:
                 notify.challenge_overdue(_team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"]),
                                          r["deadline"].isoformat() if r["deadline"] else None)
