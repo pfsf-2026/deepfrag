@@ -368,14 +368,25 @@ def _slot_in_availability(iso_slot, tz, slots):
     return h in set((slots or {}).get(_DAY_IDX[wd]) or [])
 
 
+def _is_future_slot(s):
+    """True if an ISO slot is still in the future — never schedule a match in the past."""
+    try:
+        d = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=timezone.utc)
+        return d > datetime.now(timezone.utc)
+    except Exception:
+        return False
+
+
 def _auto_schedule_challenge(cur, ch):
     """For an OPEN challenge with proposed slots, auto-derive picks for any CHALLENGED
     member who opted into auto_schedule (their availability ∩ proposed), then finalize
-    if every member now has picks + there's a common slot (earliest wins). Mirrors
-    the manual my-picks finalize. `ch` needs: id, challenged_id, proposed, picks,
-    members. Returns the agreed ISO slot if it scheduled, else None."""
+    if every member now has picks + there's a common slot (earliest FUTURE wins).
+    Mirrors the manual my-picks finalize. `ch` needs: id, challenged_id, proposed,
+    picks, members. Returns the agreed ISO slot if it scheduled, else None."""
     import auth as A
-    proposed = list(ch["proposed"] or [])
+    proposed = [s for s in (ch["proposed"] or []) if _is_future_slot(s)]  # never the past
     members = list(ch["members"] or [])
     if not proposed or not members:
         return None
@@ -402,7 +413,7 @@ def _auto_schedule_challenge(cur, ch):
         common = set(picks[members[0]])
         for m in members[1:]:
             common &= set(picks.get(m) or [])
-        agreed = (sorted(common) or [None])[0]
+        agreed = (sorted(s for s in common if _is_future_slot(s)) or [None])[0]
     if agreed:
         cur.execute("UPDATE ladder_challenges SET picks=%s, agreed_at=%s, status='scheduled' WHERE id=%s",
                     (json.dumps(picks), agreed, ch["id"]))
@@ -4920,7 +4931,7 @@ def ladder_challenge_my_picks(challenge_id: int, authorization: str | None = Hea
             common = set(picks[members[0]])
             for m in members[1:]:
                 common &= set(picks.get(m) or [])
-            common = sorted(common)   # ISO strings sort chronologically → earliest first
+            common = sorted(s for s in common if _is_future_slot(s))   # earliest FUTURE slot
             agreed = common[0] if common else None
         if agreed:
             cur.execute("""UPDATE ladder_challenges SET picks=%s, agreed_at=%s, status='scheduled' WHERE id=%s""",
