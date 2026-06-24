@@ -322,18 +322,21 @@ def _clean_availability(payload):
                 slots[d] = clean
     if not slots:
         return None
-    return {"tz": tz, "slots": slots}
+    return {"tz": tz, "slots": slots, "auto_schedule": bool(payload.get("auto_schedule"))}
 
 
 @app.post("/api/auth/availability")
 def auth_set_availability(authorization: str | None = Header(default=None),
                           tz: str | None = Body(default=None, embed=True),
-                          slots: dict | None = Body(default=None, embed=True)):
+                          slots: dict | None = Body(default=None, embed=True),
+                          auto_schedule: bool = Body(default=False, embed=True)):
     """Save the current user's general weekly availability for the ladder
-    scheduler. Stored in the player's own tz; days mon..sun, hours 0..26."""
+    scheduler. Stored in the player's own tz; days mon..sun, hours 0..26.
+    auto_schedule: when true, the scheduler may auto-pick this player's match
+    times from this availability (no manual pick needed)."""
     import auth as A
     u = _current_user(authorization, required=True)
-    blob = _clean_availability({"tz": tz, "slots": slots})
+    blob = _clean_availability({"tz": tz, "slots": slots, "auto_schedule": auto_schedule})
     with pg() as conn:
         cur = conn.cursor()
         A.ensure_users(cur)
@@ -341,6 +344,71 @@ def auth_set_availability(authorization: str | None = Header(default=None),
                     (json.dumps(blob) if blob else None, u["discord_id"]))
         conn.commit()
     return {"availability": blob}
+
+
+_DAY_IDX = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]  # Python weekday(): Mon=0
+
+
+def _slot_in_availability(iso_slot, tz, slots):
+    """Is an ISO instant within a player's weekly availability grid? The grid rows
+    are days mon..sun, hours 12..26 where 24/25/26 = 12a/1a/2a of the NIGHT that
+    belongs to that day's row — so early-morning hours roll back onto the previous
+    day's row (mirrors AvailabilityEditor.vue)."""
+    from zoneinfo import ZoneInfo
+    try:
+        dt = datetime.fromisoformat(str(iso_slot).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        local = dt.astimezone(ZoneInfo(tz or "America/New_York"))
+    except Exception:
+        return False
+    wd, h = local.weekday(), local.hour
+    if h <= 2:                      # 12a/1a/2a = previous day's night block
+        wd = (wd - 1) % 7; h += 24
+    return h in set((slots or {}).get(_DAY_IDX[wd]) or [])
+
+
+def _auto_schedule_challenge(cur, ch):
+    """For an OPEN challenge with proposed slots, auto-derive picks for any CHALLENGED
+    member who opted into auto_schedule (their availability ∩ proposed), then finalize
+    if every member now has picks + there's a common slot (earliest wins). Mirrors
+    the manual my-picks finalize. `ch` needs: id, challenged_id, proposed, picks,
+    members. Returns the agreed ISO slot if it scheduled, else None."""
+    import auth as A
+    proposed = list(ch["proposed"] or [])
+    members = list(ch["members"] or [])
+    if not proposed or not members:
+        return None
+    picks = dict(ch["picks"] or {})
+    need = [m for m in members if not picks.get(m)]
+    added = False
+    if need:
+        A.ensure_users(cur)
+        cur.execute("""SELECT canonical_id, availability, timezone FROM users
+                       WHERE canonical_id = ANY(%s) AND availability IS NOT NULL""", (need,))
+        av = {r["canonical_id"]: r for r in cur.fetchall()}
+        for m in need:
+            row = av.get(m)
+            blob = row["availability"] if row else None
+            if not blob or not blob.get("auto_schedule"):
+                continue
+            tz = blob.get("tz") or (row["timezone"] if row else None)
+            auto = [s for s in proposed if _slot_in_availability(s, tz, blob.get("slots") or {})]
+            if auto:
+                picks[m] = auto; added = True
+    both = bool(members) and all(picks.get(m) for m in members)
+    agreed = None
+    if both:
+        common = set(picks[members[0]])
+        for m in members[1:]:
+            common &= set(picks.get(m) or [])
+        agreed = (sorted(common) or [None])[0]
+    if agreed:
+        cur.execute("UPDATE ladder_challenges SET picks=%s, agreed_at=%s, status='scheduled' WHERE id=%s",
+                    (json.dumps(picks), agreed, ch["id"]))
+    elif added:
+        cur.execute("UPDATE ladder_challenges SET picks=%s WHERE id=%s", (json.dumps(picks), ch["id"]))
+    return agreed
 
 
 @app.get("/api/auth/claim/suggestions")
@@ -858,6 +926,28 @@ def _ladder_tick(cur):
         cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now() WHERE id=%s", (ch["id"],))
         counts["auto_resolved"] += 1
         _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, aw, bw, moves, match_id=match_id)
+
+    # ── AUTO-SCHEDULE: finalize OPEN challenges where a challenged player opted into
+    # auto_schedule and is free at a mutually-common proposed slot (no manual pick) ──
+    counts.setdefault("auto_scheduled_avail", 0)
+    cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.proposed, c.picks,
+                          cd.members AS members
+                   FROM ladder_challenges c
+                   JOIN ladder_teams cd ON cd.id=c.challenged_id
+                   WHERE c.status='open'
+                     AND jsonb_array_length(COALESCE(c.proposed,'[]'::jsonb)) > 0""")
+    for r in cur.fetchall():
+        try:
+            agreed = _auto_schedule_challenge(cur, r)
+        except Exception:
+            agreed = None
+        if agreed:
+            cn, cp = _team_np(cur, r["challenger_id"]); dn, dp = _team_np(cur, r["challenged_id"])
+            try:
+                notify.game_scheduled(cn, cp, dn, dp, agreed, None)
+            except Exception:
+                pass
+            counts["auto_scheduled_avail"] += 1
 
     # Scheduled matches → reminders. Two tiers: ~1 hour out and ~10 minutes out.
     # Windows are sized so the */5 cron always lands at least one tick inside them
@@ -5221,6 +5311,30 @@ def admin_notify(authorization: str | None = Header(default=None),
     _check_ladder_admin(authorization)
     import notify
     return {"sent": notify.send(content=content)}
+
+
+@app.post("/api/admin/ladder/player/{canonical_id}/auto-schedule")
+def admin_set_player_auto_schedule(canonical_id: str, authorization: str | None = Header(default=None),
+                                   enabled: bool = Body(..., embed=True)):
+    """Admin: toggle a player's ladder auto-schedule flag (stored on their weekly
+    availability). The player must already have availability set — auto-schedule
+    derives their match times from it."""
+    _check_ladder_admin(authorization)
+    import auth as A
+    with pg() as conn:
+        cur = conn.cursor()
+        A.ensure_users(cur)
+        cur.execute("SELECT discord_id, availability FROM users WHERE canonical_id=%s", (canonical_id,))
+        u = cur.fetchone()
+        if not u:
+            raise HTTPException(404, "no linked user for that player")
+        blob = dict(u["availability"] or {})
+        if not blob.get("slots"):
+            raise HTTPException(400, "player has no weekly availability set yet — they must set it first")
+        blob["auto_schedule"] = bool(enabled)
+        cur.execute("UPDATE users SET availability=%s WHERE discord_id=%s", (json.dumps(blob), u["discord_id"]))
+        conn.commit()
+    return {"canonical_id": canonical_id, "auto_schedule": bool(enabled)}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/cancel")

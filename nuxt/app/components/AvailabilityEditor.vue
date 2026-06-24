@@ -15,6 +15,9 @@ function hourLabel(h) { return h === 12 ? '12p' : h < 24 ? `${h - 12}p` : h === 
 
 // tz: saved availability tz → preferred tz → state-derived → ET.
 const tz = ref(user.value?.availability?.tz || resolveTz(user.value))
+// auto-schedule: when on, the scheduler may lock a match time from these hours
+// without the player manually picking each challenge.
+const autoSchedule = ref(!!user.value?.availability?.auto_schedule)
 
 // grid[day] = Set of selected hours
 const grid = reactive({})
@@ -66,7 +69,7 @@ async function save() {
   for (const [d] of DAYS) { const a = [...grid[d]].sort((x, y) => x - y); if (a.length) slots[d] = a }
   try {
     await $fetch(`${base}/api/auth/availability`, {
-      method: 'POST', headers: authHeader(), body: { tz: tz.value, slots },
+      method: 'POST', headers: authHeader(), body: { tz: tz.value, slots, auto_schedule: autoSchedule.value },
       retry: 2, retryDelay: 700, timeout: 20000   // ride out Cloud Run cold-start blips
     })
     await fetchMe()
@@ -115,6 +118,12 @@ async function save() {
           </tbody>
         </table>
       </div>
+
+      <label class="autosched">
+        <input type="checkbox" v-model="autoSchedule">
+        <span><strong>Auto-schedule based on my availability</strong><br>
+          <span class="muted">Let DeepFrag lock a match time from these hours automatically — no need to pick slots for each challenge.</span></span>
+      </label>
 
       <p v-if="err" class="err">{{ err }}</p>
       <div class="m-actions">
@@ -167,4 +176,7 @@ async function save() {
 .btn.ghost { background: transparent; color: var(--fg-2); border: 1px solid var(--border); }
 .btn:disabled { opacity: 0.6; cursor: wait; }
 .err { color: var(--loss); font-size: 13px; margin: 4px 0 8px; }
+.autosched { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; margin: 4px 0 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.autosched input { margin-top: 2px; width: 16px; height: 16px; flex: none; cursor: pointer; }
+.autosched span { font-size: 13px; } .autosched .muted { color: var(--fg-3); font-size: 12px; }
 </style>
