@@ -6,8 +6,9 @@ const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 
 const teamStats = ref([]); const playerStats = ref([]); const mapStats = ref(null); const matches = ref([])
+const enhanced = ref([])
 const loading = ref(true); const openMatchId = ref(null)
-const statView = ref('team')   // 'team' | 'players'
+const statView = ref('team')   // 'team' | 'players' | 'enhanced'
 
 async function load() {
   loading.value = true
@@ -21,7 +22,11 @@ async function load() {
     teamStats.value = ts.teams || []; playerStats.value = ps.players || []
     mapStats.value = ms; matches.value = mr.matches || []
   } catch (e) { console.error('[ladderstats]', e) } finally { loading.value = false }
+  // enhanced (mvd-api) stats — separate so a miss never breaks the core tables
+  try { enhanced.value = (await $fetch(`${base}/api/ladder/${props.ladderId}/enhanced-stats`)).players || [] }
+  catch { enhanced.value = [] }
 }
+function setView(v) { statView.value = v; sortKey.value = (v === 'enhanced' ? 'damage' : 'eff'); sortDir.value = -1 }
 onMounted(load)
 
 // Results are shown WINNER-first (not challenger-first) so a row always reads
@@ -43,12 +48,22 @@ const COLS = [
   { k: 'sg', l: 'SG', grp: true, pct: true, cls: 'c-wpn' }, { k: 'lg', l: 'LG', pct: true, cls: 'c-wpn' },
   { k: 'rl', l: 'RL', pct: true, cls: 'c-wpn' }, { k: 'quad', l: 'Q', grp: true, cls: 'c-q' },
 ]
+// Enhanced (mvd-api) leaderboard columns — the stats KTX box-score can't give.
+const ENH_COLS = [
+  { k: 'damage', l: 'Dmg', fmt: 'int' }, { k: 'frag_diff', l: '+/–', signed: true },
+  { k: 'react_ms', l: 'Spot→Fire', fmt: 'ms' },
+  { k: 'rockets_dmg', l: 'Rkts hit', grp: true }, { k: 'rockets_direct', l: 'Direct' }, { k: 'rockets_splash', l: 'Splash' },
+  { k: 'avg_rocket', l: 'Avg rkt' }, { k: 'rl_pref', l: 'RL%', pct: true, cls: 'c-wpn' },
+  { k: 'ewep_pct', l: 'EWep', pct: true, grp: true }, { k: 'frags', l: 'F' }, { k: 'deaths', l: 'D' },
+]
 const sortKey = ref('eff'); const sortDir = ref(-1)
 function sortBy(k) { if (sortKey.value === k) sortDir.value *= -1; else { sortKey.value = k; sortDir.value = -1 } }
 const sortedTeams = computed(() => [...teamStats.value].sort((a, b) => ((a[sortKey.value] ?? -1) - (b[sortKey.value] ?? -1)) * sortDir.value))
 const sortedPlayers = computed(() => [...playerStats.value].sort((a, b) => ((a[sortKey.value] ?? -1) - (b[sortKey.value] ?? -1)) * sortDir.value))
+// react_ms sorts ascending-as-better, but generic sort handles it via header click; default is damage desc.
+const sortedEnhanced = computed(() => [...enhanced.value].sort((a, b) => ((a[sortKey.value] ?? -1e9) - (b[sortKey.value] ?? -1e9)) * sortDir.value))
 const anyData = computed(() => teamStats.value.some(t => t.maps > 0))
-function fmtCell(v, c) { if (v == null) return '—'; if (c.pct) return v + '%'; if (c.fmt === 'int') return Math.round(v).toLocaleString(); return v }
+function fmtCell(v, c) { if (v == null) return '—'; if (c.pct) return v + '%'; if (c.fmt === 'ms') return v + 'ms'; if (c.fmt === 'int') return Math.round(v).toLocaleString(); if (c.signed) return (v >= 0 ? '+' : '') + v; return v }
 function logoUrl(id) { return `${base}/api/ladder/team/${id}/logo` }
 function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '' }
 </script>
@@ -64,10 +79,11 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
       <section class="panel">
         <h2>
           <span class="toggle">
-            <button :class="{ on: statView === 'team' }" @click="statView = 'team'">Team Stats</button>
-            <button :class="{ on: statView === 'players' }" @click="statView = 'players'">Player Stats</button>
+            <button :class="{ on: statView === 'team' }" @click="setView('team')">Team Stats</button>
+            <button :class="{ on: statView === 'players' }" @click="setView('players')">Player Stats</button>
+            <button :class="{ on: statView === 'enhanced' }" @click="setView('enhanced')">✨ Enhanced</button>
           </span>
-          <span class="meta">per-map averages · click a header to sort</span>
+          <span class="meta">{{ statView === 'enhanced' ? 'mvd-api deep stats · totals across all ladder games · click a header to sort' : 'per-map averages · click a header to sort' }}</span>
         </h2>
         <!-- Team Statistics -->
         <div v-if="statView === 'team'" class="scroll">
@@ -87,7 +103,7 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
           </table>
         </div>
         <!-- Player Statistics -->
-        <div v-else class="scroll">
+        <div v-else-if="statView === 'players'" class="scroll">
           <table v-if="playerStats.length" class="stats">
             <thead><tr>
               <th class="team">Player</th>
@@ -103,6 +119,25 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
             </tbody>
           </table>
           <div v-else class="muted small" style="padding:8px 0;">No player stats yet.</div>
+        </div>
+        <!-- Enhanced (mvd-api) Statistics -->
+        <div v-else-if="statView === 'enhanced'" class="scroll">
+          <table v-if="enhanced.length" class="stats">
+            <thead><tr>
+              <th class="team">Player</th>
+              <th v-for="c in ENH_COLS" :key="c.k" :class="[{ sorted: sortKey === c.k, colgrp: c.grp }]" @click="sortBy(c.k)">{{ c.l }}<span v-if="sortKey === c.k">{{ sortDir < 0 ? ' ▾' : ' ▴' }}</span></th>
+              <th>Maps</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="p in sortedEnhanced" :key="p.canonical_id">
+                <td class="team"><span class="tc"><NuxtLink :to="`/p/${p.canonical_id}`" class="pl-name">{{ p.name }}</NuxtLink><span v-if="p.team" class="tag sm">{{ p.team }}</span></span></td>
+                <td v-for="c in ENH_COLS" :key="c.k" :class="[c.cls, { colgrp: c.grp }]">{{ fmtCell(p[c.k], c) }}</td>
+                <td class="muted">{{ p.maps }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-else class="muted small" style="padding:8px 0;">No enhanced stats yet — they ingest from the demo parser as matches are reported.</div>
+          <p class="muted small" style="margin:8px 2px 0;">Dmg = total damage · Spot→Fire = median ms from a clear line-of-sight to your first hit (incl. ping) · Rkts hit = rockets that landed damage (direct/splash) · EWep = % of damage on armed enemies. From the mvd-api demo parser, not box-score.</p>
         </div>
       </section>
 
