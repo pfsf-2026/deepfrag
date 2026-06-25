@@ -3805,8 +3805,13 @@ def ladder_team_get(team_id: int):
     return t
 
 
-# ── Enhanced (mvd-api v37) per-player stats for ladder games ─────────────────
+# ── Enhanced (mvd-api) per-player stats for ladder games ─────────────────────
 _MVD_API = os.environ.get("MVD_API_BASE", "https://deepfrag-mvd-api-751658372467.us-central1.run.app")
+# The mvd-api parser schema version we currently deploy (LOS branch = 37). Each
+# parsed game records the version it was parsed at (enh_game_meta); we never
+# re-parse a game already done at >= this version. **Bump this whenever the
+# mvd-api image is rebuilt off a newer schema** so existing games re-ingest.
+ENH_PARSER_VERSION = 37
 
 
 def _enh_ensure(cur):
@@ -3819,12 +3824,20 @@ def _enh_ensure(cur):
         react_sum_ms BIGINT DEFAULT 0, react_n INT DEFAULT 0,
         frags INT DEFAULT 0, deaths INT DEFAULT 0,
         PRIMARY KEY (hub_game_id, canonical_id))""")
+    # one row per parsed game: which parser schema version produced its enhanced
+    # data, so we parse each demo exactly once per parser version (never twice).
+    cur.execute("""CREATE TABLE IF NOT EXISTS enh_game_meta (
+        hub_game_id BIGINT PRIMARY KEY, schema_version INT NOT NULL,
+        ingested_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
 
 
 def _mvd_get(path):
+    """Return (json, schema_version) — the X-Schema-Version header records exactly
+    which parser version produced this response."""
     import urllib.request
     with urllib.request.urlopen(_MVD_API + path, timeout=110) as r:
-        return json.loads(r.read())
+        ver = r.headers.get("X-Schema-Version")
+        return json.loads(r.read()), (int(ver) if ver and str(ver).isdigit() else None)
 
 
 def _ingest_enh_game(cur, hid):
@@ -3835,9 +3848,9 @@ def _ingest_enh_game(cur, hid):
                    JOIN matches m ON m.match_id=p.match_id
                    WHERE m.hub_game_id=%s AND p.canonical_id IS NOT NULL""", (hid,))
     name2cid = {r["player_name"]: r["canonical_id"] for r in cur.fetchall()}
-    dmg = _mvd_get(f"/v1/demos/gameId:{hid}/damage")
-    los = _mvd_get(f"/v1/demos/gameId:{hid}/los")
-    frags = _mvd_get(f"/v1/demos/gameId:{hid}/frags")
+    dmg, ver = _mvd_get(f"/v1/demos/gameId:{hid}/damage")
+    los, _ = _mvd_get(f"/v1/demos/gameId:{hid}/los")
+    frags, _ = _mvd_get(f"/v1/demos/gameId:{hid}/frags")
     P = {}
     def g(n): return P.setdefault(n, {"given":0,"taken":0,"ewep":0,"rl":0,"lg":0,"rd":0,
         "rdir":0,"rspl":0,"rsum":0,"ins":0,"rsum_ms":0,"rn":0,"f":0,"d":0})
@@ -3879,6 +3892,11 @@ def _ingest_enh_game(cur, hid):
             (hid, cid, p["given"],p["taken"],p["ewep"],p["rl"],p["lg"],p["rd"],p["rdir"],p["rspl"],
              p["rsum"],p["ins"],p["rsum_ms"],p["rn"],p["f"],p["d"]))
         n_written+=1
+    # record the parser version this game was parsed at (parse-once-per-version)
+    cur.execute("""INSERT INTO enh_game_meta (hub_game_id, schema_version, ingested_at)
+                   VALUES (%s,%s,now()) ON CONFLICT (hub_game_id) DO UPDATE SET
+                     schema_version=EXCLUDED.schema_version, ingested_at=now()""",
+                (hid, ver or ENH_PARSER_VERSION))
     return n_written
 
 
@@ -3925,7 +3943,10 @@ def admin_ingest_enhanced(authorization: str | None = Header(default=None), limi
                 if mp.get("hub_game_id"): all_ids.add(int(mp["hub_game_id"]))
             for g in (r["hub_game_ids"] or []):
                 if g is not None: all_ids.add(int(g))
-        cur.execute("SELECT DISTINCT hub_game_id FROM ladder_enh_stats")
+        # already parsed at the CURRENT parser version → skip (never re-parse);
+        # games parsed at an older version fall back into todo so they refresh.
+        cur.execute("SELECT hub_game_id FROM enh_game_meta WHERE schema_version >= %s",
+                    (ENH_PARSER_VERSION,))
         done = {r["hub_game_id"] for r in cur.fetchall()}
         todo = sorted(all_ids - done)
         conn.commit()
