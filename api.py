@@ -36,6 +36,10 @@ from export_rankings import (
     DIVERSITY_THRESHOLD_OVERALL, DIVERSITY_THRESHOLD_PER_MAP,
 )
 
+# Below this many rated games the engine can't grade a player — show "unrated /
+# too few duels" instead of a (misleadingly low) division.
+MIN_RATED_GAMES = 10
+
 
 def _get_tier_cutoffs(cur, mode: str, map_name: str = "") -> dict:
     """Fetch all conservative ratings for this (mode, map) bucket and compute
@@ -1362,6 +1366,10 @@ def player_profile(canonical_id: str):
         # Compute cutoffs lazily — one trip per mode the player is rated in.
         cutoffs_by_mode = {r["mode"]: _get_tier_cutoffs(cur, r["mode"]) for r in mode_rows}
         for r in mode_rows:
+            # Below MIN_RATED_GAMES the sample is too small to assign a division —
+            # show no tier (rated=false) so a 2v2 regular who rarely duels isn't
+            # mislabelled as a low division.
+            rated = (r["matches_rated"] or 0) >= MIN_RATED_GAMES
             ratings[r["mode"]] = {
                 "mu": round(r["mu"], 1),
                 "sigma": round(r["sigma"], 1),
@@ -1370,7 +1378,8 @@ def player_profile(canonical_id: str):
                 "wins": r["wins"],
                 "losses": r["losses"],
                 "draws": r["draws"],
-                "tier": tier_for(r["conservative"], cutoffs_by_mode.get(r["mode"])),
+                "tier": tier_for(r["conservative"], cutoffs_by_mode.get(r["mode"])) if rated else None,
+                "rated": rated,
                 "updated_at": r["updated_at"],
             }
 
@@ -4094,14 +4103,18 @@ def _ladder_preview_article(ch, A, B, prediction, prob_a, prob_b):
             from tiers import tier_for
             cutoffs = _get_tier_cutoffs(cur, "1on1")
             if a_ids + b_ids:
-                cur.execute("""SELECT canonical_id, mu, conservative, wins, losses, avg_frag_diff
+                cur.execute("""SELECT canonical_id, mu, conservative, wins, losses, avg_frag_diff, matches_rated
                                FROM ratings WHERE mode='1on1' AND map='' AND canonical_id = ANY(%s)""",
                             (a_ids + b_ids,))
                 for r in cur.fetchall():
-                    t = tier_for(r["conservative"], cutoffs)
+                    # Don't hand the writer a division for players the engine can't
+                    # grade — too few 1v1 duels (e.g. a 2v2 specialist). Show
+                    # "unrated (N duels)" so a tiny sample isn't read as a low skill.
+                    rated = (r["matches_rated"] or 0) >= MIN_RATED_GAMES
+                    t = tier_for(r["conservative"], cutoffs) if rated else None
                     member_meta[r["canonical_id"]] = {
-                        "rating_mu": round(r["mu"]) if r["mu"] is not None else None,
-                        "division": (t or {}).get("name"),
+                        "rating_mu": (round(r["mu"]) if r["mu"] is not None else None) if rated else None,
+                        "division": (t or {}).get("name") if rated else f'unrated ({r["matches_rated"] or 0} duels — too few to grade)',
                         "career_wl": f'{r["wins"]}-{r["losses"]}',
                         "avg_frag_diff": round(r["avg_frag_diff"], 1) if r["avg_frag_diff"] is not None else None,
                     }
@@ -5322,6 +5335,32 @@ def admin_notify(authorization: str | None = Header(default=None),
     _check_ladder_admin(authorization)
     import notify
     return {"sent": notify.send(content=content)}
+
+
+@app.post("/api/admin/players/{canonical_id}/unrated")
+def admin_set_unrated(canonical_id: str, authorization: str | None = Header(default=None),
+                      enabled: bool = Body(..., embed=True)):
+    """Admin: flag a player as UNRATED — they get no published OpenSkill rating/
+    division/ranking, but their raw game stats + team stats are untouched, and
+    their games still count toward opponents' ratings. Reversible: set enabled
+    false + rerate. When enabling, also deletes any existing rating rows so they
+    drop out immediately (rate.py keeps skipping them while flagged)."""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("ALTER TABLE players_canonical ADD COLUMN IF NOT EXISTS unrated BOOLEAN NOT NULL DEFAULT FALSE")
+        cur.execute("SELECT canonical_id FROM players_canonical WHERE canonical_id=%s", (canonical_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "no such player")
+        cur.execute("UPDATE players_canonical SET unrated=%s WHERE canonical_id=%s", (bool(enabled), canonical_id))
+        deleted = {"ratings": 0, "rating_history": 0}
+        if enabled:
+            cur.execute("DELETE FROM ratings WHERE canonical_id=%s", (canonical_id,))
+            deleted["ratings"] = cur.rowcount
+            cur.execute("DELETE FROM rating_history WHERE canonical_id=%s", (canonical_id,))
+            deleted["rating_history"] = cur.rowcount
+        conn.commit()
+    return {"canonical_id": canonical_id, "unrated": bool(enabled), "deleted": deleted}
 
 
 @app.post("/api/admin/ladder/player/{canonical_id}/auto-schedule")

@@ -551,8 +551,17 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
     """, (mode, map_bucket))
     uniq_counts = {r["canonical_id"]: r["n"] for r in cur.fetchall()}
 
+    # Players flagged `unrated` get NO published rating (their games still count
+    # toward OPPONENTS' ratings — we just never write a rating row for them).
+    # Reversible: clear the flag + rerate to bring them back.
+    cur.execute("ALTER TABLE players_canonical ADD COLUMN IF NOT EXISTS unrated BOOLEAN NOT NULL DEFAULT FALSE")
+    cur.execute("SELECT canonical_id FROM players_canonical WHERE unrated")
+    _unrated = {row["canonical_id"] for row in cur.fetchall()}
+
     rating_rows = []
     for cid, r in cache.items():
+        if cid in _unrated:
+            continue
         s = stats.get(cid, {})
         if map_bucket and s["matches"] < per_map_min:
             continue
