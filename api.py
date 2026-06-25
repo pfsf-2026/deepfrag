@@ -3853,6 +3853,17 @@ def _enh_norm(s):
     return re.sub(r"[^a-z0-9]", "", str(s).lower())
 
 
+_ALIASES = None
+def _aliases():
+    """Lazily load the canonical-name resolver (aliases.yaml) — maps name variants
+    (incl. clan-prefixed forms like 'wd.char') to their canonical_id."""
+    global _ALIASES
+    if _ALIASES is None:
+        from name_canon import Aliases
+        _ALIASES = Aliases.load()
+    return _ALIASES
+
+
 def _ingest_enh_game(cur, hid):
     """Pull mvd-api enhanced stats for ONE hub game and upsert per-player rows,
     keyed by canonical_id (mapped via the already-ingested players rows for this
@@ -3892,9 +3903,20 @@ def _ingest_enh_game(cur, hid):
     for f in ((frags.get("frags") if isinstance(frags,dict) else frags) or []):
         if f.get("killer"): g(f["killer"])["f"]+=1
         if f.get("victim"): g(f["victim"])["d"]+=1
+    known_cids = set(name2cid.values())   # canonicals that actually played this game
     n_written=0
     for name, p in P.items():
         cid = name2cid.get(name) or name2cid.get(_enh_norm(name))
+        if not cid:
+            # The mvd-api may render a name differently than the players table
+            # (e.g. keeps the 'wd.char' clan prefix). Resolve via the alias index,
+            # but only trust it if that canonical actually played this game.
+            try:
+                rc, _dec = _aliases().resolve(name)
+                if rc in known_cids:
+                    cid = rc
+            except Exception:
+                pass
         if not cid:
             continue   # not a canonicalised ladder player in this game
         cur.execute("""INSERT INTO ladder_enh_stats (hub_game_id,canonical_id,given,taken,ewep,rl_dmg,lg_dmg,
