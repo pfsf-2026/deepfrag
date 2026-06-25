@@ -36,9 +36,14 @@ from export_rankings import (
     DIVERSITY_THRESHOLD_OVERALL, DIVERSITY_THRESHOLD_PER_MAP,
 )
 
-# Below this many rated games the engine can't grade a player — show "unrated /
-# too few duels" instead of a (misleadingly low) division.
+# A player is only gradable with enough games AND enough opponent variety — a
+# handful of duels, or many duels vs the same 1-2 people, can't make a real rating.
 MIN_RATED_GAMES = 10
+MIN_RATED_OPPONENTS = 4
+
+
+def _is_rated(matches_rated, unique_opponents):
+    return (matches_rated or 0) >= MIN_RATED_GAMES and (unique_opponents or 0) >= MIN_RATED_OPPONENTS
 
 
 def _get_tier_cutoffs(cur, mode: str, map_name: str = "") -> dict:
@@ -1358,7 +1363,7 @@ def player_profile(canonical_id: str):
         # Per-mode ratings (overall + tier).
         cur.execute("""
             SELECT mode, mu, sigma, conservative, matches_rated, wins, losses, draws,
-                   updated_at
+                   unique_opponents, updated_at
             FROM ratings WHERE canonical_id = %s AND map = ''
         """, (canonical_id,))
         ratings = {"1on1": None, "2on2": None, "4on4": None}
@@ -1366,10 +1371,9 @@ def player_profile(canonical_id: str):
         # Compute cutoffs lazily — one trip per mode the player is rated in.
         cutoffs_by_mode = {r["mode"]: _get_tier_cutoffs(cur, r["mode"]) for r in mode_rows}
         for r in mode_rows:
-            # Below MIN_RATED_GAMES the sample is too small to assign a division —
-            # show no tier (rated=false) so a 2v2 regular who rarely duels isn't
-            # mislabelled as a low division.
-            rated = (r["matches_rated"] or 0) >= MIN_RATED_GAMES
+            # Too small / too narrow a sample to assign a division — show no tier
+            # (rated=false) so a 2v2 regular who rarely duels isn't mislabelled.
+            rated = _is_rated(r["matches_rated"], r["unique_opponents"])
             ratings[r["mode"]] = {
                 "mu": round(r["mu"], 1),
                 "sigma": round(r["sigma"], 1),
@@ -3801,6 +3805,168 @@ def ladder_team_get(team_id: int):
     return t
 
 
+# ── Enhanced (mvd-api v37) per-player stats for ladder games ─────────────────
+_MVD_API = os.environ.get("MVD_API_BASE", "https://deepfrag-mvd-api-751658372467.us-central1.run.app")
+
+
+def _enh_ensure(cur):
+    cur.execute("""CREATE TABLE IF NOT EXISTS ladder_enh_stats (
+        hub_game_id BIGINT NOT NULL, canonical_id TEXT NOT NULL,
+        given INT DEFAULT 0, taken INT DEFAULT 0, ewep INT DEFAULT 0,
+        rl_dmg INT DEFAULT 0, lg_dmg INT DEFAULT 0,
+        rockets_dmg INT DEFAULT 0, rockets_direct INT DEFAULT 0, rockets_splash INT DEFAULT 0,
+        rocket_dmg_sum INT DEFAULT 0, insight_ms BIGINT DEFAULT 0,
+        react_sum_ms BIGINT DEFAULT 0, react_n INT DEFAULT 0,
+        frags INT DEFAULT 0, deaths INT DEFAULT 0,
+        PRIMARY KEY (hub_game_id, canonical_id))""")
+
+
+def _mvd_get(path):
+    import urllib.request
+    with urllib.request.urlopen(_MVD_API + path, timeout=110) as r:
+        return json.loads(r.read())
+
+
+def _ingest_enh_game(cur, hid):
+    """Pull mvd-api enhanced stats for ONE hub game and upsert per-player rows,
+    keyed by canonical_id (mapped via the already-ingested players rows for this
+    game — reuses the existing canonicalization, no name re-resolution)."""
+    cur.execute("""SELECT p.player_name, p.canonical_id FROM players p
+                   JOIN matches m ON m.match_id=p.match_id
+                   WHERE m.hub_game_id=%s AND p.canonical_id IS NOT NULL""", (hid,))
+    name2cid = {r["player_name"]: r["canonical_id"] for r in cur.fetchall()}
+    dmg = _mvd_get(f"/v1/demos/gameId:{hid}/damage")
+    los = _mvd_get(f"/v1/demos/gameId:{hid}/los")
+    frags = _mvd_get(f"/v1/demos/gameId:{hid}/frags")
+    P = {}
+    def g(n): return P.setdefault(n, {"given":0,"taken":0,"ewep":0,"rl":0,"lg":0,"rd":0,
+        "rdir":0,"rspl":0,"rsum":0,"ins":0,"rsum_ms":0,"rn":0,"f":0,"d":0})
+    for n, b in (dmg.get("byPlayer") or {}).items():
+        p=g(n); p["given"]+=b.get("given",0); p["taken"]+=b.get("taken",0); p["ewep"]+=b.get("ewep",0)
+        bw=b.get("byWeapon",{}); p["rl"]+=bw.get("rl",0); p["lg"]+=bw.get("lg",0)
+    for e in dmg.get("events",[]):
+        if e.get("weapon")=="rl" and not e.get("isSelf") and e.get("damage",0)>0:
+            p=g(e["attacker"]); p["rd"]+=1; p["rsum"]+=e["damage"]
+            p["rspl" if e.get("isSplash") else "rdir"]+=1
+    names=[pl["name"] for pl in los.get("players",[])]
+    ev=[e for e in dmg.get("events",[]) if not e.get("isSelf") and e.get("damage",0)>0]
+    for pl in los.get("players",[]):
+        looker=pl["name"]; p=g(looker)
+        for tr in pl.get("los",[]):
+            seen=names[tr["o"]] if tr["o"]<len(names) else None
+            for iv in tr.get("iv",[]):
+                p["ins"]+=max(0, iv["e"]-iv["s"])
+                hits=[e["time"] for e in ev if e["attacker"]==looker and e["victim"]==seen and iv["s"]<=e["time"]<=iv["e"]+250]
+                if hits:
+                    r=min(hits)-iv["s"]
+                    if 0<=r<=2000: p["rsum_ms"]+=r; p["rn"]+=1
+    for f in ((frags.get("frags") if isinstance(frags,dict) else frags) or []):
+        if f.get("killer"): g(f["killer"])["f"]+=1
+        if f.get("victim"): g(f["victim"])["d"]+=1
+    n_written=0
+    for name, p in P.items():
+        cid = name2cid.get(name)
+        if not cid:
+            continue   # not a canonicalised ladder player in this game
+        cur.execute("""INSERT INTO ladder_enh_stats (hub_game_id,canonical_id,given,taken,ewep,rl_dmg,lg_dmg,
+            rockets_dmg,rockets_direct,rockets_splash,rocket_dmg_sum,insight_ms,react_sum_ms,react_n,frags,deaths)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (hub_game_id,canonical_id) DO UPDATE SET
+              given=EXCLUDED.given,taken=EXCLUDED.taken,ewep=EXCLUDED.ewep,rl_dmg=EXCLUDED.rl_dmg,lg_dmg=EXCLUDED.lg_dmg,
+              rockets_dmg=EXCLUDED.rockets_dmg,rockets_direct=EXCLUDED.rockets_direct,rockets_splash=EXCLUDED.rockets_splash,
+              rocket_dmg_sum=EXCLUDED.rocket_dmg_sum,insight_ms=EXCLUDED.insight_ms,react_sum_ms=EXCLUDED.react_sum_ms,
+              react_n=EXCLUDED.react_n,frags=EXCLUDED.frags,deaths=EXCLUDED.deaths""",
+            (hid, cid, p["given"],p["taken"],p["ewep"],p["rl"],p["lg"],p["rd"],p["rdir"],p["rspl"],
+             p["rsum"],p["ins"],p["rsum_ms"],p["rn"],p["f"],p["d"]))
+        n_written+=1
+    return n_written
+
+
+def _enh_aggregate(cur, hub_ids):
+    """Aggregate enh_stats across a set of hub games → per-player derived metrics."""
+    if not hub_ids:
+        return []
+    cur.execute("""SELECT e.canonical_id AS cid, COALESCE(pc.display_name, e.canonical_id) AS name,
+                          COUNT(*) AS maps, SUM(given) given, SUM(taken) taken, SUM(ewep) ewep,
+                          SUM(rl_dmg) rl, SUM(lg_dmg) lg, SUM(rockets_dmg) rd, SUM(rockets_direct) rdir,
+                          SUM(rockets_splash) rspl, SUM(rocket_dmg_sum) rsum, SUM(insight_ms) ins,
+                          SUM(react_sum_ms) rsum_ms, SUM(react_n) rn, SUM(frags) f, SUM(deaths) d
+                   FROM ladder_enh_stats e
+                   LEFT JOIN players_canonical pc ON pc.canonical_id=e.canonical_id
+                   WHERE e.hub_game_id = ANY(%s) GROUP BY e.canonical_id, pc.display_name""", (list(hub_ids),))
+    out=[]
+    for r in cur.fetchall():
+        rl_lg=(r["rl"] or 0)+(r["lg"] or 0)
+        out.append({"canonical_id":r["cid"],"name":r["name"],"maps":r["maps"],
+            "damage":r["given"] or 0,"taken":r["taken"] or 0,
+            "ewep_pct":round(100*(r["ewep"] or 0)/r["given"]) if r["given"] else 0,
+            "rl_pref":round(100*(r["rl"] or 0)/rl_lg) if rl_lg else 0,
+            "rockets_dmg":r["rd"] or 0,"rockets_direct":r["rdir"] or 0,"rockets_splash":r["rspl"] or 0,
+            "avg_rocket":round((r["rsum"] or 0)/r["rd"]) if r["rd"] else 0,
+            "react_ms":round((r["rsum_ms"] or 0)/r["rn"]) if r["rn"] else None,
+            "frags":r["f"] or 0,"deaths":r["d"] or 0,"frag_diff":(r["f"] or 0)-(r["d"] or 0)})
+    out.sort(key=lambda x:-x["damage"])
+    return out
+
+
+@app.post("/api/admin/ladder/ingest-enhanced")
+def admin_ingest_enhanced(authorization: str | None = Header(default=None), limit: int = Query(8, le=40)):
+    """Admin: pull mvd-api enhanced stats for ladder games not yet ingested (batched
+    — call repeatedly until remaining=0). Resumable; each game upserts on success."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur); _enh_ensure(cur)
+        cur.execute("SELECT maps, hub_game_ids FROM ladder_matches")
+        all_ids = set()
+        for r in cur.fetchall():
+            for mp in (r["maps"] or []):
+                if mp.get("hub_game_id"): all_ids.add(int(mp["hub_game_id"]))
+            for g in (r["hub_game_ids"] or []):
+                if g is not None: all_ids.add(int(g))
+        cur.execute("SELECT DISTINCT hub_game_id FROM ladder_enh_stats")
+        done = {r["hub_game_id"] for r in cur.fetchall()}
+        todo = sorted(all_ids - done)
+        conn.commit()
+    ingested, errors = [], []
+    for hid in todo[:limit]:
+        try:
+            with pg() as conn:
+                cur = conn.cursor(); n = _ingest_enh_game(cur, hid); conn.commit()
+            ingested.append({"game": hid, "players": n})
+        except Exception as e:
+            errors.append({"game": hid, "error": str(e)[:120]})
+    return {"ingested": ingested, "errors": errors,
+            "remaining": max(0, len(todo) - limit), "total_games": len(all_ids)}
+
+
+@app.get("/api/ladder/{ladder_id}/enhanced-stats")
+def ladder_enhanced_stats(ladder_id: int, response: Response):
+    """Enhanced-stats leaderboard for a ladder: per-player aggregate across all
+    ingested ladder games (damage, EWep, rockets, spot-to-fire reaction, frags)."""
+    import ladder as _ladder
+    response.headers["Cache-Control"] = "public, max-age=120"
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur); _enh_ensure(cur)
+        cur.execute("SELECT maps, hub_game_ids FROM ladder_matches WHERE ladder_id=%s", (ladder_id,))
+        hub_ids=set()
+        for r in cur.fetchall():
+            for mp in (r["maps"] or []):
+                if mp.get("hub_game_id"): hub_ids.add(int(mp["hub_game_id"]))
+            for g in (r["hub_game_ids"] or []):
+                if g is not None: hub_ids.add(int(g))
+        players = _enh_aggregate(cur, hub_ids)
+        # tag team tag from active rosters
+        cur.execute("SELECT tag, members FROM ladder_teams WHERE ladder_id=%s AND status='active'", (ladder_id,))
+        cid_tag={}
+        for t in cur.fetchall():
+            for m in (t["members"] or []): cid_tag[m]=t["tag"]
+        for p in players: p["team"]=cid_tag.get(p["canonical_id"])
+    return {"players": players}
+
+
 def _team_summary(team_id):
     """Assemble a team's home-page summary (header + record + team-scoped match
     history + per-map record + aggregate team stats + per-player stats). Shared by
@@ -4103,14 +4269,14 @@ def _ladder_preview_article(ch, A, B, prediction, prob_a, prob_b):
             from tiers import tier_for
             cutoffs = _get_tier_cutoffs(cur, "1on1")
             if a_ids + b_ids:
-                cur.execute("""SELECT canonical_id, mu, conservative, wins, losses, avg_frag_diff, matches_rated
+                cur.execute("""SELECT canonical_id, mu, conservative, wins, losses, avg_frag_diff,
+                                      matches_rated, unique_opponents
                                FROM ratings WHERE mode='1on1' AND map='' AND canonical_id = ANY(%s)""",
                             (a_ids + b_ids,))
                 for r in cur.fetchall():
                     # Don't hand the writer a division for players the engine can't
-                    # grade — too few 1v1 duels (e.g. a 2v2 specialist). Show
-                    # "unrated (N duels)" so a tiny sample isn't read as a low skill.
-                    rated = (r["matches_rated"] or 0) >= MIN_RATED_GAMES
+                    # grade — too few/narrow 1v1 sample (e.g. a 2v2 specialist).
+                    rated = _is_rated(r["matches_rated"], r["unique_opponents"])
                     t = tier_for(r["conservative"], cutoffs) if rated else None
                     member_meta[r["canonical_id"]] = {
                         "rating_mu": (round(r["mu"]) if r["mu"] is not None else None) if rated else None,
