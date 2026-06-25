@@ -3841,27 +3841,17 @@ def _mvd_get(path):
 
 
 def _enh_norm(s):
-    """Collapse a QW name to a match key (strip color codes + all non-alphanumerics)
-    so the mvd-api's rendered name (e.g. 'wd•char', color-coded) still matches the
-    players-table name ('wd.char') for the same player."""
+    """Collapse a QW name to a match key. Uses name_canon.normalize() (un-escapes
+    \\5/\\x9c color/byte codes + strips color + regional prefix) THEN removes every
+    non-alphanumeric — so the players-table raw form ('\\5w\\5d\\x9c\\5cha\\5r') and
+    the mvd-api rendered form ('wd.char') both collapse to 'wdchar'."""
     import re
     try:
-        from name_canon import strip_color_codes
-        s = strip_color_codes(str(s))
+        from name_canon import normalize
+        s = normalize(str(s))
     except Exception:
-        pass
-    return re.sub(r"[^a-z0-9]", "", str(s).lower())
-
-
-_ALIASES = None
-def _aliases():
-    """Lazily load the canonical-name resolver (aliases.yaml) — maps name variants
-    (incl. clan-prefixed forms like 'wd.char') to their canonical_id."""
-    global _ALIASES
-    if _ALIASES is None:
-        from name_canon import Aliases
-        _ALIASES = Aliases.load()
-    return _ALIASES
+        s = str(s).lower()
+    return re.sub(r"[^a-z0-9]", "", s)
 
 
 def _ingest_enh_game(cur, hid):
@@ -3903,20 +3893,9 @@ def _ingest_enh_game(cur, hid):
     for f in ((frags.get("frags") if isinstance(frags,dict) else frags) or []):
         if f.get("killer"): g(f["killer"])["f"]+=1
         if f.get("victim"): g(f["victim"])["d"]+=1
-    known_cids = set(name2cid.values())   # canonicals that actually played this game
     n_written=0
     for name, p in P.items():
         cid = name2cid.get(name) or name2cid.get(_enh_norm(name))
-        if not cid:
-            # The mvd-api may render a name differently than the players table
-            # (e.g. keeps the 'wd.char' clan prefix). Resolve via the alias index,
-            # but only trust it if that canonical actually played this game.
-            try:
-                rc, _dec = _aliases().resolve(name)
-                if rc in known_cids:
-                    cid = rc
-            except Exception:
-                pass
         if not cid:
             continue   # not a canonicalised ladder player in this game
         cur.execute("""INSERT INTO ladder_enh_stats (hub_game_id,canonical_id,given,taken,ewep,rl_dmg,lg_dmg,
@@ -4024,17 +4003,7 @@ def admin_enh_debug(hid: int, authorization: str | None = Header(default=None)):
             name2cid[r["player_name"]] = r["canonical_id"]
             name2cid.setdefault(_enh_norm(r["player_name"]), r["canonical_id"])
     known = set(name2cid.values())
-    resolved = {}
-    for n in mvd_names:
-        cid = name2cid.get(n) or name2cid.get(_enh_norm(n))
-        src = "exact/norm" if cid else None
-        if not cid:
-            try:
-                rc, dec = _aliases().resolve(n);
-                if rc in known: cid, src = rc, f"alias({dec})"
-                else: src = f"alias→{rc}(not in game)"
-            except Exception as e: src = f"err:{e}"
-        resolved[n] = {"cid": cid, "via": src}
+    resolved = {n: {"cid": name2cid.get(n) or name2cid.get(_enh_norm(n)), "key": _enh_norm(n)} for n in mvd_names}
     return {"players_table": ptbl, "mvd_names": mvd_names, "resolved": resolved}
 
 
