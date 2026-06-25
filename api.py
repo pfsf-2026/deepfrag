@@ -4005,6 +4005,39 @@ def admin_ingest_enhanced(authorization: str | None = Header(default=None), limi
             "remaining": max(0, len(todo) - limit), "total_games": len(all_ids)}
 
 
+@app.get("/api/admin/ladder/enh-debug/{hid}")
+def admin_enh_debug(hid: int, authorization: str | None = Header(default=None)):
+    """Diagnostic: players-table names/canon for a game vs mvd-api byPlayer names +
+    how each mvd name resolves. Find why a player isn't mapping."""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""SELECT p.player_name, p.canonical_id, p.player_frags
+                       FROM players p JOIN matches m ON m.match_id=p.match_id
+                       WHERE m.hub_game_id=%s""", (hid,))
+        ptbl = [{"player_name": r["player_name"], "canonical_id": r["canonical_id"], "frags": r["player_frags"]} for r in cur.fetchall()]
+    dmg, _ = _mvd_get(f"/v1/demos/gameId:{hid}/damage")
+    mvd_names = sorted((dmg.get("byPlayer") or {}).keys())
+    name2cid = {}
+    for r in ptbl:
+        if r["canonical_id"]:
+            name2cid[r["player_name"]] = r["canonical_id"]
+            name2cid.setdefault(_enh_norm(r["player_name"]), r["canonical_id"])
+    known = set(name2cid.values())
+    resolved = {}
+    for n in mvd_names:
+        cid = name2cid.get(n) or name2cid.get(_enh_norm(n))
+        src = "exact/norm" if cid else None
+        if not cid:
+            try:
+                rc, dec = _aliases().resolve(n);
+                if rc in known: cid, src = rc, f"alias({dec})"
+                else: src = f"alias→{rc}(not in game)"
+            except Exception as e: src = f"err:{e}"
+        resolved[n] = {"cid": cid, "via": src}
+    return {"players_table": ptbl, "mvd_names": mvd_names, "resolved": resolved}
+
+
 @app.get("/api/ladder/{ladder_id}/enhanced-stats")
 def ladder_enhanced_stats(ladder_id: int, response: Response):
     """Enhanced-stats leaderboard for a ladder: per-player aggregate across all
