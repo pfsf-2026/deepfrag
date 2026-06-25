@@ -7,6 +7,7 @@ const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 
 const detail = ref(null)
+const enh = ref([])
 const loading = ref(true)
 function logoUrl(id) { return `${base}/api/ladder/team/${id}/logo` }
 // Orient the whole modal WINNER-first (match winner's team on the left, their
@@ -18,6 +19,8 @@ function mapWonByWinner(mp) { return (wf(mp) ?? 0) > (lf(mp) ?? 0) }  // did the
 onMounted(async () => {
   try { detail.value = await $fetch(`${base}/api/ladder/match/${props.matchId}`) }
   catch { /* ignore */ } finally { loading.value = false }
+  try { enh.value = (await $fetch(`${base}/api/ladder/match/${props.matchId}/enhanced`)).players || [] }
+  catch { enh.value = [] }
 })
 </script>
 
@@ -50,6 +53,24 @@ onMounted(async () => {
             </tbody>
           </table>
         </div>
+        <!-- Enhanced (mvd-api) stats for the whole match -->
+        <div v-if="enh.length" class="md-block md-enh">
+          <div class="md-map-h">✨ Enhanced <span class="muted small">— mvd-api parser, match totals</span></div>
+          <table class="pl">
+            <thead><tr><th class="l">Player</th><th>Dmg</th><th>+/–</th><th title="median ms from line-of-sight to first hit">Spot→Fire</th><th title="rockets that landed damage">Rkts</th><th>Dir/Spl</th><th>RL%</th><th title="% of damage on armed enemies">EWep</th></tr></thead>
+            <tbody>
+              <tr v-for="p in enh" :key="p.canonical_id">
+                <td class="l">{{ p.name }} <span v-if="p.team" class="tag sm">{{ p.team }}</span></td>
+                <td>{{ p.damage >= 1000 ? (p.damage/1000).toFixed(1)+'k' : p.damage }}</td>
+                <td>{{ p.frag_diff >= 0 ? '+' : '' }}{{ p.frag_diff }}</td>
+                <td>{{ p.react_ms != null ? p.react_ms + 'ms' : '—' }}</td>
+                <td>{{ p.rockets_dmg }}</td>
+                <td class="muted">{{ p.rockets_direct }}/{{ p.rockets_splash }}</td>
+                <td>{{ p.rl_pref }}%</td><td>{{ p.ewep_pct }}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </template>
     </div>
   </div>
@@ -70,6 +91,8 @@ onMounted(async () => {
 .md-maps .m { font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 4px 9px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--border); }
 .md-maps .m.w { border-color: var(--accent); color: var(--accent); }
 .md-block { margin-bottom: 14px; }
+.md-enh { margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.tag.sm { font-size: 9px; font-weight: 800; color: var(--fg-3); background: var(--panel-2); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; margin-left: 4px; }
 .md-map-h { font-family: 'JetBrains Mono', monospace; font-weight: 700; margin-bottom: 6px; }
 table.pl { border-collapse: collapse; width: 100%; font-size: 12px; }
 table.pl th { font-size: 10px; color: var(--fg-3); text-transform: uppercase; text-align: right; padding: 5px 7px; border-bottom: 1px solid var(--border); }

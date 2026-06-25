@@ -3840,6 +3840,19 @@ def _mvd_get(path):
         return json.loads(r.read()), (int(ver) if ver and str(ver).isdigit() else None)
 
 
+def _enh_norm(s):
+    """Collapse a QW name to a match key (strip color codes + all non-alphanumerics)
+    so the mvd-api's rendered name (e.g. 'wd•char', color-coded) still matches the
+    players-table name ('wd.char') for the same player."""
+    import re
+    try:
+        from name_canon import strip_color_codes
+        s = strip_color_codes(str(s))
+    except Exception:
+        pass
+    return re.sub(r"[^a-z0-9]", "", str(s).lower())
+
+
 def _ingest_enh_game(cur, hid):
     """Pull mvd-api enhanced stats for ONE hub game and upsert per-player rows,
     keyed by canonical_id (mapped via the already-ingested players rows for this
@@ -3847,7 +3860,10 @@ def _ingest_enh_game(cur, hid):
     cur.execute("""SELECT p.player_name, p.canonical_id FROM players p
                    JOIN matches m ON m.match_id=p.match_id
                    WHERE m.hub_game_id=%s AND p.canonical_id IS NOT NULL""", (hid,))
-    name2cid = {r["player_name"]: r["canonical_id"] for r in cur.fetchall()}
+    name2cid = {}
+    for r in cur.fetchall():
+        name2cid[r["player_name"]] = r["canonical_id"]
+        name2cid.setdefault(_enh_norm(r["player_name"]), r["canonical_id"])   # robust fallback key
     dmg, ver = _mvd_get(f"/v1/demos/gameId:{hid}/damage")
     los, _ = _mvd_get(f"/v1/demos/gameId:{hid}/los")
     frags, _ = _mvd_get(f"/v1/demos/gameId:{hid}/frags")
@@ -3878,7 +3894,7 @@ def _ingest_enh_game(cur, hid):
         if f.get("victim"): g(f["victim"])["d"]+=1
     n_written=0
     for name, p in P.items():
-        cid = name2cid.get(name)
+        cid = name2cid.get(name) or name2cid.get(_enh_norm(name))
         if not cid:
             continue   # not a canonicalised ladder player in this game
         cur.execute("""INSERT INTO ladder_enh_stats (hub_game_id,canonical_id,given,taken,ewep,rl_dmg,lg_dmg,
@@ -3928,9 +3944,12 @@ def _enh_aggregate(cur, hub_ids):
 
 
 @app.post("/api/admin/ladder/ingest-enhanced")
-def admin_ingest_enhanced(authorization: str | None = Header(default=None), limit: int = Query(8, le=40)):
+def admin_ingest_enhanced(authorization: str | None = Header(default=None), limit: int = Query(8, le=40),
+                          force: bool = Query(False)):
     """Admin: pull mvd-api enhanced stats for ladder games not yet ingested (batched
-    — call repeatedly until remaining=0). Resumable; each game upserts on success."""
+    — call repeatedly until remaining=0). Resumable; each game upserts on success.
+    force=true re-ingests ALL games (ignores the version-skip) — use after a
+    parser-mapping fix."""
     import ladder as _ladder
     _check_ladder_admin(authorization)
     with pg() as conn:
@@ -3945,9 +3964,11 @@ def admin_ingest_enhanced(authorization: str | None = Header(default=None), limi
                 if g is not None: all_ids.add(int(g))
         # already parsed at the CURRENT parser version → skip (never re-parse);
         # games parsed at an older version fall back into todo so they refresh.
-        cur.execute("SELECT hub_game_id FROM enh_game_meta WHERE schema_version >= %s",
-                    (ENH_PARSER_VERSION,))
-        done = {r["hub_game_id"] for r in cur.fetchall()}
+        done = set()
+        if not force:
+            cur.execute("SELECT hub_game_id FROM enh_game_meta WHERE schema_version >= %s",
+                        (ENH_PARSER_VERSION,))
+            done = {r["hub_game_id"] for r in cur.fetchall()}
         todo = sorted(all_ids - done)
         conn.commit()
     ingested, errors = [], []
@@ -3985,6 +4006,35 @@ def ladder_enhanced_stats(ladder_id: int, response: Response):
         for t in cur.fetchall():
             for m in (t["members"] or []): cid_tag[m]=t["tag"]
         for p in players: p["team"]=cid_tag.get(p["canonical_id"])
+    return {"players": players}
+
+
+@app.get("/api/ladder/match/{match_id}/enhanced")
+def ladder_match_enhanced(match_id: int, response: Response):
+    """Enhanced (mvd-api) per-player stats for ONE reported match — aggregated over
+    that match's maps. Powers the enhanced block on the match-detail modal + the
+    preview page's prior-meeting section. Empty until that match's demos are ingested."""
+    import ladder as _ladder
+    response.headers["Cache-Control"] = "public, max-age=120"
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur); _enh_ensure(cur)
+        cur.execute("SELECT team_a_id, team_b_id, maps, hub_game_ids FROM ladder_matches WHERE id=%s", (match_id,))
+        m = cur.fetchone()
+        if not m:
+            raise HTTPException(404, "match not found")
+        hub_ids = set()
+        for mp in (m["maps"] or []):
+            if mp.get("hub_game_id"): hub_ids.add(int(mp["hub_game_id"]))
+        for g in (m["hub_game_ids"] or []):
+            if g is not None: hub_ids.add(int(g))
+        players = _enh_aggregate(cur, hub_ids)
+        cur.execute("SELECT id, tag, members FROM ladder_teams WHERE id = ANY(%s)",
+                    ([m["team_a_id"], m["team_b_id"]],))
+        cid_tag = {}
+        for t in cur.fetchall():
+            for mem in (t["members"] or []): cid_tag[mem] = t["tag"]
+        for p in players: p["team"] = cid_tag.get(p["canonical_id"])
     return {"players": players}
 
 

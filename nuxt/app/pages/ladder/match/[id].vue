@@ -8,6 +8,7 @@ const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 
 const id = computed(() => parseInt(route.params.id))
 const d = ref(null)
+const meetingEnh = ref([])
 const loading = ref(true)
 const err = ref(null)
 
@@ -24,6 +25,11 @@ async function load() {
   try { d.value = await $fetch(`${base}/api/ladder/challenge/${id.value}/preview`, { query: { _: Date.now() } }) }
   catch (e) { err.value = 'Could not load this preview.'; console.error('[preview]', e) }
   finally { loading.value = false }
+  // enhanced stats for the prior meeting (if these teams have played)
+  try {
+    const mt = (d.value?.challenger?.matches || []).find(m => m.opponent_id === d.value?.defender?.team?.id)
+    meetingEnh.value = mt ? ((await $fetch(`${base}/api/ladder/match/${mt.id}/enhanced`)).players || []) : []
+  } catch { meetingEnh.value = [] }
 }
 onMounted(load)
 watch(() => route.params.id, load)
@@ -175,6 +181,18 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
               <span class="sc"><span class="a">{{ mp.our_frags }}</span>–<span class="b">{{ mp.their_frags }}</span>
                 <span class="w" :class="mp.our_frags>mp.their_frags?'sa':'sb'">{{ mp.our_frags>mp.their_frags?A.team.tag:B.team.tag }}</span></span>
             </div>
+            <table v-if="meetingEnh.length" class="meet-enh">
+              <thead><tr><th class="l">From that match</th><th>Dmg</th><th>+/–</th><th title="line-of-sight to first hit">Spot→Fire</th><th title="rockets that hit">Rkts</th></tr></thead>
+              <tbody>
+                <tr v-for="p in meetingEnh" :key="p.canonical_id">
+                  <td class="l">{{ p.name }} <span class="tt" :class="p.team===A.team.tag?'a':'b'">{{ p.team }}</span></td>
+                  <td>{{ p.damage>=1000?(p.damage/1000).toFixed(1)+'k':p.damage }}</td>
+                  <td>{{ p.frag_diff>=0?'+':'' }}{{ p.frag_diff }}</td>
+                  <td>{{ p.react_ms!=null?p.react_ms+'ms':'—' }}</td>
+                  <td>{{ p.rockets_dmg }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -329,6 +347,12 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
 .stat.full td.lft,.stat.full th.lft{text-align:left;padding-left:14px}
 .plink{color:var(--fg,#e8edf5);text-decoration:none}.plink:hover{color:var(--accent,#14e6c0)}
 .tt{font-size:9.5px;font-weight:800;padding:1px 5px;border-radius:4px}.tt.a{background:#14e6c022;color:var(--accent,#14e6c0)}.tt.b{background:#f59e0b22;color:var(--draw,#f59e0b)}
+
+/* meeting enhanced mini-table */
+.meet-enh{width:100%;border-collapse:collapse;margin-top:10px;border-top:1px solid var(--border,#2b3445);font-family:'JetBrains Mono',monospace}
+.meet-enh th{font-family:inherit;font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:var(--fg-3,#64748b);font-weight:600;text-align:center;padding:8px 5px}
+.meet-enh th.l,.meet-enh td.l{text-align:left;font-family:-apple-system,sans-serif}
+.meet-enh td{padding:6px 5px;text-align:center;font-size:12px;border-top:1px solid rgba(43,52,69,.4)}
 
 /* meeting maps */
 .maprow{display:grid;grid-template-columns:74px 1fr auto;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border,#2b3445)}
