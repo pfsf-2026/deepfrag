@@ -55,7 +55,7 @@ onMounted(async () => {
         </div>
         <!-- Enhanced (mvd-api) stats for the whole match -->
         <div v-if="enh.length" class="md-block md-enh">
-          <div class="md-map-h">✨ Enhanced <span class="muted small">— mvd-api parser, match totals</span></div>
+          <div class="md-map-h">✨ Enhanced <span class="muted small">— mvd-api parser, per-map averages</span></div>
           <table class="pl">
             <thead><tr><th class="l">Player</th><th>Dmg</th><th>+/–</th><th title="median ms from line-of-sight to first hit">Spot→Fire</th><th title="rockets that landed damage">Rkts</th><th>Dir/Spl</th><th>RL%</th><th title="% of damage on armed enemies">EWep</th></tr></thead>
             <tbody>

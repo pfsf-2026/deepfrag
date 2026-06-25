@@ -83,7 +83,7 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
             <button :class="{ on: statView === 'players' }" @click="setView('players')">Player Stats</button>
             <button :class="{ on: statView === 'enhanced' }" @click="setView('enhanced')">✨ Enhanced</button>
           </span>
-          <span class="meta">{{ statView === 'enhanced' ? 'mvd-api deep stats · totals across all ladder games · click a header to sort' : 'per-map averages · click a header to sort' }}</span>
+          <span class="meta">{{ statView === 'enhanced' ? 'mvd-api deep stats · per-map averages · click a header to sort' : 'per-map averages · click a header to sort' }}</span>
         </h2>
         <!-- Team Statistics -->
         <div v-if="statView === 'team'" class="scroll">
@@ -137,7 +137,7 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
             </tbody>
           </table>
           <div v-else class="muted small" style="padding:8px 0;">No enhanced stats yet — they ingest from the demo parser as matches are reported.</div>
-          <p class="muted small" style="margin:8px 2px 0;">Dmg = total damage · Spot→Fire = median ms from a clear line-of-sight to your first hit (incl. ping) · Rkts hit = rockets that landed damage (direct/splash) · EWep = % of damage on armed enemies. From the mvd-api demo parser, not box-score.</p>
+          <p class="muted small" style="margin:8px 2px 0;">All per-map averages (so players with more games stay comparable). Dmg = damage/map · Spot→Fire = median ms from a clear line-of-sight to your first hit (incl. ping) · Rkts hit = damaging rockets/map (direct/splash) · Avg rkt = damage per rocket · EWep = % of damage on armed enemies. From the mvd-api demo parser, not box-score.</p>
         </div>
       </section>
 

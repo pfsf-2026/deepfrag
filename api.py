@@ -3932,14 +3932,16 @@ def _enh_aggregate(cur, hub_ids):
     out=[]
     for r in cur.fetchall():
         rl_lg=(r["rl"] or 0)+(r["lg"] or 0)
+        m=max(1, r["maps"] or 1)   # PER-MAP averages so players with different game
+        def pm(v, d=1): return round((v or 0)/m, d)   # counts are comparable
         out.append({"canonical_id":r["cid"],"name":r["name"],"maps":r["maps"],
-            "damage":r["given"] or 0,"taken":r["taken"] or 0,
+            "damage":pm(r["given"],0),"taken":pm(r["taken"],0),
             "ewep_pct":round(100*(r["ewep"] or 0)/r["given"]) if r["given"] else 0,
             "rl_pref":round(100*(r["rl"] or 0)/rl_lg) if rl_lg else 0,
-            "rockets_dmg":r["rd"] or 0,"rockets_direct":r["rdir"] or 0,"rockets_splash":r["rspl"] or 0,
+            "rockets_dmg":pm(r["rd"]),"rockets_direct":pm(r["rdir"]),"rockets_splash":pm(r["rspl"]),
             "avg_rocket":round((r["rsum"] or 0)/r["rd"]) if r["rd"] else 0,
             "react_ms":round((r["rsum_ms"] or 0)/r["rn"]) if r["rn"] else None,
-            "frags":r["f"] or 0,"deaths":r["d"] or 0,"frag_diff":(r["f"] or 0)-(r["d"] or 0)})
+            "frags":pm(r["f"]),"deaths":pm(r["d"]),"frag_diff":pm((r["f"] or 0)-(r["d"] or 0))})
     out.sort(key=lambda x:-x["damage"])
     return out
 
