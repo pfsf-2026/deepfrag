@@ -121,7 +121,9 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
           <div v-else class="muted small" style="padding:8px 0;">No player stats yet.</div>
         </div>
         <!-- Enhanced (mvd-api) Statistics -->
-        <div v-else-if="statView === 'enhanced'" class="scroll">
+        <div v-else-if="statView === 'enhanced'">
+          <div class="enh-note">Per-map averages from the demo parser. <NuxtLink to="/ladder/enhanced-guide" class="glink">ℹ️ What do these stats mean? →</NuxtLink></div>
+          <div class="scroll">
           <table v-if="enhanced.length" class="stats">
             <thead><tr>
               <th class="team">Player</th>
@@ -137,7 +139,7 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
             </tbody>
           </table>
           <div v-else class="muted small" style="padding:8px 0;">No enhanced stats yet — they ingest from the demo parser as matches are reported.</div>
-          <p class="muted small" style="margin:8px 2px 0;">All per-map averages (so players with more games stay comparable). Dmg = damage/map · Spot→Fire = median ms from a clear line-of-sight to your first hit (incl. ping) · Rkts hit = damaging rockets/map (direct/splash) · Avg rkt = damage per rocket · EWep = % of damage on armed enemies. From the mvd-api demo parser, not box-score.</p>
+          </div>
         </div>
       </section>
 
@@ -194,6 +196,9 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
 .two { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
 @media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
 .scroll { overflow-x: auto; }
+.enh-note { font-size: 12px; color: var(--fg-3); margin: 0 2px 10px; }
+.enh-note .glink { color: var(--accent); text-decoration: none; font-weight: 600; }
+.enh-note .glink:hover { text-decoration: underline; }
 table.stats { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; }
 table.stats th, table.stats td { padding: 7px 9px; text-align: right; white-space: nowrap; }
 table.stats th { font-size: 11px; color: var(--fg-3); font-weight: 700; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
