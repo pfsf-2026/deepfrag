@@ -58,7 +58,13 @@ function browserTz(): string | null {
 }
 
 export function resolveTz(user: any): string {
-  return user?.timezone || STATE_TZ[user?.state] || browserTz() || FALLBACK
+  // Priority: an EXPLICIT timezone the player chose → the BROWSER's own detected
+  // zone (authoritative for "show me times in my local clock") → a guess from their
+  // state → ET. The browser MUST beat the state guess: a player who only picked a
+  // state at signup (not a timezone) should still see their real local time, not the
+  // state's zone. (Was state-before-browser, which showed e.g. ET to a player whose
+  // signup state was Eastern but who plays from elsewhere — the scheduler tz bug.)
+  return user?.timezone || browserTz() || STATE_TZ[user?.state] || FALLBACK
 }
 // True when we have a confident zone: explicit profile, state mapping, or the
 // browser's own detected zone. (Only an SSR/locked-down browser falls back to ET.)

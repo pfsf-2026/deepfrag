@@ -5795,6 +5795,7 @@ def admin_users(authorization: str | None = Header(default=None)):
         A.ensure_users(cur)
         cur.execute("""SELECT u.discord_id, u.username, u.global_name, u.avatar,
                               u.canonical_id, u.is_admin, u.verified, u.created_at, u.last_login,
+                              u.timezone, u.state, (u.availability->>'tz') AS availability_tz,
                               pc.display_name AS profile_display
                        FROM users u
                        LEFT JOIN players_canonical pc ON pc.canonical_id = u.canonical_id
