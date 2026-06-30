@@ -5589,6 +5589,54 @@ def admin_ladder_match_recompute(match_id: int, authorization: str | None = Head
             "changed": changed, "maps": new_maps}
 
 
+@app.post("/api/admin/ladder/match/{match_id}/delete")
+def admin_ladder_match_delete(match_id: int, authorization: str | None = Header(default=None),
+                              reverse_movement: bool = Body(False, embed=True)):
+    """Delete a recorded ladder match (e.g. a duplicate left by a double-resolve).
+    Removes the match row + its ladder_movements rows. Team W/L and map/player
+    stats are derived from ladder_matches, so they de-duplicate automatically;
+    enhanced stats are keyed by hub_game_id (shared/deduped) so they're untouched.
+    reverse_movement=true also restores the two teams' pre-match rungs — default
+    false, for removing a duplicate when the standings are already correct."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT id, winner_id, score_a, score_b FROM ladder_matches WHERE id=%s", (match_id,))
+        m = cur.fetchone()
+        if not m:
+            raise HTTPException(404, "match not found")
+        if reverse_movement:
+            cur.execute("SELECT team_id, from_rung FROM ladder_movements WHERE match_id=%s AND from_rung IS NOT NULL", (match_id,))
+            for r in cur.fetchall():
+                cur.execute("UPDATE ladder_teams SET rung=%s WHERE id=%s", (r["from_rung"], r["team_id"]))
+        cur.execute("DELETE FROM ladder_movements WHERE match_id=%s", (match_id,))
+        cur.execute("DELETE FROM ladder_matches WHERE id=%s", (match_id,))
+        conn.commit()
+    return {"deleted_match": match_id, "reverted": reverse_movement,
+            "winner_id": m["winner_id"], "score": [m["score_a"], m["score_b"]]}
+
+
+@app.post("/api/admin/ladder/team/{team_id}/rename")
+def admin_ladder_team_rename(team_id: int, authorization: str | None = Header(default=None),
+                             name: str = Body(..., embed=True)):
+    """Set a ladder team's display name — e.g. strip a stray 👑 baked into the name
+    that collides with the KOTH-leader crown the UI draws on rung 1. Ladder-admin."""
+    _check_ladder_admin(authorization)
+    name = (name or "").strip()
+    if not name:
+        raise HTTPException(400, "name required")
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE ladder_teams SET name=%s WHERE id=%s RETURNING id, name", (name, team_id))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "team not found")
+        conn.commit()
+    return {"team_id": team_id, "name": row["name"]}
+
+
 @app.post("/api/admin/notify")
 def admin_notify(authorization: str | None = Header(default=None),
                  content: str = Body(..., embed=True)):

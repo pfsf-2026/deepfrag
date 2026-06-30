@@ -42,13 +42,20 @@ const now = ref(isBrowser ? Date.now() : 0)
 let nowTimer = null
 onMounted(() => { nowTimer = setInterval(() => { now.value = Date.now() }, 60000) })
 onBeforeUnmount(() => { if (nowTimer) clearInterval(nowTimer) })
-// A team that lost in the last week can't ISSUE challenges. Returns "6d 23h" or null.
+// A team that lost in the last week can't ISSUE challenges.
+// Returns "6d 23h", "5h 12m", "45m", "<1m", or null. Drops down to minutes once
+// under an hour so the badge never reads a useless "0h" near expiry.
 function teamCooldown(t) {
   if (!t.cooldown_until) return null
   const until = new Date(t.cooldown_until).getTime()
   if (until <= now.value) return null
   const rem = until - now.value
-  return `${Math.floor(rem / 86400000)}d ${Math.floor((rem % 86400000) / 3600000)}h`
+  const d = Math.floor(rem / 86400000)
+  const h = Math.floor((rem % 86400000) / 3600000)
+  const m = Math.floor((rem % 3600000) / 60000)
+  if (d > 0) return `${d}d ${h}h`
+  if (h > 0) return `${h}h ${m}m`
+  return m > 0 ? `${m}m` : '<1m'
 }
 const myCooldown = computed(() => myTeam.value ? teamCooldown(myTeam.value) : null)
 function canChallenge(t) {
