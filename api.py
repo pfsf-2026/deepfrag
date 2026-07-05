@@ -7662,8 +7662,18 @@ def _canonicalize_incremental(conn):
     rows = cur.fetchall()
     canon_by_cid = {}      # cid -> (cid, display, login, now, now)  (dedup per batch)
     map_rows = []          # (raw_name, cid, source, confidence, now)
+    seen_names = set()     # player_name_map is keyed by raw_name, but the query groups
+                           # by (player_name, player_login) — so one in-game name used
+                           # under two logins yields two rows with the SAME raw_name.
+                           # Feeding both to "INSERT ... ON CONFLICT (raw_name)" trips
+                           # Postgres' CardinalityViolation ("cannot affect row a second
+                           # time") and kills the whole batch. Keep only the busiest
+                           # variant (rows are ORDER BY n DESC → first-seen wins).
     for r in rows:
         name, login = r["player_name"], r["login"]
+        if name in seen_names:
+            continue
+        seen_names.add(name)
         cid, decision = c.resolve(name, login)
         if cid not in canon_by_cid:
             display = name_canon.clean_for_display(name) or name
@@ -7682,7 +7692,7 @@ def _canonicalize_incremental(conn):
     assigned = _assign_canonical_from_map(conn)
     cur.execute("SELECT count(*) AS n FROM players WHERE canonical_id IS NULL")
     still = cur.fetchone()["n"]
-    return {"new_names_resolved": len(rows), "rows_assigned": assigned, "still_unassigned": still}
+    return {"new_names_resolved": len(map_rows), "rows_assigned": assigned, "still_unassigned": still}
 
 
 @app.post("/api/admin/canon/backfill-unassigned")
