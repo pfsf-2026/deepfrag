@@ -150,18 +150,26 @@ def apply_win(cur, ladder_id, challenger_id, challenged_id, match_id=None):
     return {challenger_id: hr, challenged_id: cr}
 
 
-def apply_forfeit(cur, ladder_id, challenged_id, match_id=None):
-    """Challenged team failed to play in time → drops 1 rung (swaps with the team
-    directly below it), regardless of whether it was a 1- or 2-rung challenge."""
+def apply_forfeit(cur, ladder_id, challenged_id, drop=1, match_id=None):
+    """Challenged team failed to play in time → it drops by the challenge span:
+    1 rung for a 1-rung challenge, 2 for a 2-rung one. It swaps with the team
+    `drop` rungs below (normally the challenger), so that team climbs into the
+    vacated rung — the same swap model as a challenger win. If there aren't
+    `drop` teams below, it falls to the bottom (drops as far as it can)."""
+    drop = max(1, int(drop or 1))
     hr = _team(cur, challenged_id)["rung"]
     cur.execute("""SELECT id, rung FROM ladder_teams WHERE ladder_id=%s AND active AND rung=%s""",
-                (ladder_id, hr + 1))
+                (ladder_id, hr + drop))
     below = cur.fetchone()
+    if not below:  # not enough teams below to drop the full span — clamp to the bottom
+        cur.execute("""SELECT id, rung FROM ladder_teams WHERE ladder_id=%s AND active AND rung>%s
+                       ORDER BY rung DESC LIMIT 1""", (ladder_id, hr))
+        below = cur.fetchone()
     if not below:
         return {}  # already at the bottom; nowhere to drop
-    _set_rung(cur, challenged_id, hr + 1, ladder_id, "forfeit", match_id, hr)
-    _set_rung(cur, below["id"], hr, ladder_id, "win", match_id, hr + 1)
-    return {challenged_id: hr + 1, below["id"]: hr}
+    _set_rung(cur, challenged_id, below["rung"], ladder_id, "forfeit", match_id, hr)
+    _set_rung(cur, below["id"], hr, ladder_id, "win", match_id, below["rung"])
+    return {challenged_id: below["rung"], below["id"]: hr}
 
 
 def place_new_team(cur, ladder_id, team_id):

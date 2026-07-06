@@ -5763,7 +5763,8 @@ def admin_ladder_reschedule(challenge_id: int, authorization: str | None = Heade
 @app.post("/api/admin/ladder/challenge/{challenge_id}/forfeit")
 def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(default=None)):
     """Admin marks a challenge as forfeited (challenged team didn't play in
-    time): the challenged team drops one rung."""
+    time): the challenged team drops by the challenge span — 1 rung for a 1-rung
+    challenge, 2 for a 2-rung one."""
     import ladder as _ladder
     _check_ladder_admin(authorization)
     with pg() as conn:
@@ -5775,7 +5776,7 @@ def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(d
             raise HTTPException(404, "challenge not found")
         if ch["status"] in ("played", "forfeited"):
             raise HTTPException(409, "challenge already resolved")
-        moves = _ladder.apply_forfeit(cur, ch["ladder_id"], ch["challenged_id"])
+        moves = _ladder.apply_forfeit(cur, ch["ladder_id"], ch["challenged_id"], drop=(ch["rungs_up"] or 1))
         cur.execute("UPDATE ladder_challenges SET status='forfeited', resolved_at=now() WHERE id=%s", (challenge_id,))
         chd_lbl = _team_label(cur, ch["challenged_id"])
         # A forfeit can promote the team below into rung 1.
@@ -5790,6 +5791,31 @@ def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(d
     except Exception:
         pass
     return {"forfeited": True, "moves": moves}
+
+
+@app.get("/api/admin/ladder/movements")
+def admin_ladder_movements(authorization: str | None = Header(default=None),
+                           ladder_id: int = 1, limit: int = Query(40, le=200)):
+    """Read-only diagnostic: recent rung movements (with team labels) + recently
+    resolved challenges (with their rung span). For standings disputes — e.g.
+    'did team X drop the right number of rungs on that forfeit?'"""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""SELECT m.at, m.team_id, t.tag, t.name, m.from_rung, m.to_rung, m.reason, m.match_id
+                       FROM ladder_movements m JOIN ladder_teams t ON t.id=m.team_id
+                       WHERE m.ladder_id=%s ORDER BY m.at DESC, m.id DESC LIMIT %s""",
+                    (ladder_id, limit))
+        moves = [dict(r) for r in cur.fetchall()]
+        cur.execute("""SELECT c.id, c.challenger_id, ct.tag AS challenger, c.challenged_id,
+                              dt.tag AS challenged, c.rungs_up, c.status, c.resolved_at
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ct ON ct.id=c.challenger_id
+                       JOIN ladder_teams dt ON dt.id=c.challenged_id
+                       WHERE c.ladder_id=%s AND c.status IN ('forfeited','played','cancelled')
+                       ORDER BY c.resolved_at DESC NULLS LAST LIMIT 15""", (ladder_id,))
+        challenges = [dict(r) for r in cur.fetchall()]
+    return {"movements": moves, "recent_challenges": challenges}
 
 
 @app.get("/api/admin/oauth/status")
