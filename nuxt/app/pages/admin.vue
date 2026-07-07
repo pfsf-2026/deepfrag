@@ -1686,7 +1686,7 @@ function shortStatus(s) {
                         <div class="kv">
                           <span class="k">description</span><span class="v" style="white-space:pre-wrap;">{{ t.description }}</span>
                           <span class="k">page</span><span class="v">{{ t.page_url || '—' }}</span>
-                          <span class="k">reporter</span><span class="v">{{ t.username || '—' }}<span v-if="t.canonical_id" class="muted"> · {{ t.canonical_id }}</span></span>
+                          <span class="k">reporter</span><span class="v">{{ t.username || '—' }}<span v-if="t.discord_id" class="muted mono"> · id {{ t.discord_id }}</span><span v-if="t.canonical_id" class="muted"> · profile {{ t.canonical_id }}</span><span v-else-if="t.discord_id" style="color:var(--draw);" title="Not linked to any ladder profile. The reporter name is the Discord DISPLAY name, which anyone can change — so it can be spoofed to impersonate a member. Trust the id, not the name."> · ⚠ unverified (name is spoofable)</span></span>
                           <span class="k">email</span><span class="v">{{ t.email || '—' }}<span v-if="t.email_status" class="muted"> · email {{ t.email_status }}</span></span>
                         </div>
 
