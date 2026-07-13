@@ -49,7 +49,6 @@ useSeoMeta({
         <NuxtLink to="/stats">Stats</NuxtLink>
         <NuxtLink to="/h2h">H2H</NuxtLink>
         <NuxtLink to="/ladder">Ladder</NuxtLink>
-        <NuxtLink to="/mix">Mix</NuxtLink>
       </nav>
       <span class="spacer" />
       <ClientOnly>
