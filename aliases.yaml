@@ -133,3 +133,31 @@ nico:
   variants:
     - nico
     - venator
+
+riggz:
+  # Merged 2026-07-10 (Peter): all Riggz aliases and low-count socks fold into
+  # the main Riggz identity. Includes "Riggs" (typo/alt spelling) plus the
+  # sockpuppet variants that were showing up as separate low-match canonicals
+  # (riggzhatesyou 4, notriggz 5, riggz420691488 2, hoodratriggz 1) — total
+  # ~348 matches after re-canonicalization.
+  display: Riggz
+  login: ""
+  variants:
+    - riggz
+    - riggs
+    - riggzhatesyou
+    - notriggz
+    - riggz420691488
+    - hoodratriggz
+
+sn:
+  # Pinned 2026-07-15: prod already resolves "s][n" (color-coded brackets) to
+  # this canonical via player_name_map — verified in hub game 226682/226688
+  # debug. Pinning the variant here just prevents future drift if the name_map
+  # row is ever lost. (The KOTH ch46 flag was NOT an sn issue — it was a warmup
+  # game with a stand-in player "fe4r" polluting the bo3 detection window.)
+  display: sn
+  login: sinistro
+  variants:
+    - sn
+    - "s][n"

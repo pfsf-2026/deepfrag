@@ -991,8 +991,12 @@ def _ladder_tick(cur):
             cur.execute("UPDATE ladder_challenges SET reminded_10m=TRUE WHERE id=%s", (r["id"],))
             counts["reminded_10m"] += 1
 
-    # ── 3-day nudge: still-unscheduled challenges (it's on the challenged team) ──
-    cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.deadline,
+    # ── 3-day nudge: still-unscheduled challenges. Turn-aware (mirrors
+    # Scheduler.vue): no proposed slots yet → the CHALLENGER owes availability;
+    # slots posted → the CHALLENGED players owe picks. Blaming the challenged
+    # team unconditionally was wrong (2026-07-15 cucked/SD confusion). Forfeit
+    # is admin-decided since 2026-06-24, so say "risk", not "auto-forfeit".
+    cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.deadline, c.proposed,
                           ca.name AS a, cd.name AS b
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -1004,9 +1008,15 @@ def _ladder_tick(cur):
             dl = r["deadline"].astimezone(timezone.utc) if r["deadline"] else None
             left = f"<t:{int(dl.timestamp())}:R>" if dl else "soon"
             cl, cd = _team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"])
-            notify.send(content=(f"⏳ {cl} vs {cd} still isn't scheduled. It's on {cd} "
-                                 f"(challenged) to lock a time — deadline {left}, or they auto-forfeit their "
-                                 f"ladder position to {cl}."))
+            if not (r["proposed"] or []):
+                msg = (f"⏳ {cl} vs {cd} still isn't scheduled. It's on {cl} "
+                       f"(challenger) to post availability times — deadline {left}. "
+                       f"No times posted by then and admins may cancel the challenge.")
+            else:
+                msg = (f"⏳ {cl} vs {cd} still isn't scheduled. It's on {cd} "
+                       f"(challenged) to pick one of the offered times — deadline {left}, "
+                       f"or they risk forfeiting their ladder position to {cl}.")
+            notify.send(content=msg)
         except Exception:
             pass
         cur.execute("UPDATE ladder_challenges SET reminded_unsched_3d=TRUE WHERE id=%s", (r["id"],))
