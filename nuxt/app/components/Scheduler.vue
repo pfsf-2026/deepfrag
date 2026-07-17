@@ -24,13 +24,18 @@ const proposedByLocal = ref(c.proposed_by ?? null)
 const countering = ref(false)   // turn team chose "suggest different times"
 
 function teamName(id) { return id === c.challenger_id ? c.challenger : (id === c.challenged_id ? c.challenged : `#${id}`) }
-// Whose turn: no slots → challenger proposes first; else the team that did NOT
-// post the current slots picks/counters.
+// Whose turn: no slots → EITHER team may open (null = both; challenger-only
+// until 2026-07-15 — it let a stalling challenger trap the challenged team,
+// whose deadline clock kept running). Else the team that did NOT post the
+// current slots picks/counters.
 const turnTeamId = computed(() => {
-  if (!proposedLocal.value.length) return c.challenger_id
+  if (!proposedLocal.value.length) return null
   return proposedByLocal.value === c.challenger_id ? c.challenged_id : c.challenger_id
 })
-const isMyTurn = computed(() => isAdmin.value || props.userTeamId === turnTeamId.value)
+const onEitherTeam = computed(() =>
+  props.userTeamId === c.challenger_id || props.userTeamId === c.challenged_id)
+const isMyTurn = computed(() => isAdmin.value ||
+  (turnTeamId.value === null ? onEitherTeam.value : props.userTeamId === turnTeamId.value))
 const proposerName = computed(() => proposedByLocal.value ? teamName(proposedByLocal.value) : c.challenger)
 
 // ── availability grid — ET-anchored prime time (NA ladder) ─────────────────
@@ -86,8 +91,10 @@ async function saveAvailability() {
     await $fetch(`${base}/api/ladder/challenge/${c.id}/availability`, {
       method: 'POST', headers: authHeader(), body: { slots: [...selected.value] }
     })
-    // Advance in-place instead of closing. The proposer is whoever's turn it was.
-    const justBy = turnTeamId.value
+    // Advance in-place instead of closing. The proposer is whoever's turn it
+    // was — for the opening proposal (turn=null, either team) it's MY team,
+    // falling back to challenger for a pure admin.
+    const justBy = turnTeamId.value ?? (onEitherTeam.value ? props.userTeamId : c.challenger_id)
     proposedLocal.value = [...selected.value]
     proposedByLocal.value = justBy
     countering.value = false
@@ -339,7 +346,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
       <!-- waiting states -->
       <div v-else class="done">
         <p v-if="view === 'waiting-pick'" class="muted">✓ You proposed {{ proposedLocal.length }} time{{ proposedLocal.length === 1 ? '' : 's' }}. Waiting for <strong>{{ teamName(turnTeamId) }}</strong> to pick one or suggest different times.</p>
-        <p v-else class="muted">Waiting for <strong>{{ c.challenger }}</strong> to post their availability.</p>
+        <p v-else class="muted">No times posted yet — either team can post availability. (Log in as a player on <strong>{{ c.challenger }}</strong> or <strong>{{ c.challenged }}</strong> to post yours.)</p>
       </div>
     </div>
   </div>

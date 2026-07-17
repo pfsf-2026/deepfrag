@@ -1009,9 +1009,9 @@ def _ladder_tick(cur):
             left = f"<t:{int(dl.timestamp())}:R>" if dl else "soon"
             cl, cd = _team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"])
             if not (r["proposed"] or []):
-                msg = (f"⏳ {cl} vs {cd} still isn't scheduled. It's on {cl} "
-                       f"(challenger) to post availability times — deadline {left}. "
-                       f"No times posted by then and admins may cancel the challenge.")
+                msg = (f"⏳ {cl} vs {cd} still isn't scheduled — no times posted yet. "
+                       f"EITHER team can open the scheduler and post availability "
+                       f"(deadline {left}); the other side then picks a slot.")
             else:
                 msg = (f"⏳ {cl} vs {cd} still isn't scheduled. It's on {cd} "
                        f"(challenged) to pick one of the offered times — deadline {left}, "
@@ -5073,11 +5073,13 @@ def _notify_result(cur, challenger_id, challenged_id, winner_id, maps, aw, bw, m
 
 
 def _turn_team(ch):
-    """Whose turn it is to act. No slots on the table → the challenger proposes
-    first. Otherwise the team that did NOT post the current slots picks (or
-    counter-proposes)."""
+    """Whose turn it is to act. No slots on the table → EITHER team may open
+    (returns None; was challenger-only until 2026-07-15 — that hard-locked the
+    challenged team out of scheduling while the forfeit clock ran against THEM,
+    letting a stalling challenger trap them). Otherwise the team that did NOT
+    post the current slots picks (or counter-proposes)."""
     if not (ch.get("proposed") or []):
-        return ch["challenger_id"]
+        return None
     pb = ch.get("proposed_by")
     return ch["challenged_id"] if pb == ch["challenger_id"] else ch["challenger_id"]
 
@@ -5109,7 +5111,24 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
         # when we fire the (held) challenge announcement, bundled with the times.
         is_initial = not (ch.get("proposed") or [])
         turn = _turn_team(ch)
-        if not _user_on_team(cur, user, turn):
+        if turn is None:
+            # Opening proposal: either team may post. proposed_by = the poster's
+            # actual team (real membership beats the admin flag, so an admin who
+            # plays on one of the teams posts as their own team; pure-admin
+            # fallback: challenger, the pre-2026-07-15 behavior).
+            cid = user.get("canonical_id")
+            cur.execute("SELECT id, members FROM ladder_teams WHERE id = ANY(%s)",
+                        ([ch["challenger_id"], ch["challenged_id"]],))
+            membership = {r["id"]: cid in (r["members"] or []) for r in cur.fetchall()} if cid else {}
+            if membership.get(ch["challenger_id"]):
+                turn = ch["challenger_id"]
+            elif membership.get(ch["challenged_id"]):
+                turn = ch["challenged_id"]
+            elif user.get("is_admin"):
+                turn = ch["challenger_id"]
+            else:
+                raise HTTPException(403, "only players on one of the two teams may suggest times")
+        elif not _user_on_team(cur, user, turn):
             raise HTTPException(403, "it's not your team's turn to suggest times")
         clean = sorted(clean)   # chronological in the Discord message + pick list
         cur.execute("UPDATE ladder_challenges SET proposed=%s, proposed_by=%s WHERE id=%s",
