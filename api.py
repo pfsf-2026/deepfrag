@@ -388,6 +388,26 @@ def _is_future_slot(s):
         return False
 
 
+def _distinct_evenings(slots):
+    """Count distinct EVENINGS among ISO slots. ET-anchored with a 6h rollback so
+    the post-midnight prime-time slots (12–2am ET) count with the prior evening
+    instead of inflating the day count. Used by the 2-day challenge rule
+    (2026-07-15): a challenge whose offer covers <2 evenings gets a 3-day window
+    and expires with no ladder movement."""
+    from zoneinfo import ZoneInfo
+    et = ZoneInfo("America/New_York")
+    evenings = set()
+    for s in slots or []:
+        try:
+            d = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+            evenings.add((d.astimezone(et) - timedelta(hours=6)).date())
+        except Exception:
+            continue
+    return len(evenings)
+
+
 def _auto_schedule_challenge(cur, ch):
     """For an OPEN challenge with proposed slots, auto-derive picks for any CHALLENGED
     member who opted into auto_schedule (their availability ∩ proposed), then finalize
@@ -1030,13 +1050,28 @@ def _ladder_tick(cur):
     # Forfeit / Report / Reschedule / Cancel buttons. A ladder can still opt INTO
     # automatic forfeits by explicitly setting rules.auto_forfeit = true.
     cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.deadline,
-                          c.overdue_flagged, l.rules, ca.name AS a, cd.name AS b
+                          c.overdue_flagged, c.proposed, l.rules, ca.name AS a, cd.name AS b
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
                    JOIN ladder_teams cd ON cd.id=c.challenged_id
                    JOIN ladders l ON l.id=c.ladder_id
                    WHERE c.status='open' AND c.deadline < now()""")
     for r in cur.fetchall():
+        # 2-day rule (2026-07-15): if the offer on the table covers <2 distinct
+        # evenings, the expired challenge is auto-CANCELLED with no ladder
+        # movement — a single take-it-or-leave-it time can't earn a forfeit.
+        if _distinct_evenings(r["proposed"] or []) < 2:
+            cur.execute("UPDATE ladder_challenges SET status='cancelled', resolved_at=now() WHERE id=%s",
+                        (r["id"],))
+            counts["expired_short"] = counts.get("expired_short", 0) + 1
+            try:
+                notify.send(content=(f"⌛ The challenge {_team_label(cur, r['challenger_id'])} vs "
+                                     f"{_team_label(cur, r['challenged_id'])} expired — the offered times "
+                                     f"didn't span at least 2 days, so it's cancelled with **no ladder "
+                                     f"movement**. Re-issue with times on 2+ different days for the full window."))
+            except Exception:
+                pass
+            continue
         if not (r["rules"] or {}).get("auto_forfeit", False):
             if not r["overdue_flagged"]:
                 notify.challenge_overdue(_team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"]),
@@ -4770,9 +4805,16 @@ def ladder_player_stats(ladder_id: int, response: Response):
 @app.post("/api/ladder/{ladder_id}/challenge")
 def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=None),
                      challenger_id: int = Body(..., embed=True),
-                     challenged_id: int = Body(..., embed=True)):
-    """A captain (or admin) issues a challenge 1–2 rungs up. Sets a play-by
-    deadline from the ladder's forfeit window. Captains must be a member of the
+                     challenged_id: int = Body(..., embed=True),
+                     slots: list = Body(default=[], embed=True)):
+    """A captain (or admin) issues a challenge 1–2 rungs up. As of 2026-07-15 a
+    challenge must include the challenger's availability (≥1 future slot) — the
+    challenge and its opening proposal are one atomic action, and the combined
+    Discord announcement fires immediately. Offering ≥2 distinct evenings gets
+    the full forfeit window (rules.forfeit_days, default 7d); a 1-evening offer
+    gets a short window (rules.short_window_days, default 3d) after which the
+    challenge expires with NO ladder movement — you can't fish for a forfeit
+    with one take-it-or-leave-it time. Captains must be a member of the
     challenger team (matched by their linked canonical_id)."""
     import ladder as _ladder
     user = _current_user(authorization, required=True)
@@ -4833,16 +4875,36 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
                 raise HTTPException(409, f"your team lost recently — you can't issue challenges for "
                                          f"{rem.days}d {rem.seconds // 3600}h. (You can still be challenged, "
                                          f"and winning a defense lifts the cooldown.)")
-        forfeit_days = (lad.get("rules") or {}).get("forfeit_days", 7)
-        deadline = datetime.now(timezone.utc) + timedelta(days=forfeit_days)
-        cur.execute("""INSERT INTO ladder_challenges (ladder_id, challenger_id, challenged_id, rungs_up, deadline)
-                       VALUES (%s,%s,%s,%s,%s) RETURNING id""",
-                    (ladder_id, challenger_id, challenged_id, gap, deadline))
+        # Availability is part of the challenge itself (2026-07-15 rule).
+        clean = sorted({str(s) for s in (slots or []) if s and _is_future_slot(s)})[:200]
+        if not clean:
+            raise HTTPException(400, "post at least one future availability time to issue a challenge")
+        evenings = _distinct_evenings(clean)
+        if evenings >= 2:
+            window_days = (lad.get("rules") or {}).get("forfeit_days", 7)
+        else:
+            window_days = (lad.get("rules") or {}).get("short_window_days", 3)
+        deadline = datetime.now(timezone.utc) + timedelta(days=window_days)
+        cur.execute("""INSERT INTO ladder_challenges
+                       (ladder_id, challenger_id, challenged_id, rungs_up, deadline, proposed, proposed_by)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (ladder_id, challenger_id, challenged_id, gap, deadline,
+                     json.dumps(clean), challenger_id))
         chid = cur.fetchone()["id"]
+        cl_lbl = _team_label(cur, challenger_id)
+        cd_lbl = _team_label(cur, challenged_id)
         conn.commit()
-    # No Discord ping yet — we hold the announcement until the challenger posts
-    # their proposed times, then send ONE combined message (challenge + times).
-    return {"challenge_id": chid, "deadline": deadline.isoformat(), "rungs_up": gap}
+    # Combined announcement (challenge + times) fires right away now that the
+    # opening proposal is part of creation.
+    try:
+        import notify
+        notify.match_proposal(cl_lbl, cd_lbl, clean, initial=True,
+                              challenger=cl_lbl, challenged=cd_lbl,
+                              rungs_up=gap, deadline_iso=deadline.isoformat())
+    except Exception:
+        pass
+    return {"challenge_id": chid, "deadline": deadline.isoformat(), "rungs_up": gap,
+            "evenings": evenings, "window_days": window_days}
 
 
 @app.get("/api/ladder/challenge/{challenge_id}/server-suggestion")

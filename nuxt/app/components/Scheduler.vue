@@ -4,7 +4,12 @@
 //  - Challenged: pick one of the proposed slots + confirm the server → scheduled.
 // Slots are stored as UTC ISO strings; each side sees them in their LOCAL time.
 const props = defineProps({
-  challenge: { type: Object, required: true },
+  // Existing challenge to schedule — OR (create mode) createTarget describes a
+  // challenge about to be issued: the grid collects the opening availability and
+  // Save creates the challenge WITH those slots (atomic; ≥1 slot required,
+  // ≥2 distinct days for the full window per the 2026-07-15 rule).
+  challenge: { type: Object, default: null },
+  createTarget: { type: Object, default: null },  // { ladderId, challengerId, challengedId, challenger, challenged }
   userTeamId: { type: Number, default: null }
 })
 const emit = defineEmits(['done', 'saved', 'close'])
@@ -17,7 +22,15 @@ const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 const tz = computed(() => resolveTz(user.value))
 const tzIsGuess = computed(() => !tzKnown(user.value))
 
-const c = props.challenge
+const createMode = computed(() => !props.challenge && !!props.createTarget)
+const c = props.challenge || {
+  id: null,
+  challenger_id: props.createTarget?.challengerId,
+  challenged_id: props.createTarget?.challengedId,
+  challenger: props.createTarget?.challenger,
+  challenged: props.createTarget?.challenged,
+  proposed: [], proposed_by: null, agreed_at: null, picks: {}, server: null
+}
 const scheduled = computed(() => !!c.agreed_at)
 const isAdmin = computed(() => !!user.value?.is_admin)
 const proposedByLocal = ref(c.proposed_by ?? null)
@@ -84,10 +97,32 @@ function toggle(iso) { selected.value.has(iso) ? selected.value.delete(iso) : se
 
 const saving = ref(false)
 const err = ref('')
+// Distinct "evenings" selected (6h rollback so 12–2am ET slots count with the
+// prior evening) — mirrors the backend's window rule.
+const selectedDays = computed(() => {
+  const days = new Set()
+  for (const iso of selected.value) {
+    days.add(new Date(new Date(iso).getTime() - 6 * 3600e3)
+      .toLocaleDateString('en-US', { timeZone: 'America/New_York' }))
+  }
+  return days.size
+})
 async function saveAvailability() {
   if (selected.value.size === 0) { err.value = 'Pick at least one slot'; return }
   saving.value = true; err.value = ''
   try {
+    if (createMode.value) {
+      await $fetch(`${base}/api/ladder/${props.createTarget.ladderId}/challenge`, {
+        method: 'POST', headers: authHeader(),
+        body: {
+          challenger_id: props.createTarget.challengerId,
+          challenged_id: props.createTarget.challengedId,
+          slots: [...selected.value]
+        }
+      })
+      emit('done')            // board reload shows the new challenge
+      return
+    }
     await $fetch(`${base}/api/ladder/challenge/${c.id}/availability`, {
       method: 'POST', headers: authHeader(), body: { slots: [...selected.value] }
     })
@@ -247,7 +282,8 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
       <!-- propose / counter-propose availability -->
       <template v-else-if="view === 'fill'">
         <p class="lede">
-          Check every slot <strong>your team</strong> can play over the next 7 days — the other team picks one (or suggests different times).
+          <template v-if="createMode">You're challenging <strong>{{ c.challenged }}</strong> — check every slot <strong>your team</strong> can play. The challenge is issued with these times and they pick one.</template>
+          <template v-else>Check every slot <strong>your team</strong> can play over the next 7 days — the other team picks one (or suggests different times).</template>
         </p>
         <div class="tz-note">
           🕒 Times shown in <strong>{{ tz }}</strong>. Prime time is 7pm–2am ET.
@@ -269,9 +305,12 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
           </div>
         </div>
         <p v-if="err" class="err">{{ err }}</p>
+        <p v-if="selected.size && selectedDays < 2" class="legend">
+          ⚠️ Times on <strong>one day only</strong> — the challenge gets a short <strong>3-day</strong> window and expires with <strong>no ladder movement</strong> if unplayed. Add a second day for the full 7-day window.
+        </p>
         <div class="m-actions">
           <button class="btn ghost" @click="emit('close')">Cancel</button>
-          <button class="btn" :disabled="saving" @click="saveAvailability">{{ saving ? 'Saving…' : `Save ${selected.size} slot${selected.size === 1 ? '' : 's'}` }}</button>
+          <button class="btn" :disabled="saving" @click="saveAvailability">{{ saving ? 'Saving…' : (createMode ? `Issue challenge · ${selected.size} slot${selected.size === 1 ? '' : 's'}` : `Save ${selected.size} slot${selected.size === 1 ? '' : 's'}`) }}</button>
         </div>
       </template>
 

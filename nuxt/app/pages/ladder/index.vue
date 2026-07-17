@@ -67,18 +67,22 @@ function canChallenge(t) {
 }
 const challengeErr = ref('')
 const schedulerChallenge = ref(null)
-async function doChallenge(t) {
+const createTarget = ref(null)
+function doChallenge(t) {
+  // 2026-07-15: a challenge is issued WITH availability — open the slot grid
+  // first; Scheduler's save creates the challenge atomically (≥1 slot required,
+  // ≥2 distinct days for the full window). Cooldown/eligibility errors surface
+  // inside the modal on save.
   challengeErr.value = ''
-  try {
-    await $fetch(`${base}/api/ladder/${ladder.value.id}/challenge`, {
-      method: 'POST', headers: useAuth().authHeader(),
-      body: { challenger_id: myTeam.value.id, challenged_id: t.id }
-    })
-    await load()
-    const nc = challenges.value.find(c => c.challenger_id === myTeam.value.id && c.challenged_id === t.id)
-    if (nc) schedulerChallenge.value = nc
-  } catch (e) { challengeErr.value = e?.data?.detail || e?.message || 'Could not create challenge' }
+  createTarget.value = {
+    ladderId: ladder.value.id,
+    challengerId: myTeam.value.id,
+    challengedId: t.id,
+    challenger: myTeam.value.name,
+    challenged: t.name
+  }
 }
+async function onChallengeCreated() { createTarget.value = null; await load() }
 function challengeStatus(c) {
   if (c.agreed_at) return `📅 ${new Date(c.agreed_at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${c.server ? ' · ' + c.server : ''}`
   if ((c.proposed || []).length) return 'Awaiting time pick'
@@ -431,9 +435,12 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
           <h3>How it works</h3>
           <ul>
             <li>Challenge a team <strong>1 or 2 rungs</strong> above you.</li>
+            <li><strong>Issuing a challenge includes your availability</strong> — you pick your team's playable time slots as part of the challenge (at least one required). The challenged team then just picks one.</li>
+            <li><strong>Offer times on at least 2 different days</strong> to get the full <strong>7-day</strong> window. An offer covering <strong>only 1 day</strong> gets a short <strong>3-day</strong> window and, if unplayed, the challenge simply <strong>expires with no ladder movement</strong> — a single take-it-or-leave-it time can't earn a forfeit.</li>
+            <li><strong>Either team may re-post availability</strong> at any point before a time is locked — scheduling is never stuck waiting on one side.</li>
             <li><strong>Win a 1-rung challenge</strong> → swap places.</li>
             <li><strong>Win a 2-rung challenge</strong> → swap places too. The two teams that played simply exchange rungs; no other team moves (e.g. rung 5 beats rung 3 → 5 and 3 swap, rung 4 is untouched).</li>
-            <li><strong>Forfeit</strong> (no game within a week) → the challenged team drops a rung.</li>
+            <li><strong>Forfeit</strong> (no game within the window, with a valid 2-day offer on the table) → the challenged team drops a rung.</li>
             <li>Best of 3 (first to 2) sets the ladder W/L. Natural Bo3 only — a 2–0 is two games, a 2–1 is three; only those games count toward stats, no extra/dead-rubber games. Winners may challenge again immediately.</li>
             <li><strong>Withdraw:</strong> the <strong>challenging</strong> team can pull a challenge any time <strong>before it's scheduled</strong> (no agreed time yet) — this frees both teams. The challenged team can't withdraw; only the side that issued it.</li>
             <li><strong>After a loss</strong> your team <strong>can't issue challenges for 3 days</strong> — you can still be challenged. (A live countdown shows on your row.)</li>
@@ -497,6 +504,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
       <AddTeam v-if="showAddTeam && ladder" :ladder-id="ladder.id" @done="onTeamAdded" @close="showAddTeam = false" />
       <AddTeam v-if="editingTeam && ladder" :ladder-id="ladder.id" :edit-team="editingTeam" @done="onTeamAdded" @close="editingTeam = null" />
       <Scheduler v-if="schedulerChallenge" :challenge="schedulerChallenge" :user-team-id="myTeam?.id" @done="onScheduled" @saved="load" @close="schedulerChallenge = null" />
+      <Scheduler v-if="createTarget && !schedulerChallenge" :create-target="createTarget" :user-team-id="myTeam?.id" @done="onChallengeCreated" @close="createTarget = null" />
       <MatchDetailModal v-if="openMatchId" :match-id="openMatchId" @close="openMatchId = null" />
     </ClientOnly>
   </div>
