@@ -1050,7 +1050,7 @@ def _ladder_tick(cur):
     # Forfeit / Report / Reschedule / Cancel buttons. A ladder can still opt INTO
     # automatic forfeits by explicitly setting rules.auto_forfeit = true.
     cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.deadline,
-                          c.overdue_flagged, c.proposed, l.rules, ca.name AS a, cd.name AS b
+                          c.overdue_flagged, c.proposed, c.proposed_by, l.rules, ca.name AS a, cd.name AS b
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
                    JOIN ladder_teams cd ON cd.id=c.challenged_id
@@ -1078,6 +1078,23 @@ def _ladder_tick(cur):
                                          r["deadline"].isoformat() if r["deadline"] else None)
                 cur.execute("UPDATE ladder_challenges SET overdue_flagged=TRUE WHERE id=%s", (r["id"],))
                 counts["overdue"] += 1
+            continue
+        # Auto-forfeit only punishes the CHALLENGED team for sitting on a valid
+        # offer. If the current offer was posted BY the challenged team (either-
+        # team proposals, 2026-07-15), the CHALLENGER is the one stalling — that
+        # cancels with no movement instead of forfeiting the active party.
+        if r.get("proposed_by") == r["challenged_id"]:
+            cur.execute("UPDATE ladder_challenges SET status='cancelled', resolved_at=now() WHERE id=%s",
+                        (r["id"],))
+            counts["expired_challenger_stall"] = counts.get("expired_challenger_stall", 0) + 1
+            try:
+                notify.send(content=(f"⌛ The challenge {_team_label(cur, r['challenger_id'])} vs "
+                                     f"{_team_label(cur, r['challenged_id'])} expired — "
+                                     f"{_team_label(cur, r['challenged_id'])} offered times but "
+                                     f"{_team_label(cur, r['challenger_id'])} never picked one. "
+                                     f"Cancelled with **no ladder movement**."))
+            except Exception:
+                pass
             continue
         moves = _ladder.apply_win(cur, r["ladder_id"], r["challenger_id"], r["challenged_id"])
         cur.execute("UPDATE ladder_challenges SET status='forfeited', resolved_at=now() WHERE id=%s", (r["id"],))
@@ -3539,6 +3556,43 @@ def admin_ladder_open(ladder_id: int, authorization: str | None = Header(default
     if not row:
         raise HTTPException(404, "ladder not found")
     return {"ladder_id": ladder_id, "open": bool(open)}
+
+
+@app.post("/api/admin/ladder/{ladder_id}/rules")
+def admin_ladder_rules(ladder_id: int, authorization: str | None = Header(default=None),
+                       patch: dict = Body(..., embed=True)):
+    """Merge a patch into the ladder's rules JSONB (ladder-admin). Only known
+    tunables are accepted — added 2026-07-21 to flip auto_forfeit without a
+    deploy. auto_forfeit=true makes the tick resolve expired challenges
+    unattended: <2-evening offers cancel with no movement; challenger-stalled
+    offers (challenged team posted, challenger never picked) cancel with no
+    movement; otherwise the challenged team forfeits per the ladder rules."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    ALLOWED = {"auto_forfeit": bool, "auto_resolve": bool,
+               "forfeit_days": int, "short_window_days": int,
+               "loss_cooldown_days": int, "best_of": int, "rung_jump": int,
+               "timelimit": int}
+    clean = {}
+    for k, v in (patch or {}).items():
+        if k not in ALLOWED:
+            raise HTTPException(400, f"unknown rules key: {k}")
+        try:
+            clean[k] = ALLOWED[k](v)
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"bad value for {k}")
+    if not clean:
+        raise HTTPException(400, "empty patch")
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("UPDATE ladders SET rules = COALESCE(rules,'{}'::jsonb) || %s::jsonb WHERE id=%s RETURNING rules",
+                    (json.dumps(clean), ladder_id))
+        row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(404, "ladder not found")
+    return {"ladder_id": ladder_id, "rules": row["rules"]}
 
 
 @app.post("/api/admin/ladder/{ladder_id}/teams")
