@@ -3442,24 +3442,6 @@ def ladder_detail(ladder_id: int, response: Response):
                     cd[r["id"]] = until.isoformat()
         for t in teams:
             t["cooldown_until"] = cd.get(t["id"])
-        # Inactivity: when each team last ISSUED a challenge or COMPLETED a match
-        # (fallback: when the team joined). PG GREATEST skips NULLs, and
-        # t.created_at is always set, so this never comes back NULL. Drives the
-        # standings "Idle" timer for teams sitting Open.
-        cur.execute("""SELECT t.id,
-                              GREATEST(
-                                t.created_at,
-                                (SELECT MAX(c.created_at) FROM ladder_challenges c
-                                  WHERE c.ladder_id=%s AND c.challenger_id=t.id),
-                                (SELECT MAX(m.played_at) FROM ladder_matches m
-                                  WHERE m.ladder_id=%s AND (m.team_a_id=t.id OR m.team_b_id=t.id))
-                              ) AS last_activity
-                       FROM ladder_teams t WHERE t.ladder_id=%s""",
-                    (ladder_id, ladder_id, ladder_id))
-        la = {r["id"]: r["last_activity"] for r in cur.fetchall()}
-        for t in teams:
-            v = la.get(t["id"])
-            t["last_activity"] = v.isoformat() if hasattr(v, "isoformat") else v
         # Match record (W-L) + game/map record (W-L) per team, from reported matches.
         cur.execute("SELECT team_a_id, team_b_id, winner_id, maps FROM ladder_matches WHERE ladder_id=%s", (ladder_id,))
         rec = {}

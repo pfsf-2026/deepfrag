@@ -83,21 +83,6 @@ function doChallenge(t) {
   }
 }
 async function onChallengeCreated() { createTarget.value = null; await load() }
-// Idle timer: time since the team last issued a challenge or completed a match
-// (server computes last_activity; join date is the floor). Only shown for teams
-// sitting Open — a team in an active challenge isn't idle.
-function idleFor(t) {
-  if (!t.last_activity) return null
-  const ms = now.value - new Date(t.last_activity).getTime()
-  if (ms < 0) return null
-  const d = Math.floor(ms / 86400e3)
-  if (d < 1) { const h = Math.floor(ms / 3600e3); return h < 1 ? '<1h' : `${h}h` }
-  if (d < 14) return `${d}d`
-  return `${Math.floor(d / 7)}w`
-}
-function idleStale(t) {
-  return !!t.last_activity && (now.value - new Date(t.last_activity).getTime()) > 14 * 86400e3
-}
 function challengeStatus(c) {
   if (c.agreed_at) return `📅 ${new Date(c.agreed_at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${c.server ? ' · ' + c.server : ''}`
   if ((c.proposed || []).length) return 'Awaiting time pick'
@@ -301,7 +286,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
         <section class="card board-card">
           <h3>🏆 Standings <button class="exp" @click="setTab('rules')">how it works ⓘ</button></h3>
           <div class="board">
-            <div class="board-head"><span class="c-rung">#</span><span class="c-team">Team</span><span class="c-members">Players</span><span class="c-rec" title="Match record (won–lost)">Match</span><span class="c-rec" title="Game/map record (won–lost)">Games</span><span class="c-idle" title="Time since this team last issued a challenge or completed a match">Idle</span><span class="c-status">Status</span></div>
+            <div class="board-head"><span class="c-rung">#</span><span class="c-team">Team</span><span class="c-members">Players</span><span class="c-rec" title="Match record (won–lost)">Match</span><span class="c-rec" title="Game/map record (won–lost)">Games</span><span class="c-status">Status</span></div>
             <div v-for="t in teams" :key="t.id" class="row" :class="{ top: t.rung === 1 }">
               <span class="c-rung">{{ t.rung }}</span>
               <span class="c-team">
@@ -319,10 +304,6 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
               </span>
               <span class="c-rec c-match"><span class="rec-lbl">M </span><b>{{ t.match_w ?? 0 }}</b><span class="dash">–</span>{{ t.match_l ?? 0 }}</span>
               <span class="c-rec c-games"><span class="rec-lbl">G </span><b>{{ t.game_w ?? 0 }}</b><span class="dash">–</span>{{ t.game_l ?? 0 }}</span>
-              <span class="c-idle" :class="{ stale: !teamStatus(t) && idleStale(t) }"
-                    :title="t.last_activity ? `Last issued a challenge / completed a match: ${new Date(t.last_activity).toLocaleDateString()}` : ''">
-                {{ teamStatus(t) ? '—' : (idleFor(t) || '—') }}
-              </span>
               <span class="c-status">
                 <span v-if="teamStatus(t)" class="badge challenged">{{ teamStatus(t) }}</span>
                 <button v-else-if="canChallenge(t)" class="chal-btn" @click="doChallenge(t)">⚔ Challenge</button>
@@ -575,10 +556,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .koth-weeks { margin-left: auto; color: var(--fg-2); font-size: 13px; } .koth-weeks strong { color: var(--fg); font-size: 18px; }
 
 .board { margin: 0 -18px; }
-.board-head, .row { display: grid; grid-template-columns: 34px minmax(0,1.5fr) minmax(0,1.1fr) 58px 58px 42px minmax(0,1.15fr); align-items: center; gap: 12px; padding: 10px 18px; }
-.c-idle { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg-3); white-space: nowrap; }
-.c-idle.stale { color: var(--draw); font-weight: 700; }
-.board-head .c-idle { font-size: 11px; font-family: inherit; }
+.board-head, .row { display: grid; grid-template-columns: 34px minmax(0,1.5fr) minmax(0,1.1fr) 58px 58px minmax(0,1.15fr); align-items: center; gap: 12px; padding: 10px 18px; }
 .c-rec { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--fg-3); text-align: left; white-space: nowrap; }
 .c-rec b { color: var(--win); font-weight: 700; } .c-rec .dash { color: var(--fg-3); margin: 0 1px; }
 .board-head .c-rec { font-size: 11px; }
@@ -693,7 +671,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
     grid-template-areas:
       "rung team    team   status"
       "rung players players players"
-      "rung match   games  idle";
+      "rung match   games  games";
     column-gap: 8px; row-gap: 3px; padding: 11px 14px; align-items: center;
   }
   .row .c-rung    { grid-area: rung; }
@@ -701,8 +679,6 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
   .row .c-members { grid-area: players; font-size: 12px; }
   .row .c-match   { grid-area: match; }
   .row .c-games   { grid-area: games; }
-  .row .c-idle    { grid-area: idle; justify-self: end; font-size: 11px; }
-  .row .c-idle::before { content: 'idle '; color: var(--fg-3); font-weight: 700; font-family: inherit; }
   .row .c-status  { grid-area: status; justify-self: end; }
   .c-rec { font-size: 12px; }
   .rec-lbl { display: inline; color: var(--fg-3); font-weight: 700; }
