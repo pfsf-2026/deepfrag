@@ -161,3 +161,17 @@ sn:
   variants:
     - sn
     - "s][n"
+
+wdcanino:
+  # Merged 2026-07-29 (Peter): plain "canino" (color-coded, no clan tag) and
+  # "caninowd" are the same player as wd.canino — his untagged name was
+  # splitting into a separate canonical and broke KOTH ch55 auto-resolve
+  # (his frags vanished from CoCaComPão's totals). shcanino / slz_canino
+  # left separate pending Peter's confirmation.
+  display: wdcanino
+  login: ""
+  variants:
+    - wdcanino
+    - wd.canino
+    - canino
+    - caninowd
