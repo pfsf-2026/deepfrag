@@ -163,11 +163,11 @@ sn:
     - "s][n"
 
 wdcanino:
-  # Merged 2026-07-29 (Peter): plain "canino" (color-coded, no clan tag) and
-  # "caninowd" are the same player as wd.canino — his untagged name was
-  # splitting into a separate canonical and broke KOTH ch55 auto-resolve
-  # (his frags vanished from CoCaComPão's totals). shcanino / slz_canino
-  # left separate pending Peter's confirmation.
+  # Merged 2026-07-29 (Peter): ALL canino clan-tag variants are the same player
+  # (his Discord global_name is "Caninoslz" — slz confirmed his). Plain
+  # "canino" splitting into its own canonical broke KOTH ch55 auto-resolve
+  # (his frags vanished from CoCaComPão's totals). Full set folded in:
+  # canino (129), caninowd (5), shcanino (64), slz_canino (3) → 1,159 total.
   display: wdcanino
   login: ""
   variants:
@@ -175,3 +175,7 @@ wdcanino:
     - wd.canino
     - canino
     - caninowd
+    - shcanino
+    - sh.canino
+    - slz_canino
+    - slz.canino
