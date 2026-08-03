@@ -83,6 +83,9 @@ function doChallenge(t) {
   }
 }
 async function onChallengeCreated() { createTarget.value = null; await load() }
+// "Report match" — self-service for a played bo3 that didn't record.
+const reportChallenge = ref(null)
+async function onReported() { await load() }   // keep modal open; it shows the outcome
 function challengeStatus(c) {
   if (c.agreed_at) return `📅 ${new Date(c.agreed_at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${c.server ? ' · ' + c.server : ''}`
   if ((c.proposed || []).length) return 'Awaiting time pick'
@@ -379,6 +382,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
               <div class="ym-status">{{ challengeStatus(myOpenChallenge) }}</div>
               <div class="ym-actions">
                 <button class="rail-btn" @click="schedulerChallenge = myOpenChallenge">{{ myChallengeAction(myOpenChallenge) }}</button>
+                <button class="rail-btn ghost" @click="reportChallenge = myOpenChallenge">Report result</button>
                 <button v-if="myOpenChallenge.agreed_at" class="rail-btn ghost" :disabled="reschedulingId === myOpenChallenge.id" @click="doReschedule(myOpenChallenge)">{{ reschedulingId === myOpenChallenge.id ? 'Reopening…' : 'Reschedule' }}</button>
                 <button v-if="canWithdraw(myOpenChallenge)" class="rail-btn ghost" :disabled="withdrawingId === myOpenChallenge.id" @click="doWithdraw(myOpenChallenge)">{{ withdrawingId === myOpenChallenge.id ? 'Withdrawing…' : 'Withdraw' }}</button>
               </div>
@@ -395,6 +399,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             <span class="cstatus">{{ challengeStatus(c) }}</span>
             <span class="spacer" />
             <button v-if="involvesMe(c)" class="sched-btn" @click="schedulerChallenge = c">{{ c.agreed_at ? 'View' : 'Schedule' }}</button>
+            <button v-if="involvesMe(c)" class="sched-btn ghost" title="Played it but it didn't record? Point DeepFrag at the games." @click="reportChallenge = c">Report</button>
             <button v-if="canWithdraw(c)" class="sched-btn ghost" :disabled="withdrawingId === c.id" @click="doWithdraw(c)">{{ withdrawingId === c.id ? '…' : 'Withdraw' }}</button>
             <span v-else-if="!involvesMe(c) && c.deadline && !c.agreed_at" class="deadline">by {{ new Date(c.deadline).toLocaleDateString() }}</span>
           </div>
@@ -505,6 +510,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
       <AddTeam v-if="editingTeam && ladder" :ladder-id="ladder.id" :edit-team="editingTeam" @done="onTeamAdded" @close="editingTeam = null" />
       <Scheduler v-if="schedulerChallenge" :challenge="schedulerChallenge" :user-team-id="myTeam?.id" @done="onScheduled" @saved="load" @close="schedulerChallenge = null" />
       <Scheduler v-if="createTarget && !schedulerChallenge" :create-target="createTarget" :user-team-id="myTeam?.id" @done="onChallengeCreated" @close="createTarget = null" />
+      <ReportMatch v-if="reportChallenge" :challenge="reportChallenge" :user-team-id="myTeam?.id" @done="onReported" @close="reportChallenge = null" />
       <MatchDetailModal v-if="openMatchId" :match-id="openMatchId" @close="openMatchId = null" />
     </ClientOnly>
   </div>

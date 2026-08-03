@@ -1138,6 +1138,50 @@ def _ladder_tick(cur):
                 notify.koth_changed(_team_label(cur, new_koth))
         except Exception:
             pass
+
+    # ── PENDING MATCH REPORTS: submitted before the games were ingested (the
+    # 2h sync). Retry each; cancel reports whose challenge got resolved some
+    # other way or that have sat pending past any plausible ingest delay. ──
+    counts.setdefault("reports_recorded", 0)
+    counts.setdefault("reports_flagged", 0)
+    cur.execute("""SELECT r.id AS report_id, r.game_ids, r.reporter, r.created_at AS reported_at,
+                          c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.status,
+                          c.agreed_at, c.deadline, c.created_at, c.flagged_review,
+                          ca.members AS a_members, cd.members AS b_members
+                   FROM ladder_match_reports r
+                   JOIN ladder_challenges c ON c.id = r.challenge_id
+                   JOIN ladder_teams ca ON ca.id=c.challenger_id
+                   JOIN ladder_teams cd ON cd.id=c.challenged_id
+                   WHERE r.status='pending'""")
+    for rp in cur.fetchall():
+        if rp["status"] not in ("open", "scheduled"):
+            cur.execute("UPDATE ladder_match_reports SET status='cancelled', resolved_at=now() WHERE id=%s",
+                        (rp["report_id"],))
+            continue
+        try:
+            outcome, _payload = _try_report_games(cur, rp, [int(g) for g in (rp["game_ids"] or [])],
+                                                  rp.get("reporter"))
+        except HTTPException:
+            # Input became invalid on retry (e.g. games landed outside the
+            # window) — cancel rather than retry forever.
+            cur.execute("UPDATE ladder_match_reports SET status='cancelled', resolved_at=now() WHERE id=%s",
+                        (rp["report_id"],))
+            continue
+        except Exception:
+            continue
+        if outcome == "pending":
+            # Still not ingested. Give up after 3 days — the sync cycle is 2h,
+            # so by then the IDs are simply wrong.
+            try:
+                if rp["reported_at"] < datetime.now(timezone.utc) - timedelta(days=3):
+                    cur.execute("UPDATE ladder_match_reports SET status='cancelled', resolved_at=now() WHERE id=%s",
+                                (rp["report_id"],))
+            except Exception:
+                pass
+            continue
+        cur.execute("UPDATE ladder_match_reports SET status=%s, resolved_at=now() WHERE id=%s",
+                    (outcome, rp["report_id"]))
+        counts["reports_recorded" if outcome == "recorded" else "reports_flagged"] += 1
     return counts
 
 
@@ -5583,6 +5627,200 @@ def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = 
         det = _detect_bo3(cur, a_roster, b_roster, ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"))
     return {"challenge_id": challenge_id, "a_name": ch["a_name"], "b_name": ch["b_name"],
             "challenger_id": ch["challenger_id"], "challenged_id": ch["challenged_id"],
+            "candidates": det["candidates"],
+            "suggested_score": {"a": det["aw"], "b": det["bw"]},
+            "suggested_complete": det["complete"],
+            "full_match": det["full_match"]}
+
+
+def _report_load_challenge(cur, challenge_id):
+    cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.status,
+                          c.agreed_at, c.deadline, c.created_at, c.flagged_review,
+                          ca.members AS a_members, cd.members AS b_members
+                   FROM ladder_challenges c
+                   JOIN ladder_teams ca ON ca.id=c.challenger_id
+                   JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
+    return cur.fetchone()
+
+
+def _report_user_side(cur, user, ch):
+    """The reporter's team id (real membership beats admin), or None for a pure
+    admin, or raises 403 for everyone else."""
+    cid = user.get("canonical_id")
+    if cid:
+        if cid in (ch["a_members"] or []):
+            return ch["challenger_id"]
+        if cid in (ch["b_members"] or []):
+            return ch["challenged_id"]
+    if user.get("is_admin"):
+        return None
+    raise HTTPException(403, "only players on one of the two teams may report this match")
+
+
+def _try_report_games(cur, ch, game_ids, reporter):
+    """Validate reporter-submitted hub games through the SAME gates as
+    auto-resolve and record the match if they pass. Never trusts the reporter:
+    winner comes from frags, rosters must fully match, games must sit inside
+    the challenge's life. Returns (outcome, payload):
+      recorded — match written, movement applied, Discord posted
+      flagged  — complete series but rosters didn't fully match → admin review
+      pending  — some games not ingested yet (retry from the tick)
+    Raises HTTPException for reporter-fixable input problems."""
+    a_roster = list(ch["a_members"] or [])
+    b_roster = list(ch["b_members"] or [])
+    if not a_roster or not b_roster:
+        raise HTTPException(409, "both rosters must be linked before reporting")
+    cur.execute("""SELECT mt.hub_game_id, mt.match_map, mt.match_date,
+                          SUM(CASE WHEN p.canonical_id = ANY(%(a)s) THEN p.player_frags ELSE 0 END) AS a_frags,
+                          SUM(CASE WHEN p.canonical_id = ANY(%(b)s) THEN p.player_frags ELSE 0 END) AS b_frags,
+                          COUNT(DISTINCT p.canonical_id) FILTER (WHERE p.canonical_id = ANY(%(a)s)) AS a_n,
+                          COUNT(DISTINCT p.canonical_id) FILTER (WHERE p.canonical_id = ANY(%(b)s)) AS b_n
+                   FROM matches mt JOIN players p ON p.match_id = mt.match_id
+                   WHERE mt.match_mode='2on2' AND mt.hub_game_id = ANY(%(ids)s)
+                   GROUP BY mt.hub_game_id, mt.match_map, mt.match_date""",
+                {"a": a_roster, "b": b_roster, "ids": list(game_ids)})
+    rows = {int(r["hub_game_id"]): r for r in cur.fetchall()}
+    missing = [g for g in game_ids if int(g) not in rows]
+    if missing:
+        return "pending", {"missing": missing}
+    # Window: inside the challenge's life, with slack for clock drift and
+    # just-past-deadline finishes.
+    lo = ch["created_at"] - timedelta(hours=6) if ch.get("created_at") else None
+    hi = (ch["deadline"] + timedelta(hours=24)) if ch.get("deadline") else None
+    ordered = sorted(rows.values(), key=lambda r: str(r["match_date"]))
+    for r in ordered:
+        try:
+            d = datetime.fromisoformat(str(r["match_date"]).replace("Z", "+00:00"))
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+        except Exception:
+            continue
+        if (lo and d < lo) or (hi and d > hi):
+            raise HTTPException(400, f"game {r['hub_game_id']} ({r['match_map']}) was played outside "
+                                     f"this challenge's window — check the game IDs")
+    # Chronological first-to-2 walk over ONLY the submitted games.
+    aw = bw = 0
+    decisive = []
+    for r in ordered:
+        a, b = r["a_frags"] or 0, r["b_frags"] or 0
+        if aw == 2 or bw == 2 or a == b:
+            continue
+        decisive.append(r)
+        if a > b:
+            aw += 1
+        else:
+            bw += 1
+    if aw < 2 and bw < 2:
+        raise HTTPException(400, f"these games only score {aw}-{bw} — a bo3 needs a winner with 2. "
+                                 f"Add the missing game ID.")
+    full = all((r["a_n"] or 0) >= 2 and (r["b_n"] or 0) >= 2 for r in decisive)
+    if not full:
+        bad = [f"{r['match_map']} (matched {r['a_n']}v{r['b_n']})" for r in decisive
+               if (r["a_n"] or 0) < 2 or (r["b_n"] or 0) < 2]
+        if not ch.get("flagged_review"):
+            try:
+                import notify
+                notify.send(content=(f"🚩 **Match report needs review** — {_team_label(cur, ch['challenger_id'])} vs "
+                                     f"{_team_label(cur, ch['challenged_id'])}: {reporter or 'a player'} reported games "
+                                     f"{[int(g) for g in game_ids]}, but not all 4 rostered players matched in: "
+                                     f"{', '.join(bad)} (name not linked, or a stand-in played). Nothing recorded — "
+                                     f"admins please review."))
+            except Exception:
+                pass
+            cur.execute("UPDATE ladder_challenges SET flagged_review=TRUE WHERE id=%s", (ch["id"],))
+        return "flagged", {"bad": bad}
+    # All gates passed — record exactly like auto-resolve.
+    import ladder as _ladder
+    maps = [{"map": r["match_map"], "a_frags": r["a_frags"], "b_frags": r["b_frags"],
+             "hub_game_id": int(r["hub_game_id"])} for r in decisive]
+    winner_id = ch["challenger_id"] if aw > bw else ch["challenged_id"]
+    hub_ids = [m["hub_game_id"] for m in maps]
+    cur.execute("SELECT max(match_date) AS m FROM matches WHERE hub_game_id = ANY(%s)", (hub_ids,))
+    mm = cur.fetchone()
+    pa = mm["m"] if mm and mm["m"] else None
+    cur.execute("""INSERT INTO ladder_matches
+                   (ladder_id, challenge_id, team_a_id, team_b_id, maps, score_a, score_b, winner_id, hub_game_ids, played_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, COALESCE(%s::timestamptz, now())) RETURNING id""",
+                (ch["ladder_id"], ch["id"], ch["challenger_id"], ch["challenged_id"],
+                 json.dumps(maps), aw, bw, winner_id, json.dumps(hub_ids), pa))
+    match_id = cur.fetchone()["id"]
+    moves = {}
+    if winner_id == ch["challenger_id"]:
+        moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
+    cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now(), flagged_review=FALSE WHERE id=%s",
+                (ch["id"],))
+    _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, aw, bw, moves, match_id=match_id)
+    return "recorded", {"match_id": match_id, "winner_id": winner_id, "score": f"{aw}-{bw}", "moves": moves}
+
+
+@app.post("/api/ladder/challenge/{challenge_id}/report")
+def ladder_challenge_report(challenge_id: int, authorization: str | None = Header(default=None),
+                            game_ids: list = Body(..., embed=True)):
+    """Player self-service 'Report match' (2026-08-02): submit the hub game IDs
+    of a played bo3 (2 required, 3rd for a full series). Validated through the
+    same gates as auto-resolve — recorded if clean, flagged to admins if the
+    rosters don't fully match, queued if the games aren't ingested yet."""
+    import ladder as _ladder
+    user = _current_user(authorization, required=True)
+    try:
+        ids = []
+        for g in (game_ids or []):
+            gi = int(g)
+            if gi not in ids:
+                ids.append(gi)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "game_ids must be numbers (the gameId from the hub URL)")
+    if not (2 <= len(ids) <= 3):
+        raise HTTPException(400, "submit 2 game IDs (or 3 for a full series)")
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        ch = _report_load_challenge(cur, challenge_id)
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] not in ("open", "scheduled"):
+            raise HTTPException(409, "challenge is already resolved")
+        _report_user_side(cur, user, ch)
+        reporter = user.get("canonical_id") or user.get("username") or "admin"
+        outcome, payload = _try_report_games(cur, ch, ids, reporter)
+        # One live report row per challenge: replace any prior pending row.
+        cur.execute("UPDATE ladder_match_reports SET status='cancelled', resolved_at=now() "
+                    "WHERE challenge_id=%s AND status='pending'", (challenge_id,))
+        cur.execute("""INSERT INTO ladder_match_reports (challenge_id, reporter, game_ids, status, resolved_at)
+                       VALUES (%s,%s,%s,%s, CASE WHEN %s='pending' THEN NULL ELSE now() END)""",
+                    (challenge_id, reporter, json.dumps(ids), outcome, outcome))
+        conn.commit()
+    return {"challenge_id": challenge_id, "outcome": outcome, **payload}
+
+
+@app.post("/api/ladder/challenge/{challenge_id}/report-search")
+def ladder_challenge_report_search(challenge_id: int, authorization: str | None = Header(default=None),
+                                   start_time: str = Body(..., embed=True)):
+    """Find-by-time helper for the Report modal: given a rough match start, look
+    for candidate games ±(2h back / 8h forward) between the two rosters. The
+    player confirms in the UI; submission still goes through /report."""
+    import ladder as _ladder
+    user = _current_user(authorization, required=True)
+    try:
+        anchor = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+        if anchor.tzinfo is None:
+            anchor = anchor.replace(tzinfo=timezone.utc)
+    except Exception:
+        raise HTTPException(400, "start_time must be an ISO timestamp")
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        ch = _report_load_challenge(cur, challenge_id)
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] not in ("open", "scheduled"):
+            raise HTTPException(409, "challenge is already resolved")
+        _report_user_side(cur, user, ch)
+        # Reuse the open-challenge window branch: created_at→deadline become our
+        # explicit search bounds.
+        det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []),
+                          None, anchor + timedelta(hours=8), anchor - timedelta(hours=2))
+    return {"challenge_id": challenge_id,
             "candidates": det["candidates"],
             "suggested_score": {"a": det["aw"], "b": det["bw"]},
             "suggested_complete": det["complete"],

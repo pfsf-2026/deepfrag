@@ -113,6 +113,21 @@ def ensure_schema(cur):
     # can do -> {canonical_id: [iso, ...]}. When both have picked, the match
     # auto-schedules at the earliest slot common to both.
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS picks JSONB NOT NULL DEFAULT '{}'::jsonb")
+    # Player-submitted match reports (2026-08-02): "we played it, it didn't
+    # record" self-service. Validated through the same gates as auto-resolve;
+    # pending = submitted before the games were ingested (tick retries).
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ladder_match_reports (
+          id           BIGSERIAL PRIMARY KEY,
+          challenge_id BIGINT NOT NULL REFERENCES ladder_challenges(id),
+          reporter     TEXT,                              -- canonical_id (or discord username)
+          game_ids     JSONB NOT NULL,                    -- [hub_game_id, ...] as submitted
+          status       TEXT NOT NULL DEFAULT 'pending',   -- pending | recorded | flagged | cancelled
+          note         TEXT,
+          created_at   TIMESTAMPTZ DEFAULT now(),
+          resolved_at  TIMESTAMPTZ
+        )
+    """)
 
 
 def standings(cur, ladder_id):
