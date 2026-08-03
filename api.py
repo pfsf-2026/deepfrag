@@ -899,18 +899,21 @@ def _ladder_tick(cur):
     # Same detection the admin has been accepting (proven over the first matches),
     # now run unattended. Gated per-ladder by rules.auto_resolve (default ON). A
     # Discord result post fires for every auto-resolution so it stays auditable.
+    # status='open' included since 2026-08-02: teams that agree off-platform and
+    # just play (never picking a slot) still get their bo3 detected + resolved —
+    # window for those is creation -> deadline, guarded by the exact-roster gate.
     cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.agreed_at,
-                          c.deadline, c.flagged_review,
+                          c.deadline, c.created_at, c.flagged_review,
                           ca.members AS a_members, cd.members AS b_members, l.rules AS rules
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
                    JOIN ladder_teams cd ON cd.id=c.challenged_id
                    JOIN ladders l ON l.id=c.ladder_id
-                   WHERE c.status='scheduled'""")
+                   WHERE c.status IN ('scheduled','open')""")
     for ch in cur.fetchall():
         if not (ch["rules"] or {}).get("auto_resolve", True):
             continue
-        det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"))
+        det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"))
         if not det["complete"]:
             continue
         # SAFETY GATE: only auto-resolve when EVERY decisive game had all four
@@ -1050,13 +1053,26 @@ def _ladder_tick(cur):
     # Forfeit / Report / Reschedule / Cancel buttons. A ladder can still opt INTO
     # automatic forfeits by explicitly setting rules.auto_forfeit = true.
     cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.deadline,
-                          c.overdue_flagged, c.proposed, c.proposed_by, l.rules, ca.name AS a, cd.name AS b
+                          c.agreed_at, c.created_at,
+                          c.overdue_flagged, c.proposed, c.proposed_by, l.rules, ca.name AS a, cd.name AS b,
+                          ca.members AS a_members, cd.members AS b_members
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
                    JOIN ladder_teams cd ON cd.id=c.challenged_id
                    JOIN ladders l ON l.id=c.ladder_id
                    WHERE c.status='open' AND c.deadline < now()""")
     for r in cur.fetchall():
+        # Race guard (2026-08-02): if a complete bo3 between the exact rosters
+        # already exists in the window, the match WAS played — let the resolver
+        # record it (this tick or the next, once settled) instead of
+        # cancelling/forfeiting a played challenge at the deadline.
+        try:
+            pend = _detect_bo3(cur, list(r["a_members"] or []), list(r["b_members"] or []),
+                               r.get("agreed_at"), r.get("deadline"), r.get("created_at"))
+            if pend["complete"] and pend["full_match"]:
+                continue
+        except Exception:
+            pass
         # 2-day rule (2026-07-15): if the offer on the table covers <2 distinct
         # evenings, the expired challenge is auto-CANCELLED with no ladder
         # movement — a single take-it-or-leave-it time can't earn a forfeit.
@@ -5462,7 +5478,7 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
     return {"challenge_id": challenge_id, "status": "open"}
 
 
-def _detect_bo3(cur, a_roster, b_roster, agreed_at, deadline=None):
+def _detect_bo3(cur, a_roster, b_roster, agreed_at, deadline=None, created_at=None):
     """Find candidate 2on2 hub games involving BOTH rosters around the scheduled
     time, then walk them in time order into the decisive Bo3 set (first to 2).
     Shared by the admin candidate-games view AND the cron auto-resolver so they
@@ -5482,6 +5498,13 @@ def _detect_bo3(cur, a_roster, b_roster, agreed_at, deadline=None):
         if deadline is not None and deadline > hi_dt:
             hi_dt = deadline
         hi = hi_dt.isoformat()
+    elif created_at:
+        # Never scheduled through the site (2026-08-02 Tardy Party/FIWN: teams
+        # agreed off-platform and just played). Search the challenge's whole
+        # life: creation → deadline. The exact-roster gate is what keeps this
+        # window safe at up-to-7-days wide.
+        lo = created_at.isoformat()
+        hi = (deadline or (datetime.now(timezone.utc) + timedelta(hours=1))).isoformat()
     else:
         lo = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
         hi = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
@@ -5544,7 +5567,7 @@ def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = 
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.agreed_at, c.deadline,
+        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.agreed_at, c.deadline, c.created_at,
                               ca.name AS a_name, cd.name AS b_name,
                               ca.members AS a_members, cd.members AS b_members
                        FROM ladder_challenges c
@@ -5557,7 +5580,7 @@ def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = 
         b_roster = list(ch["b_members"] or [])
         if not a_roster or not b_roster:
             return {"challenge_id": challenge_id, "candidates": [], "note": "rosters not fully linked yet"}
-        det = _detect_bo3(cur, a_roster, b_roster, ch.get("agreed_at"), ch.get("deadline"))
+        det = _detect_bo3(cur, a_roster, b_roster, ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"))
     return {"challenge_id": challenge_id, "a_name": ch["a_name"], "b_name": ch["b_name"],
             "challenger_id": ch["challenger_id"], "challenged_id": ch["challenged_id"],
             "candidates": det["candidates"],
@@ -5626,7 +5649,7 @@ def admin_ladder_reresolve(challenge_id: int, authorization: str | None = Header
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
         cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.agreed_at,
-                              c.deadline,
+                              c.deadline, c.created_at,
                               ca.members AS a_members, cd.members AS b_members
                        FROM ladder_challenges c
                        JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -5634,7 +5657,7 @@ def admin_ladder_reresolve(challenge_id: int, authorization: str | None = Header
         ch = cur.fetchone()
         if not ch:
             raise HTTPException(404, "challenge not found")
-        det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"))
+        det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"))
         if not det["complete"]:
             raise HTTPException(409, "corrected detection is not a complete Bo3 — fix rosters first")
         if not det.get("full_match"):
