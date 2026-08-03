@@ -1321,6 +1321,64 @@ def _evaluate_freshness(conn):
             "recent_unassigned": unassigned, "problems": problems, "alerted": alerted}
 
 
+@app.post("/api/admin/fleet/token")
+def admin_fleet_token(authorization: str | None = Header(default=None)):
+    """Generate (rotate) the low-privilege fleet incident token. The game boxes
+    hold this token; it can ONLY post incident notices — never admin actions."""
+    import secrets as _secrets
+    _check_ladder_admin(authorization)
+    tok = _secrets.token_urlsafe(24)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS monitor_state (key TEXT PRIMARY KEY, value TEXT)")
+        cur.execute("""INSERT INTO monitor_state (key, value) VALUES ('fleet_incident_token', %s)
+                       ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value""", (tok,))
+        conn.commit()
+    return {"token": tok}
+
+
+@app.post("/api/fleet/incident")
+def fleet_incident(authorization: str | None = Header(default=None),
+                   box: str = Body(..., embed=True),
+                   kind: str = Body(..., embed=True),
+                   detail: str = Body(default="", embed=True)):
+    """Game-server watchdogs report incidents here (port deaths, stuck-map
+    diagnostics) -> Discord via the bot. Auth: the fleet incident token
+    (low-privilege, admin-rotatable). Server-side throttle: one post per
+    box+kind per 30 min so a crashloop can't flood the channel."""
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS monitor_state (key TEXT PRIMARY KEY, value TEXT)")
+        cur.execute("SELECT value FROM monitor_state WHERE key='fleet_incident_token'")
+        row = cur.fetchone()
+        expected = row["value"] if row else None
+        if not expected or (authorization or "").removeprefix("Bearer ") != expected:
+            raise HTTPException(401, "bad fleet token")
+        box = (box or "")[:40]; kind = (kind or "")[:60]; detail = (detail or "")[:500]
+        now = datetime.now(timezone.utc)
+        tkey = f"fleet_incident_last:{box}:{kind}"
+        cur.execute("SELECT value FROM monitor_state WHERE key=%s", (tkey,))
+        last = cur.fetchone()
+        throttled = False
+        if last and last["value"]:
+            try:
+                throttled = (now - datetime.fromisoformat(last["value"])).total_seconds() < 1800
+            except Exception:
+                pass
+        if not throttled:
+            try:
+                import notify
+                notify.send(content=(f"🛠️ **Fleet incident** — `{box}` {kind}"
+                                     + (f"\n```{detail}```" if detail else "")))
+            except Exception:
+                pass
+            cur.execute("""INSERT INTO monitor_state (key, value) VALUES (%s, %s)
+                           ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value""",
+                        (tkey, now.isoformat()))
+        conn.commit()
+    return {"ok": True, "throttled": throttled}
+
+
 @app.post("/api/cron/freshness-check")
 def cron_freshness_check(authorization: str | None = Header(default=None)):
     """Data-freshness watchdog — the alarm the 2026-06 silent stall lacked.
