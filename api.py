@@ -3614,7 +3614,7 @@ def ladder_detail(ladder_id: int, response: Response):
                     "since": since.isoformat() if since else None, "weeks": weeks}
         cur.execute("""
             SELECT c.id, c.challenger_id, c.challenged_id, c.rungs_up, c.status, c.deadline, c.created_at,
-                   c.proposed, c.proposed_by, c.agreed_at, c.server,
+                   c.proposed, c.proposed_by, c.agreed_at, c.server, c.picks,
                    ca.name AS challenger, cd.name AS challenged
             FROM ladder_challenges c
             JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -3622,11 +3622,15 @@ def ladder_detail(ladder_id: int, response: Response):
             WHERE c.ladder_id=%s AND c.status IN ('open','scheduled')
             ORDER BY c.created_at DESC
         """, (ladder_id,))
+        # picks included since 2026-08-04: without it the Scheduler modal
+        # re-initialized a challenged player's saved picks to EMPTY on every
+        # open ("i've selected times it keeps reseting it" — war, ch58).
         challenges = [dict(r,
                            deadline=r["deadline"].isoformat() if r["deadline"] else None,
                            created_at=r["created_at"].isoformat() if r["created_at"] else None,
                            agreed_at=r["agreed_at"].isoformat() if r["agreed_at"] else None,
-                           proposed=r["proposed"] or [])
+                           proposed=r["proposed"] or [],
+                           picks=r["picks"] or {})
                       for r in cur.fetchall()]
     return {"ladder": lad, "teams": teams, "koth": koth, "challenges": challenges}
 
