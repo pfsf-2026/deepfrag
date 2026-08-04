@@ -315,28 +315,13 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
       </template>
 
       <!-- pick a slot (or counter with different times) -->
+      <!-- 2026-08-04: the challenged team picks a single offered slot and it's
+           scheduled immediately — one player picking is enough (onus on the
+           challenged team). Same single-pick UI for both sides now; the old
+           two-player checkbox/overlap path was retired. -->
       <template v-else-if="view === 'act'">
-        <!-- per-individual: each challenged player ticks every offered slot they can play -->
-        <template v-if="amChallenged">
-          <p class="lede"><strong>{{ proposerName }}</strong> offered these times — tick <strong>every slot you can play</strong>. When both teammates submit, the match auto-schedules at your earliest common time.</p>
-          <div class="tz-note">🕒 Times in <strong>{{ tz }}</strong>.</div>
-          <div class="picklist">
-            <label v-for="iso in proposedLocal" :key="iso" class="pickrow" :class="{ on: myPicks.has(iso) }">
-              <input type="checkbox" :checked="myPicks.has(iso)" @change="toggleMyPick(iso)">
-              <span class="pl-time">{{ fmtLocal(iso) }}</span>
-              <span v-if="freeCount(iso)" class="pl-free"><span class="fdot" :class="{ allfree: freeCount(iso) === overlayMeta.withAvail }">{{ freeCount(iso) }}</span></span>
-            </label>
-          </div>
-          <button class="link-btn" @click="countering = true">None of these work — suggest different times →</button>
-          <p v-if="picksStatus" class="muted small">{{ picksStatus }}</p>
-          <p v-if="err" class="err">{{ err }}</p>
-          <div class="m-actions">
-            <button class="btn ghost" @click="emit('close')">Cancel</button>
-            <button class="btn" :disabled="saving || !myPicks.size" @click="submitMyPicks">{{ saving ? 'Submitting…' : `Submit my ${myPicks.size} time${myPicks.size === 1 ? '' : 's'}` }}</button>
-          </div>
-        </template>
-        <template v-else>
-        <p class="lede"><strong>{{ proposerName }}</strong> proposed these times — pick one, or suggest different times.</p>
+        <template>
+        <p class="lede"><strong>{{ proposerName }}</strong> proposed these times — pick one to lock the match, or suggest different times. (Any one player picking is enough.)</p>
         <div class="tz-note">
           🕒 Times in <strong>{{ tz }}</strong>.
           <a v-if="tzIsGuess" class="tz-link" @click="showSettings = true">Showing Eastern — set your time zone →</a>
