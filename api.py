@@ -5413,16 +5413,15 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
             raise HTTPException(409, "challenge is already scheduled or resolved")
         if not (ch["proposed"] or []):
             raise HTTPException(400, "no times have been proposed yet")
-        # 2026-08-04 (Peter): the onus is on the CHALLENGED team — any ONE of
-        # their players picking an offered slot schedules the match immediately
-        # (no per-player overlap needed). The challenger may still pick when the
-        # challenged team counter-proposed (they're the turn team then). Admin
-        # always allowed.
-        challenged_picks = _user_on_team(cur, user, ch["challenged_id"])
+        # 2026-08-04 (Peter): whoever POSTED the current slots is assumed
+        # available at all of them (offering = agreeing). So the OTHER side —
+        # the turn team — just needs ONE player to pick one slot and the match
+        # is scheduled immediately (no per-player overlap). In the normal flow
+        # the challenger offers and the challenged team is the turn team, so the
+        # onus lands on the challenged team as intended. Admin always allowed.
         turn = _turn_team(ch)
-        if not (challenged_picks or user.get("is_admin")
-                or (turn is not None and _user_on_team(cur, user, turn))):
-            raise HTTPException(403, "the challenged team picks one of the offered times")
+        if not (user.get("is_admin") or (turn is not None and _user_on_team(cur, user, turn))):
+            raise HTTPException(403, "it's the other team's turn to pick one of the offered times")
         if slot not in (ch["proposed"] or []):
             raise HTTPException(400, "pick one of the proposed slots")
         cur.execute("""UPDATE ladder_challenges
