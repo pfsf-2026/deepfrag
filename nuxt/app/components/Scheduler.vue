@@ -320,7 +320,6 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
            challenged team). Same single-pick UI for both sides now; the old
            two-player checkbox/overlap path was retired. -->
       <template v-else-if="view === 'act'">
-        <template>
         <p class="lede"><strong>{{ proposerName }}</strong> proposed these times — pick one to lock the match, or suggest different times. (Any one player picking is enough.)</p>
         <div class="tz-note">
           🕒 Times in <strong>{{ tz }}</strong>.
@@ -364,7 +363,6 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
           <button class="btn ghost" @click="emit('close')">Cancel</button>
           <button class="btn" :disabled="saving" @click="confirmSlot">{{ saving ? 'Scheduling…' : 'Confirm match' }}</button>
         </div>
-        </template>
       </template>
 
       <!-- waiting states -->
