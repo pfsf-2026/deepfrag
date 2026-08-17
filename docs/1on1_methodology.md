@@ -95,6 +95,33 @@ dual career+form rating — both ≤0.1% gains, indistinguishable from noise. Th
 margin signal already tracks genuine improvement; a recency knob only adds
 variance. Don't re-add without a backtest that beats 0.4115.
 
+**Known property, deliberate: efficient wins vs weak opponents bleed μ.**
+Surfaced 2026-08-17 by the sane/bogojoker case: sane went 406W-3L vs
+1300-1700 opponents for **net −370 μ** (he wins by ~15-20 where the curve
+expects more from his level), while bogojoker's blowout-farming of the same
+tier paid +433 — that difference, not their elite results, is the whole gap
+between them (vs 2100+ opponents the engine credits sane MORE: +201 vs +62).
+Two candidate "fixes" were backtested and REJECTED:
+- *Competitiveness-gated margin* (margin weight × 4p(1−p), so farm games score
+  ~binary): log-loss 0.4115 → 0.4369-0.4726. The mismatch margin signal IS
+  the calibration gain; gating it re-inflates the top like v2.
+- *Win-bleed floor* (a win scores no less than `P(win) − slack`): slack 0.05
+  → 0.4172 (−1.4%); slack 0.10 ≈ neutral (0.4118) but only narrows the
+  sane-bogo gap 136→120 while adding a knob. Not worth it.
+μ is a *level* estimate, not a win-the-game trophy: it settles where your
+aggregate performance sits, and how hard you beat weak opponents is genuine
+evidence of level. The face-validity cost for non-transitive pairs is handled
+in the PREDICTOR instead (h2h blending, below) — not by distorting ratings.
+
+**H2H-blended prediction** (api.py `/api/h2h`, added 2026-08-17): one global
+rating cannot encode non-transitive style matchups (sane leads bogojoker
+23-21 lifetime; rating-only predicted 35%). For pairs with **≥10 decisive
+meetings**, the headline win probability shrinks toward the observed pair
+record with **8 pseudo-games** of rating prior:
+`p' = (n·h2h_rate + 8·p_rating)/(n + 8)`.
+Backtested on pair-history games: 0.4115 → **0.4086**. Ratings themselves are
+untouched — this is a prediction-layer overlay only.
+
 ### What gets rated
 
 - Every 1on1 match in the `matches` table where `match_mode = '1on1'` and `match_id` resolves to exactly two distinct `canonical_id`s in `players`.

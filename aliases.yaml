@@ -42,6 +42,10 @@ sane:
     - sane
     - enas
     - bposane     # added 2026-05-20 — pending DB rebuild
+    # messi merged 2026-08-17 (Peter): smurf run 07-11..07-23 vs cronus (22-0).
+    # Evidence: sane silent under own name 07-05..07-28 exactly spanning the run;
+    # elite NA fingerprint LG .373 / DDR 1.86 ≈ sane .348/1.70; mu 2297 ≈ sane.
+    - messi
 
 grl:
   display: grl
@@ -80,6 +84,10 @@ chris:
     - chris
     - chr1s
     - eatmyass
+    # chris+back merged 2026-08-17 (Peter): one-night name 08-04; chris absent
+    # under own name 08-03..08-05; LG .423 matches chris's elite .386 LG.
+    - chris+back
+    - chris_back
 
 war:
   display: war
@@ -193,3 +201,12 @@ wdcanino:
     - sh.canino
     - slz_canino
     - slz.canino
+
+blaze:
+  # Created 2026-08-17 (Peter): BLZE (one game vs cronus 08-04) is blaze.
+  # blaze is flagged unrated — the merge folds the game into his hidden arc.
+  display: blaze
+  login: ""
+  variants:
+    - blaze
+    - blze

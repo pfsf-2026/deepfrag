@@ -2257,8 +2257,21 @@ def head_to_head(
             oa = model.rating(mu=player_a["mu"], sigma=player_a["sigma"], name=p1)
             ob = model.rating(mu=player_b["mu"], sigma=player_b["sigma"], name=p2)
             probs = model.predict_win([[oa], [ob]])
-            overall_pred_a = round(probs[0], 3)
-            overall_pred_b = round(probs[1], 3)
+            overall_pred_a = probs[0]
+            # H2H blend (added 2026-08-17, backtested: 0.4115 → 0.4086 logloss on
+            # pairs with ≥10 prior meetings). One global rating can't encode
+            # non-transitive matchups (sane beats bogojoker 23-21 lifetime while
+            # rating-only said 35% — style pairings are real). Shrink toward the
+            # observed pair record with 8 pseudo-games of rating-implied prior;
+            # below 10 meetings the record is too noisy to move the headline.
+            H2H_MIN_GAMES, H2H_PRIOR_WEIGHT = 10, 8.0
+            n_h2h = (h2h_summary.get("wins_a") or 0) + (h2h_summary.get("wins_b") or 0)
+            if n_h2h >= H2H_MIN_GAMES:
+                h2h_rate = h2h_summary["wins_a"] / n_h2h
+                overall_pred_a = ((n_h2h * h2h_rate + H2H_PRIOR_WEIGHT * overall_pred_a)
+                                  / (n_h2h + H2H_PRIOR_WEIGHT))
+            overall_pred_a = round(overall_pred_a, 3)
+            overall_pred_b = round(1.0 - overall_pred_a, 3)
 
     return {
         "mode": mode,
