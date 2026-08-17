@@ -162,6 +162,20 @@ sn:
     - sn
     - "s][n"
 
+powerzord:
+  # Merged 2026-08-17 (Peter, from the KOTH scoreboard): "Zord" and "PowerZord"
+  # are the same player. Canonical is `powerzord` because that's the id on the
+  # Ultra Violence ladder roster — flipping it would break the roster link.
+  # This split broke KOTH ch62 auto-resolve exactly like the canino case: Zord's
+  # frags landed on a separate canonical, so UV's totals were undercounted and
+  # a_n came back 1, tripping the incomplete-roster gate on maps 1-3.
+  # zord = 718 games, powerzord = 368.
+  display: PowerZord
+  login: ""
+  variants:
+    - powerzord
+    - zord
+
 wdcanino:
   # Merged 2026-07-29 (Peter): ALL canino clan-tag variants are the same player
   # (his Discord global_name is "Caninoslz" — slz confirmed his). Plain

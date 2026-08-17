@@ -1,6 +1,6 @@
 # 1on1 Rating Methodology — DeepFrag
 
-> Status: **shipped, in production.** Last major change: 2026-05-26 (TrueSkill → OpenSkill migration + Div 0-3 tiers). Treat as a living bible — any change to constants, formulas, or thresholds in code should be reflected here in the same commit.
+> Status: **shipped, in production.** Last major change: 2026-08-17 (engine v3: continuous-margin outcomes + shrunk per-map deviations — see §1b). Prior major change: 2026-05-26 (TrueSkill → OpenSkill migration + Div 0-3 tiers). Treat as a living bible — any change to constants, formulas, or thresholds in code should be reflected here in the same commit.
 
 ---
 
@@ -36,6 +36,65 @@ These live in [rate.py:42](../rate.py#L42).
 
 OpenSkill produces a ~700pt gap between low- and high-diversity rating arcs *without any post-hoc penalty* — significantly more aggressive than the prior TrueSkill + sqrt-multiplier band-aid achieved.
 
+### 1b. Engine v3 — continuous-margin outcomes (2026-08-17)
+
+Motivated by the 2026-08-15 Cronus/Yeti 9-map bet post-mortem: the W/L-only
+engine forecast the series at ~2% when the observed frag margins implied ~45%.
+Root causes, each verified by walk-forward backtest on 79,928 duels (scored on
+37,352 held-out matches from 2025-01-01 where both players had ≥20 prior games):
+
+1. **Expected-margin curve was wrong.** The old perf-weighting predicted
+   `0.020 × μ-gap` capped at ±20 frags. Empirical fit on 8,776 duel
+   observations: `70 · tanh(gap / 2575)` — real margins reach −44 at extreme
+   gaps, so the ±20 cap destroyed most of the signal exactly where mismatches
+   live.
+2. **A loss could never raise μ.** Perf weighting multiplied the update by a
+   factor clamped to [0.2, 1.6] — magnitude only, never direction. A 13-15
+   loss to a +950 opponent is *evidence the gap shrank*, but it still moved
+   the loser down.
+3. **σ over-contracted for veterans** (Cronus: 5,711 games, σ 41) so μ became
+   nearly immovable, and idle players' σ never widened in-engine.
+
+**The v3 update.** Each match gets a continuous outcome score
+`s ∈ [0,1]` for player A:
+
+```
+surprise = (frags_a − frags_b) − 70·tanh((μa − μb)/2575)
+margin_s = σ(surprise / 10)                   # logistic
+margin_s = 0.65·margin_s + 0.35·σ((DDR−1)·2)  # DDR blend when damage data exists
+s        = 0.65·binary(W/L/draw) + 0.35·margin_s
+```
+
+Both hypothetical OpenSkill posteriors are computed (A wins / B wins) and the
+new rating is the s-interpolation between them. Cross-region dampening then
+blends toward the prior exactly as before (×0.6 for the away player). σ gets
+Glicko-style inflation of `1.0 σ-units/idle-day` at update time and never
+contracts below `80`.
+
+| Constant | Value | Where |
+|---|---|---|
+| `EXP_MARGIN_AMP` / `EXP_MARGIN_SCALE` | 70 / 2575 | [rate.py](../rate.py) |
+| `MARGIN_NORM` | 10 | |
+| `W_RESULT` / `DDR_WEIGHT` | 0.65 / 0.35 | |
+| `TAU_PER_DAY` / `SIGMA_FLOOR` | 1.0 / 80 | |
+
+**Evidence** (held-out log-loss; paired z = 21.7):
+
+| Engine | log-loss | Brier | acc |
+|---|---|---|---|
+| v2 production (W/L + perf weight) | 0.4684 | 0.1388 | 80.9% |
+| **v3 (continuous margin)** | **0.4115** | **0.1327** | 80.8% |
+
+The gain is calibration, concentrated in mismatches: gap>800 improves 74%,
+gap 400-800 improves 52%. Accuracy is flat — picking winners was never the
+problem; probability quality was.
+
+**Tested and rejected** (2026-08-16, keep for the record): trend-adaptive
+volatility (Glicko-2-style σ inflation for players on a surprise streak) and a
+dual career+form rating — both ≤0.1% gains, indistinguishable from noise. The
+margin signal already tracks genuine improvement; a recency knob only adds
+variance. Don't re-add without a backtest that beats 0.4115.
+
 ### What gets rated
 
 - Every 1on1 match in the `matches` table where `match_mode = '1on1'` and `match_id` resolves to exactly two distinct `canonical_id`s in `players`.
@@ -47,9 +106,18 @@ OpenSkill produces a ~700pt gap between low- and high-diversity rating arcs *wit
 We compute TWO sets of ratings per mode:
 
 1. **Overall** (`map = ''`) — every 1on1 match contributes regardless of map. This is what powers the main rankings page.
-2. **Per-map** (`map = 'dm2'`, `map = 'aerowalk'`, etc.) — separate rating per `(player, map)` pair. Only stored when the player has played ≥ `per_map_min` matches on that map (default **5**).
+2. **Per-map** (`map = 'dm2'`, `map = 'aerowalk'`, etc.) — a **shrunk deviation from the global rating** (v3, 2026-08-17), stored when the player has ≥ `per_map_min` matches on that map (default **5**) and the map has ≥ 50 matches corpus-wide.
 
-Per-map ratings let the profile page show "you're rated 1800 overall but 2100 on AEROWALK." See [rate.py:204](../rate.py#L204).
+```
+map_μ = global_μ + 900 · (n/(n+10)) · mean(residual)
+residual = actual outcome − P(win) predicted by the global rating at match time
+```
+
+`MAP_GAIN=900`, `MAP_SHRINK_K=10`. Accumulator state lives in the `map_residuals` table so incremental runs are exact. Map σ = global σ plus the standard error of the shrunk deviation.
+
+~~Per-map as an independent ELO walk (K=32, seeded at final global μ)~~ **(deprecated 2026-08-17)** — backtested at 0.6614 log-loss / 69.0% accuracy, i.e. *worse than ignoring maps entirely* (global-only: 0.4016 / 81.4%). Two defects: (a) a free-floating rating on 5-20 games is a random walk — variance swamps the real map effect; (b) it was seeded/expected against the *final* global μ, leaking the future into historical matches. Map skill itself is real — split-half reliability of the per-map residual is **r = 0.50** (shuffled-label control: −0.08) — it just has to be estimated as a regularised deviation. The shrinkage model scores **0.3875 / 82.4%**, finally beating global-only. Prediction tools should use `global_μ + shrunk deviation`, never a standalone per-map rating.
+
+Per-map ratings let the profile page show "you're rated 1800 overall but 2100 on AEROWALK." See `map_delta()` in [rate.py](../rate.py).
 
 ---
 
@@ -173,13 +241,13 @@ Default filter: `min_matches >= 100`. Region and map filters available.
 - **Mix vs divisional split** — EU has formal divs (Div 1/2/3/4 league play); NA/AU/BR are pickup-only. A rating earned in structured div play arguably carries different weight than mix-game wins. Optional per-region split.
 
 ### Open questions
-- **Frag-differential weighting** — currently a 21-19 win and a 21-3 win count identically. Margin-of-victory is information we're discarding. Could either feed into `beta` per match or post-hoc adjust μ delta.
-- **Score decay** — should a 5-year-old win count the same as last week's? σ-decay handles this for INACTIVE players, but an active player's old wins still anchor their μ. Time-weighted re-rating would let skill genuinely improve faster.
+- ~~**Frag-differential weighting** — currently a 21-19 win and a 21-3 win count identically.~~ **Shipped 2026-08-17** as the v3 continuous-margin outcome (§1b). (A weaker multiplicative perf-weight version had shipped 2026-05-26; §1b explains why it wasn't enough.)
+- ~~**Score decay** — time-weighted re-rating would let skill genuinely improve faster.~~ **Resolved 2026-08-17, mostly by rejection**: idle-day σ inflation (`TAU_PER_DAY=1.0`) shipped in-engine, but explicit recency weighting was backtested two ways (trend volatility, career+form dual rating) and both failed to beat the margin signal — see §1b "Tested and rejected".
 - **Tier renaming** — see Section 4.
 
 ### Limitations
-- Only stores ratings for `per_map_min ≥ 5` matches per map — obscure maps with 1-2 games show no per-map rating.
-- OpenSkill's `tau` is a global compromise. Players whose skill is genuinely volatile (returning veterans, rapid improvers) get penalized.
+- Only stores ratings for `per_map_min ≥ 5` matches per map — obscure maps with 1-2 games show no per-map rating (accumulators are tracked from game 1 in `map_residuals`, so nothing is lost before the threshold).
+- OpenSkill's `tau` is a global compromise. Partially mitigated 2026-08-17 by `TAU_PER_DAY` idle inflation + `SIGMA_FLOOR=80`, but a genuinely volatile ACTIVE player still shares the global dynamics (an explicit fix was tested and rejected — §1b).
 - No "team you played FOR/AGAINST" awareness — irrelevant for 1on1 but relevant downstream when we use 1on1 as a prior for team modes.
 
 ---

@@ -1,26 +1,43 @@
 #!/usr/bin/env python3
-"""Compute OpenSkill (Weng-Lin Plackett-Luce) ratings — 1on1, W/L-based.
+"""Compute DeepFrag ratings — margin-calibrated OpenSkill + shrunk per-map deviations.
 
-Replaces TrueSkill (deprecated 2026-05-26). OpenSkill advantages:
-  - Per-player σ updates reflect information content of each match (not a global tau).
-  - Drops the need for a separate diversity-penalty σ multiplier.
-  - MIT-licensed, actively maintained (openskill.py).
-  - Native team support — same engine will power 2on2/4on4 when those land.
+ENGINE v3 (deployed 2026-08-17). Two structural changes vs the 2026-05-26 engine,
+both validated by walk-forward backtest on 79,928 duels (docs/1on1_methodology.md
+§1b has the full evidence table; scratchpad harness: backtest.py/permap3.py):
 
-Walks every 1on1 match in chronological order, updates both players' ratings,
-persists current state in `ratings` and per-match deltas in `rating_history`.
+  1. CONTINUOUS-MARGIN OUTCOMES (overall rating).
+     The old engine rated binary W/L and multiplied the update by a perf weight
+     clamped to [0.2, 1.6] — so a loss could never raise μ, and its linear
+     expected-margin curve (0.020×gap, capped ±20) destroyed ~85% of the frag
+     signal in mismatches (real curve: 70·tanh(gap/2575), reaching -44 at big
+     gaps). v3 scores each match as a continuous outcome s ∈ [0,1] blending
+     the binary result with margin + DDR surprise, then interpolates between
+     the win-case and loss-case OpenSkill posteriors by s. A 13-15 loss to a
+     +950 opponent now nudges μ UP. Held-out log-loss: 0.4684 → 0.4115 (-12.2%,
+     z=21.7); the gain concentrates in mismatches (gap>800: -74%).
 
-Inter-regional weighting:
-  When a player plays on a server outside their home region (cross-region match),
-  their rating update is dampened (CROSS_REGION_WEIGHT). The home-region player's
-  update is unaffected. Rationale: high ping disadvantages the visitor; the result
-  is informative but less so than a fair-ping match.
+  2. PER-MAP AS SHRUNK DEVIATIONS (replaces the per-map ELO walk).
+     The old per-map path gave each (player, map) a free-floating ELO seeded at
+     final global μ (temporal leakage) wandering at K=32 on 5-20 games — pure
+     variance: it predicted WORSE than ignoring maps entirely (0.6614 vs 0.4016
+     log-loss). Map skill is real (split-half reliability r=0.50, shuffled
+     control -0.08) but must be estimated as a regularised DEVIATION:
 
-Outcomes:
-  - Higher player_frags wins → openskill.rate([winner, loser], ranks=[0, 1])
-  - Equal frags → ranks=[0, 0] (drawn)
+         map_mu = global_mu + MAP_GAIN · (n/(n+K)) · mean(residual)
 
-Defaults: full rebuild each run. Use --incremental to only rate new matches.
+     where residual = actual outcome − P(win) predicted by the global rating at
+     match time (no leakage). Backtest: 0.3875 log-loss / 82.4% acc — per-map
+     finally ADDS signal over global (0.4016 / 81.4%).
+
+  Also new: Glicko-style idle-day σ inflation (TAU_PER_DAY) and a σ floor so
+  high-game-count veterans' μ stays responsive.
+
+Single chronological pass rates the overall bucket AND accumulates per-map
+residuals together (the old code ran 1 + n_maps separate passes). Persists to
+`ratings` + `rating_history` exactly as before; per-map accumulator state lives
+in the new `map_residuals` table so --incremental runs stay exact.
+
+Inter-regional weighting: unchanged (away player's update dampened ×0.6).
 
 Usage:
   python rate.py                 # full rebuild for 1on1
@@ -31,6 +48,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,84 +59,121 @@ import db as dbmod
 
 DEFAULT_DB = Path(__file__).parent / "data" / "qw-stats.db"
 
-# OpenSkill model — same display scale as the prior TrueSkill setup (μ=1500, σ=500)
-# so downstream consumers (tiers, conservative-rating) don't need to be re-scaled.
-# β = skill noise per match (≈σ/2 by convention). τ = additive σ growth per match;
-# keeps σ from over-narrowing in the high-game-count regime. Tuned tight (0.5)
-# because per-player σ updates already do most of the work.
-MODEL = PlackettLuce(mu=1500.0, sigma=500.0, beta=250.0, tau=0.5, kappa=0.0001)
+ENGINE_VERSION = "v3-margin-2026-08-17"
+
+# OpenSkill model — same display scale as always (μ=1500, σ=500) so downstream
+# consumers (tiers, conservative-rating, predict_win) need no re-scaling.
+BETA = 250.0
+MODEL = PlackettLuce(mu=1500.0, sigma=500.0, beta=BETA, tau=0.5, kappa=0.0001)
 
 # Cross-region match: rating update for the away player is multiplied by this.
-# 0.6 = "this match is 60% as informative for the away player as a fair-ping match".
-# Home player unaffected. Chosen by reasoning, not data — revisit after a quarter
-# of cross-region match data accumulates.
+# 0.6 = "this match is 60% as informative for the away player as a fair-ping
+# match". Home player unaffected. Chosen by reasoning, not data (2026-05-26).
 CROSS_REGION_WEIGHT = 0.6
 
-# Performance-weighting tunables (introduced 2026-05-26 alongside OpenSkill).
-# A composite perf score blends two signals: frag-diff vs rating-expected gap, and
-# DDR (damage given / taken ratio). The result amplifies (>1) or dampens (<1)
-# the rating update beyond what W/L alone would say.
-#
-# Example: Cronus (1500) loses 21-15 to chr1s (2500) with DDR 1.1.
-#   - Expected frag-diff for Cronus: -20 (capped). Actual: -6 → overperformed by +14.
-#   - DDR 1.1 → mild positive (he was trading well).
-#   - perf_delta_cronus ≈ +0.34 → loser-weight = 1.0 - 0.34 = 0.66 → 34% smaller loss.
-#   - perf_delta_chr1s ≈ -0.34 → winner-weight = 1.0 - 0.34 = 0.66 → 34% smaller gain.
-#
-# Tunables in [0, 1]; larger = more aggressive perf-weighting. Calibrated low
-# initially so the W/L signal stays dominant — perf is a refinement, not a
-# replacement.
-PERF_FRAG_WEIGHT = 0.5     # weight of the frag-diff-vs-expected signal
-PERF_DDR_WEIGHT  = 0.5     # weight of the DDR signal
-                           # 50/50 split — both signals carry equal weight.
-                           # DDR captures sustained pressure; frag-diff captures
-                           # finishing/timing. Both matter, neither dominates.
-PERF_MAX_DELTA   = 0.5     # cap |perf_delta| — wider band lets perf signals
-                           # actually move ratings on blowouts/upsets.
-EXPECTED_FRAG_PER_RATING = 0.020  # 200pt rating gap → 4 frag expected diff (calibrate later)
-EXPECTED_FRAG_CAP = 20.0   # rating gaps > 1000pt saturate the expected diff
-FRAG_DIFF_NORMALIZER = 25.0  # 25-frag overperformance ≈ full signal saturation
+# ── v3 engine constants ──────────────────────────────────────────────────────
+# All values from the 2026-08-16 coordinate-descent sweep against held-out
+# log-loss (37,352 scored matches, 2025-01-01+, both players ≥20 prior games).
+# Change these ONLY with a fresh backtest; update the bible in the same commit.
+EXP_MARGIN_AMP = 70.0     # expected frag diff = AMP · tanh(gap / SCALE) —
+EXP_MARGIN_SCALE = 2575.0  # fitted on 8,776 real duel observations
+MARGIN_NORM = 10.0        # frag surprise that saturates the margin score
+W_RESULT = 0.65           # outcome score: 65% binary W/L, 35% margin/DDR
+DDR_WEIGHT = 0.35         # share of the margin component carried by DDR
+TAU_PER_DAY = 1.0         # Glicko-style σ inflation per idle day (σ-units)
+SIGMA_FLOOR = 80.0        # σ never contracts below this (μ stays responsive
+                          # for veterans; old engine let it reach ~41)
+
+# ── per-map shrinkage constants ──────────────────────────────────────────────
+MAP_SHRINK_K = 10.0       # games at which the map effect reaches half weight
+MAP_GAIN = 900.0          # converts mean win-prob residual → μ offset
+MAP_MIN_CORPUS = 50       # a map needs ≥ this many matches to get rating rows
+                          # (accumulators still tracked below the threshold)
 
 
-def _expected_frag_diff(mu_a: float, mu_b: float) -> float:
-    """Predicted (player_a frags - player_b frags). Positive = a should win.
-    Naive linear from rating gap, saturated at ±EXPECTED_FRAG_CAP."""
-    raw = EXPECTED_FRAG_PER_RATING * (mu_a - mu_b)
-    return max(-EXPECTED_FRAG_CAP, min(EXPECTED_FRAG_CAP, raw))
+def predict_win(mu_a: float, sig_a: float, mu_b: float, sig_b: float) -> float:
+    """P(a beats b) — identical form to api.py's predict_win."""
+    denom = math.sqrt(2 * BETA**2 + sig_a**2 + sig_b**2)
+    return 0.5 * (1.0 + math.erf((mu_a - mu_b) / (denom * math.sqrt(2.0))))
 
 
-def _perf_delta(mu_a: float, mu_b: float, frags_a: int, frags_b: int,
-                dmg_given_a, dmg_taken_a) -> float:
-    """Return the performance delta P_a ∈ [-PERF_MAX_DELTA, +PERF_MAX_DELTA] for
-    player A. Positive = A overperformed their rating-expected outcome.
+def expected_margin(mu_a: float, mu_b: float) -> float:
+    """Predicted (a_frags − b_frags). Empirical fit — see module docstring."""
+    return EXP_MARGIN_AMP * math.tanh((mu_a - mu_b) / EXP_MARGIN_SCALE)
 
-    Combine frag-diff signal (how much did the actual gap beat the predicted gap?)
-    with DDR signal (damage given / taken — was A generating pressure?).
-    Returns 0.0 when damage stats are missing (older matches without KTX data)."""
-    expected = _expected_frag_diff(mu_a, mu_b)
-    actual = (frags_a or 0) - (frags_b or 0)
-    frag_signal = max(-1.0, min(1.0, (actual - expected) / FRAG_DIFF_NORMALIZER))
 
-    if dmg_given_a is None or dmg_taken_a is None or dmg_taken_a <= 0:
-        ddr_signal = 0.0
-    else:
+def outcome_score(mu_a: float, mu_b: float, frags_a: int, frags_b: int,
+                  dmg_given_a, dmg_taken_a) -> float:
+    """Continuous outcome s ∈ [0,1] for player A. 0.5 = performed exactly to
+    rating; >0.5 = performed like a win. Blends the binary result (W_RESULT)
+    with a margin-surprise sigmoid, itself blended with a DDR sigmoid when
+    damage stats exist (pre-KTX matches fall back to margin only)."""
+    surprise = ((frags_a or 0) - (frags_b or 0)) - expected_margin(mu_a, mu_b)
+    margin_s = 1.0 / (1.0 + math.exp(-surprise / MARGIN_NORM))
+    if dmg_given_a is not None and dmg_taken_a is not None and dmg_taken_a > 0:
         ddr = dmg_given_a / max(1.0, dmg_taken_a)
-        ddr_signal = max(-1.0, min(1.0, ddr - 1.0))
-
-    delta = PERF_FRAG_WEIGHT * frag_signal + PERF_DDR_WEIGHT * ddr_signal
-    return max(-PERF_MAX_DELTA, min(PERF_MAX_DELTA, delta))
-
-
-def _perf_weight(perf_delta: float, won: bool) -> float:
-    """Convert a player's perf delta to a rating-update multiplier.
-
-    Winner: overperformed (delta > 0) → bigger gain. Underperformed → smaller gain.
-    Loser:  overperformed (delta > 0) → smaller loss. Underperformed → bigger loss.
-    """
-    if won:
-        return 1.0 + perf_delta
+        ddr_s = 1.0 / (1.0 + math.exp(-(ddr - 1.0) * 2.0))
+        margin_s = (1 - DDR_WEIGHT) * margin_s + DDR_WEIGHT * ddr_s
+    if frags_a == frags_b:
+        binary = 0.5
     else:
-        return 1.0 - perf_delta
+        binary = 1.0 if frags_a > frags_b else 0.0
+    return W_RESULT * binary + (1 - W_RESULT) * margin_s
+
+
+def aged_sigma(sigma: float, idle_days: float) -> float:
+    """Glicko-style: belief widens while a player is away, capped at the prior."""
+    if idle_days <= 0 or TAU_PER_DAY <= 0:
+        return sigma
+    return min(500.0, math.sqrt(sigma**2 + (TAU_PER_DAY * idle_days) ** 2))
+
+
+def v3_update(mu_a: float, sig_a: float, mu_b: float, sig_b: float,
+              s_a: float, w_a: float = 1.0, w_b: float = 1.0):
+    """One match update. Computes BOTH hypothetical OpenSkill posteriors
+    (A wins / B wins) and interpolates by the continuous score s_a — this is
+    what lets a strong loss raise μ, which the old multiplicative perf weight
+    (clamped ≥0.2) structurally could not. Cross-region dampening then blends
+    the result back toward the prior per player (w ∈ {1.0, CROSS_REGION_WEIGHT}).
+
+    NOTE: openskill's rate() mutates its input Rating objects in place
+    (verified 2026-05-26), so each call gets freshly constructed objects.
+
+    Returns (new_mu_a, new_sig_a, new_mu_b, new_sig_b).
+    """
+    [[aw_a], [aw_b]] = MODEL.rate(
+        [[MODEL.rating(mu=mu_a, sigma=sig_a)], [MODEL.rating(mu=mu_b, sigma=sig_b)]],
+        ranks=[0, 1])
+    [[bw_a], [bw_b]] = MODEL.rate(
+        [[MODEL.rating(mu=mu_a, sigma=sig_a)], [MODEL.rating(mu=mu_b, sigma=sig_b)]],
+        ranks=[1, 0])
+
+    v2_mu_a = s_a * aw_a.mu + (1 - s_a) * bw_a.mu
+    v2_sig_a = s_a * aw_a.sigma + (1 - s_a) * bw_a.sigma
+    v2_mu_b = s_a * aw_b.mu + (1 - s_a) * bw_b.mu
+    v2_sig_b = s_a * aw_b.sigma + (1 - s_a) * bw_b.sigma
+
+    new_mu_a = mu_a + w_a * (v2_mu_a - mu_a)
+    new_sig_a = max(SIGMA_FLOOR, sig_a + w_a * (v2_sig_a - sig_a))
+    new_mu_b = mu_b + w_b * (v2_mu_b - mu_b)
+    new_sig_b = max(SIGMA_FLOOR, sig_b + w_b * (v2_sig_b - sig_b))
+    return new_mu_a, new_sig_a, new_mu_b, new_sig_b
+
+
+def map_delta(resid_sum: float, n: int) -> float:
+    """Shrunk map-effect in μ units. 0 games → 0 (pure global)."""
+    if n <= 0:
+        return 0.0
+    return MAP_GAIN * (n / (n + MAP_SHRINK_K)) * (resid_sum / n)
+
+
+def map_sigma(global_sigma: float, n: int) -> float:
+    """σ for a per-map row: global belief + standard error of the shrunk
+    deviation (per-game residual sd ≈ 0.5 in win-prob units)."""
+    if n <= 0:
+        return global_sigma
+    se = MAP_GAIN * 0.5 * math.sqrt(n) / (n + MAP_SHRINK_K)
+    return math.sqrt(global_sigma**2 + se**2)
 
 
 def _bulk_insert_history(cur, rows):
@@ -169,37 +224,80 @@ def _bulk_insert_ratings(cur, rows):
     )
 
 
-def ensure_perf_columns(conn):
-    """Idempotently add avg_ddr / avg_frag_diff columns to ratings table.
-    These are precomputed during the rating run so the rankings API doesn't
-    have to aggregate millions of player-match rows on every request."""
+def ensure_schema(conn):
+    """Idempotent DDL: perf columns on ratings + the map_residuals accumulator
+    table (v3). map_residuals persists per-(player, map) residual state so
+    --incremental runs continue exactly where the last run stopped — including
+    cells still below per_map_min that have no ratings row yet."""
     cur = conn.cursor()
     cur.execute("""
         ALTER TABLE ratings
         ADD COLUMN IF NOT EXISTS avg_ddr REAL,
         ADD COLUMN IF NOT EXISTS avg_frag_diff REAL
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS map_residuals (
+            canonical_id TEXT NOT NULL,
+            mode         TEXT NOT NULL,
+            map          TEXT NOT NULL,
+            resid_sum    DOUBLE PRECISION NOT NULL DEFAULT 0,
+            n            INTEGER NOT NULL DEFAULT 0,
+            wins         INTEGER NOT NULL DEFAULT 0,
+            losses       INTEGER NOT NULL DEFAULT 0,
+            draws        INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (canonical_id, mode, map)
+        )
+    """)
     conn.commit()
     cur.close()
 
 
-def load_existing_ratings(conn, mode, map_bucket=''):
-    """Return (cache, stats) for incremental runs within a single (mode, map) bucket."""
+# Backwards-compat alias (admin tooling referenced the old name).
+ensure_perf_columns = ensure_schema
+
+
+def load_existing_ratings(conn, mode):
+    """Return (cache, stats) for incremental runs — overall bucket only.
+    cache: {cid: [mu, sigma]}."""
     cache = {}
     stats = {}
     cur = conn.cursor()
     cur.execute(
         "SELECT canonical_id, mu, sigma, matches_rated, wins, losses, draws "
-        "FROM ratings WHERE mode=%s AND map=%s",
-        (mode, map_bucket),
+        "FROM ratings WHERE mode=%s AND map=''",
+        (mode,),
     )
     for r in cur.fetchall():
         cid = r["canonical_id"]
-        cache[cid] = MODEL.rating(mu=r["mu"], sigma=r["sigma"], name=cid)
+        cache[cid] = [r["mu"], r["sigma"]]
         stats[cid] = {"matches": r["matches_rated"] or 0, "wins": r["wins"] or 0,
                       "losses": r["losses"] or 0, "draws": r["draws"] or 0}
     cur.close()
     return cache, stats
+
+
+def load_map_residuals(conn, mode):
+    """{(cid, map): {"rs": resid_sum, "n": n, "wins": w, "losses": l, "draws": d}}"""
+    cells = {}
+    cur = conn.cursor()
+    cur.execute("SELECT canonical_id, map, resid_sum, n, wins, losses, draws "
+                "FROM map_residuals WHERE mode=%s", (mode,))
+    for r in cur.fetchall():
+        cells[(r["canonical_id"], r["map"])] = {
+            "rs": r["resid_sum"], "n": r["n"],
+            "wins": r["wins"], "losses": r["losses"], "draws": r["draws"]}
+    cur.close()
+    return cells
+
+
+def load_last_dates(conn, mode):
+    """{cid: last rated match_date} — seeds idle-day σ aging on incremental runs."""
+    cur = conn.cursor()
+    cur.execute("SELECT canonical_id, MAX(match_date) AS last FROM rating_history "
+                "WHERE mode=%s AND map='' GROUP BY canonical_id", (mode,))
+    out = {r["canonical_id"]: r["last"] for r in cur.fetchall()}
+    cur.close()
+    return out
 
 
 def load_player_regions(conn):
@@ -228,24 +326,21 @@ def list_maps_for_mode(conn, mode, min_matches=10):
     return out
 
 
-def fetch_matches(conn, mode, since_date=None, map_filter=None):
-    """Yield per-match tuples with all data needed for OpenSkill + perf-weighting.
+def fetch_matches(conn, mode, since_date=None):
+    """Yield per-match tuples with all data needed for the v3 engine.
 
-    Columns: match_id, match_date, cid_a, frags_a, dmg_given_a, dmg_taken_a,
-             cid_b, frags_b, dmg_given_b, dmg_taken_b, server_region.
+    Columns: match_id, match_date, match_map, cid_a, frags_a, dmg_given_a,
+             dmg_taken_a, cid_b, frags_b, dmg_given_b, dmg_taken_b, server_region.
 
     server_region lookup: matches.server_hostname → strip port → servers.hostname.
     None when geo unknown. Damage columns may be NULL on older pre-KTX matches —
-    perf weighting falls back to W/L-only in that case.
+    the outcome score falls back to margin-only in that case.
     """
     where_extra = ""
     params = {"mode": mode}
     if since_date:
         where_extra += " AND m.match_date > %(since)s"
         params["since"] = since_date
-    if map_filter:
-        where_extra += " AND m.match_map = %(map)s"
-        params["map"] = map_filter
     cur = conn.cursor()
     # CRITICAL: aggregate per (match_id, canonical_id) BEFORE the self-join.
     # Without this, a player who appears with multiple name variants in the same
@@ -256,7 +351,7 @@ def fetch_matches(conn, mode, since_date=None, map_filter=None):
     cur.execute(
         f"""
         WITH match_players AS (
-            SELECT m.match_id, m.match_date, m.server_hostname,
+            SELECT m.match_id, m.match_date, m.match_map, m.server_hostname,
                    p.canonical_id,
                    SUM(p.player_frags) AS frags,
                    SUM(p.player_damage_given) AS dmg_given,
@@ -266,9 +361,9 @@ def fetch_matches(conn, mode, since_date=None, map_filter=None):
             WHERE m.match_mode = %(mode)s
               AND p.canonical_id IS NOT NULL
               {where_extra}
-            GROUP BY m.match_id, m.match_date, m.server_hostname, p.canonical_id
+            GROUP BY m.match_id, m.match_date, m.match_map, m.server_hostname, p.canonical_id
         )
-        SELECT mp1.match_id, mp1.match_date,
+        SELECT mp1.match_id, mp1.match_date, mp1.match_map,
                mp1.canonical_id AS cid_a, mp1.frags AS f_a, mp1.dmg_given AS dg_a, mp1.dmg_taken AS dt_a,
                mp2.canonical_id AS cid_b, mp2.frags AS f_b, mp2.dmg_given AS dg_b, mp2.dmg_taken AS dt_b,
                s.region AS server_region
@@ -281,46 +376,11 @@ def fetch_matches(conn, mode, since_date=None, map_filter=None):
         params,
     )
     for r in cur.fetchall():
-        yield (r["match_id"], r["match_date"],
+        yield (r["match_id"], r["match_date"], r["match_map"],
                r["cid_a"], r["f_a"], r["dg_a"], r["dt_a"],
                r["cid_b"], r["f_b"], r["dg_b"], r["dt_b"],
                r["server_region"])
     cur.close()
-
-
-def _update_with_weights(model, r_winner, r_loser, weight_winner, weight_loser, drawn=False):
-    """Rate a 1v1 match with per-player update weights.
-
-    OpenSkill's `rate()` produces the full update assuming weight=1.0 for both.
-    For weight≠1.0 (cross-region away, perf-weighted), we blend:
-      new = pre + weight * (full - pre)
-    Implemented manually rather than using openskill's `weights=` because that
-    param is for team-internal contribution weighting, which doesn't apply to 1v1.
-
-    CRITICAL: openskill.rate() mutates the input Rating objects in place
-    (verified 2026-05-26 — `r_winner is new_a` after the call). So we capture
-    pre-update μ/σ before calling rate(), otherwise the blend silently no-ops.
-    """
-    pre_w_mu, pre_w_sigma = r_winner.mu, r_winner.sigma
-    pre_l_mu, pre_l_sigma = r_loser.mu, r_loser.sigma
-    pre_w_name, pre_l_name = r_winner.name, r_loser.name
-
-    if drawn:
-        [[new_a], [new_b]] = model.rate([[r_winner], [r_loser]], ranks=[0, 0])
-    else:
-        [[new_a], [new_b]] = model.rate([[r_winner], [r_loser]], ranks=[0, 1])
-
-    blended_winner = model.rating(
-        mu=pre_w_mu + weight_winner * (new_a.mu - pre_w_mu),
-        sigma=pre_w_sigma + weight_winner * (new_a.sigma - pre_w_sigma),
-        name=pre_w_name,
-    )
-    blended_loser = model.rating(
-        mu=pre_l_mu + weight_loser * (new_b.mu - pre_l_mu),
-        sigma=pre_l_sigma + weight_loser * (new_b.sigma - pre_l_sigma),
-        name=pre_l_name,
-    )
-    return blended_winner, blended_loser
 
 
 def _weights_for_match(player_a_region, player_b_region, server_region):
@@ -337,97 +397,74 @@ def _weights_for_match(player_a_region, player_b_region, server_region):
     return w_a, w_b
 
 
-# ELO update for per-map ratings. Expected outcome uses the OPPONENT's GLOBAL μ
-# (so beating someone 700 pts above you globally on metron gives a big metron
-# jump on the first such win) blended with the PLAYER's PER-MAP μ on the self
-# side. The blend gives bounded math — as your per-map μ climbs above your
-# global, expected outcome rises against the same opponents, so each
-# subsequent win delivers less delta. Without this blend, the system runs
-# away: pure-global expected means a low-rated player winning against higher
-# opponents gains big delta forever with no convergence.
-# Corsi perf factor (DDR + ±frag) and cross-region weight (0.6× away)
-# multiply onto delta unchanged. σ contracts toward a floor (Glicko-lite).
-ELO_K = 32                # classical chess K
-ELO_SIGMA_DECAY = 0.985   # ~1.5% σ shrink per match
-ELO_SIGMA_FLOOR = 50.0    # σ never drops below this so cons doesn't pin to μ
-ELO_SELF_BLEND = 0.5      # weight of per-map μ in the self side of expected
-                          # (0 = pure global → runaway, 1 = pure per-map →
-                          # classical Elo; 0.5 = balanced bounded convergence)
+def _idle_days(last, current) -> float:
+    if last is None or current is None:
+        return 0.0
+    try:
+        return max(0.0, (current - last).total_seconds() / 86400.0)
+    except TypeError:
+        return 0.0  # mixed naive/aware or string leakage — no aging over bad data
 
 
-def _elo_update_map(map_rating, global_mu_self, global_mu_opp, won, perf_w, cr_w):
-    """ELO-style delta on a per-map rating. Expected outcome uses opponent's
-    GLOBAL μ vs a blend of (player's GLOBAL μ + player's PER-MAP μ on self).
-    Blend keeps the user-spec'd "beat higher-globally → big delta" property
-    on first wins while bounding cumulative climb (otherwise unbounded)."""
-    effective_self_mu = (
-        (1 - ELO_SELF_BLEND) * global_mu_self
-        + ELO_SELF_BLEND * map_rating.mu
-    )
-    expected = 1.0 / (1.0 + 10.0 ** ((global_mu_opp - effective_self_mu) / 400.0))
-    if won is True:
-        actual = 1.0
-    elif won is False:
-        actual = 0.0
-    else:
-        actual = 0.5  # draw
-    delta = ELO_K * (actual - expected) * perf_w * cr_w
-    new_mu = map_rating.mu + delta
-    new_sigma = max(ELO_SIGMA_FLOOR, map_rating.sigma * ELO_SIGMA_DECAY)
-    return MODEL.rating(mu=new_mu, sigma=new_sigma, name=map_rating.name)
+def rate_all(db, mode, now, full_rebuild=True, per_map_min=5, player_regions=None):
+    """ONE chronological pass over every match in `mode`:
+      - v3 overall rating update per match (continuous-margin OpenSkill)
+      - per-map residual accumulation vs the pre-match GLOBAL prediction
+        (this is what kills the old engine's temporal leakage: the residual is
+        always measured against the belief AT THAT MATCH, never the final one)
+      - history rows for the '' bucket and (when the map qualifies) the map bucket
 
-
-def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
-                player_regions=None, global_mu=None):
-    """Run OpenSkill over all matches in (mode, map_bucket).
-       map_bucket='' = overall (all maps in the mode).
-
-       For per-map buckets, expected outcome uses each player's GLOBAL μ (from
-       the just-completed overall pass, passed in via `global_mu`). The update
-       lands on the map rating via the ELO helper above. Falls back to MODEL
-       PlackettLuce updates when global_mu is None (e.g. cold start).
-
-       For per-map buckets only emit ratings for players with >= per_map_min matches.
-
-    Returns (n_rated, n_players_written).
+    Returns (n_matches, n_overall_rows, n_map_rows).
     """
     if player_regions is None:
         player_regions = {}
-    use_elo_path = bool(map_bucket) and (global_mu is not None)
     cur = db.cursor()
+
+    maps_ok = set(list_maps_for_mode(db, mode, min_matches=MAP_MIN_CORPUS))
+
     if full_rebuild:
-        cur.execute("DELETE FROM ratings WHERE mode=%s AND map=%s", (mode, map_bucket))
-        cur.execute("DELETE FROM rating_history WHERE mode=%s AND map=%s", (mode, map_bucket))
+        cur.execute("DELETE FROM ratings WHERE mode=%s", (mode,))
+        cur.execute("DELETE FROM rating_history WHERE mode=%s", (mode,))
+        cur.execute("DELETE FROM map_residuals WHERE mode=%s", (mode,))
         db.commit()
         cache, stats = {}, {}
+        cells = {}
+        last_date = {}
+        since_date = None
     else:
-        cache, stats = load_existing_ratings(db, mode, map_bucket)
-
-    map_filter = map_bucket if map_bucket else None
-    # Incremental: only fetch matches AFTER the latest rating_history row for
-    # this bucket. Without this filter, --incremental re-processes EVERY match
-    # on top of the loaded matches_rated counts, inflating them on every run
-    # (verified 2026-05-27 — 4 scheduler runs got cronus from 5,228 → 26,164).
-    since_date = None
-    if not full_rebuild:
+        cache, stats = load_existing_ratings(db, mode)
+        cells = load_map_residuals(db, mode)
+        last_date = load_last_dates(db, mode)
         cur.execute(
-            "SELECT MAX(match_date) AS last FROM rating_history WHERE mode=%s AND map=%s",
-            (mode, map_bucket),
+            "SELECT MAX(match_date) AS last FROM rating_history WHERE mode=%s AND map=''",
+            (mode,),
         )
         row = cur.fetchone()
         since_date = row["last"] if row else None
-    matches = list(fetch_matches(db, mode, since_date=since_date, map_filter=map_filter))
-    if not matches:
-        return 0, 0
 
-    # Per-player perf accumulators (precomputed here so /api/rankings doesn't
-    # have to re-aggregate millions of player rows per request).
-    # perf[cid] = {dg_sum, dt_sum, frag_diff_sum, perf_match_count}
+    matches = list(fetch_matches(db, mode, since_date=since_date))
+    if not matches:
+        return 0, 0, 0
+
+    # Per-player perf accumulators, keyed by (cid, map_bucket) with '' = overall.
+    # Precomputed here so /api/rankings doesn't aggregate millions of rows.
     perf = {}
+
+    def _accum_perf(cid, bucket, dg, dt, frag_diff):
+        if dg is None or dt is None:
+            return
+        p = perf.setdefault((cid, bucket), {"dg": 0, "dt": 0, "fd_sum": 0.0, "n": 0})
+        p["dg"] += dg
+        p["dt"] += dt
+        p["fd_sum"] += frag_diff
+        p["n"] += 1
 
     history_rows = []
     n_skipped = 0
-    for (match_id, match_date,
+    touched_cells = set()
+    played_this_run = set()
+
+    for (match_id, match_date, match_map,
          cid_a, f_a, dg_a, dt_a,
          cid_b, f_b, dg_b, dt_b,
          server_region) in matches:
@@ -435,103 +472,98 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
             n_skipped += 1
             continue
 
-        # Per-map cache init: seed μ from the player's GLOBAL μ so high-rated
-        # players don't get stuck near 1500 (their expected outcome is ~1.0
-        # against everyone, so each win adds ~0.5 pts and each loss subtracts
-        # ~30 → net drift downward even when winning 90%). Starting at global
-        # μ means map deltas reflect map-specific deviation from global skill.
-        if cid_a not in cache:
-            init_mu_a = global_mu.get(cid_a, 1500.0) if use_elo_path else 1500.0
-            cache[cid_a] = MODEL.rating(mu=init_mu_a, sigma=500.0, name=cid_a)
-        if cid_b not in cache:
-            init_mu_b = global_mu.get(cid_b, 1500.0) if use_elo_path else 1500.0
-            cache[cid_b] = MODEL.rating(mu=init_mu_b, sigma=500.0, name=cid_b)
-        ra = cache[cid_a]
-        rb = cache[cid_b]
+        ra = cache.setdefault(cid_a, [1500.0, 500.0])
+        rb = cache.setdefault(cid_b, [1500.0, 500.0])
         sa = stats.setdefault(cid_a, {"matches": 0, "wins": 0, "losses": 0, "draws": 0})
         sb = stats.setdefault(cid_b, {"matches": 0, "wins": 0, "losses": 0, "draws": 0})
-        mu_a_b, sig_a_b = ra.mu, ra.sigma
-        mu_b_b, sig_b_b = rb.mu, rb.sigma
+        mu_a_pre, sig_a_pre = ra
+        mu_b_pre, sig_b_pre = rb
 
-        # Accumulate perf — only matches with damage stats (pre-KTX matches
-        # have NULL damage and are dropped from the DDR average).
-        if dg_a is not None and dt_a is not None:
-            pa = perf.setdefault(cid_a, {"dg": 0, "dt": 0, "fd_sum": 0.0, "n": 0})
-            pa["dg"] += dg_a
-            pa["dt"] += dt_a
-            pa["fd_sum"] += (f_a or 0) - (f_b or 0)
-            pa["n"] += 1
-        if dg_b is not None and dt_b is not None:
-            pb = perf.setdefault(cid_b, {"dg": 0, "dt": 0, "fd_sum": 0.0, "n": 0})
-            pb["dg"] += dg_b
-            pb["dt"] += dt_b
-            pb["fd_sum"] += (f_b or 0) - (f_a or 0)
-            pb["n"] += 1
+        mp = (match_map or "").lower() if match_map else None
+        rated_map = mp if (mp and mp in maps_ok) else None
 
-        # Cross-region dampening (orthogonal to performance)
+        # ── per-map bookkeeping happens against the PRE-update global belief
+        if rated_map:
+            cell_a = cells.setdefault((cid_a, rated_map),
+                                      {"rs": 0.0, "n": 0, "wins": 0, "losses": 0, "draws": 0})
+            cell_b = cells.setdefault((cid_b, rated_map),
+                                      {"rs": 0.0, "n": 0, "wins": 0, "losses": 0, "draws": 0})
+            map_mu_a_pre = mu_a_pre + map_delta(cell_a["rs"], cell_a["n"])
+            map_mu_b_pre = mu_b_pre + map_delta(cell_b["rs"], cell_b["n"])
+            map_sig_a_pre = map_sigma(sig_a_pre, cell_a["n"])
+            map_sig_b_pre = map_sigma(sig_b_pre, cell_b["n"])
+            p_global = predict_win(mu_a_pre, sig_a_pre, mu_b_pre, sig_b_pre)
+
+        _accum_perf(cid_a, "", dg_a, dt_a, (f_a or 0) - (f_b or 0))
+        _accum_perf(cid_b, "", dg_b, dt_b, (f_b or 0) - (f_a or 0))
+        if rated_map:
+            _accum_perf(cid_a, rated_map, dg_a, dt_a, (f_a or 0) - (f_b or 0))
+            _accum_perf(cid_b, rated_map, dg_b, dt_b, (f_b or 0) - (f_a or 0))
+
+        # ── idle-day σ aging (applies at the moment a player returns to play)
+        aged_a = aged_sigma(sig_a_pre, _idle_days(last_date.get(cid_a), match_date))
+        aged_b = aged_sigma(sig_b_pre, _idle_days(last_date.get(cid_b), match_date))
+        last_date[cid_a] = match_date
+        last_date[cid_b] = match_date
+
+        # ── outcome + W/L/D bookkeeping
+        if f_a > f_b:
+            out_a, out_b = "win", "loss"
+            sa["wins"] += 1
+            sb["losses"] += 1
+            y_eff = 1.0
+        elif f_b > f_a:
+            out_a, out_b = "loss", "win"
+            sb["wins"] += 1
+            sa["losses"] += 1
+            y_eff = 0.0
+        else:
+            out_a = out_b = "draw"
+            sa["draws"] += 1
+            sb["draws"] += 1
+            y_eff = 0.5
+        sa["matches"] += 1
+        sb["matches"] += 1
+        played_this_run.add(cid_a)
+        played_this_run.add(cid_b)
+
+        # ── v3 global update
         wa_cr, wb_cr = _weights_for_match(
             player_regions.get(cid_a), player_regions.get(cid_b), server_region
         )
+        s_a = outcome_score(mu_a_pre, mu_b_pre, f_a, f_b, dg_a, dt_a)
+        new_mu_a, new_sig_a, new_mu_b, new_sig_b = v3_update(
+            mu_a_pre, aged_a, mu_b_pre, aged_b, s_a, wa_cr, wb_cr)
+        ra[0], ra[1] = new_mu_a, new_sig_a
+        rb[0], rb[1] = new_mu_b, new_sig_b
 
-        # Perf delta per player — measured against the rating-implied expectation.
-        # Drawn matches skip perf (won=neither), keeping the W/L-only update.
-        if f_a > f_b:
-            won_a, won_b = True, False
-        elif f_b > f_a:
-            won_a, won_b = False, True
-        else:
-            won_a, won_b = None, None  # draw
+        history_rows.append((cid_a, mode, "", match_id, match_date, cid_b, out_a,
+                             mu_a_pre, new_mu_a, sig_a_pre, new_sig_a, new_mu_a - mu_a_pre))
+        history_rows.append((cid_b, mode, "", match_id, match_date, cid_a, out_b,
+                             mu_b_pre, new_mu_b, sig_b_pre, new_sig_b, new_mu_b - mu_b_pre))
 
-        if won_a is None:
-            wa_perf = wb_perf = 1.0
-        else:
-            pa = _perf_delta(ra.mu, rb.mu, f_a, f_b, dg_a, dt_a)
-            pb = _perf_delta(rb.mu, ra.mu, f_b, f_a, dg_b, dt_b)
-            wa_perf = _perf_weight(pa, won_a)
-            wb_perf = _perf_weight(pb, won_b)
+        # ── per-map residual update + history
+        if rated_map:
+            cell_a["rs"] += y_eff - p_global
+            cell_b["rs"] += (1.0 - y_eff) - (1.0 - p_global)
+            cell_a["n"] += 1
+            cell_b["n"] += 1
+            key_wld = {"win": "wins", "loss": "losses", "draw": "draws"}
+            cell_a[key_wld[out_a]] += 1
+            cell_b[key_wld[out_b]] += 1
+            touched_cells.add((cid_a, rated_map))
+            touched_cells.add((cid_b, rated_map))
 
-        # Combine cross-region × perf, clamped to a sane range.
-        wa = max(0.2, min(1.6, wa_cr * wa_perf))
-        wb = max(0.2, min(1.6, wb_cr * wb_perf))
-
-        if use_elo_path:
-            # Per-map: ELO update using GLOBAL μ for expected; map rating gets
-            # updated. Beating a much higher-rated player on this map → big map
-            # jump even if your map μ is already high. Fallback to default
-            # rating (1500) if a player has no global rating yet.
-            gmu_a = global_mu.get(cid_a, 1500.0)
-            gmu_b = global_mu.get(cid_b, 1500.0)
-            ra_new = _elo_update_map(ra, gmu_a, gmu_b, won_a, wa_perf, wa_cr)
-            rb_new = _elo_update_map(rb, gmu_b, gmu_a, won_b, wb_perf, wb_cr)
-            if won_a is True:
-                out_a, out_b = "win", "loss"
-                sa["wins"] += 1; sb["losses"] += 1
-            elif won_a is False:
-                out_a, out_b = "loss", "win"
-                sb["wins"] += 1; sa["losses"] += 1
-            else:
-                out_a = out_b = "draw"
-                sa["draws"] += 1; sb["draws"] += 1
-        elif f_a > f_b:
-            ra_new, rb_new = _update_with_weights(MODEL, ra, rb, wa, wb, drawn=False)
-            out_a, out_b = "win", "loss"
-            sa["wins"] += 1; sb["losses"] += 1
-        elif f_b > f_a:
-            rb_new, ra_new = _update_with_weights(MODEL, rb, ra, wb, wa, drawn=False)
-            out_a, out_b = "loss", "win"
-            sb["wins"] += 1; sa["losses"] += 1
-        else:
-            ra_new, rb_new = _update_with_weights(MODEL, ra, rb, wa, wb, drawn=True)
-            out_a = out_b = "draw"
-            sa["draws"] += 1; sb["draws"] += 1
-
-        cache[cid_a] = ra_new; cache[cid_b] = rb_new
-        sa["matches"] += 1; sb["matches"] += 1
-
-        history_rows.append((cid_a, mode, map_bucket, match_id, match_date, cid_b, out_a,
-                             mu_a_b, ra_new.mu, sig_a_b, ra_new.sigma, ra_new.mu - mu_a_b))
-        history_rows.append((cid_b, mode, map_bucket, match_id, match_date, cid_a, out_b,
-                             mu_b_b, rb_new.mu, sig_b_b, rb_new.sigma, rb_new.mu - mu_b_b))
+            map_mu_a_post = new_mu_a + map_delta(cell_a["rs"], cell_a["n"])
+            map_mu_b_post = new_mu_b + map_delta(cell_b["rs"], cell_b["n"])
+            history_rows.append((cid_a, mode, rated_map, match_id, match_date, cid_b, out_a,
+                                 map_mu_a_pre, map_mu_a_post,
+                                 map_sig_a_pre, map_sigma(new_sig_a, cell_a["n"]),
+                                 map_mu_a_post - map_mu_a_pre))
+            history_rows.append((cid_b, mode, rated_map, match_id, match_date, cid_a, out_b,
+                                 map_mu_b_pre, map_mu_b_post,
+                                 map_sig_b_pre, map_sigma(new_sig_b, cell_b["n"]),
+                                 map_mu_b_post - map_mu_b_pre))
 
         if len(history_rows) >= 5000:
             _bulk_insert_history(cur, history_rows)
@@ -541,95 +573,102 @@ def rate_bucket(db, mode, map_bucket, now, full_rebuild=True, per_map_min=5,
     if history_rows:
         _bulk_insert_history(cur, history_rows)
 
-    # Unique-opponent count is still useful as a UI "Provisional" hint — even though
-    # OpenSkill's σ updates handle diversity natively in the math, we surface the
-    # count so users see when a rating is built from a thin opponent pool.
+    # ── persist per-map accumulator state (touched cells only on incremental —
+    # untouched cells are already stored; full rebuild writes everything)
+    if touched_cells or full_rebuild:
+        write_cells = cells.items() if full_rebuild else \
+            [((cid, mp), cells[(cid, mp)]) for (cid, mp) in touched_cells]
+        resid_rows = [(cid, mode, mp, c["rs"], c["n"], c["wins"], c["losses"], c["draws"])
+                      for (cid, mp), c in write_cells]
+        psycopg2.extras.execute_values(
+            cur,
+            """INSERT INTO map_residuals
+               (canonical_id, mode, map, resid_sum, n, wins, losses, draws)
+               VALUES %s
+               ON CONFLICT (canonical_id, mode, map) DO UPDATE SET
+                 resid_sum=EXCLUDED.resid_sum, n=EXCLUDED.n, wins=EXCLUDED.wins,
+                 losses=EXCLUDED.losses, draws=EXCLUDED.draws""",
+            resid_rows, page_size=2000)
+
+    # Unique-opponent counts for every bucket in one query — surfaced as the
+    # UI "Provisional" hint (no math adjustment since the OpenSkill migration).
     cur.execute("""
-        SELECT canonical_id, COUNT(DISTINCT opponent_cid) AS n
-        FROM rating_history WHERE mode = %s AND map = %s AND opponent_cid IS NOT NULL
-        GROUP BY canonical_id
-    """, (mode, map_bucket))
-    uniq_counts = {r["canonical_id"]: r["n"] for r in cur.fetchall()}
+        SELECT canonical_id, map, COUNT(DISTINCT opponent_cid) AS n
+        FROM rating_history WHERE mode = %s AND opponent_cid IS NOT NULL
+        GROUP BY canonical_id, map
+    """, (mode,))
+    uniq = {(r["canonical_id"], r["map"]): r["n"] for r in cur.fetchall()}
 
     # Players flagged `unrated` get NO published rating (their games still count
     # toward OPPONENTS' ratings — we just never write a rating row for them).
-    # Reversible: clear the flag + rerate to bring them back.
     cur.execute("ALTER TABLE players_canonical ADD COLUMN IF NOT EXISTS unrated BOOLEAN NOT NULL DEFAULT FALSE")
     cur.execute("SELECT canonical_id FROM players_canonical WHERE unrated")
     _unrated = {row["canonical_id"] for row in cur.fetchall()}
 
+    # ── overall rating rows
     rating_rows = []
-    for cid, r in cache.items():
+    for cid, (mu, sigma) in cache.items():
         if cid in _unrated:
             continue
         s = stats.get(cid, {})
-        if map_bucket and s["matches"] < per_map_min:
-            continue
-        pf = perf.get(cid)
+        pf = perf.get((cid, ""))
         avg_ddr = (pf["dg"] / pf["dt"]) if (pf and pf["dt"] > 0) else None
         avg_frag_diff = (pf["fd_sum"] / pf["n"]) if (pf and pf["n"] > 0) else None
-        rating_rows.append((cid, mode, map_bucket, r.mu, r.sigma, r.mu - 3 * r.sigma,
-                            s["matches"], s["wins"], s["losses"], s["draws"],
-                            None, None, now, uniq_counts.get(cid, 0),
+        rating_rows.append((cid, mode, "", mu, sigma, mu - 3 * sigma,
+                            s.get("matches", 0), s.get("wins", 0),
+                            s.get("losses", 0), s.get("draws", 0),
+                            None, None, now, uniq.get((cid, ""), 0),
                             avg_ddr, avg_frag_diff))
+    n_overall = len(rating_rows)
+
+    # ── per-map rating rows, derived from final global rating + shrunk deviation.
+    # A cell needs rewriting when its accumulator moved OR the global μ under it
+    # moved — i.e. whenever the PLAYER appeared this run. Full rebuild: everyone.
+    n_map = 0
+    for (cid, mp), c in cells.items():
+        if cid in _unrated or c["n"] < per_map_min or mp not in maps_ok:
+            continue
+        if not full_rebuild and cid not in played_this_run:
+            continue
+        g = cache.get(cid)
+        if not g:
+            continue
+        mu = g[0] + map_delta(c["rs"], c["n"])
+        sigma = map_sigma(g[1], c["n"])
+        pf = perf.get((cid, mp))
+        avg_ddr = (pf["dg"] / pf["dt"]) if (pf and pf["dt"] > 0) else None
+        avg_frag_diff = (pf["fd_sum"] / pf["n"]) if (pf and pf["n"] > 0) else None
+        rating_rows.append((cid, mode, mp, mu, sigma, mu - 3 * sigma,
+                            c["n"], c["wins"], c["losses"], c["draws"],
+                            None, None, now, uniq.get((cid, mp), 0),
+                            avg_ddr, avg_frag_diff))
+        n_map += 1
+
     if rating_rows:
         _bulk_insert_ratings(cur, rating_rows)
     db.commit()
     cur.close()
-    return len(matches), len(rating_rows)
+    return len(matches), n_overall, n_map
 
 
 def run(db_path: Path, mode: str = "1on1", incremental: bool = False, per_map_min: int = 5):
     db = dbmod.connect()
     now = datetime.now(timezone.utc).isoformat()
     full_rebuild = not incremental
-    ensure_perf_columns(db)
+    ensure_schema(db)
     player_regions = load_player_regions(db)
-    print(f"Loaded regions for {len(player_regions):,} players.")
+    print(f"Engine {ENGINE_VERSION} — loaded regions for {len(player_regions):,} players.")
 
-    print(f"Rating {mode} overall (OpenSkill PlackettLuce, cross-region weight={CROSS_REGION_WEIGHT})…")
+    print(f"Rating {mode} (continuous-margin OpenSkill, cross-region weight={CROSS_REGION_WEIGHT}, "
+          f"per-map shrinkage K={MAP_SHRINK_K:.0f} G={MAP_GAIN:.0f}, "
+          f"{'FULL REBUILD' if full_rebuild else 'incremental'})…")
     start = datetime.now()
-    n_matches, n_players = rate_bucket(db, mode, '', now, full_rebuild=full_rebuild,
-                                        per_map_min=0, player_regions=player_regions)
+    n_matches, n_overall, n_map = rate_all(db, mode, now, full_rebuild=full_rebuild,
+                                           per_map_min=per_map_min,
+                                           player_regions=player_regions)
     elapsed = (datetime.now() - start).total_seconds()
-    print(f"  {n_matches:,} matches → {n_players:,} players rated in {elapsed:.1f}s")
-
-    # Load the just-updated GLOBAL μ for every player. Per-map ratings use this
-    # to compute expected outcomes (so beating a higher-globally-rated player
-    # on a specific map gives a bigger map-rating jump than beating someone
-    # of equal global skill).
-    gcur = db.cursor()
-    gcur.execute("SELECT canonical_id, mu FROM ratings WHERE mode=%s AND map=''", (mode,))
-    global_mu = {r["canonical_id"]: r["mu"] for r in gcur.fetchall()}
-    gcur.close()
-    print(f"  loaded global μ for {len(global_mu):,} players (for per-map expected calc)")
-
-    # Per-map rebuild — always wipe + rebuild so the ELO algo change propagates
-    # cleanly (mixing old OpenSkill per-map cache with new ELO updates produces
-    # nonsense). Honors full_rebuild=False on the overall pass only.
-    if full_rebuild:
-        wcur = db.cursor()
-        wcur.execute("DELETE FROM ratings WHERE mode=%s AND map<>''", (mode,))
-        wcur.execute("DELETE FROM rating_history WHERE mode=%s AND map<>''", (mode,))
-        db.commit()
-        wcur.close()
-
-    maps = list_maps_for_mode(db, mode, min_matches=50)
-    print(f"\nRating {mode} per-map across {len(maps)} maps "
-          f"(min {per_map_min} matches per player to be stored, "
-          f"ELO K={ELO_K} σ-decay={ELO_SIGMA_DECAY})…")
-    start = datetime.now()
-    total_matches = 0
-    total_players = 0
-    for m in maps:
-        n_matches, n_players = rate_bucket(db, mode, m, now, full_rebuild=full_rebuild,
-                                            per_map_min=per_map_min,
-                                            player_regions=player_regions,
-                                            global_mu=global_mu)
-        total_matches += n_matches
-        total_players += n_players
-    elapsed = (datetime.now() - start).total_seconds()
-    print(f"  {total_matches:,} match-events → {total_players:,} per-map ratings written in {elapsed:.1f}s")
+    print(f"  {n_matches:,} matches → {n_overall:,} overall + {n_map:,} per-map "
+          f"rating rows in {elapsed:.1f}s")
 
     print(f"\nTop 10 {mode} OVERALL (by conservative rating):")
     sanity_cur = db.cursor()
