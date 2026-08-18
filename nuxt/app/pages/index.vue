@@ -65,14 +65,14 @@ function tierRtip(t) {
 }
 function provisionalRtip(p) {
   return {
-    title: 'Provisional rating',
-    body: `Only ${p.unique_opponents || 0} unique opponents so far. The rating is built from a thin opponent pool — flagged as a UX hint, not a math penalty.`
+    title: 'Unranked — rating still settling',
+    body: `σ ${Math.round(p.sigma_effective ?? p.sigma)} (needs ≤150) · ${p.unique_opponents || 0} unique opponents (needs 10+). The rating is shown but holds no rank until it settles — play more games against more opponents. Long inactivity also widens σ back past the bar.`
   }
 }
-function consRtip(p) {
+function muRtip(p) {
   return {
-    title: `Conservative rating: ${Math.round(p.conservative)}`,
-    body: 'μ − 3σ — the 99.7% lower bound of our skill belief. Used for ranking so uncertain ratings don\'t inflate. Movement-resistant: a single match nudges this slightly.'
+    title: `μ ${Math.round(p.mu)} — best skill estimate`,
+    body: 'The engine\'s best guess of true skill, and what the board sorts by. The small line shows σ (uncertainty) and the conservative floor (μ − 3σ) we used to lead with.'
   }
 }
 function musigmaRtip(p) {
@@ -127,8 +127,8 @@ useHead({ title: 'Rankings · DeepFrag' })
         </NuxtLink>
       </div>
       <p class="sub">
-        The rating shown is the <strong>conservative</strong> OpenSkill value (μ − 3σ) — that's what we sort by.
-        μ is raw skill, σ is uncertainty (lower = more settled).
+        The rating shown is <strong>μ</strong> — the engine's best estimate of skill — and that's what we sort by.
+        Players whose rating hasn't settled (high σ, or too few unique opponents) are listed but <strong>unranked ( — )</strong> until it does.
       </p>
     </div>
 
@@ -189,7 +189,7 @@ useHead({ title: 'Rankings · DeepFrag' })
       <a v-for="p in filtered.slice(0, 500)" :key="p.canonical_id"
          :href="profileHref(p.canonical_id)"
          :class="['row', p.rank === 1 ? 'top1' : p.rank === 2 ? 'top2' : p.rank === 3 ? 'top3' : '']">
-        <div class="rank">#{{ p.rank }}</div>
+        <div class="rank">{{ p.rank ? '#' + p.rank : '—' }}</div>
         <div class="avatar">{{ (p.display || '?')[0].toUpperCase() }}</div>
         <div class="id">
           <div class="name">
@@ -210,8 +210,8 @@ useHead({ title: 'Rankings · DeepFrag' })
           </span>
         </div>
         <div class="rating">
-          <span v-rtip="consRtip(p)">{{ Math.round(p.conservative) }}</span>
-          <div class="sigma" v-rtip="musigmaRtip(p)">μ {{ Math.round(p.mu) }} · ±σ {{ Math.round(p.sigma) }}</div>
+          <span v-rtip="muRtip(p)">{{ Math.round(p.mu) }}</span>
+          <div class="sigma" v-rtip="musigmaRtip(p)">±σ {{ Math.round(p.sigma_effective ?? p.sigma) }} · floor {{ Math.round(p.conservative) }}</div>
           <div v-if="p.avg_ddr || p.avg_frag_diff != null" class="perf">
             <span v-if="p.avg_ddr" v-rtip="ddrRtip(p)"
                   :class="{ pos: p.avg_ddr >= 1, neg: p.avg_ddr < 1 }">DDR {{ p.avg_ddr.toFixed(2) }}</span>

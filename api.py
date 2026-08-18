@@ -46,16 +46,23 @@ def _is_rated(matches_rated, unique_opponents):
     return (matches_rated or 0) >= MIN_RATED_GAMES and (unique_opponents or 0) >= MIN_RATED_OPPONENTS
 
 
+PROVISIONAL_SIGMA_MAX = 150.0  # sigma_effective above this = unranked ("provisional")
+
+
 def _get_tier_cutoffs(cur, mode: str, map_name: str = "") -> dict:
     """Fetch all conservative ratings for this (mode, map) bucket and compute
     percentile-based tier cutoffs. Cheap (one indexed SELECT + sort) — called
     once per ranking response, once per profile mode/map. See tiers.py for
     the Div 0/1/2/3 percentile breaks."""
+    # Tiers key off mu (the displayed rating since 2026-08-17), computed over
+    # the ESTABLISHED population (sigma settled) so ghost accounts with wide
+    # sigma and inflated mu don't drag the percentile boundaries around.
     cur.execute(
-        "SELECT conservative FROM ratings WHERE mode=%s AND map=%s AND matches_rated >= 10",
-        (mode, map_name),
+        "SELECT mu FROM ratings WHERE mode=%s AND map=%s AND matches_rated >= 10"
+        " AND sigma <= %s",
+        (mode, map_name, PROVISIONAL_SIGMA_MAX),
     )
-    return compute_cutoffs(r["conservative"] for r in cur.fetchall())
+    return compute_cutoffs(r["mu"] for r in cur.fetchall())
 import profile_pg
 import stats_pg
 
@@ -1475,7 +1482,8 @@ def rankings(
             "conservative_raw": round(r["conservative"], 1),
             "matches": r["matches_rated"],
             "unique_opponents": r["unique_opponents"],
-            "provisional": r["unique_opponents"] < DIVERSITY_THRESHOLD_OVERALL,
+            "provisional": (sigma_eff > PROVISIONAL_SIGMA_MAX
+                            or r["unique_opponents"] < DIVERSITY_THRESHOLD_OVERALL),
             "wins": r["wins"],
             "losses": r["losses"],
             "draws": r["draws"],
@@ -1485,12 +1493,19 @@ def rankings(
             "active_90d": recent > 0,
             "avg_ddr": round(r["avg_ddr"], 2) if r["avg_ddr"] is not None else None,
             "avg_frag_diff": round(r["avg_frag_diff"], 1) if r["avg_frag_diff"] is not None else None,
-            "tier": tier_for(conservative_eff, cutoffs),
+            "tier": tier_for(r["mu"], cutoffs),
         })
 
-    out.sort(key=lambda x: -x["conservative"])
-    for i, p in enumerate(out[:limit]):
-        p["rank"] = i + 1
+    # Display convention (2026-08-17): sort by mu — the best skill estimate —
+    # with provisional players (unsettled sigma / thin opponent pool) listed
+    # inline but holding NO rank number. A fresh 10-0 smurf reaches mu ~2400
+    # but sigma ~320, so he shows as "?" instead of displacing ranked players.
+    out.sort(key=lambda x: -x["mu"])
+    rank = 0
+    for p in out[:limit]:
+        if not p["provisional"]:
+            rank += 1
+            p["rank"] = rank
     return {"mode": mode, "count": len(out), "players": out[:limit]}
 
 
@@ -1562,7 +1577,7 @@ def player_profile(canonical_id: str):
                 "wins": r["wins"],
                 "losses": r["losses"],
                 "draws": r["draws"],
-                "tier": tier_for(r["conservative"], cutoffs_by_mode.get(r["mode"])) if rated else None,
+                "tier": tier_for(r["mu"], cutoffs_by_mode.get(r["mode"])) if rated else None,
                 "rated": rated,
                 "updated_at": r["updated_at"],
             }
@@ -1823,7 +1838,7 @@ def server_detail(response: Response, host_root: str):
                 "display": r["display"],
                 "conservative": round(cons_eff, 1),
                 "games_here": r["games_here"],
-                "tier": tier_for(cons_eff, cutoffs_1on1),
+                "tier": tier_for(r["mu"], cutoffs_1on1),
             })
 
         # Weekly activity for the FULL history of this server (no 53-week cap).
@@ -1979,16 +1994,20 @@ def map_rankings(
             "conservative_raw": round(r["conservative"], 1),
             "matches": r["matches_rated"],
             "unique_opponents": r["unique_opponents"],
-            "provisional": r["unique_opponents"] < DIVERSITY_THRESHOLD_PER_MAP,
+            "provisional": (sigma_eff > PROVISIONAL_SIGMA_MAX
+                            or r["unique_opponents"] < DIVERSITY_THRESHOLD_PER_MAP),
             "wins": r["wins"],
             "losses": r["losses"],
             "draws": r["draws"],
             "win_rate": round(r["wins"] / r["matches_rated"], 3) if r["matches_rated"] else None,
-            "tier": tier_for(conservative_eff, cutoffs),
+            "tier": tier_for(r["mu"], cutoffs),
         })
-    out.sort(key=lambda x: -x["conservative"])
-    for i, p in enumerate(out[:limit]):
-        p["rank"] = i + 1
+    out.sort(key=lambda x: -x["mu"])
+    rank = 0
+    for p in out[:limit]:
+        if not p["provisional"]:
+            rank += 1
+            p["rank"] = rank
     return {"mode": mode, "map": map_name, "count": len(out), "players": out[:limit]}
 
 
@@ -2515,7 +2534,7 @@ def player_profile_full(
             SELECT mode, mu, sigma, conservative, matches_rated, wins, losses, draws, updated_at,
                    COALESCE(unique_opponents, 0) AS unique_opponents,
                    (SELECT COUNT(*) + 1 FROM ratings r2
-                    WHERE r2.mode = r.mode AND r2.map = '' AND r2.conservative > r.conservative) AS rank,
+                    WHERE r2.mode = r.mode AND r2.map = '' AND r2.mu > r.mu) AS rank,
                    (SELECT COUNT(*) FROM ratings r3 WHERE r3.mode = r.mode AND r3.map = '') AS total_rated
             FROM ratings r WHERE canonical_id = %s AND map = ''
         """, (canonical_id,))
@@ -2534,13 +2553,14 @@ def player_profile_full(
                 "conservative_raw": round(r["conservative"], 1),
                 "matches": r["matches_rated"],
                 "unique_opponents": r["unique_opponents"],
-                "provisional": r["unique_opponents"] < DIVERSITY_THRESHOLD_OVERALL,
+                "provisional": (sigma_eff > PROVISIONAL_SIGMA_MAX
+                            or r["unique_opponents"] < DIVERSITY_THRESHOLD_OVERALL),
                 "wins": r["wins"],
                 "losses": r["losses"],
                 "draws": r["draws"],
                 "rank": r["rank"],
                 "total_rated": r["total_rated"],
-                "tier": tier_for(conservative_eff, cutoffs_by_mode.get(r["mode"])),
+                "tier": tier_for(r["mu"], cutoffs_by_mode.get(r["mode"])),
                 "updated_at": r["updated_at"],
             }
 
@@ -2549,7 +2569,7 @@ def player_profile_full(
             SELECT map, mu, sigma, conservative, matches_rated, wins, losses, draws,
                    COALESCE(unique_opponents, 0) AS unique_opponents,
                    (SELECT COUNT(*) + 1 FROM ratings r2
-                    WHERE r2.mode = r.mode AND r2.map = r.map AND r2.conservative > r.conservative) AS rank,
+                    WHERE r2.mode = r.mode AND r2.map = r.map AND r2.mu > r.mu) AS rank,
                    (SELECT COUNT(*) FROM ratings r3 WHERE r3.mode = r.mode AND r3.map = r.map) AS total_rated
             FROM ratings r WHERE canonical_id = %s AND mode = '1on1' AND map != ''
         """, (canonical_id,))
@@ -2580,7 +2600,7 @@ def player_profile_full(
         for row in win_payload["by_map_1on1"]:
             mr = map_ratings_1on1.get(row["bucket"])
             if mr:
-                row["rating"] = mr["conservative"]
+                row["rating"] = mr["mu"]
                 row["mu"] = mr["mu"]
                 row["sigma"] = mr["sigma"]
                 row["rated_matches"] = mr["matches"]
