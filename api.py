@@ -1570,6 +1570,8 @@ def player_profile(canonical_id: str):
             # (rated=false) so a 2v2 regular who rarely duels isn't mislabelled.
             rated = _is_rated(r["matches_rated"], r["unique_opponents"])
             ratings[r["mode"]] = {
+                "rank_provisional": (sigma_eff > PROVISIONAL_SIGMA_MAX
+                                     or r["unique_opponents"] < DIVERSITY_THRESHOLD_OVERALL),
                 "mu": round(r["mu"], 1),
                 "sigma": round(r["sigma"], 1),
                 "conservative": round(r["conservative"], 1),
@@ -2535,8 +2537,10 @@ def player_profile_full(
             SELECT mode, mu, sigma, conservative, matches_rated, wins, losses, draws, updated_at,
                    COALESCE(unique_opponents, 0) AS unique_opponents,
                    (SELECT COUNT(*) + 1 FROM ratings r2
-                    WHERE r2.mode = r.mode AND r2.map = '' AND r2.mu > r.mu) AS rank,
-                   (SELECT COUNT(*) FROM ratings r3 WHERE r3.mode = r.mode AND r3.map = '') AS total_rated
+                    WHERE r2.mode = r.mode AND r2.map = '' AND r2.mu > r.mu
+                      AND r2.sigma <= 150) AS rank,
+                   (SELECT COUNT(*) FROM ratings r3 WHERE r3.mode = r.mode AND r3.map = ''
+                      AND r3.sigma <= 150) AS total_rated
             FROM ratings r WHERE canonical_id = %s AND map = ''
         """, (canonical_id,))
         ratings = {"1on1": None, "2on2": None, "4on4": None}
@@ -2547,6 +2551,8 @@ def player_profile_full(
             sigma_eff = r["sigma"] * factor
             conservative_eff = r["mu"] - 3 * sigma_eff
             ratings[r["mode"]] = {
+                "rank_provisional": (sigma_eff > PROVISIONAL_SIGMA_MAX
+                                     or r["unique_opponents"] < DIVERSITY_THRESHOLD_OVERALL),
                 "mu": round(r["mu"], 1),
                 "sigma": round(r["sigma"], 1),
                 "sigma_effective": round(sigma_eff, 1),
@@ -2570,8 +2576,10 @@ def player_profile_full(
             SELECT map, mu, sigma, conservative, matches_rated, wins, losses, draws,
                    COALESCE(unique_opponents, 0) AS unique_opponents,
                    (SELECT COUNT(*) + 1 FROM ratings r2
-                    WHERE r2.mode = r.mode AND r2.map = r.map AND r2.mu > r.mu) AS rank,
-                   (SELECT COUNT(*) FROM ratings r3 WHERE r3.mode = r.mode AND r3.map = r.map) AS total_rated
+                    WHERE r2.mode = r.mode AND r2.map = r.map AND r2.mu > r.mu
+                      AND r2.sigma <= 150) AS rank,
+                   (SELECT COUNT(*) FROM ratings r3 WHERE r3.mode = r.mode AND r3.map = r.map
+                      AND r3.sigma <= 150) AS total_rated
             FROM ratings r WHERE canonical_id = %s AND mode = '1on1' AND map != ''
         """, (canonical_id,))
         map_ratings_1on1 = {}

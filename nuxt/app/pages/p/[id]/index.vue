@@ -354,7 +354,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
             <template v-if="ratings[mode]">
               <div class="rt-val">{{ Math.round(ratings[mode].mu) }}</div>
               <div class="rt-sigma">±σ {{ Math.round(ratings[mode].sigma) }} · floor {{ Math.round(ratings[mode].conservative) }}</div>
-              <div class="rt-meta">#{{ ratings[mode].rank }} of {{ ratings[mode].total_rated }} · {{ ratings[mode].wins }}W–{{ ratings[mode].losses }}L</div>
+              <div class="rt-meta">{{ ratings[mode].rank_provisional ? 'unranked · rating settling' : `#${ratings[mode].rank} of ${ratings[mode].total_rated} ranked` }} · {{ ratings[mode].wins }}W–{{ ratings[mode].losses }}L</div>
               <span v-if="ratings[mode].tier" class="rt-tier"
                     :style="{ color: ratings[mode].tier.color, borderColor: ratings[mode].tier.color, background: ratings[mode].tier.color + '14' }">
                 {{ ratings[mode].tier.name }}
