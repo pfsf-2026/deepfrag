@@ -1836,6 +1836,7 @@ def server_detail(response: Response, host_root: str):
             top_by_rating.append({
                 "canonical_id": r["canonical_id"],
                 "display": r["display"],
+                "mu": round(r["mu"], 1),
                 "conservative": round(cons_eff, 1),
                 "games_here": r["games_here"],
                 "tier": tier_for(r["mu"], cutoffs_1on1),

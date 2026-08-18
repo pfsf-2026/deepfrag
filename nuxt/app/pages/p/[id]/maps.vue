@@ -48,7 +48,7 @@ const rows = computed(() => {
       const rt = mapRatings.value[r.bucket]
       return {
         ...r,
-        rating: rt?.conservative ?? null,
+        rating: rt?.mu ?? null,
         mu: rt?.mu ?? null,
         sigma: rt?.sigma ?? null,
         rank: rt?.rank ?? null,

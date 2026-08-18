@@ -246,7 +246,7 @@ watch(mode, loadH2H)
             </div>
             <button class="change-link" @click="changeP1">Change player ↺</button>
           </div>
-          <div class="cons a">{{ Math.round(data.player_a.conservative) }}</div>
+          <div class="cons a">{{ Math.round(data.player_a.mu) }}</div>
         </div>
         <div class="center">
           <div class="label">Head to head</div>
@@ -260,7 +260,7 @@ watch(mode, loadH2H)
           <button class="swap" @click="swap">↔ swap</button>
         </div>
         <div class="p right">
-          <div class="cons b">{{ Math.round(data.player_b.conservative) }}</div>
+          <div class="cons b">{{ Math.round(data.player_b.mu) }}</div>
           <div style="text-align: right;">
             <div class="name">{{ data.player_b.display }}</div>
             <div class="micro" style="justify-content: flex-end;">

@@ -287,7 +287,7 @@ function modeDelta(mode, key, opts = {}) {
 }
 // Per-map ratings (1on1 only for now). Keyed by lowercase map name.
 const mapRatings1on1 = computed(() => profile.value?.map_ratings_1on1 || {})
-function mapRating(bucket) { return mapRatings1on1.value[bucket]?.conservative }
+function mapRating(bucket) { return mapRatings1on1.value[bucket]?.mu }
 
 function oppDelta(opponent, key = 'win_rate', opts = {}) {
   const curList = w.value.head_to_head_1on1 || []
@@ -352,8 +352,8 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
                @click="ratings[mode] && (ratingHistoryMode = mode)">
             <div class="rt-label"><span :class="['chip', 'chip-' + mode]">{{ mode }}</span></div>
             <template v-if="ratings[mode]">
-              <div class="rt-val">{{ Math.round(ratings[mode].conservative) }}</div>
-              <div class="rt-sigma">μ {{ Math.round(ratings[mode].mu) }} · ±σ {{ Math.round(ratings[mode].sigma) }}</div>
+              <div class="rt-val">{{ Math.round(ratings[mode].mu) }}</div>
+              <div class="rt-sigma">±σ {{ Math.round(ratings[mode].sigma) }} · floor {{ Math.round(ratings[mode].conservative) }}</div>
               <div class="rt-meta">#{{ ratings[mode].rank }} of {{ ratings[mode].total_rated }} · {{ ratings[mode].wins }}W–{{ ratings[mode].losses }}L</div>
               <span v-if="ratings[mode].tier" class="rt-tier"
                     :style="{ color: ratings[mode].tier.color, borderColor: ratings[mode].tier.color, background: ratings[mode].tier.color + '14' }">

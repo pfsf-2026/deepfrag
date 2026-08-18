@@ -268,7 +268,7 @@ useHead({ title: 'Servers · DeepFrag' })
                             <span class="rank">#{{ i + 1 }}</span>
                             <NuxtLink :to="`/p/${encodeURIComponent(p.canonical_id)}`" class="name" @click.stop>{{ p.display }}</NuxtLink>
                             <span v-if="p.tier" class="tier" :style="{ color: p.tier.color, borderColor: p.tier.color, background: p.tier.color + '14' }">{{ p.tier.name }}</span>
-                            <span class="val">{{ Math.round(p.conservative) }}</span>
+                            <span class="val">{{ Math.round(p.mu) }}</span>
                           </div>
                           <div v-if="!detailCache[s.hostname].top_by_rating.length" class="muted small">No rated players with ≥10 games here.</div>
                         </div>

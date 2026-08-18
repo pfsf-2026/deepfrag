@@ -62,7 +62,7 @@ useHead({ title: () => `${mapName.value} ${mode.value} rankings · DeepFrag` })
     <div class="head">
       <NuxtLink to="/" class="back">← All rankings</NuxtLink>
       <h1>{{ mapName }} <span class="mode-chip" :class="'chip-' + mode">{{ mode }}</span></h1>
-      <p class="sub">Per-map ratings on <strong>{{ mapName }}</strong>. Sorted by conservative (μ − 3σ).</p>
+      <p class="sub">Per-map ratings on <strong>{{ mapName }}</strong>. Sorted by μ — unsettled ratings are listed but unranked.</p>
       <NuxtLink v-if="mode === '1on1'" :to="`/training/first-spawn/${encodeURIComponent(mapName)}`" class="fs-link">
         🎯 First-spawn training — replay how the top 5 open from each spawn →
       </NuxtLink>
@@ -122,8 +122,8 @@ useHead({ title: () => `${mapName.value} ${mode.value} rankings · DeepFrag` })
           </span>
         </div>
         <div class="rating">
-          {{ Math.round(p.conservative) }}
-          <div class="sigma">μ {{ Math.round(p.mu) }} · ±σ {{ Math.round(p.sigma) }}</div>
+          {{ Math.round(p.mu) }}
+          <div class="sigma">±σ {{ Math.round(p.sigma) }} · floor {{ Math.round(p.conservative) }}</div>
         </div>
         <div class="winbar">
           <div class="bar">
