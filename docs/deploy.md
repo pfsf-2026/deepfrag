@@ -81,6 +81,19 @@ cd ~/Projects/qw-stats
 gcloud run deploy deepfrag-api --source . --region us-central1 --project deepfrag-prod
 ```
 
+## ⚠️ Backend+frontend deploy ordering (2026-08-18 incident)
+
+The prerendered homepage bakes /api/rankings data at CF build time. If you push
+a change that alters BOTH the API response and the frontend, and fire the CF
+Pages rebuild (deploy hook / admin sync) before Cloud Run finishes rolling the
+new API revision (~5 min), the page prerenders against the OLD API — e.g. the
+2026-08-18 mu-rankings launch briefly showed new templates with stale
+cons-ordering (bogojoker #2 above a higher-mu Milton). Order is:
+
+1. `git push` → wait for `gcloud builds list --region=us-central1` SUCCESS
+2. verify the API change is live (`curl /api/rankings | head`)
+3. THEN fire the CF rebuild (POST /api/admin/sync, or the deploy hook)
+
 ## Env vars & secrets
 
 `DEEPFRAG_PG_URL`, `SYNC_SECRET`, and friends live **on the Cloud Run service**
