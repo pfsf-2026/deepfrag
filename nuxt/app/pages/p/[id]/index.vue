@@ -17,7 +17,7 @@ async function loadProfile() {
     // top-level shape as the legacy static JSON but only includes the requested window
     // (it's the only one rendered), keeping the payload ~5× smaller than the static file.
     const url = df.useApi
-      ? `${df.profileUrl(id.value)}/full?window=${windowKey.value}`
+      ? `${df.profileUrl(id.value)}/full?window=${windowKey.value}&v=3`
       : df.profileUrl(id.value)
     const r = await fetch(url)
     if (!r.ok) throw new Error(r.status)

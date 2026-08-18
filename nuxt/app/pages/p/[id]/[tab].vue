@@ -24,7 +24,7 @@ async function load() {
   }
   pending.value = true
   try {
-    const url = df.useApi ? `${df.profileUrl(id.value)}/full?window=${windowKey.value}` : df.profileUrl(id.value)
+    const url = df.useApi ? `${df.profileUrl(id.value)}/full?window=${windowKey.value}&v=3` : df.profileUrl(id.value)
     const r = await fetch(url)
     profile.value = r.ok ? await r.json() : null
     // Mode tabs need division averages for the weapon-donut reference arcs.

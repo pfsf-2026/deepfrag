@@ -14,7 +14,7 @@ async function loadProfile() {
   pending.value = true
   try {
     const url = df.useApi
-      ? `${df.profileUrl(id.value)}/full?window=${windowKey.value}`
+      ? `${df.profileUrl(id.value)}/full?window=${windowKey.value}&v=3`
       : df.profileUrl(id.value)
     const r = await fetch(url)
     if (!r.ok) throw new Error(r.status)
