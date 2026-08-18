@@ -23,7 +23,10 @@ export function useDeepFrag() {
     rankingsUrl(mode: string = '1on1', region: string = ''): string {
       // 500 covers every realistic min-matches filter the UI exposes; smaller
       // payload + CDN cache make this fast even on the first uncached hit.
-      const params = new URLSearchParams({ mode, min_matches: '10', limit: '500' })
+      // v=3: bumped 2026-08-18 with the mu-display convention — new cache key
+      // so browsers holding the old cons-sorted JSON (SWR'd for a day) can't
+      // swap stale data back in over the corrected baked page.
+      const params = new URLSearchParams({ mode, min_matches: '10', limit: '500', v: '3' })
       if (region) params.set('region', region)
       return useApi ? `${base}/api/rankings?${params}` : '/rankings.json'
     },

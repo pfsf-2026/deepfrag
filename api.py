@@ -1415,7 +1415,7 @@ def rankings(
     # the CDN — first request hits Cloud Run + Cloud SQL, subsequent ones served
     # from Cloudflare's edge in <50ms. stale-while-revalidate keeps it instant
     # while a background refresh fetches the new data.
-    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=86400"
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
     now = datetime.now(timezone.utc)
     recent_cutoff = (now - timedelta(days=90)).isoformat()
 
@@ -2500,7 +2500,7 @@ def player_profile_full(
     # CDN edge (5min fresh) + serve-stale-while-revalidating for a day. Long TTL
     # is what keeps origin/DB load low — the db-f1-micro can't take a per-request
     # origin hit per profile view (2026-06-03 pool-exhaustion incident).
-    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=86400"
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
 
     # 'all' = no date filter (None). Otherwise it's a day count.
     window_key = window
