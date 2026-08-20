@@ -1279,7 +1279,8 @@ def admin_ladder_notify_scheduled(challenge_id: int, authorization: str | None =
 
 def _evaluate_freshness(conn):
     """Data-freshness watchdog core: flag stale ingestion / behind canonicalize,
-    alert to Discord (throttled 3h via monitor_state). Returns a verdict dict.
+    alert to Discord (throttled 3h via monitor_state). Staleness alerts only
+    after 24h (quiet/dmm4-only nights are normal). Returns a verdict dict.
     Called by the cron endpoint AND at the end of every 2h sync."""
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(days=4)).isoformat()
@@ -1300,7 +1301,12 @@ def _evaluate_freshness(conn):
         except Exception:
             pass
     problems = []
-    if stale_hours is None or stale_hours > 4:
+    # 24h minimum before a staleness alert (Peter, 2026-08-20): quiet nights are
+    # normal — the fleet regularly hosts povdmm4/hammer sessions the hub doesn't
+    # ingest, so short gaps are content, not failure. stale_hours=None (no
+    # matches readable at all) still alerts immediately — that's a broken DB,
+    # not a quiet server.
+    if stale_hours is None or stale_hours > 24:
         problems.append(f"newest match is {stale_hours if stale_hours is not None else '?'}h old — ingestion may be stalled")
     if unassigned > 200:
         problems.append(f"{unassigned} recent player rows have no profile link — canonicalize may be stalled")
