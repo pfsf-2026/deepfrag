@@ -1022,7 +1022,7 @@ def run(db_path: Path, mode: str = "1on1", incremental: bool = False, per_map_mi
 
 
 def _sanity_top10(db, mode):
-    print(f"\nTop 10 {mode} OVERALL (by conservative rating):")
+    print(f"\nTop 10 {mode} OVERALL (by mu — matches the public board):")
     sanity_cur = db.cursor()
     sanity_cur.execute(
         """
@@ -1031,7 +1031,7 @@ def _sanity_top10(db, mode):
         FROM ratings r
         LEFT JOIN players_canonical pc ON pc.canonical_id = r.canonical_id
         WHERE r.mode = %s AND r.map = '' AND r.matches_rated >= 50
-        ORDER BY r.conservative DESC LIMIT 10
+        ORDER BY r.mu DESC LIMIT 10
         """,
         (mode,),
     )
