@@ -47,9 +47,15 @@ onMounted(() => {
 })
 
 // API returns { players: [...] }; static returns { modes: { 1on1: [...] } }.
-const current = computed(() => df.useApi
-  ? (rankings.value?.players || [])
-  : (rankings.value?.modes?.[mode.value] || []))
+// Unranked (provisional) rows are HIDDEN by default (Peter, 2026-08-24): they
+// are mostly throwaway alias accounts with huge sigma; a toggle reveals them.
+const showUnranked = ref(false)
+const current = computed(() => {
+  const rows = df.useApi
+    ? (rankings.value?.players || [])
+    : (rankings.value?.modes?.[mode.value] || [])
+  return showUnranked.value ? rows : rows.filter(p => !p.provisional)
+})
 
 // Rich-tooltip content helpers — kept inline since each is tied to one
 // stat's explanation. Returns { title, body }.
@@ -165,6 +171,11 @@ useHead({ title: 'Rankings · DeepFrag' })
         <option value="all">All time</option>
         <option value="90">Last 90d</option>
       </select>
+      <button :class="['dd', 'unranked-toggle', { on: showUnranked }]"
+              @click="showUnranked = !showUnranked"
+              title="Unranked = rating not settled yet (high σ or too few unique opponents) — mostly new or throwaway accounts">
+        {{ showUnranked ? 'Hiding nothing' : 'Unranked hidden' }}
+      </button>
       <input v-model="search" type="text" placeholder="Filter by name…" class="search">
       <span class="count">{{ filtered.length }} of {{ current.length }}</span>
     </div>
@@ -398,4 +409,6 @@ useHead({ title: 'Rankings · DeepFrag' })
   .row .winbar { grid-area: winbar; align-self: center; }
   .row .matches { grid-area: matches; align-self: center; text-align: right; }
 }
+.unranked-toggle { cursor: pointer; }
+.unranked-toggle.on { border-color: var(--accent); color: var(--accent); }
 </style>
