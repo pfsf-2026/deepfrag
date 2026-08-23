@@ -194,15 +194,18 @@ TEAM_EXP_SCALE = 700.0
 TEAM_MARGIN_NORM = 40.0
 TEAM_W_RESULT = 0.35
 TEAM_SIGMA_FLOOR = 80.0
-# Map layer + contribution weighting (2026-08-23 sweeps, walk-forward logloss):
-#   engine 0.5894 → +map 0.5694 (K=60, G=1900) → +contrib 0.5619 (CW=0.3),
-#   accuracy 68.1% → 70.8%. Contribution: a player's personal outcome is the
-#   team score shifted by their damage share within the team (0.25 = neutral) —
-#   this is what lets individual improvement move an individual's rating
-#   (bible §0; the "cronus DDR up 35%, rating flat" complaint, 2026-08-23).
+# Map layer + contribution weighting (2026-08-23/24 sweeps, walk-forward
+# logloss): engine 0.5894 → +map 0.5694 (K=60, G=1900) → +contrib 0.5560
+# (CW=1.1, μ-CONDITIONAL expected share), accuracy 68.1% → 71.5%.
+# Contribution: personal outcome = team score + CW·(damage_share −
+# expected_share), expected_share = own_mu / Σ team_mu. NOT flat 0.25 — that
+# drained players on stronger teams and boosted players on weaker ones (the
+# ntr/roster-context complaint, 2026-08-24). Higher CW keeps improving logloss
+# slowly (0.5516 @ 3.0) but drifts toward pure performance rating with
+# role-bias risk — raise only alongside role modeling.
 TEAM_MAP_K = 60.0
 TEAM_MAP_G = 1900.0
-TEAM_CONTRIB_W = 0.3
+TEAM_CONTRIB_W = 1.1
 
 
 def team_map_delta(resid_sum: float, n: int) -> float:
@@ -778,7 +781,7 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
     """Single chronological pass for a team mode (4on4). Per player:
     - global mu/sigma from the continuous team-margin outcome, with each
       player's personal score shifted by their DAMAGE SHARE within the team
-      (TEAM_CONTRIB_W; share 0.25 = neutral) — individual improvement moves
+      (TEAM_CONTRIB_W; expected share = own μ / team μ sum) — individual improvement moves
       individual ratings;
     - per-(player,map) shrunk deviations learned from residuals vs the
       MAP-ADJUSTED prediction (state persisted in map_residuals).
@@ -852,11 +855,15 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
         tdg_a = sum((r[3] or 0) for r in TA)
         tdg_b = sum((r[3] or 0) for r in TB)
 
-        def _si(row, tdg, s):
+        mu_sum_a = sum(m for m, _ in ra)
+        mu_sum_b = sum(m for m, _ in rb)
+
+        def _si(row, tdg, s, own_mu, mu_team):
             if TEAM_CONTRIB_W <= 0 or not tdg or row[3] is None:
                 return s
             share = (row[3] or 0) / tdg
-            return min(1.0, max(0.0, s + TEAM_CONTRIB_W * (share - 0.25)))
+            expected = own_mu / mu_team if mu_team > 0 else 0.25
+            return min(1.0, max(0.0, s + TEAM_CONTRIB_W * (share - expected)))
 
         RA = [TEAM_MODEL.rating(mu=m, sigma=g) for m, g in ra]
         RB = [TEAM_MODEL.rating(mu=m, sigma=g) for m, g in rb]
@@ -876,7 +883,7 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
 
         for row, (om, og), w, l in zip(TA, ra, wa, la):
             cid = row[0]
-            si = _si(row, tdg_a, s_team)
+            si = _si(row, tdg_a, s_team, om, mu_sum_a)
             nm = si * w.mu + (1 - si) * l.mu
             ns = max(TEAM_SIGMA_FLOOR, si * w.sigma + (1 - si) * l.sigma)
             history_rows.append((cid, mode, "", mid, mdate, opp_a, out_a,
@@ -887,7 +894,7 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
             st["wins" if out_a == "win" else "losses" if out_a == "loss" else "draws"] += 1
         for row, (om, og), w, l in zip(TB, rb, wb, lb):
             cid = row[0]
-            si = _si(row, tdg_b, 1.0 - s_team)
+            si = _si(row, tdg_b, 1.0 - s_team, om, mu_sum_b)
             nm = si * l.mu + (1 - si) * w.mu
             ns = max(TEAM_SIGMA_FLOOR, si * l.sigma + (1 - si) * w.sigma)
             history_rows.append((cid, mode, "", mid, mdate, opp_b, out_b,

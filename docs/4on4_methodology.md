@@ -27,11 +27,17 @@ level and re-tuned on 4on4 data. `rate_team_mode()` in [rate.py](../rate.py).
   mu_map = mu + 1900·(n/(n+60))·mean_resid vs the map-adjusted prediction.
   Logloss 0.5894 → 0.5694. State in `map_residuals`; per-map rating rows emitted
   at ≥5 games; `/api/balance?map=` uses them.
-- **Contribution weighting (Layer-2-lite)** — each player's personal outcome =
-  team score + 0.3·(damage_share − 0.25), clamped [0,1]. Logloss → **0.5619**,
-  accuracy → **70.8%**. This is what makes INDIVIDUAL improvement move an
-  individual's rating instead of being smeared across the team (the flat-rating
-  complaint of 2026-08-23: cronus DDR 0.68→0.92 over two years, rating static).
+- **Contribution weighting (Layer-2-lite, revised 2026-08-24)** — each player's
+  personal outcome = team score + 1.1·(damage_share − expected_share), clamped
+  [0,1], with **expected_share = own μ / Σ team μ**. Logloss → **0.5560**,
+  accuracy → **71.5%**. The first version used a flat 0.25 baseline, which
+  systematically drained players on stronger teams and boosted players on
+  weaker ones (Peter's ntr/roster-context observation) — μ-conditional fixes
+  the bias AND predicts better. CW beyond 1.1 keeps improving logloss slowly
+  (0.5516 @ 3.0) but drifts toward pure performance rating with role bias
+  (damage share is not role-neutral: RA-defenders under-share by design) —
+  do not raise without role modeling. This is what makes INDIVIDUAL improvement
+  move an individual's rating instead of being smeared across the team.
 
 **Anti-alias gate (2026-08-24, Peter):** a player with NO 1on1 rating row gets no
 PUBLISHED 4on4 rating (matches still count toward opponents). Throwaway alias
@@ -244,6 +250,21 @@ The role-differentiation problem means a single tier ladder is less informative 
 - **AI commentary** — UI-level, not rating-system. Separate workstream.
 
 ---
+
+## 10. Attribution: phylter's qw-4on4-ratings
+
+DeepFrag's ingestion lineage: our sync.py's hub-fetch pattern **was lifted from
+[phylter-qw/qw-4on4-ratings](https://github.com/phylter-qw/qw-4on4-ratings)**
+(it says so in its docstring) and our matches/players schema matches his
+column-for-column. This bible failed to credit that before 2026-08-24 — fixed.
+
+His rating method differs from ours: community-survey-derived weights over
+per-stat standard scores → per-player match score → TrueSkill. That is a
+*performance rating* (stats drive rating regardless of team result); ours is
+*outcome-anchored* (team W/L + margin) with a bounded contribution nudge. His
+weights.txt is a genuine community prior over what matters in 4on4 — a future
+experiment: replace damage-share in our contribution term with a phylter-style
+weighted standard-score composite, backtest against 0.5560.
 
 ## 10. References
 
