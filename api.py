@@ -2039,6 +2039,7 @@ def team_balance(
     historic pickup average was a predicted 67/33; the optimal split of the
     same players averages 52/48). Unrated players get the blank prior (1500)
     and are flagged — treat their placement with skepticism."""
+    import math
     from itertools import combinations
     response.headers["Cache-Control"] = "public, max-age=60"
     ids = [x.strip() for x in players.split(",") if x.strip()]
