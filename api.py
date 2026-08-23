@@ -2022,6 +2022,110 @@ def map_rankings(
 
 # ── Head-to-head: two players, overall + per-map breakdown + predictions ──
 
+@app.get("/api/h2h/team-split")
+def h2h_team_split(
+    response: Response,
+    p1: str, p2: str,
+    mode: str = Query("4on4", pattern="^(2on2|4on4)$"),
+    days: int = Query(60, ge=1, le=3650),
+):
+    """Team-mode comparison of two players across the matches they SHARED,
+    split into same-team vs opposite-team games. Per split, per player:
+    games, W-L, and per-game averages of the core 4on4 stats. Built 2026-08-22
+    for the Cronus-vs-Omicron 60-day comparison; general-purpose."""
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            WITH shared AS (
+              SELECT p.match_id
+              FROM players p JOIN matches m ON m.match_id=p.match_id
+              WHERE m.match_mode=%(mode)s
+                AND m.match_date > now() - (%(days)s || ' days')::interval
+                AND p.canonical_id IN (%(p1)s, %(p2)s)
+              GROUP BY p.match_id
+              HAVING COUNT(DISTINCT p.canonical_id)=2
+            ),
+            pm AS (  -- per-match per-player rollup (rejoin rows summed)
+              SELECT p.match_id, p.canonical_id AS cid,
+                     MIN(p.player_team) AS team,
+                     SUM(p.player_frags) AS frags, SUM(p.player_deaths) AS deaths,
+                     SUM(p.player_teamkills) AS tks,
+                     SUM(p.player_spawnfrags) AS spawnfrags,
+                     SUM(p.player_damage_given) AS dg, SUM(p.player_damage_taken) AS dt,
+                     SUM(p.player_damage_team) AS dteam,
+                     SUM(p.player_lg_hits) AS lg_h, SUM(p.player_lg_attacks) AS lg_a,
+                     SUM(p.player_rl_virtual) AS rl_v, SUM(p.player_rl_attacks) AS rl_a,
+                     SUM(p.player_quad_taken) AS quads, SUM(p.player_ra_taken) AS ra,
+                     SUM(p.player_ya_taken) AS ya, SUM(p.player_health100_taken) AS megas
+              FROM players p
+              WHERE p.match_id IN (SELECT match_id FROM shared)
+                AND p.canonical_id IN (%(p1)s, %(p2)s)
+              GROUP BY p.match_id, p.canonical_id
+            ),
+            tt AS (  -- full team totals decide the match result
+              SELECT p.match_id, p.player_team AS team, SUM(p.player_frags) AS tf
+              FROM players p WHERE p.match_id IN (SELECT match_id FROM shared)
+              GROUP BY p.match_id, p.player_team
+            ),
+            winners AS (
+              SELECT match_id,
+                     (ARRAY_AGG(team ORDER BY tf DESC))[1] AS win_team,
+                     COUNT(*) AS n_teams,
+                     MAX(tf) = MIN(tf) AS drawn
+              FROM tt GROUP BY match_id
+            ),
+            tagged AS (
+              SELECT a.match_id,
+                     CASE WHEN a.team = b.team THEN 'together' ELSE 'against' END AS split,
+                     a.cid, a.team, a.frags, a.deaths, a.tks, a.spawnfrags,
+                     a.dg, a.dt, a.dteam, a.lg_h, a.lg_a, a.rl_v, a.rl_a,
+                     a.quads, a.ra, a.ya, a.megas,
+                     CASE WHEN w.drawn THEN NULL ELSE (a.team = w.win_team) END AS won
+              FROM pm a
+              JOIN pm b ON b.match_id = a.match_id AND b.cid <> a.cid
+              JOIN winners w ON w.match_id = a.match_id
+              WHERE w.n_teams = 2
+            )
+            SELECT split, cid, COUNT(*) AS games,
+                   COUNT(*) FILTER (WHERE won) AS wins,
+                   COUNT(*) FILTER (WHERE NOT won) AS losses,
+                   ROUND(AVG(frags)::numeric,1) AS frags_pg,
+                   ROUND(AVG(deaths)::numeric,1) AS deaths_pg,
+                   ROUND(AVG(frags - deaths)::numeric,1) AS fragdiff_pg,
+                   ROUND(AVG(dg)::numeric) AS dmg_given_pg,
+                   ROUND(AVG(dt)::numeric) AS dmg_taken_pg,
+                   ROUND((SUM(dg)::numeric / NULLIF(SUM(dt),0))::numeric, 2) AS ddr,
+                   ROUND((SUM(lg_h)::numeric / NULLIF(SUM(lg_a),0))::numeric, 3) AS lg_acc,
+                   ROUND((SUM(rl_v)::numeric / NULLIF(SUM(rl_a),0))::numeric, 3) AS rl_acc,
+                   ROUND(AVG(quads)::numeric,1) AS quads_pg,
+                   ROUND(AVG(ra)::numeric,1) AS ra_pg,
+                   ROUND(AVG(ya)::numeric,1) AS ya_pg,
+                   ROUND(AVG(megas)::numeric,1) AS megas_pg,
+                   ROUND(AVG(spawnfrags)::numeric,1) AS spawnfrags_pg,
+                   ROUND(AVG(tks)::numeric,2) AS tks_pg,
+                   ROUND(AVG(dteam)::numeric) AS team_dmg_pg
+            FROM tagged
+            GROUP BY split, cid
+            ORDER BY split, cid
+        """, {"mode": mode, "days": days, "p1": p1, "p2": p2})
+        rows = [dict(r) for r in cur.fetchall()]
+        cur.execute("""
+            SELECT m.match_map, COUNT(*) AS n
+            FROM matches m
+            WHERE m.match_id IN (
+              SELECT p.match_id FROM players p JOIN matches mm ON mm.match_id=p.match_id
+              WHERE mm.match_mode=%(mode)s
+                AND mm.match_date > now() - (%(days)s || ' days')::interval
+                AND p.canonical_id IN (%(p1)s, %(p2)s)
+              GROUP BY p.match_id HAVING COUNT(DISTINCT p.canonical_id)=2)
+            GROUP BY m.match_map ORDER BY n DESC
+        """, {"mode": mode, "days": days, "p1": p1, "p2": p2})
+        maps = [dict(r) for r in cur.fetchall()]
+    return {"p1": p1, "p2": p2, "mode": mode, "days": days,
+            "splits": rows, "maps": maps}
+
+
 @app.get("/api/h2h")
 def head_to_head(
     response: Response,
