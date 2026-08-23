@@ -726,7 +726,7 @@ def fetch_team_matches(conn, mode, since_date=None):
                SUM(p.player_damage_given) AS dg, SUM(p.player_damage_taken) AS dt
         FROM matches m JOIN players p ON p.match_id = m.match_id
         WHERE m.match_mode = %(mode)s AND p.canonical_id IS NOT NULL
-          AND COALESCE(m.has_bots, FALSE) = FALSE
+          AND COALESCE(m.has_bots, 0) = 0
           {where}
         GROUP BY m.match_id, m.match_date, p.canonical_id
         ORDER BY m.match_date, m.match_id
