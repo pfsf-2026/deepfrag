@@ -23,9 +23,10 @@ const error = ref('')
 async function loadPlayers() {
   if (!apiBase && !isBrowser) { playersLoading.value = false; return }
   try {
-    // /api/search requires q>=1 char, so use /api/rankings to get the full
-    // rated-player list for the mode in one call. Shape: { players: [{ canonical_id, display, matches }] }
-    const r = await $fetch(`${apiBase}/api/rankings?mode=${mode.value}&min_matches=10&limit=2000`)
+    // /api/players = every tracked player across ALL modes. The old source
+    // (/api/rankings, 1on1-rated only) hid team-mode-only players — omicron
+    // has ~no duels, so he couldn't be picked for the 4on4 comparison at all.
+    const r = await $fetch(`${apiBase}/api/players?limit=5000`)
     players.value = (r.players || []).map(p => ({
       canonical_id: p.canonical_id,
       display: p.display,
@@ -183,8 +184,12 @@ const hasWeaponShape = computed(() => {
 })
 
 onMounted(async () => {
+  // Static-build hydration can miss query params at setup time — re-read them
+  // here so shared /h2h?p1=&p2= links actually load the matchup.
+  if (!p1.value && route.query.p1) p1.value = String(route.query.p1)
+  if (!p2.value && route.query.p2) p2.value = String(route.query.p2)
   await loadPlayers()
-  if (p1.value && p2.value) await loadH2H()
+  if (p1.value && p2.value) { await loadH2H(); await loadTeamSplit() }
 })
 
 watch(mode, loadH2H)
