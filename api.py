@@ -2022,6 +2022,65 @@ def map_rankings(
 
 # ── Head-to-head: two players, overall + per-map breakdown + predictions ──
 
+@app.get("/api/balance")
+def team_balance(
+    response: Response,
+    players: str = Query(..., description="comma-separated canonical ids — exactly 8"),
+    mode: str = Query("4on4", pattern="^(4on4)$"),
+):
+    """Pickup-night team balancer. Give it the 8 players in the lobby; returns
+    the most even 4v4 splits by the live 4on4 ratings (engine constants and the
+    walk-forward validation live in rate.py / docs/4on4_methodology.md — the
+    historic pickup average was a predicted 67/33; the optimal split of the
+    same players averages 52/48). Unrated players get the blank prior (1500)
+    and are flagged — treat their placement with skepticism."""
+    from itertools import combinations
+    response.headers["Cache-Control"] = "public, max-age=60"
+    ids = [x.strip() for x in players.split(",") if x.strip()]
+    if len(ids) != 8 or len(set(ids)) != 8:
+        raise HTTPException(400, "need exactly 8 distinct canonical ids")
+    TEAM_BETA = 200.0     # keep in lockstep with rate.py TEAM_BETA
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""SELECT r.canonical_id, r.mu, r.sigma, r.matches_rated,
+                              pc.display_name
+                       FROM ratings r
+                       LEFT JOIN players_canonical pc ON pc.canonical_id=r.canonical_id
+                       WHERE r.mode=%s AND r.map='' AND r.canonical_id = ANY(%s)""",
+                    (mode, ids))
+        rated = {r["canonical_id"]: r for r in cur.fetchall()}
+    roster = {}
+    for cid in ids:
+        r = rated.get(cid)
+        roster[cid] = {
+            "cid": cid,
+            "display": (r["display_name"] if r else None) or cid,
+            "mu": round(r["mu"], 1) if r else 1500.0,
+            "sigma": round(r["sigma"], 1) if r else 500.0,
+            "games": r["matches_rated"] if r else 0,
+            "rated": bool(r),
+        }
+
+    def team_p(A, B):
+        dmu = sum(roster[c]["mu"] for c in A) - sum(roster[c]["mu"] for c in B)
+        var = 8 * TEAM_BETA ** 2 + sum(roster[c]["sigma"] ** 2 for c in A + B)
+        return 0.5 * (1.0 + math.erf(dmu / math.sqrt(2 * var)))
+
+    anchor = ids[0]
+    splits = []
+    for rest in combinations(ids[1:], 3):
+        A = [anchor, *rest]
+        B = [c for c in ids if c not in A]
+        p = team_p(A, B)
+        splits.append({"team_a": A, "team_b": B,
+                       "p_team_a": round(p, 3),
+                       "evenness": round(abs(p - 0.5), 3)})
+    splits.sort(key=lambda x: x["evenness"])
+    return {"mode": mode, "players": [roster[c] for c in ids],
+            "unrated": [c for c in ids if not roster[c]["rated"]],
+            "best": splits[0], "alternatives": splits[1:4]}
+
+
 @app.get("/api/h2h/team-split")
 def h2h_team_split(
     response: Response,
@@ -7793,7 +7852,8 @@ def admin_scheduler(action: str, authorization: str | None = Header(default=None
 @app.post("/api/admin/rerate")
 def admin_rerate(authorization: str | None = Header(default=None),
                  confirm: str = Query(...,
-                     description="must equal 'I-understand-this-wipes-ratings'")):
+                     description="must equal 'I-understand-this-wipes-ratings'"),
+                 mode: str = Query("1on1", pattern="^(1on1|4on4)$")):
     """Full re-rate of every 1on1 rating row. Wipes the ratings table for
     mode=1on1 (across all map buckets) and rebuilds from scratch. Takes ~3-8
     minutes; the request blocks until done.
@@ -7806,7 +7866,7 @@ def admin_rerate(authorization: str | None = Header(default=None),
     _check_admin_auth(authorization)
     if confirm != "I-understand-this-wipes-ratings":
         raise HTTPException(400, "missing confirm token")
-    result = _run_script("rate.py", "--mode", "1on1", timeout=1200)
+    result = _run_script("rate.py", "--mode", mode, timeout=1200)
     # Also run invariants right after — re-rate is exactly the moment to verify.
     invariants = _run_script("tests/test_invariants.py", timeout=60)
     return {"rerate": result, "invariants": invariants}
@@ -8137,6 +8197,7 @@ def admin_sync(authorization: str | None = Header(default=None),
     # Step 5 — incremental rate (only new matches)
     if not skip_rate:
         summary["steps"].append({"step": "rate", **_run_script("rate.py", "--mode", "1on1", "--incremental", timeout=600)})
+        summary["steps"].append({"step": "rate_4on4", **_run_script("rate.py", "--mode", "4on4", "--incremental", timeout=300)})
 
     # Step 5b — trigger the CF Pages rebuild so the prerendered homepage re-bakes
     # with the fresh standings (proactive global cache refresh after recompute).

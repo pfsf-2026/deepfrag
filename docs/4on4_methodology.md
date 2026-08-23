@@ -1,6 +1,56 @@
 # 4on4 Rating Methodology — DeepFrag
 
-> Status: **NOT YET BUILT.** This is the design bible for 4on4 OpenSkill, carry rating, and the team-mode performance metrics that will eventually unlock match-quality scoring. Read [1on1_methodology.md](./1on1_methodology.md) first for the rating engine basics, and [2on2_methodology.md](./2on2_methodology.md) for the team-rating fundamentals — this document focuses on what's UNIQUE about 4on4.
+> Status: **Layer 1 SHIPPED 2026-08-23** (individual ratings + margin engine + team balancer — see §0). Layers 2-4 (roles, stacked-DDR, roster context) remain design. Read [1on1_methodology.md](./1on1_methodology.md) first for the rating engine basics, and [2on2_methodology.md](./2on2_methodology.md) for the team-rating fundamentals — this document focuses on what's UNIQUE about 4on4.
+
+---
+
+## 0. Layer 1 as shipped (2026-08-23)
+
+Individual per-player 4on4 ratings via team OpenSkill (PlackettLuce 4v4) with the
+**continuous-margin outcome** validated for 1on1 in the v3 engine — ported to team
+level and re-tuned on 4on4 data. `rate_team_mode()` in [rate.py](../rate.py).
+
+### Constants (coordinate-descent sweep, walk-forward log-loss, 2026-08-23)
+
+| Param | Value | Note |
+|---|---|---|
+| `TEAM_BETA` | 200 | vs 250 in 1on1 — bible §3's "lower beta" guess confirmed by sweep |
+| `TEAM_W_RESULT` | 0.35 | margin carries 65% of the outcome — MORE than 1on1 (35%): team margins (median 65 frags) are high-information, single W/L is noisy |
+| `TEAM_EXP_AMP / SCALE` | 110 / 700 | expected team frag diff = 110·tanh(mean_mu_gap/700) |
+| `TEAM_MARGIN_NORM` | 40 | |
+| `TEAM_SIGMA_FLOOR` | 80 | same convention as 1on1 v3 |
+| tau | 0.5 | sweep axis was flat (no measurable effect); kept at model default |
+
+**Deliberately absent** (not part of the validated backtest — add only with fresh evidence):
+DDR term in the outcome score, idle-day sigma aging, cross-region weighting, per-map ratings.
+Matches that are not exactly 4v4 with two teams are skipped entirely.
+
+### Validation (scratchpad t4.py/balance.py, 19,877 matches 2022-01..2026-05)
+
+Walk-forward, scored on 9,946 matches (2024-08-23+, all 8 players ≥10 priors):
+
+| Engine | logloss | acc |
+|---|---|---|
+| coin flip | 0.693 | 50% |
+| per-player Elo (K=16) baseline | 0.618 | 65.7% |
+| pure team OpenSkill | 0.611 | 67.5% |
+| **shipped margin engine** | **0.589** | **68.1%** |
+
+Calibration: favorite-probability buckets land within ~1-2pts of their centers
+(50-60%→56.0, 60-70%→65.3, 70-80%→74.9, 80-90%→86.0, 90-100%→95.0) and actual
+frag margins rise monotonically with confidence (65→156).
+
+### Team balancer (`GET /api/balance`)
+
+For 8 players, enumerates all 35 4/4 splits and returns the most even by
+predicted win probability. Historic validation: actual pickup splits averaged
+|P−0.5| = 0.174 (a ~67/33 game); the optimal split of the same 8 players
+averages 0.016 (~52/48); a <55/45 split existed in 94.5% of matches but actual
+teams achieved one only 16.4% of the time. External check: predicted evenness
+of ACTUAL splits tracks realized closeness (the calibration table above), so
+minimizing predicted imbalance minimizes real imbalance. Known bias: skill is
+treated as additive — practiced fixed rosters outperform their rating sum
+(that's Layer 4's job).
 
 ---
 
@@ -73,9 +123,9 @@ Inherits 2on2's three layers ([2on2 §3](./2on2_methodology.md#3-proposed-rating
 ### Layer 1: Team OpenSkill (baseline)
 
 `[a, b, c, d]` vs `[e, f, g, h]`. OpenSkill (Weng-Lin) handles N-vs-N natively. Tuning:
-- `tau` higher than 2on2 (~15-20) due to 4-player variance.
-- `beta` lower (~100-150) — outcomes are less spiky.
-- `draw_probability` slightly higher than 1on1/2on2 — 4on4 draws happen (timed maps + close clan matches).
+- ~~`tau` higher than 2on2 (~15-20) due to 4-player variance.~~ (decided 2026-08-23: sweep showed tau flat — kept 0.5)
+- ~~`beta` lower (~100-150) — outcomes are less spiky.~~ (decided 2026-08-23: sweep landed on 200, direction right, magnitude wrong)
+- draws handled by the continuous outcome score (binary component = 0.5) — no draw_probability tuning needed.
 
 ### Layer 2: Partner-weighted adjustment with role awareness
 

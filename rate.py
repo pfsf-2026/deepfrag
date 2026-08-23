@@ -176,6 +176,62 @@ def map_sigma(global_sigma: float, n: int) -> float:
     return math.sqrt(global_sigma**2 + se**2)
 
 
+# ── team-mode (4on4) engine constants ────────────────────────────────────────
+# From the 2026-08-23 coordinate-descent sweep against held-out log-loss on the
+# walk-forward 4on4 backtest (9,946 scored matches, 2024-08-23+, all 8 players
+# ≥10 priors; scratchpad t4sweep.py). Final: logloss 0.5894 vs 0.6931 coin /
+# 0.6105 pure OpenSkill; acc 68.1%; calibration within ~1-2pts per bucket.
+# NOTE the differences from 1on1: margin gets MORE weight (W_RESULT 0.35 vs
+# 0.65) because team margins are high-information (median |margin| 65 frags);
+# beta lower (200); NO DDR term, NO idle aging, NO cross-region weighting —
+# none were part of the validated backtest. Change only with a fresh backtest;
+# update docs/4on4_methodology.md in the same commit.
+TEAM_SIZE = {"4on4": 4}          # 2on2 needs its own sweep before enabling
+TEAM_BETA = 200.0
+TEAM_MODEL = PlackettLuce(mu=1500.0, sigma=500.0, beta=TEAM_BETA, tau=0.5, kappa=0.0001)
+TEAM_EXP_AMP = 110.0             # expected TEAM frag diff = AMP·tanh(mean_gap/SCALE)
+TEAM_EXP_SCALE = 700.0
+TEAM_MARGIN_NORM = 40.0
+TEAM_W_RESULT = 0.35
+TEAM_SIGMA_FLOOR = 80.0
+
+
+def predict_team(ra: list, rb: list) -> float:
+    """P(team A wins). ra/rb = [(mu, sigma), ...] per player."""
+    dmu = sum(m for m, _ in ra) - sum(m for m, _ in rb)
+    var = (len(ra) + len(rb)) * TEAM_BETA ** 2 + sum(s ** 2 for _, s in ra + rb)
+    return 0.5 * (1.0 + math.erf(dmu / (math.sqrt(2 * var))))
+
+
+def team_outcome_score(mean_mu_a: float, mean_mu_b: float, fa: int, fb: int) -> float:
+    """Continuous outcome for team A — the validated t4/T2 form (no DDR term)."""
+    expected = TEAM_EXP_AMP * math.tanh((mean_mu_a - mean_mu_b) / TEAM_EXP_SCALE)
+    surprise = (fa - fb) - expected
+    margin_s = 1.0 / (1.0 + math.exp(-surprise / TEAM_MARGIN_NORM))
+    binary = 0.5 if fa == fb else (1.0 if fa > fb else 0.0)
+    return TEAM_W_RESULT * binary + (1 - TEAM_W_RESULT) * margin_s
+
+
+def team_update(ra: list, rb: list, s: float):
+    """One team-match update, interpolating win-case/loss-case posteriors by s.
+    ra/rb = [(mu, sigma), ...]; returns (new_ra, new_rb) same shape."""
+    def fresh():
+        RA = [TEAM_MODEL.rating(mu=m, sigma=g) for m, g in ra]
+        RB = [TEAM_MODEL.rating(mu=m, sigma=g) for m, g in rb]
+        return RA, RB
+    RA, RB = fresh()
+    [wa, wb] = TEAM_MODEL.rate([RA, RB], ranks=[0, 1])
+    RA2, RB2 = fresh()
+    [la, lb] = TEAM_MODEL.rate([RA2, RB2], ranks=[1, 0])
+    new_a = [(s * w.mu + (1 - s) * l.mu,
+              max(TEAM_SIGMA_FLOOR, s * w.sigma + (1 - s) * l.sigma))
+             for w, l in zip(wa, la)]
+    new_b = [(s * w.mu + (1 - s) * l.mu,
+              max(TEAM_SIGMA_FLOOR, s * w.sigma + (1 - s) * l.sigma))
+             for w, l in zip(wb, lb)]
+    return new_a, new_b
+
+
 def _bulk_insert_history(cur, rows):
     """Single round-trip insert via execute_values. ~100× faster than executemany.
     Dedupes by PK (canonical_id, mode, map, match_id) first — rare but real when a
@@ -651,11 +707,175 @@ def rate_all(db, mode, now, full_rebuild=True, per_map_min=5, player_regions=Non
     return len(matches), n_overall, n_map
 
 
+def fetch_team_matches(conn, mode, since_date=None):
+    """Yield (match_id, match_date, teamA, teamB) where each team is a list of
+    (cid, frags, deaths, dmg_given, dmg_taken), STRICTLY chronological. Only
+    matches with exactly two teams of TEAM_SIZE[mode] players survive — mixed
+    joins/leavers and odd formats are skipped (same rule as the backtest)."""
+    size = TEAM_SIZE[mode]
+    where = ""
+    params = {"mode": mode}
+    if since_date:
+        where = " AND m.match_date > %(since)s"
+        params["since"] = since_date
+    cur = conn.cursor()
+    cur.execute(f"""
+        SELECT m.match_id, m.match_date,
+               p.canonical_id AS cid, MIN(p.player_team) AS team,
+               SUM(p.player_frags) AS frags, SUM(p.player_deaths) AS deaths,
+               SUM(p.player_damage_given) AS dg, SUM(p.player_damage_taken) AS dt
+        FROM matches m JOIN players p ON p.match_id = m.match_id
+        WHERE m.match_mode = %(mode)s AND p.canonical_id IS NOT NULL
+          AND COALESCE(m.has_bots, FALSE) = FALSE
+          {where}
+        GROUP BY m.match_id, m.match_date, p.canonical_id
+        ORDER BY m.match_date, m.match_id
+    """, params)
+    cur_mid, cur_date, bucket = None, None, {}
+    def emit():
+        if cur_mid is None:
+            return None
+        teams = {}
+        for cid, (team, fr, de, dg, dt) in bucket.items():
+            teams.setdefault((team or "").lower(), []).append((cid, fr, de, dg, dt))
+        if len(teams) != 2:
+            return None
+        (ta, pa), (tb, pb) = sorted(teams.items())
+        if len(pa) != size or len(pb) != size:
+            return None
+        if any(r[1] is None for r in pa + pb):
+            return None
+        return (cur_mid, cur_date, pa, pb)
+    for r in cur.fetchall():
+        if r["match_id"] != cur_mid:
+            m = emit()
+            if m:
+                yield m
+            cur_mid, cur_date, bucket = r["match_id"], r["match_date"], {}
+        bucket[r["cid"]] = (r["team"], r["frags"], r["deaths"], r["dg"], r["dt"])
+    m = emit()
+    if m:
+        yield m
+    cur.close()
+
+
+def rate_team_mode(db, mode, now, full_rebuild=True):
+    """Single chronological pass for a team mode (4on4). Individual mu/sigma per
+    player; outcome = validated continuous team-margin score. No per-map, no
+    cross-region, no idle aging — none were in the validated backtest."""
+    cur = db.cursor()
+    if full_rebuild:
+        cur.execute("DELETE FROM ratings WHERE mode=%s", (mode,))
+        cur.execute("DELETE FROM rating_history WHERE mode=%s", (mode,))
+        db.commit()
+        cache, stats = {}, {}
+        since_date = None
+    else:
+        cache, stats = load_existing_ratings(db, mode)
+        cur.execute("SELECT MAX(match_date) AS last FROM rating_history WHERE mode=%s AND map=''", (mode,))
+        row = cur.fetchone()
+        since_date = row["last"] if row else None
+
+    perf = {}
+    history_rows = []
+    n_matches = 0
+    for (mid, mdate, TA, TB) in fetch_team_matches(db, mode, since_date=since_date):
+        A = [r[0] for r in TA]
+        B = [r[0] for r in TB]
+        fa = sum(r[1] for r in TA)
+        fb = sum(r[1] for r in TB)
+        for cid in A + B:
+            cache.setdefault(cid, (1500.0, 500.0))
+            stats.setdefault(cid, {"matches": 0, "wins": 0, "losses": 0, "draws": 0})
+        ra = [cache[c] for c in A]
+        rb = [cache[c] for c in B]
+        s = team_outcome_score(sum(m for m, _ in ra) / len(ra),
+                               sum(m for m, _ in rb) / len(rb), fa, fb)
+        new_a, new_b = team_update(ra, rb, s)
+        if fa > fb:
+            out_a, out_b = "win", "loss"
+        elif fb > fa:
+            out_a, out_b = "loss", "win"
+        else:
+            out_a = out_b = "draw"
+        opp_a = ",".join(sorted(B))
+        opp_b = ",".join(sorted(A))
+        for cid, (om, os_), (nm, ns) in zip(A, ra, new_a):
+            history_rows.append((cid, mode, "", mid, mdate, opp_a, out_a,
+                                 om, nm, os_, ns, nm - om))
+            cache[cid] = (nm, ns)
+            st = stats[cid]
+            st["matches"] += 1
+            st["wins" if out_a == "win" else "losses" if out_a == "loss" else "draws"] += 1
+        for cid, (om, os_), (nm, ns) in zip(B, rb, new_b):
+            history_rows.append((cid, mode, "", mid, mdate, opp_b, out_b,
+                                 om, nm, os_, ns, nm - om))
+            cache[cid] = (nm, ns)
+            st = stats[cid]
+            st["matches"] += 1
+            st["wins" if out_b == "win" else "losses" if out_b == "loss" else "draws"] += 1
+        for (cid, fr, de, dg, dt) in TA + TB:
+            if dg is not None and dt is not None:
+                pf = perf.setdefault(cid, {"dg": 0, "dt": 0, "fd": 0.0, "n": 0})
+                pf["dg"] += dg
+                pf["dt"] += dt
+                pf["fd"] += (fr or 0) - (de or 0)
+                pf["n"] += 1
+        n_matches += 1
+        if len(history_rows) >= 5000:
+            _bulk_insert_history(cur, history_rows)
+            history_rows = []
+            db.commit()
+    if history_rows:
+        _bulk_insert_history(cur, history_rows)
+
+    # unique_opponents for team modes counts distinct opposing LINEUPS — good
+    # enough for the provisional-flag UX, cheap, and monotonic with activity.
+    cur.execute("""SELECT canonical_id, COUNT(DISTINCT opponent_cid) AS n
+                   FROM rating_history WHERE mode=%s AND opponent_cid IS NOT NULL
+                   GROUP BY canonical_id""", (mode,))
+    uniq = {r["canonical_id"]: r["n"] for r in cur.fetchall()}
+    cur.execute("SELECT canonical_id FROM players_canonical WHERE unrated")
+    _unrated = {r["canonical_id"] for r in cur.fetchall()}
+
+    rating_rows = []
+    for cid, (mu, sig) in cache.items():
+        if cid in _unrated:
+            continue
+        st = stats.get(cid, {})
+        if not st.get("matches"):
+            continue
+        pf = perf.get(cid)
+        avg_ddr = (pf["dg"] / pf["dt"]) if (pf and pf["dt"] > 0) else None
+        avg_fd = (pf["fd"] / pf["n"]) if (pf and pf["n"] > 0) else None
+        rating_rows.append((cid, mode, "", mu, sig, mu - 3 * sig,
+                            st["matches"], st["wins"], st["losses"], st["draws"],
+                            None, None, now, uniq.get(cid, 0), avg_ddr, avg_fd))
+    if rating_rows:
+        _bulk_insert_ratings(cur, rating_rows)
+    db.commit()
+    cur.close()
+    return n_matches, len(rating_rows)
+
+
 def run(db_path: Path, mode: str = "1on1", incremental: bool = False, per_map_min: int = 5):
     db = dbmod.connect()
     now = datetime.now(timezone.utc).isoformat()
     full_rebuild = not incremental
     ensure_schema(db)
+    if mode in TEAM_SIZE:
+        print(f"Engine {ENGINE_VERSION} — TEAM mode {mode} "
+              f"(beta={TEAM_BETA:.0f}, w_result={TEAM_W_RESULT}, amp={TEAM_EXP_AMP:.0f}, "
+              f"{'FULL REBUILD' if full_rebuild else 'incremental'})…")
+        start = datetime.now()
+        n_matches, n_rows = rate_team_mode(db, mode, now, full_rebuild=full_rebuild)
+        elapsed = (datetime.now() - start).total_seconds()
+        print(f"  {n_matches:,} team matches → {n_rows:,} player rating rows in {elapsed:.1f}s")
+        _sanity_top10(db, mode)
+        return
+    if mode == "2on2":
+        print("2on2 is NOT enabled: constants are unvalidated (needs its own backtest sweep).")
+        return
     player_regions = load_player_regions(db)
     print(f"Engine {ENGINE_VERSION} — loaded regions for {len(player_regions):,} players.")
 
@@ -670,6 +890,10 @@ def run(db_path: Path, mode: str = "1on1", incremental: bool = False, per_map_mi
     print(f"  {n_matches:,} matches → {n_overall:,} overall + {n_map:,} per-map "
           f"rating rows in {elapsed:.1f}s")
 
+    _sanity_top10(db, mode)
+
+
+def _sanity_top10(db, mode):
     print(f"\nTop 10 {mode} OVERALL (by conservative rating):")
     sanity_cur = db.cursor()
     sanity_cur.execute(
