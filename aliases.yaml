@@ -42,6 +42,7 @@ sane:
     - sane
     - enas
     - bposane     # added 2026-05-20 — pending DB rebuild
+    - anton       # 2026-08-24 (Peter): anton is sane
     # messi merged 2026-08-17 (Peter): smurf run 07-11..07-23 vs cronus (22-0).
     # Evidence: sane silent under own name 07-05..07-28 exactly spanning the run;
     # elite NA fingerprint LG .373 / DDR 1.86 ≈ sane .348/1.70; mu 2297 ≈ sane.
@@ -93,11 +94,23 @@ war:
   display: war
   login: ""
   # Confirmed by Cronus 2026-05-21: whodat, george, notgeorge all = war
+  # 2026-08-24 (Peter): he "loves to alias" — folded in dat_nigga (74g),
+  # fok (117g), allufok (102g), g_e_o_r_g_e (underscored form the normalizer
+  # missed, 18g), tardface (145g), igor (214g), pikachu (572g)
   variants:
     - war
     - whodat
     - george
     - notgeorge
+    - dat_nigga
+    - "dat nigga"
+    - datnigga
+    - fok
+    - allufok
+    - g_e_o_r_g_e
+    - tardface
+    - igor
+    - pikachu
 
 blood_dog_d_p:
   # (D_P) clan tag; the closing ')' was being trimmed and the prefix-tag spelling
@@ -183,6 +196,9 @@ powerzord:
   variants:
     - powerzord
     - zord
+    - buns_world  # 2026-08-24 (Peter): bunsworld is zord
+    - "buns world"
+    - bunsworld
 
 wdcanino:
   # Merged 2026-07-29 (Peter): ALL canino clan-tag variants are the same player

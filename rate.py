@@ -932,10 +932,21 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
     uniq = {r["canonical_id"]: r["n"] for r in cur.fetchall()}
     cur.execute("SELECT canonical_id FROM players_canonical WHERE unrated")
     _unrated = {r["canonical_id"] for r in cur.fetchall()}
+    # Anti-alias gate (Peter, 2026-08-24): no duel rating → no PUBLISHED team
+    # rating. Throwaway alias accounts live in team modes and rarely duel; a
+    # 1on1 ratings row is the cheap identity bar. Their matches still count
+    # toward opponents' ratings — publishing is all that's gated (reversible
+    # by rerate after a merge lands them under their real identity).
+    cur.execute("SELECT canonical_id FROM ratings WHERE mode='1on1' AND map=''")
+    duel_rated = {r["canonical_id"] for r in cur.fetchall()}
 
     rating_rows = []
+    n_gated = 0
     for cid, (mu, sig) in cache.items():
         if cid in _unrated:
+            continue
+        if cid not in duel_rated:
+            n_gated += 1
             continue
         st = stats.get(cid, {})
         if not st.get("matches"):
@@ -950,7 +961,7 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
     # never drift from the current global rating)
     n_map_rows = 0
     for (cid, mp_), c in cells.items():
-        if cid in _unrated or c["n"] < per_map_min:
+        if cid in _unrated or cid not in duel_rated or c["n"] < per_map_min:
             continue
         base = cache.get(cid)
         if not base:
@@ -964,6 +975,7 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
         _bulk_insert_ratings(cur, rating_rows)
     db.commit()
     cur.close()
+    print(f"  duel-rating gate: {n_gated:,} team-only identities NOT published")
     return n_matches, len(rating_rows) - n_map_rows
 
 

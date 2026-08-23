@@ -33,6 +33,10 @@ level and re-tuned on 4on4 data. `rate_team_mode()` in [rate.py](../rate.py).
   individual's rating instead of being smeared across the team (the flat-rating
   complaint of 2026-08-23: cronus DDR 0.68→0.92 over two years, rating static).
 
+**Anti-alias gate (2026-08-24, Peter):** a player with NO 1on1 rating row gets no
+PUBLISHED 4on4 rating (matches still count toward opponents). Throwaway alias
+accounts live in team modes and rarely duel — the duel rating is the identity bar.
+
 **Deliberately absent** (not part of the validated backtest — add only with fresh evidence):
 DDR term in the outcome score, idle-day sigma aging, cross-region weighting.
 Matches that are not exactly 4v4 with two teams are skipped entirely.
