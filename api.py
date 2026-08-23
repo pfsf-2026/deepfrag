@@ -2206,8 +2206,54 @@ def h2h_team_split(
             GROUP BY m.match_map ORDER BY n DESC
         """, {"mode": mode, "cutoff": cutoff, "p1": p1, "p2": p2, "excl": excl})
         maps = [dict(r) for r in cur.fetchall()]
+        cur.execute("""
+            WITH shared AS (
+              SELECT p.match_id
+              FROM players p JOIN matches m ON m.match_id=p.match_id
+              WHERE m.match_mode=%(mode)s
+                AND m.match_date > %(cutoff)s
+                AND p.canonical_id IN (%(p1)s, %(p2)s)
+              GROUP BY p.match_id
+              HAVING COUNT(DISTINCT p.canonical_id)=2
+                 AND NOT EXISTS (SELECT 1 FROM players px
+                                 WHERE px.match_id = p.match_id
+                                   AND px.canonical_id = ANY(%(excl)s))
+            ),
+            pm AS (
+              SELECT p.match_id, p.canonical_id AS cid, MIN(p.player_team) AS team,
+                     SUM(p.player_frags) AS frags
+              FROM players p
+              WHERE p.match_id IN (SELECT match_id FROM shared)
+                AND p.canonical_id IN (%(p1)s, %(p2)s)
+              GROUP BY p.match_id, p.canonical_id
+            ),
+            tt AS (
+              SELECT p.match_id, p.player_team AS team, SUM(p.player_frags) AS tf
+              FROM players p WHERE p.match_id IN (SELECT match_id FROM shared)
+              GROUP BY p.match_id, p.player_team
+            ),
+            winners AS (
+              SELECT match_id, (ARRAY_AGG(team ORDER BY tf DESC))[1] AS win_team,
+                     COUNT(*) AS n_teams, MAX(tf) = MIN(tf) AS drawn
+              FROM tt GROUP BY match_id
+            )
+            SELECT CASE WHEN a.team = b.team THEN 'together' ELSE 'against' END AS split,
+                   m.match_map, COUNT(*) AS n,
+                   COUNT(*) FILTER (WHERE NOT w.drawn AND a.team = w.win_team) AS p1_wins
+            FROM pm a
+            JOIN pm b ON b.match_id = a.match_id AND b.cid <> a.cid
+            JOIN winners w ON w.match_id = a.match_id AND w.n_teams = 2
+            JOIN matches m ON m.match_id = a.match_id
+            WHERE a.cid = %(p1)s
+            GROUP BY 1, m.match_map ORDER BY 1, n DESC
+        """, {"mode": mode, "cutoff": cutoff, "p1": p1, "p2": p2, "excl": excl})
+        maps_by_split = {}
+        for r in cur.fetchall():
+            maps_by_split.setdefault(r["split"], []).append(
+                {"map": r["match_map"], "n": r["n"], "p1_wins": r["p1_wins"]})
     return {"p1": p1, "p2": p2, "mode": mode, "days": days,
-            "excluded": excl or None, "splits": rows, "maps": maps}
+            "excluded": excl or None, "splits": rows, "maps": maps,
+            "maps_by_split": maps_by_split}
 
 
 @app.get("/api/h2h")
