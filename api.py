@@ -1571,10 +1571,15 @@ def player_profile(canonical_id: str):
         mode_rows = cur.fetchall()
         # Compute cutoffs lazily — one trip per mode the player is rated in.
         cutoffs_by_mode = {r["mode"]: _get_tier_cutoffs(cur, r["mode"]) for r in mode_rows}
+        _now = datetime.now(timezone.utc)
         for r in mode_rows:
             # Too small / too narrow a sample to assign a division — show no tier
             # (rated=false) so a 2v2 regular who rarely duels isn't mislabelled.
             rated = _is_rated(r["matches_rated"], r["unique_opponents"])
+            # Same decay the rankings board applies; the career last_match is the
+            # activity anchor (per-mode last_match_date is NULL for team modes).
+            sigma_eff = effective_sigma(r["sigma"], career.get("last_match"),
+                                        _now, r["unique_opponents"])
             ratings[r["mode"]] = {
                 "rank_provisional": (sigma_eff > PROVISIONAL_SIGMA_MAX
                                      or r["unique_opponents"] < DIVERSITY_THRESHOLD_OVERALL),
