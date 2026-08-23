@@ -188,6 +188,81 @@ onMounted(async () => {
 })
 
 watch(mode, loadH2H)
+
+// ── Team-modes split (together vs against) — /api/h2h/team-split ──
+const tsMode = ref('4on4')
+const tsDays = ref(60)
+const TS_WINDOWS = [
+  { days: 30,   label: '30d' },
+  { days: 60,   label: '60d' },
+  { days: 90,   label: '90d' },
+  { days: 365,  label: '1y' },
+  { days: 3650, label: 'All time' }
+]
+const teamSplit = ref(null)
+const tsLoading = ref(false)
+async function loadTeamSplit() {
+  if (!p1.value || !p2.value || p1.value === p2.value) { teamSplit.value = null; return }
+  if (!apiBase && !isBrowser) return
+  tsLoading.value = true
+  try {
+    const q = new URLSearchParams({ p1: p1.value, p2: p2.value, mode: tsMode.value, days: String(tsDays.value) })
+    teamSplit.value = await $fetch(`${apiBase}/api/h2h/team-split?${q}`)
+  } catch (e) {
+    console.error('[h2h] team-split failed', e)
+    teamSplit.value = null
+  } finally { tsLoading.value = false }
+}
+watch([tsMode, tsDays], loadTeamSplit)
+watch([p1, p2], loadTeamSplit)
+
+const tsByKey = computed(() => {
+  const out = {}
+  for (const r of (teamSplit.value?.splits || [])) out[`${r.split}:${r.cid}`] = r
+  return out
+})
+const TS_ROWS = [
+  { k: 'record',        label: 'Record (team W-L)' },
+  { k: 'frags_pg',      label: 'Frags / game' },
+  { k: 'deaths_pg',     label: 'Deaths / game' },
+  { k: 'fragdiff_pg',   label: '±Frag / game' },
+  { k: 'ddr',           label: 'DDR' },
+  { k: 'dmg_given_pg',  label: 'Dmg given / game' },
+  { k: 'dmg_taken_pg',  label: 'Dmg taken / game' },
+  { k: 'lg_acc',        label: 'LG accuracy' },
+  { k: 'rl_acc',        label: 'RL accuracy' },
+  { k: 'quads_pg',      label: 'Quads / game' },
+  { k: 'ra_pg',         label: 'RA / game' },
+  { k: 'ya_pg',         label: 'YA / game' },
+  { k: 'megas_pg',      label: 'Megas / game' },
+  { k: 'spawnfrags_pg', label: 'Spawnfrags / game' },
+  { k: 'tks_pg',        label: 'Teamkills / game' },
+  { k: 'team_dmg_pg',   label: 'Team dmg / game' }
+]
+function tsCell(split, cid, k) {
+  const r = tsByKey.value[`${split}:${cid}`]
+  if (!r) return '—'
+  if (k === 'record') return `${r.wins}-${r.losses}`
+  const v = r[k]
+  if (v == null) return '—'
+  if (k === 'lg_acc' || k === 'rl_acc') return `${(Number(v) * 100).toFixed(1)}%`
+  return String(v)
+}
+function tsGames(split) {
+  const r = tsByKey.value[`${split}:${p1.value}`]
+  return r ? r.games : 0
+}
+// Bold the better side per row (higher is better except deaths/taken/TKs/team dmg)
+const TS_LOWER_BETTER = new Set(['deaths_pg', 'dmg_taken_pg', 'tks_pg', 'team_dmg_pg'])
+function tsBetter(split, cid, k) {
+  if (k === 'record') return false
+  const a = tsByKey.value[`${split}:${p1.value}`]; const b = tsByKey.value[`${split}:${p2.value}`]
+  if (!a || !b || a[k] == null || b[k] == null) return false
+  const mine = Number(cid === p1.value ? a[k] : b[k])
+  const theirs = Number(cid === p1.value ? b[k] : a[k])
+  if (mine === theirs) return false
+  return TS_LOWER_BETTER.has(k) ? mine < theirs : mine > theirs
+}
 </script>
 
 <template>
@@ -408,6 +483,55 @@ watch(mode, loadH2H)
           </tr>
         </tbody>
       </table>
+      </div>
+      <!-- TEAM MODES: together vs against -->
+      <div class="ts-card">
+        <div class="ts-head">
+          <div>
+            <h2>Team modes</h2>
+            <p class="ts-sub">The {{ tsMode }} games these two shared — same team vs opposite teams.</p>
+          </div>
+          <div class="ts-controls">
+            <div class="window-pills">
+              <button v-for="m in ['2on2', '4on4']" :key="m"
+                      :class="['window-pill', { active: tsMode === m }]" @click="tsMode = m">{{ m }}</button>
+            </div>
+            <div class="window-pills">
+              <button v-for="w in TS_WINDOWS" :key="w.days"
+                      :class="['window-pill', { active: tsDays === w.days }]" @click="tsDays = w.days">{{ w.label }}</button>
+            </div>
+          </div>
+        </div>
+        <div v-if="tsLoading" class="ts-empty">Loading…</div>
+        <template v-else-if="teamSplit && teamSplit.splits && teamSplit.splits.length">
+          <div class="ts-grid">
+            <div v-for="split in ['together', 'against']" :key="split" class="ts-col">
+              <h3 class="ts-col-title">
+                {{ split === 'together' ? '🤝 Same team' : '⚔️ Opposite teams' }}
+                <span class="ts-n">{{ tsGames(split) }} games</span>
+              </h3>
+              <table v-if="tsGames(split)" class="ts-table">
+                <thead><tr><th></th>
+                  <th class="a">{{ data.player_a.display }}</th>
+                  <th class="b">{{ data.player_b.display }}</th>
+                </tr></thead>
+                <tbody>
+                  <tr v-for="row in TS_ROWS" :key="row.k">
+                    <td class="ts-stat">{{ row.label }}</td>
+                    <td :class="['num', { best: tsBetter(split, p1, row.k) }]">{{ tsCell(split, p1, row.k) }}</td>
+                    <td :class="['num', { best: tsBetter(split, p2, row.k) }]">{{ tsCell(split, p2, row.k) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else class="ts-empty">No {{ split === 'together' ? 'shared-team' : 'opposing' }} games in this window.</div>
+            </div>
+          </div>
+          <div v-if="teamSplit.maps && teamSplit.maps.length" class="ts-maps">
+            <span class="ts-maps-label">Maps:</span>
+            <span v-for="m in teamSplit.maps" :key="m.match_map" class="ts-map-chip">{{ m.match_map }} ×{{ m.n }}</span>
+          </div>
+        </template>
+        <div v-else class="ts-empty">No shared {{ tsMode }} games between these two in this window.</div>
       </div>
     </template>
   </div>
@@ -645,5 +769,31 @@ table.matchup .pred .win-b { color: #a855f7; }
 @media (max-width: 400px) {
   .wo-grid { grid-template-columns: repeat(2, 1fr); }
   .strip { grid-template-columns: repeat(2, 1fr); }
+}
+
+.ts-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; margin-top: 18px; }
+.ts-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.ts-head h2 { margin: 0; font-size: 17px; }
+.ts-sub { color: var(--fg-3); font-size: 12.5px; margin: 4px 0 0; }
+.ts-controls { display: flex; gap: 10px; flex-wrap: wrap; }
+.ts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.ts-col-title { font-size: 14px; margin: 0 0 10px; display: flex; align-items: baseline; gap: 8px; }
+.ts-n { color: var(--fg-3); font-size: 12px; font-weight: 400; }
+.ts-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ts-table th { text-align: right; padding: 5px 8px; color: var(--fg-3); font-size: 11.5px; border-bottom: 1px solid var(--border); }
+.ts-table th.a { color: var(--accent); }
+.ts-table th.b { color: var(--loss); }
+.ts-table td { padding: 4.5px 8px; border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent); }
+.ts-stat { color: var(--fg-2); }
+.ts-table .num { text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.ts-table .num.best { color: var(--win); font-weight: 700; }
+.ts-maps { margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.ts-maps-label { color: var(--fg-3); font-size: 12px; }
+.ts-map-chip { border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: 11.5px; color: var(--fg-2); }
+.ts-empty { color: var(--fg-3); font-size: 13px; padding: 8px 0; }
+@media (max-width: 760px) {
+  .ts-grid { grid-template-columns: 1fr; }
+  .ts-card { padding: 14px; }
+  .ts-head { flex-direction: column; }
 }
 </style>
