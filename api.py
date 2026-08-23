@@ -2103,6 +2103,7 @@ def h2h_team_split(
     p1: str, p2: str,
     mode: str = Query("4on4", pattern="^(2on2|4on4)$"),
     days: int = Query(60, ge=1, le=3650),
+    exclude: str = Query("", description="comma-separated canonical ids — drop any shared match where one of these players appears on either side"),
 ):
     """Team-mode comparison of two players across the matches they SHARED,
     split into same-team vs opposite-team games. Per split, per player:
@@ -2110,6 +2111,7 @@ def h2h_team_split(
     for the Cronus-vs-Omicron 60-day comparison; general-purpose."""
     response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    excl = [x.strip() for x in exclude.split(",") if x.strip()]
     with pg() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -2121,6 +2123,9 @@ def h2h_team_split(
                 AND p.canonical_id IN (%(p1)s, %(p2)s)
               GROUP BY p.match_id
               HAVING COUNT(DISTINCT p.canonical_id)=2
+                 AND NOT EXISTS (SELECT 1 FROM players px
+                                 WHERE px.match_id = p.match_id
+                                   AND px.canonical_id = ANY(%(excl)s))
             ),
             pm AS (  -- per-match per-player rollup (rejoin rows summed)
               SELECT p.match_id, p.canonical_id AS cid,
@@ -2184,7 +2189,7 @@ def h2h_team_split(
             FROM tagged
             GROUP BY split, cid
             ORDER BY split, cid
-        """, {"mode": mode, "cutoff": cutoff, "p1": p1, "p2": p2})
+        """, {"mode": mode, "cutoff": cutoff, "p1": p1, "p2": p2, "excl": excl})
         rows = [dict(r) for r in cur.fetchall()]
         cur.execute("""
             SELECT m.match_map, COUNT(*) AS n
@@ -2194,12 +2199,15 @@ def h2h_team_split(
               WHERE mm.match_mode=%(mode)s
                 AND mm.match_date > %(cutoff)s
                 AND p.canonical_id IN (%(p1)s, %(p2)s)
-              GROUP BY p.match_id HAVING COUNT(DISTINCT p.canonical_id)=2)
+              GROUP BY p.match_id HAVING COUNT(DISTINCT p.canonical_id)=2
+                 AND NOT EXISTS (SELECT 1 FROM players px
+                                 WHERE px.match_id = p.match_id
+                                   AND px.canonical_id = ANY(%(excl)s)))
             GROUP BY m.match_map ORDER BY n DESC
-        """, {"mode": mode, "cutoff": cutoff, "p1": p1, "p2": p2})
+        """, {"mode": mode, "cutoff": cutoff, "p1": p1, "p2": p2, "excl": excl})
         maps = [dict(r) for r in cur.fetchall()]
     return {"p1": p1, "p2": p2, "mode": mode, "days": days,
-            "splits": rows, "maps": maps}
+            "excluded": excl or None, "splits": rows, "maps": maps}
 
 
 @app.get("/api/h2h")
