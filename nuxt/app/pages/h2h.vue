@@ -9,8 +9,11 @@ const apiBase = isBrowser ? '' : (config.public.apiBase || '')
 useHead({ title: 'Head to head · DeepFrag' })
 
 const mode = ref('1on1')
-const p1 = ref(route.query.p1 ? String(route.query.p1) : '')
-const p2 = ref(route.query.p2 ? String(route.query.p2) : '')
+// Deep links: route.query is unreliable on this SSG deploy (empty at setup AND
+// in onMounted after a hydration remount) — location.search is ground truth.
+const _qs = isBrowser ? new URLSearchParams(window.location.search) : null
+const p1 = ref(String(route.query.p1 || _qs?.get('p1') || ''))
+const p2 = ref(String(route.query.p2 || _qs?.get('p2') || ''))
 const sinceDays = ref(route.query.since ? Number(route.query.since) : 0)  // 0 = all time
 const p1Search = ref('')
 const p2Search = ref('')
@@ -225,6 +228,10 @@ async function loadTeamSplit() {
 }
 watch([tsMode, tsDays], loadTeamSplit)
 watch([p1, p2], loadTeamSplit)
+// Whichever instance ends up owning the DOM, refs-set => data loads.
+watch([p1, p2], () => {
+  if (p1.value && p2.value && p1.value !== p2.value && !data.value && !dataLoading.value) loadH2H()
+})
 
 const tsByKey = computed(() => {
   const out = {}
