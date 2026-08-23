@@ -2034,6 +2034,7 @@ def h2h_team_split(
     games, W-L, and per-game averages of the core 4on4 stats. Built 2026-08-22
     for the Cronus-vs-Omicron 60-day comparison; general-purpose."""
     response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     with pg() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -2041,7 +2042,7 @@ def h2h_team_split(
               SELECT p.match_id
               FROM players p JOIN matches m ON m.match_id=p.match_id
               WHERE m.match_mode=%(mode)s
-                AND m.match_date > now() - (%(days)s || ' days')::interval
+                AND m.match_date > %(cutoff)s
                 AND p.canonical_id IN (%(p1)s, %(p2)s)
               GROUP BY p.match_id
               HAVING COUNT(DISTINCT p.canonical_id)=2
@@ -2108,7 +2109,7 @@ def h2h_team_split(
             FROM tagged
             GROUP BY split, cid
             ORDER BY split, cid
-        """, {"mode": mode, "days": days, "p1": p1, "p2": p2})
+        """, {"mode": mode, "cutoff": cutoff, "p1": p1, "p2": p2})
         rows = [dict(r) for r in cur.fetchall()]
         cur.execute("""
             SELECT m.match_map, COUNT(*) AS n
@@ -2116,11 +2117,11 @@ def h2h_team_split(
             WHERE m.match_id IN (
               SELECT p.match_id FROM players p JOIN matches mm ON mm.match_id=p.match_id
               WHERE mm.match_mode=%(mode)s
-                AND mm.match_date > now() - (%(days)s || ' days')::interval
+                AND mm.match_date > %(cutoff)s
                 AND p.canonical_id IN (%(p1)s, %(p2)s)
               GROUP BY p.match_id HAVING COUNT(DISTINCT p.canonical_id)=2)
             GROUP BY m.match_map ORDER BY n DESC
-        """, {"mode": mode, "days": days, "p1": p1, "p2": p2})
+        """, {"mode": mode, "cutoff": cutoff, "p1": p1, "p2": p2})
         maps = [dict(r) for r in cur.fetchall()]
     return {"p1": p1, "p2": p2, "mode": mode, "days": days,
             "splits": rows, "maps": maps}
