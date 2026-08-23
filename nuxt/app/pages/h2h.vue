@@ -184,10 +184,15 @@ const hasWeaponShape = computed(() => {
 })
 
 onMounted(async () => {
-  // Static-build hydration can miss query params at setup time — re-read them
-  // here so shared /h2h?p1=&p2= links actually load the matchup.
-  if (!p1.value && route.query.p1) p1.value = String(route.query.p1)
-  if (!p2.value && route.query.p2) p2.value = String(route.query.p2)
+  // Static-build hydration can miss query params at setup time — and on this
+  // SSG deploy route.query is STILL empty in onMounted (verified 2026-08-22:
+  // /h2h/?p1=..&p2=.. never fired loadH2H). location.search is the ground
+  // truth the router can't lose.
+  if (isBrowser) {
+    const qs = new URLSearchParams(window.location.search)
+    if (!p1.value && qs.get('p1')) p1.value = qs.get('p1')
+    if (!p2.value && qs.get('p2')) p2.value = qs.get('p2')
+  }
   await loadPlayers()
   if (p1.value && p2.value) { await loadH2H(); await loadTeamSplit() }
 })
