@@ -21,8 +21,20 @@ level and re-tuned on 4on4 data. `rate_team_mode()` in [rate.py](../rate.py).
 | `TEAM_SIGMA_FLOOR` | 80 | same convention as 1on1 v3 |
 | tau | 0.5 | sweep axis was flat (no measurable effect); kept at model default |
 
+**Added 2026-08-23 (same-day, separately validated):**
+- **Per-map shrunk deviations** — split-half reliability of 4on4 map skill r=+0.28
+  (control −0.10; Spearman-Brown 0.44 — real, weaker than duels' 0.67). Layer:
+  mu_map = mu + 1900·(n/(n+60))·mean_resid vs the map-adjusted prediction.
+  Logloss 0.5894 → 0.5694. State in `map_residuals`; per-map rating rows emitted
+  at ≥5 games; `/api/balance?map=` uses them.
+- **Contribution weighting (Layer-2-lite)** — each player's personal outcome =
+  team score + 0.3·(damage_share − 0.25), clamped [0,1]. Logloss → **0.5619**,
+  accuracy → **70.8%**. This is what makes INDIVIDUAL improvement move an
+  individual's rating instead of being smeared across the team (the flat-rating
+  complaint of 2026-08-23: cronus DDR 0.68→0.92 over two years, rating static).
+
 **Deliberately absent** (not part of the validated backtest — add only with fresh evidence):
-DDR term in the outcome score, idle-day sigma aging, cross-region weighting, per-map ratings.
+DDR term in the outcome score, idle-day sigma aging, cross-region weighting.
 Matches that are not exactly 4v4 with two teams are skipped entirely.
 
 ### Validation (scratchpad t4.py/balance.py, 19,877 matches 2022-01..2026-05)

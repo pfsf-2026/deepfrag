@@ -2032,6 +2032,7 @@ def team_balance(
     response: Response,
     players: str = Query(..., description="comma-separated canonical ids — exactly 8"),
     mode: str = Query("4on4", pattern="^(4on4)$"),
+    map: str = Query("", description="optional map — uses per-map 4on4 ratings when set"),
 ):
     """Pickup-night team balancer. Give it the 8 players in the lobby; returns
     the most even 4v4 splits by the live 4on4 ratings (engine constants and the
@@ -2055,13 +2056,22 @@ def team_balance(
                        WHERE r.mode=%s AND r.map='' AND r.canonical_id = ANY(%s)""",
                     (mode, ids))
         rated = {r["canonical_id"]: r for r in cur.fetchall()}
+        map_mu = {}
+        if map:
+            cur.execute("""SELECT canonical_id, mu FROM ratings
+                           WHERE mode=%s AND map=%s AND canonical_id = ANY(%s)""",
+                        (mode, map.lower(), ids))
+            map_mu = {r["canonical_id"]: r["mu"] for r in cur.fetchall()}
     roster = {}
     for cid in ids:
         r = rated.get(cid)
+        mu = map_mu.get(cid, r["mu"] if r else 1500.0) if map else (r["mu"] if r else 1500.0)
         roster[cid] = {
             "cid": cid,
             "display": (r["display_name"] if r else None) or cid,
-            "mu": round(r["mu"], 1) if r else 1500.0,
+            "mu": round(mu, 1),
+            "mu_overall": round(r["mu"], 1) if r else 1500.0,
+            "map_adjusted": bool(map) and cid in map_mu,
             "sigma": round(r["sigma"], 1) if r else 500.0,
             "games": r["matches_rated"] if r else 0,
             "rated": bool(r),
@@ -2082,7 +2092,7 @@ def team_balance(
                        "p_team_a": round(p, 3),
                        "evenness": round(abs(p - 0.5), 3)})
     splits.sort(key=lambda x: x["evenness"])
-    return {"mode": mode, "players": [roster[c] for c in ids],
+    return {"mode": mode, "map": map or None, "players": [roster[c] for c in ids],
             "unrated": [c for c in ids if not roster[c]["rated"]],
             "best": splits[0], "alternatives": splits[1:4]}
 

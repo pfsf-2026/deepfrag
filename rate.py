@@ -194,6 +194,21 @@ TEAM_EXP_SCALE = 700.0
 TEAM_MARGIN_NORM = 40.0
 TEAM_W_RESULT = 0.35
 TEAM_SIGMA_FLOOR = 80.0
+# Map layer + contribution weighting (2026-08-23 sweeps, walk-forward logloss):
+#   engine 0.5894 → +map 0.5694 (K=60, G=1900) → +contrib 0.5619 (CW=0.3),
+#   accuracy 68.1% → 70.8%. Contribution: a player's personal outcome is the
+#   team score shifted by their damage share within the team (0.25 = neutral) —
+#   this is what lets individual improvement move an individual's rating
+#   (bible §0; the "cronus DDR up 35%, rating flat" complaint, 2026-08-23).
+TEAM_MAP_K = 60.0
+TEAM_MAP_G = 1900.0
+TEAM_CONTRIB_W = 0.3
+
+
+def team_map_delta(resid_sum: float, n: int) -> float:
+    if n <= 0:
+        return 0.0
+    return TEAM_MAP_G * (n / (n + TEAM_MAP_K)) * (resid_sum / n)
 
 
 def predict_team(ra: list, rb: list) -> float:
@@ -708,7 +723,7 @@ def rate_all(db, mode, now, full_rebuild=True, per_map_min=5, player_regions=Non
 
 
 def fetch_team_matches(conn, mode, since_date=None):
-    """Yield (match_id, match_date, teamA, teamB) where each team is a list of
+    """Yield (match_id, match_date, match_map, teamA, teamB) where each team is a list of
     (cid, frags, deaths, dmg_given, dmg_taken), STRICTLY chronological. Only
     matches with exactly two teams of TEAM_SIZE[mode] players survive — mixed
     joins/leavers and odd formats are skipped (same rule as the backtest)."""
@@ -720,7 +735,7 @@ def fetch_team_matches(conn, mode, since_date=None):
         params["since"] = since_date
     cur = conn.cursor()
     cur.execute(f"""
-        SELECT m.match_id, m.match_date,
+        SELECT m.match_id, m.match_date, m.match_map,
                p.canonical_id AS cid, MIN(p.player_team) AS team,
                SUM(p.player_frags) AS frags, SUM(p.player_deaths) AS deaths,
                SUM(p.player_damage_given) AS dg, SUM(p.player_damage_taken) AS dt
@@ -728,10 +743,10 @@ def fetch_team_matches(conn, mode, since_date=None):
         WHERE m.match_mode = %(mode)s AND p.canonical_id IS NOT NULL
           AND COALESCE(m.has_bots, 0) = 0
           {where}
-        GROUP BY m.match_id, m.match_date, p.canonical_id
+        GROUP BY m.match_id, m.match_date, m.match_map, p.canonical_id
         ORDER BY m.match_date, m.match_id
     """, params)
-    cur_mid, cur_date, bucket = None, None, {}
+    cur_mid, cur_date, cur_map, bucket = None, None, None, {}
     def emit():
         if cur_mid is None:
             return None
@@ -745,13 +760,13 @@ def fetch_team_matches(conn, mode, since_date=None):
             return None
         if any(r[1] is None for r in pa + pb):
             return None
-        return (cur_mid, cur_date, pa, pb)
+        return (cur_mid, cur_date, cur_map, pa, pb)
     for r in cur.fetchall():
         if r["match_id"] != cur_mid:
             m = emit()
             if m:
                 yield m
-            cur_mid, cur_date, bucket = r["match_id"], r["match_date"], {}
+            cur_mid, cur_date, cur_map, bucket = r["match_id"], r["match_date"], (r["match_map"] or "").lower(), {}
         bucket[r["cid"]] = (r["team"], r["frags"], r["deaths"], r["dg"], r["dt"])
     m = emit()
     if m:
@@ -759,27 +774,37 @@ def fetch_team_matches(conn, mode, since_date=None):
     cur.close()
 
 
-def rate_team_mode(db, mode, now, full_rebuild=True):
-    """Single chronological pass for a team mode (4on4). Individual mu/sigma per
-    player; outcome = validated continuous team-margin score. No per-map, no
-    cross-region, no idle aging — none were in the validated backtest."""
+def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
+    """Single chronological pass for a team mode (4on4). Per player:
+    - global mu/sigma from the continuous team-margin outcome, with each
+      player's personal score shifted by their DAMAGE SHARE within the team
+      (TEAM_CONTRIB_W; share 0.25 = neutral) — individual improvement moves
+      individual ratings;
+    - per-(player,map) shrunk deviations learned from residuals vs the
+      MAP-ADJUSTED prediction (state persisted in map_residuals).
+    No cross-region, no idle aging — not part of the validated backtest."""
     cur = db.cursor()
     if full_rebuild:
         cur.execute("DELETE FROM ratings WHERE mode=%s", (mode,))
         cur.execute("DELETE FROM rating_history WHERE mode=%s", (mode,))
+        cur.execute("DELETE FROM map_residuals WHERE mode=%s", (mode,))
         db.commit()
-        cache, stats = {}, {}
+        cache, stats, cells = {}, {}, {}
         since_date = None
     else:
-        cache, stats = load_existing_ratings(db, mode)
-        cur.execute("SELECT MAX(match_date) AS last FROM rating_history WHERE mode=%s AND map=''", (mode,))
+        cache_raw, stats = load_existing_ratings(db, mode)
+        cache = {k: (v[0], v[1]) if not isinstance(v, tuple) else v
+                 for k, v in cache_raw.items()}
+        cells = load_map_residuals(db, mode)
+        cur.execute("SELECT MAX(match_date) AS last FROM rating_history "
+                    "WHERE mode=%s AND map=''", (mode,))
         row = cur.fetchone()
         since_date = row["last"] if row else None
 
     perf = {}
     history_rows = []
     n_matches = 0
-    for (mid, mdate, TA, TB) in fetch_team_matches(db, mode, since_date=since_date):
+    for (mid, mdate, mp, TA, TB) in fetch_team_matches(db, mode, since_date=since_date):
         A = [r[0] for r in TA]
         B = [r[0] for r in TB]
         fa = sum(r[1] for r in TA)
@@ -789,9 +814,57 @@ def rate_team_mode(db, mode, now, full_rebuild=True):
             stats.setdefault(cid, {"matches": 0, "wins": 0, "losses": 0, "draws": 0})
         ra = [cache[c] for c in A]
         rb = [cache[c] for c in B]
-        s = team_outcome_score(sum(m for m, _ in ra) / len(ra),
-                               sum(m for m, _ in rb) / len(rb), fa, fb)
-        new_a, new_b = team_update(ra, rb, s)
+
+        # map-adjusted prediction — used ONLY to learn map residuals (this is
+        # the exact form the backtest validated; the global update below uses
+        # unadjusted mus for its outcome score).
+        if mp:
+            def _eff(c):
+                m, g = cache[c]
+                cell = cells.get((c, mp))
+                if cell and cell["n"]:
+                    m += team_map_delta(cell["rs"], cell["n"])
+                return m, g
+            ea = [_eff(c) for c in A]
+            eb = [_eff(c) for c in B]
+            p_map = predict_team(ea, eb)
+            if fa != fb:
+                y = 1.0 if fa > fb else 0.0
+                for c in A:
+                    cell = cells.setdefault((c, mp), {"rs": 0.0, "n": 0, "wins": 0, "losses": 0, "draws": 0})
+                    cell["rs"] += y - p_map
+                    cell["n"] += 1
+                    cell["wins" if y == 1.0 else "losses"] += 1
+                for c in B:
+                    cell = cells.setdefault((c, mp), {"rs": 0.0, "n": 0, "wins": 0, "losses": 0, "draws": 0})
+                    cell["rs"] += (1 - y) - (1 - p_map)
+                    cell["n"] += 1
+                    cell["wins" if y == 0.0 else "losses"] += 1
+            else:
+                for c in A + B:
+                    cell = cells.setdefault((c, mp), {"rs": 0.0, "n": 0, "wins": 0, "losses": 0, "draws": 0})
+                    cell["n"] += 1
+                    cell["draws"] += 1
+
+        # team outcome + contribution-weighted per-player interpolation
+        s_team = team_outcome_score(sum(m for m, _ in ra) / len(ra),
+                                    sum(m for m, _ in rb) / len(rb), fa, fb)
+        tdg_a = sum((r[3] or 0) for r in TA)
+        tdg_b = sum((r[3] or 0) for r in TB)
+
+        def _si(row, tdg, s):
+            if TEAM_CONTRIB_W <= 0 or not tdg or row[3] is None:
+                return s
+            share = (row[3] or 0) / tdg
+            return min(1.0, max(0.0, s + TEAM_CONTRIB_W * (share - 0.25)))
+
+        RA = [TEAM_MODEL.rating(mu=m, sigma=g) for m, g in ra]
+        RB = [TEAM_MODEL.rating(mu=m, sigma=g) for m, g in rb]
+        [wa, wb] = TEAM_MODEL.rate([RA, RB], ranks=[0, 1])
+        RA2 = [TEAM_MODEL.rating(mu=m, sigma=g) for m, g in ra]
+        RB2 = [TEAM_MODEL.rating(mu=m, sigma=g) for m, g in rb]
+        [la, lb] = TEAM_MODEL.rate([RA2, RB2], ranks=[1, 0])
+
         if fa > fb:
             out_a, out_b = "win", "loss"
         elif fb > fa:
@@ -800,20 +873,30 @@ def rate_team_mode(db, mode, now, full_rebuild=True):
             out_a = out_b = "draw"
         opp_a = ",".join(sorted(B))
         opp_b = ",".join(sorted(A))
-        for cid, (om, os_), (nm, ns) in zip(A, ra, new_a):
+
+        for row, (om, og), w, l in zip(TA, ra, wa, la):
+            cid = row[0]
+            si = _si(row, tdg_a, s_team)
+            nm = si * w.mu + (1 - si) * l.mu
+            ns = max(TEAM_SIGMA_FLOOR, si * w.sigma + (1 - si) * l.sigma)
             history_rows.append((cid, mode, "", mid, mdate, opp_a, out_a,
-                                 om, nm, os_, ns, nm - om))
+                                 om, nm, og, ns, nm - om))
             cache[cid] = (nm, ns)
             st = stats[cid]
             st["matches"] += 1
             st["wins" if out_a == "win" else "losses" if out_a == "loss" else "draws"] += 1
-        for cid, (om, os_), (nm, ns) in zip(B, rb, new_b):
+        for row, (om, og), w, l in zip(TB, rb, wb, lb):
+            cid = row[0]
+            si = _si(row, tdg_b, 1.0 - s_team)
+            nm = si * l.mu + (1 - si) * w.mu
+            ns = max(TEAM_SIGMA_FLOOR, si * l.sigma + (1 - si) * w.sigma)
             history_rows.append((cid, mode, "", mid, mdate, opp_b, out_b,
-                                 om, nm, os_, ns, nm - om))
+                                 om, nm, og, ns, nm - om))
             cache[cid] = (nm, ns)
             st = stats[cid]
             st["matches"] += 1
             st["wins" if out_b == "win" else "losses" if out_b == "loss" else "draws"] += 1
+
         for (cid, fr, de, dg, dt) in TA + TB:
             if dg is not None and dt is not None:
                 pf = perf.setdefault(cid, {"dg": 0, "dt": 0, "fd": 0.0, "n": 0})
@@ -829,8 +912,20 @@ def rate_team_mode(db, mode, now, full_rebuild=True):
     if history_rows:
         _bulk_insert_history(cur, history_rows)
 
-    # unique_opponents for team modes counts distinct opposing LINEUPS — good
-    # enough for the provisional-flag UX, cheap, and monotonic with activity.
+    # persist map cells
+    resid_rows = [(cid, mode, mp_, c["rs"], c["n"], c["wins"], c["losses"], c["draws"])
+                  for (cid, mp_), c in cells.items()]
+    if resid_rows:
+        psycopg2.extras.execute_values(
+            cur,
+            """INSERT INTO map_residuals
+               (canonical_id, mode, map, resid_sum, n, wins, losses, draws)
+               VALUES %s
+               ON CONFLICT (canonical_id, mode, map) DO UPDATE SET
+                 resid_sum=EXCLUDED.resid_sum, n=EXCLUDED.n, wins=EXCLUDED.wins,
+                 losses=EXCLUDED.losses, draws=EXCLUDED.draws""",
+            resid_rows, page_size=2000)
+
     cur.execute("""SELECT canonical_id, COUNT(DISTINCT opponent_cid) AS n
                    FROM rating_history WHERE mode=%s AND opponent_cid IS NOT NULL
                    GROUP BY canonical_id""", (mode,))
@@ -851,11 +946,25 @@ def rate_team_mode(db, mode, now, full_rebuild=True):
         rating_rows.append((cid, mode, "", mu, sig, mu - 3 * sig,
                             st["matches"], st["wins"], st["losses"], st["draws"],
                             None, None, now, uniq.get(cid, 0), avg_ddr, avg_fd))
+    # per-map rows: mu = global + shrunk map delta (recomputed every run so they
+    # never drift from the current global rating)
+    n_map_rows = 0
+    for (cid, mp_), c in cells.items():
+        if cid in _unrated or c["n"] < per_map_min:
+            continue
+        base = cache.get(cid)
+        if not base:
+            continue
+        mu_m = base[0] + team_map_delta(c["rs"], c["n"])
+        rating_rows.append((cid, mode, mp_, mu_m, base[1], mu_m - 3 * base[1],
+                            c["n"], c["wins"], c["losses"], c["draws"],
+                            None, None, now, 0, None, None))
+        n_map_rows += 1
     if rating_rows:
         _bulk_insert_ratings(cur, rating_rows)
     db.commit()
     cur.close()
-    return n_matches, len(rating_rows)
+    return n_matches, len(rating_rows) - n_map_rows
 
 
 def run(db_path: Path, mode: str = "1on1", incremental: bool = False, per_map_min: int = 5):
