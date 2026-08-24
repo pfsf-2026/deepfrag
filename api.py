@@ -2027,6 +2027,85 @@ def map_rankings(
 
 # ── Head-to-head: two players, overall + per-map breakdown + predictions ──
 
+@app.get("/api/balancer/servers")
+def balancer_servers(response: Response):
+    """Live servers that have humans on them RIGHT NOW, with each roster
+    resolved to canonical ids + 4on4 ratings. Feeds the Balancer page:
+    pick a server -> confirm the 8 -> /api/balance does the math.
+    Roster freshness = the per-minute live poll (current_players_json)."""
+    import name_canon as NC
+    response.headers["Cache-Control"] = "no-store"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT hostname, city, region, current_map, current_mode,
+                   current_players, max_clients, current_players_json
+            FROM servers
+            WHERE is_live AND COALESCE(current_players, 0) > 0
+            ORDER BY current_players DESC, hostname
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
+
+        # collect every human name across servers for batch resolution
+        rosters = {}
+        all_names = set()
+        for r in rows:
+            try:
+                clients = json.loads(r.get("current_players_json") or "[]")
+            except Exception:
+                clients = []
+            humans = [c for c in clients if not c.get("is_bot")]
+            rosters[r["hostname"]] = humans
+            for c in humans:
+                if c.get("name"):
+                    all_names.add(c["name"])
+        resolved = {}
+        if all_names:
+            names = list(all_names)
+            norm = {n: NC.normalize(n) for n in names}
+            cur.execute("SELECT raw_name, canonical_id FROM player_name_map WHERE raw_name = ANY(%s)",
+                        (names + list(norm.values()),))
+            by_raw = {r["raw_name"]: r["canonical_id"] for r in cur.fetchall()}
+            # canonical ids that ARE the normalized name (covers most regulars)
+            cur.execute("SELECT canonical_id FROM players_canonical WHERE canonical_id = ANY(%s)",
+                        (list(set(norm.values())),))
+            canon_direct = {r["canonical_id"] for r in cur.fetchall()}
+            for n in names:
+                cid = by_raw.get(n) or by_raw.get(norm[n]) or (norm[n] if norm[n] in canon_direct else None)
+                resolved[n] = cid
+        cids = sorted({c for c in resolved.values() if c})
+        ratings = {}
+        if cids:
+            cur.execute("""SELECT r.canonical_id, r.mu, r.sigma, r.matches_rated, pc.display_name
+                           FROM ratings r
+                           LEFT JOIN players_canonical pc ON pc.canonical_id=r.canonical_id
+                           WHERE r.mode='4on4' AND r.map='' AND r.canonical_id = ANY(%s)""", (cids,))
+            ratings = {r["canonical_id"]: r for r in cur.fetchall()}
+
+    out = []
+    for r in rows:
+        players = []
+        for c in rosters.get(r["hostname"], []):
+            cid = resolved.get(c.get("name"))
+            rr = ratings.get(cid) if cid else None
+            players.append({
+                "name": c.get("name"), "team": c.get("team"), "ping": c.get("ping"),
+                "cid": cid,
+                "display": (rr["display_name"] if rr else None) or cid or c.get("name"),
+                "mu": round(rr["mu"], 1) if rr else (1500.0 if cid else None),
+                "games": rr["matches_rated"] if rr else 0,
+                "rated": bool(rr),
+                "resolved": bool(cid),
+            })
+        out.append({
+            "hostname": r["hostname"], "city": r["city"], "region": r["region"],
+            "map": r["current_map"], "mode": r["current_mode"],
+            "humans": len(players), "max_clients": r["max_clients"],
+            "players": players,
+        })
+    return {"servers": out}
+
+
 @app.get("/api/balance")
 def team_balance(
     response: Response,
