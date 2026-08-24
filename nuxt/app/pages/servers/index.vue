@@ -2,7 +2,7 @@
 const df = useDeepFrag()
 const servers = ref([])
 const pending = ref(true)
-const sortKey = ref('games')      // games | avg_rating | last_match | region
+const sortKey = ref('last_match') // last_match (default per Peter 2026-08-26) | games | avg_rating | region
 const filter = ref('')
 const regionFilter = ref('')
 const showInactive = ref(false)    // default OFF: only servers live in hub or active in last 90d
