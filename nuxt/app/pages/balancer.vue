@@ -252,6 +252,12 @@ onMounted(load)
             </span>
           </div>
           <div class="odds-bar"><div class="fill" :style="{ width: (sp.p_team_a * 100) + '%' }"></div></div>
+          <div v-if="sp.p_by_map" class="map-strip">
+            <span v-for="(pv, m) in sp.p_by_map" :key="m" class="mp"
+                  :class="{ afav: pv >= 0.55, bfav: pv <= 0.45 }">
+              {{ m }} <b>{{ Math.round(pv * 100) }}%</b>
+            </span>
+          </div>
           <div class="teams">
             <div class="team">
               <div class="team-h a">TEAM A</div>
@@ -328,6 +334,10 @@ onMounted(load)
 .split-odds .a { color: var(--accent); } .split-odds .b { color: var(--loss); }
 .odds-bar { height: 6px; border-radius: 3px; background: var(--loss); margin: 10px 0 16px; overflow: hidden; }
 .odds-bar .fill { height: 100%; background: var(--accent); }
+.map-strip { display: flex; gap: 14px; flex-wrap: wrap; margin: -6px 0 14px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--fg-3); }
+.map-strip b { color: var(--fg-2); font-weight: 600; }
+.map-strip .afav b { color: var(--accent); }
+.map-strip .bfav b { color: var(--loss); }
 .teams { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .team-h { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.14em; margin-bottom: 8px; }
 .team-h.a { color: var(--accent); } .team-h.b { color: var(--loss); }
