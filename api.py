@@ -2045,6 +2045,14 @@ def balancer_servers(response: Response):
             ORDER BY current_players DESC, hostname
         """)
         rows = [dict(r) for r in cur.fetchall()]
+        # Not every lobby is a game: bot farms declare themselves in the server
+        # name ([BOTS] ...) even when client is_bot flags lie, and qwfwd
+        # proxies / QTV relays list route-through or spectator clients, not
+        # players in a match. None are balanceable lobbies.
+        import re as _re
+        rows = [r for r in rows
+                if not _re.search(r"\[\s*bots?\s*\]|qwfwd|\bqtv\b",
+                                  r.get("hostname") or "", _re.I)]
 
         # collect every human name across servers for batch resolution
         rosters = {}
