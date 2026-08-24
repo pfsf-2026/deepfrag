@@ -2054,7 +2054,10 @@ def balancer_servers(response: Response):
                 clients = json.loads(r.get("current_players_json") or "[]")
             except Exception:
                 clients = []
-            humans = [c for c in clients if not c.get("is_bot")]
+            def _is_bot(c):
+                n = (c.get("name") or "")
+                return bool(c.get("is_bot")) or n.upper().startswith("BOT:") or n.startswith("[BOT]")
+            humans = [c for c in clients if not _is_bot(c)]
             rosters[r["hostname"]] = humans
             for c in humans:
                 if c.get("name"):
@@ -2097,12 +2100,15 @@ def balancer_servers(response: Response):
                 "rated": bool(rr),
                 "resolved": bool(cid),
             })
+        if not players:
+            continue
         out.append({
             "hostname": r["hostname"], "city": r["city"], "region": r["region"],
             "map": r["current_map"], "mode": r["current_mode"],
             "humans": len(players), "max_clients": r["max_clients"],
             "players": players,
         })
+    out.sort(key=lambda x: -x["humans"])
     return {"servers": out}
 
 

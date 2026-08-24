@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 import requests
 
 import db as dbmod
-from geolocate_servers import MANUAL_LOCATIONS
+from geolocate_servers import MANUAL_LOCATIONS, MANUAL_LOCATIONS_BY_IP
 
 HUB_URL = "https://hubapi.quakeworld.nu/v2/servers"
 
@@ -120,7 +120,9 @@ def extract_row(s: dict, now: str) -> dict:
     # parent region (The-Den is in Denver; its AWS Local Zone IP says Portland).
     # Without this, the per-minute upsert steamrolls geolocate_servers.py's
     # MANUAL_LOCATIONS within 60s of any manual fix (found 2026-08-26).
-    manual = MANUAL_LOCATIONS.get(hostname)
+    manual = (MANUAL_LOCATIONS.get(hostname)
+              or MANUAL_LOCATIONS.get(hostname.split(":")[0].strip())
+              or MANUAL_LOCATIONS_BY_IP.get(ip or ""))
     if manual:
         geo = dict(geo or {})
         geo["city"] = manual["city"]

@@ -117,6 +117,13 @@ MANUAL_LOCATIONS = {
     "Cronus-The-Den":  {"city": "Denver", "lat": 39.7392, "lon": -104.9903, "country": "US", "region": "NA"},
 }
 
+# QW "hostname" settings carry ports and live-status junk ("The-Den:28504
+# (no vs. red)"), so name keys are fragile — the IP is the stable key.
+# 15.181.21.196 = qw-den-1, AWS Denver Local Zone (IP-geolocates to Portland).
+MANUAL_LOCATIONS_BY_IP = {
+    "15.181.21.196": {"city": "Denver", "lat": 39.7392, "lon": -104.9903, "country": "US", "region": "NA"},
+}
+
 
 def hint_region_from_name(raw_name: str):
     """Fallback: try to guess country/region from substrings in the raw hostname.
