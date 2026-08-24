@@ -2112,6 +2112,51 @@ def balancer_servers(response: Response):
     return {"servers": out}
 
 
+@app.post("/api/balancer/identify")
+def balancer_identify(raw_name: str = Body(..., embed=True),
+                      canonical_id: str = Body(..., embed=True)):
+    """Crowd-sourced alias intel from the Balancer: someone in the lobby says
+    who an unresolved name really is. NEVER merges automatically — files a
+    suggestion (deduped, counted) for admin review; the balance itself uses
+    the identification client-side only. Unauthenticated by design (lobby
+    players aren't logged in); worst-case abuse is a noisy suggestion list."""
+    raw_name = (raw_name or "").strip()[:64]
+    canonical_id = (canonical_id or "").strip()[:64]
+    if not raw_name or not canonical_id:
+        raise HTTPException(400, "raw_name and canonical_id required")
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id=%s", (canonical_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "unknown canonical_id")
+        cur.execute("""CREATE TABLE IF NOT EXISTS alias_suggestions (
+                         raw_name TEXT, canonical_id TEXT, n INTEGER DEFAULT 1,
+                         first_seen TIMESTAMPTZ DEFAULT now(), last_seen TIMESTAMPTZ DEFAULT now(),
+                         PRIMARY KEY (raw_name, canonical_id))""")
+        cur.execute("""INSERT INTO alias_suggestions (raw_name, canonical_id)
+                       VALUES (%s, %s)
+                       ON CONFLICT (raw_name, canonical_id)
+                       DO UPDATE SET n = alias_suggestions.n + 1, last_seen = now()""",
+                    (raw_name, canonical_id))
+        conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/admin/alias-suggestions")
+def admin_alias_suggestions(authorization: str | None = Header(default=None)):
+    """Review queue for Balancer identifications — feed for aliases.yaml merges."""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS alias_suggestions (
+                         raw_name TEXT, canonical_id TEXT, n INTEGER DEFAULT 1,
+                         first_seen TIMESTAMPTZ DEFAULT now(), last_seen TIMESTAMPTZ DEFAULT now(),
+                         PRIMARY KEY (raw_name, canonical_id))""")
+        cur.execute("""SELECT raw_name, canonical_id, n, first_seen, last_seen
+                       FROM alias_suggestions ORDER BY n DESC, last_seen DESC LIMIT 200""")
+        return {"suggestions": [dict(r) for r in cur.fetchall()]}
+
+
 @app.get("/api/balance")
 def team_balance(
     response: Response,

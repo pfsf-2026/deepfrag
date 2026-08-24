@@ -44,14 +44,41 @@ async function load() {
   } catch (e) {}
 }
 
+const roster = ref([])              // local mutable copy — identify edits it
+const idFor = ref(null)             // raw name currently being identified
+const idSearch = ref('')
 function pick(s) {
   picked.value = s
   results.value = null
   err.value = ''
   extra.value = []
-  // preselect the resolved players, first 8
-  const resolved = s.players.filter(p => p.resolved)
+  roster.value = s.players.map(p => ({ ...p }))
+  idFor.value = null
+  const resolved = roster.value.filter(p => p.resolved)
   sel.value = new Set(resolved.slice(0, 8).map(p => p.cid))
+}
+const idMatch = computed(() => {
+  const q = idSearch.value.trim().toLowerCase()
+  if (q.length < 2) return []
+  const taken = new Set(chosen.value.map(p => p.cid))
+  return allPlayers.value
+    .filter(x => !taken.has(x.canonical_id)
+      && (x.display || x.canonical_id).toLowerCase().includes(q))
+    .slice(0, 8)
+})
+function identify(p, x) {
+  p.cid = x.canonical_id
+  p.display = (x.display || x.canonical_id) + '';
+  p.resolved = true
+  p.identified = true
+  p.mu = null
+  const n = new Set(sel.value); n.add(p.cid); sel.value = n
+  idFor.value = null; idSearch.value = ''
+  results.value = null
+  // fire-and-forget: file the alias suggestion for admin review
+  $fetch(`${apiBase}/api/balancer/identify`, {
+    method: 'POST', body: { raw_name: p.name, canonical_id: p.cid }
+  }).catch(() => {})
 }
 function toggle(cid) {
   if (!cid) return
@@ -67,7 +94,7 @@ function addExtra(x) {
   results.value = null
 }
 const chosen = computed(() => {
-  const fromSrv = (picked.value?.players || []).filter(p => p.resolved && sel.value.has(p.cid))
+  const fromSrv = roster.value.filter(p => p.resolved && sel.value.has(p.cid))
   const fromExtra = extra.value.filter(p => sel.value.has(p.cid))
   const seen = new Set(); const out = []
   for (const p of [...fromSrv, ...fromExtra]) {
@@ -151,12 +178,23 @@ onMounted(load)
       </div>
 
       <div class="roster">
-        <label v-for="p in picked.players" :key="p.name" class="pl" :class="{ off: !p.resolved || !sel.has(p.cid), un: !p.resolved }">
-          <input type="checkbox" :disabled="!p.resolved" :checked="p.resolved && sel.has(p.cid)" @change="toggle(p.cid)">
-          <span class="pl-name">{{ p.display }}</span>
-          <span v-if="p.resolved" class="pl-mu">{{ Math.round(p.mu) }}<span v-if="!p.rated" class="pl-note" title="No 4on4 rating yet — blank prior used">?</span></span>
-          <span v-else class="pl-note" :title="`Couldn't match '${p.name}' to a profile`">unlinked</span>
-        </label>
+        <div v-for="p in roster" :key="p.name" class="pl-wrap">
+          <label class="pl" :class="{ off: !p.resolved || !sel.has(p.cid), un: !p.resolved }">
+            <input type="checkbox" :disabled="!p.resolved" :checked="p.resolved && sel.has(p.cid)" @change="toggle(p.cid)">
+            <span class="pl-name">{{ p.display }}<span v-if="p.identified" class="pl-was"> was "{{ p.name }}"</span></span>
+            <span v-if="p.resolved && p.mu != null" class="pl-mu">{{ Math.round(p.mu) }}<span v-if="!p.rated" class="pl-note" title="No 4on4 rating yet — blank prior used">?</span></span>
+            <span v-else-if="p.identified" class="pl-note">identified</span>
+            <button v-else class="who" @click.prevent="idFor = (idFor === p.name ? null : p.name); idSearch = ''">who is this?</button>
+          </label>
+          <div v-if="idFor === p.name" class="idbox">
+            <input v-model="idSearch" :placeholder="`Who is '${p.name}'?`" autofocus>
+            <div v-if="idMatch.length" class="dropdown">
+              <a v-for="x in idMatch" :key="x.canonical_id" href="#" @click.prevent="identify(p, x)">
+                {{ x.display || x.canonical_id }}
+              </a>
+            </div>
+          </div>
+        </div>
         <label v-for="p in extra" :key="p.cid" class="pl" :class="{ off: !sel.has(p.cid) }">
           <input type="checkbox" :checked="sel.has(p.cid)" @change="toggle(p.cid)">
           <span class="pl-name">{{ p.display }}</span>
@@ -236,6 +274,14 @@ onMounted(load)
 .pl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-mu { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--fg-2); }
 .pl-note { margin-left: auto; color: var(--draw); font-size: 11px; }
+.pl-wrap { position: relative; }
+.pl-was { color: var(--fg-3); font-size: 11.5px; font-style: italic; }
+.who { margin-left: auto; background: none; border: 1px solid var(--border); color: var(--draw);
+  border-radius: 999px; padding: 3px 10px; font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.who:hover { border-color: var(--draw); }
+.idbox { position: absolute; top: 100%; left: 0; right: 0; z-index: 30; margin-top: 4px; }
+.idbox input { width: 100%; background: var(--bg); border: 1px solid var(--accent); border-radius: 9px;
+  color: var(--fg-1); padding: 9px 12px; font-size: 13.5px; }
 .controls { display: flex; gap: 14px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
 .addbox { position: relative; }
 .addbox input { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; color: var(--fg-1); padding: 10px 14px; font-size: 14px; min-width: 200px; }
