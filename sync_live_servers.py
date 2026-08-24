@@ -73,6 +73,31 @@ CREATE INDEX IF NOT EXISTS idx_servers_last_seen_live ON servers(last_seen_live)
 """
 
 
+def derive_mode(settings):
+    """KTX usually publishes a `mode` key; qwleague's 1.48-dev build doesn't.
+    The hub derives the mode from teamplay + maxclients — do the same
+    (found 2026-08-28: berlin.qwleague showed mode '?' while the hub said
+    4on4)."""
+    mode = settings.get("mode")
+    if mode:
+        return mode
+    try:
+        teamplay = int(settings.get("teamplay") or 0)
+        maxclients = int(settings.get("maxclients") or 0)
+    except (TypeError, ValueError):
+        return None
+    if not maxclients:
+        return None
+    if teamplay > 0:
+        per_side = maxclients // 2
+        if per_side in (2, 3, 4):
+            return f"{per_side}on{per_side}"
+        return "team"
+    if maxclients == 2:
+        return "1on1"
+    return "ffa"
+
+
 def to_int(v, default=None):
     try:
         return int(v)
@@ -143,7 +168,7 @@ def extract_row(s: dict, now: str) -> dict:
         "qtv_stream_url":   qtv.get("url"),
         "gamedir":          settings.get("*gamedir"),
         "current_map":      settings.get("map"),
-        "current_mode":     settings.get("mode"),
+        "current_mode":     derive_mode(settings),
         "current_players":  players_active,
         "current_specs":    to_int(qtv.get("spectator_names") and len(qtv["spectator_names"])),
         "max_clients":      to_int(settings.get("maxclients")),
