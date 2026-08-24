@@ -2222,6 +2222,27 @@ def team_balance(
                        "p_team_a": round(p, 3),
                        "evenness": round(abs(p - 0.5), 3)})
     splits.sort(key=lambda x: x["evenness"])
+
+    # Big-4 map projections: the SAME top splits, re-evaluated with per-map
+    # effective mus (fallback overall mu). One extra query, one round-trip.
+    BIG4 = ["dm2", "dm3", "e1m2", "schloss"]
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT canonical_id, map, mu FROM ratings "
+                    "WHERE mode=%s AND map = ANY(%s) AND canonical_id = ANY(%s)",
+                    (mode, BIG4, ids))
+        map_mu = {(r["canonical_id"], r["map"]): r["mu"] for r in cur.fetchall()}
+
+    def team_p_on(A, B, mp):
+        gm = lambda c: map_mu.get((c, mp), roster[c]["mu"])
+        dmu = sum(gm(c) for c in A) - sum(gm(c) for c in B)
+        var = 8 * TEAM_BETA ** 2 + sum(roster[c]["sigma"] ** 2 for c in A + B)
+        return 0.5 * (1.0 + math.erf(dmu / math.sqrt(2 * var)))
+
+    for sp in splits[:4]:
+        sp["p_by_map"] = {mp: round(team_p_on(sp["team_a"], sp["team_b"], mp), 3)
+                          for mp in BIG4}
+
     return {"mode": mode, "map": map or None, "players": [roster[c] for c in ids],
             "unrated": [c for c in ids if not roster[c]["rated"]],
             "best": splits[0], "alternatives": splits[1:4]}
