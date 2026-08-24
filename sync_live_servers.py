@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 import requests
 
 import db as dbmod
+from geolocate_servers import MANUAL_LOCATIONS
 
 HUB_URL = "https://hubapi.quakeworld.nu/v2/servers"
 
@@ -114,11 +115,23 @@ def extract_row(s: dict, now: str) -> dict:
         for c in clients
     ]) if clients else None
 
+    hostname = (settings.get("hostname") or "").strip()
+    # Manual overrides beat hub IP-geo — cloud/Local-Zone IPs geolocate to the
+    # parent region (The-Den is in Denver; its AWS Local Zone IP says Portland).
+    # Without this, the per-minute upsert steamrolls geolocate_servers.py's
+    # MANUAL_LOCATIONS within 60s of any manual fix (found 2026-08-26).
+    manual = MANUAL_LOCATIONS.get(hostname)
+    if manual:
+        geo = dict(geo or {})
+        geo["city"] = manual["city"]
+        geo["cc"] = manual.get("country", geo.get("cc"))
+        lat = manual.get("lat", lat)
+        lon = manual.get("lon", lon)
     return {
-        "hostname":         (settings.get("hostname") or "").strip(),
+        "hostname":         hostname,
         "ip":               ip,
         "country":          geo.get("cc"),
-        "region":           HUB_REGION_MAP.get(geo.get("region"), geo.get("region")),
+        "region":           (manual or {}).get("region") or HUB_REGION_MAP.get(geo.get("region"), geo.get("region")),
         "city":             geo.get("city"),
         "lat":              lat,
         "lon":              lon,
