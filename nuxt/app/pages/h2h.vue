@@ -14,6 +14,8 @@ const mode = ref('1on1')
 const _qs = isBrowser ? new URLSearchParams(window.location.search) : null
 const p1 = ref(String(route.query.p1 || _qs?.get('p1') || ''))
 const p2 = ref(String(route.query.p2 || _qs?.get('p2') || ''))
+const _m = String(route.query.mode || _qs?.get('mode') || '1on1')
+mode.value = ['1on1', '2on2', '4on4'].includes(_m) ? _m : '1on1'
 const sinceDays = ref(route.query.since ? Number(route.query.since) : 0)  // 0 = all time
 const p1Search = ref('')
 const p2Search = ref('')
@@ -68,6 +70,7 @@ function syncUrl() {
   router.replace({ query: {
     ...(p1.value && { p1: p1.value }),
     ...(p2.value && { p2: p2.value }),
+    ...(mode.value !== '1on1' && { mode: mode.value }),
     ...(sinceDays.value > 0 && { since: String(sinceDays.value) })
   } })
 }
@@ -203,7 +206,6 @@ onMounted(async () => {
 watch(mode, loadH2H)
 
 // ── Team-modes split (together vs against) — /api/h2h/team-split ──
-const tsMode = ref('4on4')
 const tsDays = ref(60)
 const TS_WINDOWS = [
   { days: 30,   label: '30d' },
@@ -214,20 +216,42 @@ const TS_WINDOWS = [
 ]
 const teamSplit = ref(null)
 const tsLoading = ref(false)
+// Exclude filter: names typed by the user, resolved to canonical ids against
+// the player list (case-insensitive display or id match). Unresolved names are
+// surfaced, not silently dropped.
+const tsExcludeRaw = ref('')
+const tsExcludeUnresolved = ref([])
+function tsResolveExcludes() {
+  const out = []
+  const bad = []
+  for (const tok of tsExcludeRaw.value.split(',').map(t => t.trim()).filter(Boolean)) {
+    const tl = tok.toLowerCase()
+    const hit = players.value.find(x => x.canonical_id === tl
+      || (x.display || '').toLowerCase() === tl)
+    if (hit) out.push(hit.canonical_id)
+    else bad.push(tok)
+  }
+  tsExcludeUnresolved.value = bad
+  return out
+}
 async function loadTeamSplit() {
+  if (mode.value === '1on1') { teamSplit.value = null; return }
   if (!p1.value || !p2.value || p1.value === p2.value) { teamSplit.value = null; return }
   if (!apiBase && !isBrowser) return
   tsLoading.value = true
   try {
-    const q = new URLSearchParams({ p1: p1.value, p2: p2.value, mode: tsMode.value, days: String(tsDays.value) })
+    const q = new URLSearchParams({ p1: p1.value, p2: p2.value, mode: mode.value, days: String(tsDays.value) })
+    const excl = tsResolveExcludes()
+    if (excl.length) q.set('exclude', excl.join(','))
     teamSplit.value = await $fetch(`${apiBase}/api/h2h/team-split?${q}`)
   } catch (e) {
     console.error('[h2h] team-split failed', e)
     teamSplit.value = null
   } finally { tsLoading.value = false }
 }
-watch([tsMode, tsDays], loadTeamSplit)
+watch(tsDays, loadTeamSplit)
 watch([p1, p2], loadTeamSplit)
+watch(mode, () => { syncUrl(); loadTeamSplit() })
 // Whichever instance ends up owning the DOM, refs-set => data loads.
 watch([p1, p2], () => {
   if (p1.value && p2.value && p1.value !== p2.value && !data.value && !dataLoading.value) loadH2H()
@@ -323,6 +347,15 @@ function tsBetter(split, cid, k) {
 
     <!-- MAIN VIEW -->
     <template v-if="data && !dataLoading">
+      <!-- GAME MODE SELECTOR — one view per mode, never stacked -->
+      <div class="mode-bar">
+        <span class="window-label">Game mode</span>
+        <div class="window-pills">
+          <button v-for="m in ['1on1', '2on2', '4on4']" :key="m"
+                  :class="['window-pill', { active: mode === m }]" @click="mode = m">{{ m }}</button>
+        </div>
+      </div>
+
       <!-- HEADER BAR -->
       <div class="head-bar">
         <div class="p">
@@ -341,14 +374,20 @@ function tsBetter(split, cid, k) {
           <div class="cons a">{{ Math.round(data.player_a.mu) }}</div>
         </div>
         <div class="center">
-          <div class="label">Head to head</div>
-          <div class="h2h-score">
-            <span class="a">{{ data.h2h.wins_a }}</span> — <span class="b">{{ data.h2h.wins_b }}</span>
-          </div>
-          <div class="meta">
-            {{ data.h2h.matches }} matches
-            <span v-if="data.h2h.matches"> · last {{ String(data.h2h.last_match || '').slice(0, 10) }}</span>
-          </div>
+          <template v-if="mode === '1on1'">
+            <div class="label">Head to head</div>
+            <div class="h2h-score">
+              <span class="a">{{ data.h2h.wins_a }}</span> — <span class="b">{{ data.h2h.wins_b }}</span>
+            </div>
+            <div class="meta">
+              {{ data.h2h.matches }} matches
+              <span v-if="data.h2h.matches"> · last {{ String(data.h2h.last_match || '').slice(0, 10) }}</span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="label">Team comparison</div>
+            <div class="h2h-score">{{ mode }}</div>
+          </template>
           <button class="swap" @click="swap">↔ swap</button>
         </div>
         <div class="p right">
@@ -368,6 +407,7 @@ function tsBetter(split, cid, k) {
         </div>
       </div>
 
+      <template v-if="mode === '1on1'">
       <!-- TIME WINDOW PILLS -->
       <div class="window-bar">
         <span class="window-label">H2H window</span>
@@ -501,18 +541,20 @@ function tsBetter(split, cid, k) {
         </tbody>
       </table>
       </div>
+      </template>
+
       <!-- TEAM MODES: together vs against -->
-      <div class="ts-card">
+      <div v-if="mode !== '1on1'" class="ts-card">
         <div class="ts-head">
           <div>
             <h2>Team modes</h2>
-            <p class="ts-sub">The {{ tsMode }} games these two shared — same team vs opposite teams.</p>
+            <p class="ts-sub">The {{ mode }} games these two shared — same team vs opposite teams.<span v-if="teamSplit && teamSplit.excluded"> Excluding games with: {{ teamSplit.excluded.join(', ') }}.</span></p>
+            <p v-if="tsExcludeUnresolved.length" class="ts-warn">Unknown player(s): {{ tsExcludeUnresolved.join(', ') }} — check spelling.</p>
           </div>
           <div class="ts-controls">
-            <div class="window-pills">
-              <button v-for="m in ['2on2', '4on4']" :key="m"
-                      :class="['window-pill', { active: tsMode === m }]" @click="tsMode = m">{{ m }}</button>
-            </div>
+            <input v-model="tsExcludeRaw" class="ts-exclude" placeholder="Exclude players (comma-sep)…"
+                   @keyup.enter="loadTeamSplit" @blur="loadTeamSplit"
+                   title="Drop every shared game where these players appeared on either side">
             <div class="window-pills">
               <button v-for="w in TS_WINDOWS" :key="w.days"
                       :class="['window-pill', { active: tsDays === w.days }]" @click="tsDays = w.days">{{ w.label }}</button>
@@ -541,14 +583,15 @@ function tsBetter(split, cid, k) {
                 </tbody>
               </table>
               <div v-else class="ts-empty">No {{ split === 'together' ? 'shared-team' : 'opposing' }} games in this window.</div>
+              <div v-if="teamSplit.maps_by_split && teamSplit.maps_by_split[split]" class="ts-maps">
+                <span v-for="m in teamSplit.maps_by_split[split]" :key="m.map" class="ts-map-chip">
+                  {{ m.map }} ×{{ m.n }} <span class="ts-chip-wl">({{ m.p1_wins }}-{{ m.n - m.p1_wins }})</span>
+                </span>
+              </div>
             </div>
           </div>
-          <div v-if="teamSplit.maps && teamSplit.maps.length" class="ts-maps">
-            <span class="ts-maps-label">Maps:</span>
-            <span v-for="m in teamSplit.maps" :key="m.match_map" class="ts-map-chip">{{ m.match_map }} ×{{ m.n }}</span>
-          </div>
         </template>
-        <div v-else class="ts-empty">No shared {{ tsMode }} games between these two in this window.</div>
+        <div v-else class="ts-empty">No shared {{ mode }} games between these two in this window.</div>
       </div>
     </template>
   </div>
@@ -813,4 +856,8 @@ table.matchup .pred .win-b { color: #a855f7; }
   .ts-card { padding: 14px; }
   .ts-head { flex-direction: column; }
 }
+.mode-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.ts-exclude { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--fg-1); padding: 7px 12px; font-size: 12.5px; min-width: 230px; }
+.ts-warn { color: var(--draw); font-size: 12px; margin: 4px 0 0; }
+.ts-chip-wl { color: var(--fg-3); }
 </style>
