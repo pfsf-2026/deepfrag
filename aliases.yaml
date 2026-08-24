@@ -218,6 +218,37 @@ wdcanino:
     - slz_canino
     - slz.canino
 
+anza_fu:
+  # Merged 2026-08-27 (Peter): clan-FU tag rearrangements + tagless form are
+  # one player. anza_fu (5,655g) absorbs fu_anza (304g, carried his duel
+  # rating), anza (246g), anzaq (8g), and the (1) dupe-suffix form.
+  display: Anza FU
+  login: ""
+  variants:
+    - anza_fu
+    - "anza fu"
+    - "fu/anza"
+    - fu_anza
+    - anza
+    - anzaq
+    - "1)anza fu"
+  excludes:
+    - noranza          # "not anza" joke account
+    - "anza fanclub"
+    - anza-hto         # combo/spectator name, not him alone
+
+hto_fu:
+  # Merged 2026-08-27 (Peter): same clan-tag pattern as anza.
+  display: Hto FU
+  login: ""
+  variants:
+    - hto_fu
+    - "hto fu"
+    - hto
+    - htowski
+    - hto.skogsmaskin
+    - hto_skogsmaskin
+
 blaze:
   # Created 2026-08-17 (Peter): BLZE (one game vs cronus 08-04) is blaze.
   # blaze is flagged unrated — the merge folds the game into his hidden arc.

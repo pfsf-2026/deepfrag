@@ -39,9 +39,11 @@ level and re-tuned on 4on4 data. `rate_team_mode()` in [rate.py](../rate.py).
   do not raise without role modeling. This is what makes INDIVIDUAL improvement
   move an individual's rating instead of being smeared across the team.
 
-**Anti-alias gate (2026-08-24, Peter):** a player with NO 1on1 rating row gets no
-PUBLISHED 4on4 rating (matches still count toward opponents). Throwaway alias
-accounts live in team modes and rarely duel — the duel rating is the identity bar.
+**Anti-alias gate (2026-08-24, Peter; softened 2026-08-27):** a team rating is
+published when the player is duel-rated OR has ≥100 rated games in the team
+mode. The original duel-only bar also hid legit fours-only regulars (Anza FU:
+5,655 games, zero duels). Socks never reach 100 games; regulars always do.
+Matches count toward opponents' ratings regardless.
 
 **Deliberately absent** (not part of the validated backtest — add only with fresh evidence):
 DDR term in the outcome score, idle-day sigma aging, cross-region weighting.

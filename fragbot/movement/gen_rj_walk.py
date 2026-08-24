@@ -86,11 +86,11 @@ static int FBW_Len(int w)
 \treturn 0;
 }
 
-static int   fbw_idx[MAX_CLIENTS];     /* which recorded jump */
-static int   fbw_phase[MAX_CLIENTS];   /* 0 walk, 1 replay, 2 pause */
-static int   fbw_fi[MAX_CLIENTS];      /* replay frame index */
+static int   fbw_idx[MAX_CLIENTS];      /* which recorded jump */
+static int   fbw_phase[MAX_CLIENTS];    /* 0 walk, 1 replay, 2 pause */
+static int   fbw_fi[MAX_CLIENTS];       /* replay frame index */
 static int   fbw_timer[MAX_CLIENTS];
-static int   fbw_init[MAX_CLIENTS];
+static float fbw_lastseen[MAX_CLIENTS]; /* server time we last ran this slot */
 
 static void FragBot_RJ(gedict_t *self)
 {
@@ -99,7 +99,19 @@ static void FragBot_RJ(gedict_t *self)
 \tconst float (*tr)[9];
 
 \tif (slot < 0 || slot >= MAX_CLIENTS) return;
-\tif (!fbw_init[slot]) { fbw_idx[slot]=0; fbw_phase[slot]=0; fbw_fi[slot]=0; fbw_timer[slot]=0; fbw_init[slot]=1; }
+\t/* Detect a FRESHLY-ADDED bot (this slot had no cmd for >0.5s -> a new client,
+\t * not the same bot last frame) and RESET it to WALK. Without this, a new bot
+\t * added into a reused slot inherits the previous bot's mid-REPLAY state and
+\t * appears spawned mid-air. Stagger the starting jump by slot so multiple bots
+\t * don't all do the same one. */
+\t{
+\t\tfloat now = g_globalvars.time;
+\t\tif (now - fbw_lastseen[slot] > 0.5f) {
+\t\t\tfbw_idx[slot] = slot %% FBW_N;
+\t\t\tfbw_phase[slot] = 0; fbw_fi[slot] = 0; fbw_timer[slot] = 0;
+\t\t}
+\t\tfbw_lastseen[slot] = now;
+\t}
 \tidx = fbw_idx[slot]; if (idx < 0 || idx >= FBW_N) idx = 0;
 \ttr = FBW_Trace(idx); n = FBW_Len(idx);
 \tif (!tr || n <= 0) return;
@@ -126,13 +138,12 @@ static void FragBot_RJ(gedict_t *self)
 \t\t\tfbw_phase[slot] = 1; fbw_fi[slot] = 0; fbw_timer[slot] = 0;
 \t\t\tbreak;
 \t\t}
-\t\tif (d > 1.0f) {                        /* steer/move toward the start */
+\t\tif (d > 1.0f) {                        /* walk toward the start ON THE GROUND (no hops -> never airborne while walking) */
 \t\t\tself->fb.dir_move_[0] = dx / d;
 \t\t\tself->fb.dir_move_[1] = dy / d;
 \t\t\tself->fb.dir_move_[2] = 0;
 \t\t\tself->fb.desired_angle[PITCH] = 0;
 \t\t\tself->fb.desired_angle[YAW] = atan2(dy, dx) * 180.0f / 3.14159265f;
-\t\t\tif (og && d > 250.0f) self->fb.jumping = true; /* hop to cover ground */
 \t\t}
 \t\tif (++fbw_timer[slot] > FBW_WALK_TIMEOUT) {  /* stuck -> snap to grounded start */
 \t\t\tvec3_t p; p[0]=tr[0][0]; p[1]=tr[0][1]; p[2]=tr[0][2];

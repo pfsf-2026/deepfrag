@@ -939,11 +939,12 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
     uniq = {r["canonical_id"]: r["n"] for r in cur.fetchall()}
     cur.execute("SELECT canonical_id FROM players_canonical WHERE unrated")
     _unrated = {r["canonical_id"] for r in cur.fetchall()}
-    # Anti-alias gate (Peter, 2026-08-24): no duel rating → no PUBLISHED team
-    # rating. Throwaway alias accounts live in team modes and rarely duel; a
-    # 1on1 ratings row is the cheap identity bar. Their matches still count
-    # toward opponents' ratings — publishing is all that's gated (reversible
-    # by rerate after a merge lands them under their real identity).
+    # Anti-alias gate (Peter, 2026-08-24; SOFTENED 2026-08-27): publish a team
+    # rating when the player is duel-rated OR has >= 100 rated games in this
+    # team mode. The original duel-only bar caught throwaway socks but also
+    # nuked legit fours-only regulars (Anza FU: 5,655 games, zero duels).
+    # Socks never accumulate 100 games; regulars always do. Matches still
+    # count toward opponents' ratings either way.
     cur.execute("SELECT canonical_id FROM ratings WHERE mode='1on1' AND map=''")
     duel_rated = {r["canonical_id"] for r in cur.fetchall()}
 
@@ -952,11 +953,11 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
     for cid, (mu, sig) in cache.items():
         if cid in _unrated:
             continue
-        if cid not in duel_rated:
-            n_gated += 1
-            continue
         st = stats.get(cid, {})
         if not st.get("matches"):
+            continue
+        if cid not in duel_rated and st["matches"] < 100:
+            n_gated += 1
             continue
         pf = perf.get(cid)
         avg_ddr = (pf["dg"] / pf["dt"]) if (pf and pf["dt"] > 0) else None
@@ -968,7 +969,9 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
     # never drift from the current global rating)
     n_map_rows = 0
     for (cid, mp_), c in cells.items():
-        if cid in _unrated or cid not in duel_rated or c["n"] < per_map_min:
+        if cid in _unrated or c["n"] < per_map_min:
+            continue
+        if cid not in duel_rated and stats.get(cid, {}).get("matches", 0) < 100:
             continue
         base = cache.get(cid)
         if not base:

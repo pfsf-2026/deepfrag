@@ -57,6 +57,17 @@ function pick(s) {
   const resolved = roster.value.filter(p => p.resolved)
   sel.value = new Set(resolved.slice(0, 8).map(p => p.cid))
 }
+const MAPS_4ON4 = ['dm2', 'dm3', 'e1m2', 'schloss', 'bravado', 'nova', 'catalyst', 'shifter']
+const customMap = ref('')
+function pickCustom() {
+  picked.value = { hostname: 'What-if lobby', map: '', city: '', custom: true, players: [] }
+  roster.value = []
+  extra.value = []
+  sel.value = new Set()
+  results.value = null
+  err.value = ''
+  idFor.value = null
+}
 const idMatch = computed(() => {
   const q = idSearch.value.trim().toLowerCase()
   if (q.length < 2) return []
@@ -110,7 +121,7 @@ async function balance() {
   balancing.value = true
   try {
     const q = new URLSearchParams({ players: ids.join(','), mode: '4on4' })
-    const mp = (picked.value?.map || '').toLowerCase()
+    const mp = (picked.value?.custom ? customMap.value : (picked.value?.map || '')).toLowerCase()
     if (useMap.value && mp) q.set('map', mp)
     results.value = await $fetch(`${apiBase}/api/balance?${q}`)
   } catch (e) {
@@ -148,10 +159,15 @@ onMounted(load)
     <template v-if="!picked">
       <div v-if="loading" class="placeholder">Scanning live servers…</div>
       <div v-else-if="!servers.length" class="placeholder">
-        No servers with players on them right now. Pickup games usually spin up around 9pm ET —
-        or seed a lobby from the <a href="https://discord.gg/3UwkkwaWrQ">Discord</a>.
+        No servers with players on them right now — but you can still
+        <a href="#" @click.prevent="pickCustom()">build a what-if lobby</a> with any 8 players.
       </div>
       <div v-else class="srv-grid">
+        <button class="srv-card whatif" @click="pickCustom()">
+          <div class="srv-name">⚗ What-if lobby</div>
+          <div class="srv-meta"><span>no server needed</span></div>
+          <div class="srv-count">Pick any 8 players and see the splits</div>
+        </button>
         <button v-for="s in servers" :key="s.hostname" class="srv-card" @click="pick(s)">
           <div class="srv-name">{{ s.hostname }}</div>
           <div class="srv-meta">
@@ -172,7 +188,7 @@ onMounted(load)
       <div class="picked-bar">
         <div>
           <div class="picked-name">{{ picked.hostname }}</div>
-          <div class="picked-meta">{{ picked.map }} · {{ picked.city || picked.region || '' }}</div>
+          <div class="picked-meta">{{ picked.custom ? 'hypothetical — pick any 8' : `${picked.map} · ${picked.city || picked.region || ''}` }}</div>
         </div>
         <button class="change" @click="picked = null; results = null">↺ different server</button>
       </div>
@@ -211,7 +227,13 @@ onMounted(load)
             </a>
           </div>
         </div>
-        <label class="mapopt" v-if="picked.map">
+        <label class="mapopt" v-if="picked.custom">
+          <select v-model="customMap" class="mapsel">
+            <option value="">overall ratings</option>
+            <option v-for="m in MAPS_4ON4" :key="m" :value="m">{{ m }} map ratings</option>
+          </select>
+        </label>
+        <label class="mapopt" v-else-if="picked.map">
           <input type="checkbox" v-model="useMap"> use {{ picked.map }} map ratings
         </label>
         <button class="go" :disabled="balancing || chosen.length !== 8" @click="balance">
@@ -257,6 +279,8 @@ onMounted(load)
 .srv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-top: 26px; }
 .srv-card { text-align: left; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; cursor: pointer; color: var(--fg-1); font-family: inherit; transition: border-color 0.15s; }
 .srv-card:hover { border-color: var(--accent); }
+.srv-card.whatif { border-style: dashed; }
+.mapsel { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; color: var(--fg-1); padding: 9px 12px; font-size: 13.5px; font-family: inherit; }
 .srv-name { font-weight: 700; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .srv-meta { display: flex; gap: 8px; align-items: center; color: var(--fg-3); font-size: 12.5px; margin-top: 6px; }
 .map-pill { border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }

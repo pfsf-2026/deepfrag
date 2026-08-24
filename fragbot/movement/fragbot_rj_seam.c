@@ -2144,11 +2144,11 @@ static int FBW_Len(int w)
 	return 0;
 }
 
-static int   fbw_idx[MAX_CLIENTS];     /* which recorded jump */
-static int   fbw_phase[MAX_CLIENTS];   /* 0 walk, 1 replay, 2 pause */
-static int   fbw_fi[MAX_CLIENTS];      /* replay frame index */
+static int   fbw_idx[MAX_CLIENTS];      /* which recorded jump */
+static int   fbw_phase[MAX_CLIENTS];    /* 0 walk, 1 replay, 2 pause */
+static int   fbw_fi[MAX_CLIENTS];       /* replay frame index */
 static int   fbw_timer[MAX_CLIENTS];
-static int   fbw_init[MAX_CLIENTS];
+static float fbw_lastseen[MAX_CLIENTS]; /* server time we last ran this slot */
 
 static void FragBot_RJ(gedict_t *self)
 {
@@ -2157,7 +2157,19 @@ static void FragBot_RJ(gedict_t *self)
 	const float (*tr)[9];
 
 	if (slot < 0 || slot >= MAX_CLIENTS) return;
-	if (!fbw_init[slot]) { fbw_idx[slot]=0; fbw_phase[slot]=0; fbw_fi[slot]=0; fbw_timer[slot]=0; fbw_init[slot]=1; }
+	/* Detect a FRESHLY-ADDED bot (this slot had no cmd for >0.5s -> a new client,
+	 * not the same bot last frame) and RESET it to WALK. Without this, a new bot
+	 * added into a reused slot inherits the previous bot's mid-REPLAY state and
+	 * appears spawned mid-air. Stagger the starting jump by slot so multiple bots
+	 * don't all do the same one. */
+	{
+		float now = g_globalvars.time;
+		if (now - fbw_lastseen[slot] > 0.5f) {
+			fbw_idx[slot] = slot % FBW_N;
+			fbw_phase[slot] = 0; fbw_fi[slot] = 0; fbw_timer[slot] = 0;
+		}
+		fbw_lastseen[slot] = now;
+	}
 	idx = fbw_idx[slot]; if (idx < 0 || idx >= FBW_N) idx = 0;
 	tr = FBW_Trace(idx); n = FBW_Len(idx);
 	if (!tr || n <= 0) return;
