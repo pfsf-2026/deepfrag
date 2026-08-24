@@ -48,6 +48,7 @@ useSeoMeta({
         <NuxtLink to="/servers">Servers</NuxtLink>
         <NuxtLink to="/stats">Stats</NuxtLink>
         <NuxtLink to="/h2h">H2H</NuxtLink>
+        <NuxtLink to="/balancer">Balancer</NuxtLink>
         <NuxtLink to="/ladder">Ladder</NuxtLink>
       </nav>
       <span class="spacer" />
