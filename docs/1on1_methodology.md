@@ -190,10 +190,11 @@ The conservative rating maps to one of four divisions ([tiers.py](../tiers.py)).
 
 | Tier | Percentile | Color | Notes |
 |---|---|---|---|
-| **Div 0** | top 15% | gold (#fbbf24) | Elite. The genuine top tier across all regions. |
-| **Div 1** | next 30% (55-85th) | violet (#a855f7) | Strong, multi-region competitive. |
-| **Div 2** | next 35% (20-55th) | teal (#14e6c0) | Solid, regular competitors. |
-| **Div 3** | bottom 20% (<20th) | gray (#64748b) | Climbing / casual / new. |
+| **Div 0** | top 5% | gold (#fbbf24) | Elite of elites. |
+| **Div 1** | next 15% (80-95th) | red (#ef4444) | The top tier proper. |
+| **Div 2** | next 35% (45-80th) | violet (#a855f7) | Strong, multi-region competitive. |
+| **Div 3** | next 35% (10-45th) | teal (#14e6c0) | Solid, regular competitors. |
+| **Div 4** | bottom 10% (<10th) | gray (#64748b) | Climbing / casual / new. Deliberately small (Peter 2026-08-25; was 25%) so mid-pack regulars don't read as bottom-tier. |
 
 Cutoffs are computed by `_get_tier_cutoffs()` in [api.py](../api.py) using `tiers.compute_cutoffs()`. EU naturally dominates Div 0 due to depth — that's intended. The system measures rating, not regional fairness; cross-region fairness lives in the per-match weighting (§6).
 

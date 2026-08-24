@@ -3,10 +3,14 @@
 Tiers (high → low) — follows QW community division convention:
 
   Div 0   top 5%    — elite of elites
-  Div 1   6-10%     — top tier proper
-  Div 2   11-40%    — strong, multi-region competitive (next 30%)
-  Div 3   41-75%    — solid, regular competitors (next 35%)
-  Div 4   76-100%   — climbing / casual / new players (bottom 25%)
+  Div 1   6-20%     — top tier proper (next 15%)
+  Div 2   21-55%    — strong, multi-region competitive (next 35%)
+  Div 3   56-90%    — solid, regular competitors (next 35%)
+  Div 4   91-100%   — climbing / casual / new players (bottom 10%)
+
+Distribution set by Peter 2026-08-25 (was 5/5/30/35/25): a 25%-wide bottom
+division made mid-pack regulars read as bottom-tier; 10% reserves Div 4 for
+genuinely new/climbing players and gives Div 1 real membership.
 
 Boundaries are **percentile-based**, recomputed on demand from the current rated
 population (overall 1on1, matches_rated ≥ 10). Cutoffs are absolute rating values
@@ -24,11 +28,11 @@ from __future__ import annotations
 # percentile_floor is the LOWER bound of this tier within the population —
 # i.e. Div 0 starts at 95th percentile (top 5%).
 TIER_SPECS = [
-    ("div0", "Div 0", 0.95, "#fbbf24"),  # gold
-    ("div1", "Div 1", 0.90, "#ef4444"),  # red
-    ("div2", "Div 2", 0.60, "#a855f7"),  # violet
-    ("div3", "Div 3", 0.25, "#14e6c0"),  # teal
-    ("div4", "Div 4", 0.00, "#64748b"),  # gray
+    ("div0", "Div 0", 0.95, "#fbbf24"),  # gold   — top 5%
+    ("div1", "Div 1", 0.80, "#ef4444"),  # red    — next 15%
+    ("div2", "Div 2", 0.45, "#a855f7"),  # violet — next 35%
+    ("div3", "Div 3", 0.10, "#14e6c0"),  # teal   — next 35%
+    ("div4", "Div 4", 0.00, "#64748b"),  # gray   — bottom 10%
 ]
 
 
