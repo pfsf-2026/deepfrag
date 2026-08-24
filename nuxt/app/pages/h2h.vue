@@ -216,23 +216,31 @@ const TS_WINDOWS = [
 ]
 const teamSplit = ref(null)
 const tsLoading = ref(false)
-// Exclude filter: names typed by the user, resolved to canonical ids against
-// the player list (case-insensitive display or id match). Unresolved names are
-// surfaced, not silently dropped.
-const tsExcludeRaw = ref('')
-const tsExcludeUnresolved = ref([])
-function tsResolveExcludes() {
-  const out = []
-  const bad = []
-  for (const tok of tsExcludeRaw.value.split(',').map(t => t.trim()).filter(Boolean)) {
-    const tl = tok.toLowerCase()
-    const hit = players.value.find(x => x.canonical_id === tl
-      || (x.display || '').toLowerCase() === tl)
-    if (hit) out.push(hit.canonical_id)
-    else bad.push(tok)
-  }
-  tsExcludeUnresolved.value = bad
-  return out
+// Exclude filter: picked from the same autocomplete as the player picker,
+// applied as removable pills next to the card title.
+const tsExclude = ref([])            // canonical ids currently filtered out
+const tsExcludeSearch = ref('')
+const tsExcludeMatch = computed(() => {
+  const q = tsExcludeSearch.value.trim().toLowerCase()
+  if (q.length < 2) return []
+  return players.value
+    .filter(x => !tsExclude.value.includes(x.canonical_id)
+      && x.canonical_id !== p1.value && x.canonical_id !== p2.value
+      && (x.display || x.canonical_id).toLowerCase().includes(q))
+    .slice(0, 8)
+})
+function tsDisplay(cid) {
+  const hit = players.value.find(x => x.canonical_id === cid)
+  return hit?.display || cid
+}
+function tsAddExclude(cid) {
+  tsExclude.value = [...tsExclude.value, cid]
+  tsExcludeSearch.value = ''
+  loadTeamSplit()
+}
+function tsRemoveExclude(cid) {
+  tsExclude.value = tsExclude.value.filter(c => c !== cid)
+  loadTeamSplit()
 }
 async function loadTeamSplit() {
   if (mode.value === '1on1') { teamSplit.value = null; return }
@@ -241,8 +249,7 @@ async function loadTeamSplit() {
   tsLoading.value = true
   try {
     const q = new URLSearchParams({ p1: p1.value, p2: p2.value, mode: mode.value, days: String(tsDays.value) })
-    const excl = tsResolveExcludes()
-    if (excl.length) q.set('exclude', excl.join(','))
+    if (tsExclude.value.length) q.set('exclude', tsExclude.value.join(','))
     teamSplit.value = await $fetch(`${apiBase}/api/h2h/team-split?${q}`)
   } catch (e) {
     console.error('[h2h] team-split failed', e)
@@ -547,14 +554,28 @@ function tsBetter(split, cid, k) {
       <div v-if="mode !== '1on1'" class="ts-card">
         <div class="ts-head">
           <div>
-            <h2>Team modes</h2>
-            <p class="ts-sub">The {{ mode }} games these two shared — same team vs opposite teams.<span v-if="teamSplit && teamSplit.excluded"> Excluding games with: {{ teamSplit.excluded.join(', ') }}.</span></p>
-            <p v-if="tsExcludeUnresolved.length" class="ts-warn">Unknown player(s): {{ tsExcludeUnresolved.join(', ') }} — check spelling.</p>
+            <div class="ts-title-row">
+              <h2>Team modes</h2>
+              <span v-for="cid in tsExclude" :key="cid" class="ts-ex-pill">
+                {{ tsDisplay(cid) }}
+                <button class="ts-ex-x" :title="`Stop excluding ${tsDisplay(cid)}`"
+                        @click="tsRemoveExclude(cid)">✕</button>
+              </span>
+            </div>
+            <p class="ts-sub">The {{ mode }} games these two shared — same team vs opposite teams.<span v-if="tsExclude.length"> Games with the excluded player{{ tsExclude.length > 1 ? 's' : '' }} are dropped from both columns.</span></p>
           </div>
           <div class="ts-controls">
-            <input v-model="tsExcludeRaw" class="ts-exclude" placeholder="Exclude players (comma-sep)…"
-                   @keyup.enter="loadTeamSplit" @blur="loadTeamSplit"
-                   title="Drop every shared game where these players appeared on either side">
+            <div class="picker-input ts-ex-wrap">
+              <input v-model="tsExcludeSearch" class="ts-exclude" placeholder="Exclude a player…"
+                     title="Drop every shared game where this player appeared on either side">
+              <div v-if="tsExcludeMatch.length" class="dropdown">
+                <a v-for="x in tsExcludeMatch" :key="x.canonical_id" href="#"
+                   @click.prevent="tsAddExclude(x.canonical_id)">
+                  <strong>{{ x.display || x.canonical_id }}</strong>
+                  <span class="meta">{{ x.matches }} games</span>
+                </a>
+              </div>
+            </div>
             <div class="window-pills">
               <button v-for="w in TS_WINDOWS" :key="w.days"
                       :class="['window-pill', { active: tsDays === w.days }]" @click="tsDays = w.days">{{ w.label }}</button>
@@ -858,6 +879,13 @@ table.matchup .pred .win-b { color: #a855f7; }
 }
 .mode-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .ts-exclude { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--fg-1); padding: 7px 12px; font-size: 12.5px; min-width: 230px; }
-.ts-warn { color: var(--draw); font-size: 12px; margin: 4px 0 0; }
+.ts-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ts-ex-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--loss);
+  color: var(--loss); border-radius: 999px; padding: 2px 6px 2px 10px; font-size: 12px; }
+.ts-ex-x { background: none; border: 0; color: var(--loss); cursor: pointer; font-size: 11px;
+  padding: 2px 4px; line-height: 1; }
+.ts-ex-x:hover { color: var(--fg-1); }
+.ts-ex-wrap { min-width: 230px; }
+.ts-ex-wrap .dropdown { min-width: 230px; }
 .ts-chip-wl { color: var(--fg-3); }
 </style>
