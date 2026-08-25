@@ -46,10 +46,10 @@ useSeoMeta({
 <template>
   <UApp>
     <header class="topbar">
-      <NuxtLink to="/" class="brand">
+      <a href="https://deepfrag.gg" class="brand" title="DeepFrag home">
         <img src="/favicon.svg" alt="" class="brand-mark">
         <span class="brand-word">Deep<em>Frag</em></span>
-      </NuxtLink>
+      </a>
       <nav class="nav">
         <NuxtLink to="/">Rankings</NuxtLink>
         <NuxtLink to="/players">Players</NuxtLink>
