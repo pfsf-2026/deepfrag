@@ -291,10 +291,10 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
           <div class="board">
             <div class="board-head"><span class="c-rung">#</span><span class="c-team">Team</span><span class="c-members">Players</span><span class="c-rec" title="Match record (won–lost)">Match</span><span class="c-rec" title="Game/map record (won–lost)">Games</span><span class="c-status">Status</span></div>
             <div v-for="t in teams" :key="t.id" class="row" :class="{ top: t.rung === 1 }">
-              <span class="c-rung">{{ t.rung }}</span>
+              <span class="c-rung">{{ t.rung }}<span v-if="t.rung === 1" class="koth-crown" title="King of the Hill — holds rung 1">👑</span></span>
               <span class="c-team">
                 <img v-if="t.has_logo" :src="logoUrl(t.id)" class="tlogo" alt="">
-                <span v-else class="tlogo tlogo-ph">👑</span>
+                <span v-else class="tlogo tlogo-ph">{{ (t.tag || t.name || '?')[0].toUpperCase() }}</span>
                 <span class="ttag">{{ t.tag || '—' }}</span>
                 <NuxtLink class="tname tlink" :to="`/ladder/team/${t.id}`" title="View team page">{{ t.name }}</NuxtLink>
                 <button v-if="isMyTeam(t)" class="edit" title="Team settings" @click="editTeam(t)">✎</button>
@@ -571,9 +571,11 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .row { border-top: 1px solid rgba(43,54,80,.5); font-size: 14px; }
 .row:first-of-type { border-top: 0; }
 .row .c-rung { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--fg-2); }
-.row.top { background: rgba(245,158,11,0.07); } .row.top .c-rung { color: var(--draw); } .row.top .tname::before { content: '👑 '; }
+.row.top { background: rgba(245,158,11,0.07); } .row.top .c-rung { color: var(--draw); display: flex; align-items: center; gap: 10px; }
+.koth-crown { font-size: 17px; filter: drop-shadow(0 0 6px rgba(245,158,11,0.55)); }
 .c-team { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .tlogo { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; flex: 0 0 22px; }
+.tlogo-ph { display: inline-flex; align-items: center; justify-content: center; background: var(--panel-2, rgba(255,255,255,0.05)); border: 1px solid var(--border); color: var(--fg-3); font-size: 11px; font-weight: 700; }
 .tlogo-ph { display: inline-flex; align-items: center; justify-content: center; background: var(--panel-3); font-size: 12px; opacity: 0.55; }
 .ttag { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(20,230,192,0.12); border: 1px solid rgba(20,230,192,0.3); border-radius: 5px; padding: 1px 4px; flex: 0 0 auto; min-width: 42px; text-align: center; box-sizing: border-box; }
 .tname { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
