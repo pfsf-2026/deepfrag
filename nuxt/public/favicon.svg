@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="lava" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb347"/>
+      <stop offset="0.45" stop-color="#ff7a1a"/>
+      <stop offset="1" stop-color="#e5330f"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="1.05" r="0.9">
+      <stop offset="0" stop-color="#ff7a1a" stop-opacity="0.38"/>
+      <stop offset="0.55" stop-color="#e5330f" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#e5330f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="13" fill="#0a0806"/>
+  <rect width="64" height="64" rx="13" fill="url(#glow)"/>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="12.25" fill="none" stroke="#2a2018" stroke-width="1.5"/>
+  <!-- D -->
+  <path fill="url(#lava)" d="M11 13 h11.5 c8.8 0 14 7.4 14 19 s-5.2 19-14 19 H11 Z
+    M19 20.5 v23 h3 c4.6 0 6.4-4.4 6.4-11.5 s-1.8-11.5-6.4-11.5 Z"/>
+  <!-- F -->
+  <path fill="url(#lava)" d="M40 13 h14 v7.5 h-6 v8.5 h5.5 v7.5 H48 V51 h-8 Z"/>
+</svg>
