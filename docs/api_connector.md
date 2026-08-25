@@ -93,6 +93,38 @@ Full tracked list (with last-activity): `GET /api/servers`.
 Exactly 8 canonical ids → most even 4v4 splits with win probabilities and
 per-map projections (`p_by_map` over dm2/dm3/e1m2/schloss).
 
+## Sage connector protocol (machine ingestion)
+
+For Sage SEO's Customer Data Connector, the API also implements the provider
+protocol under `GET /api/v1/connector/*` — bearer-key authenticated
+(`Authorization: Bearer <key>`), wire-format-v1 envelope
+(`{format, version, generated_at, params, data}`). Datasets:
+
+- `meta` — inventory + freshness: total bot-free matches, `data_through`,
+  established rated-player counts per mode, dataset list.
+- `rankings-1on1`, `rankings-4on4` (`?top=50`) — established players (≥10
+  rated games, σ≤150) ranked by rating μ, with region, W-L, damage ratio
+  (DDR), and average frag differential. μ ~1500 = median, Div 0 starts around
+  the top 5%.
+- `map-activity` — games per map per mode across the whole corpus. The "big
+  four" 4on4 maps are dm2, dm3, schloss, e1m2.
+- `activity-trends` (`?weeks=26`) — games and distinct active players per ISO
+  week per mode: the community-health / seasonality signal.
+- `live-servers` — servers with humans on them right now (hostname, city,
+  region, map, mode, player count).
+
+Vocabulary: "duel" = 1on1; "fours"/"4on4" = the team mode; a match's
+"margin" is the team frag differential; "quad" (Quad Damage) and "RA" (red
+armor) are the contested map resources; KTX is the competitive server mod;
+ratings are OpenSkill-based (μ = best-guess skill, σ = uncertainty;
+provisional until ~10 rated games).
+
+Article angles this data uniquely supports: weekly/seasonal activity trends;
+map meta pieces (pace, margins, item control from the match DB); rankings
+movement and divisional cutoffs; "who's playing right now" regional server
+coverage; team-balance fairness (the calibrated 4on4 predictor described
+above).
+
 ## Writing rules for generated articles
 
 1. Never invent numbers — every stat must come from one of these endpoints

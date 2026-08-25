@@ -8763,3 +8763,8 @@ def admin_seed_map_geometry(authorization: str | None = Header(default=None)):
         **_run_script("seed_map_geometry.py", timeout=600),
         "completed_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ── Sage data connector (read-only, key-authenticated) — see connector.py ─────
+from connector import router as _connector_router  # noqa: E402
+app.include_router(_connector_router)
