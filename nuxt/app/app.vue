@@ -25,6 +25,14 @@ async function teamSettings() {
 
 useHead({
   meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
+  script: [
+    // GA4 (same property as deepfrag.gg; Site Kit owns the WP side). Config
+    // only fires on the brand host so pages.dev fallback + localhost stay out
+    // of the reports — same guard pattern as sage-frontend. SPA route changes
+    // are covered by the stream's enhanced measurement (history events).
+    { src: 'https://www.googletagmanager.com/gtag/js?id=G-ZZZJ1C0TV2', async: true },
+    { innerHTML: "window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}window.gtag=gtag;gtag('js',new Date());if(location.hostname==='app.deepfrag.gg'){gtag('config','G-ZZZJ1C0TV2');}" }
+  ],
   link: [
     { rel: 'canonical', href: 'https://app.deepfrag.gg' },
     { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
