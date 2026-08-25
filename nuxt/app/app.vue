@@ -1,5 +1,12 @@
 <script setup>
 const { user, loggedIn, ready, fetchMe, login, logout } = useAuth()
+
+// Canonical home is app.deepfrag.gg (2026-08-30 cutover). pages.dev stays the
+// origin and keeps serving as a fallback, but visitors get moved to the brand
+// domain with their path/query intact.
+if (typeof window !== 'undefined' && window.location.hostname === 'deepfrag.pages.dev') {
+  window.location.replace('https://app.deepfrag.gg' + window.location.pathname + window.location.search + window.location.hash)
+}
 const menuOpen = ref(false)
 // Shared so the KOTH "set your location" prompt can open the same modal.
 const showSettings = useState('show-settings', () => false)
@@ -19,6 +26,7 @@ async function teamSettings() {
 useHead({
   meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
   link: [
+    { rel: 'canonical', href: 'https://app.deepfrag.gg' },
     { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
     { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32.png' },
     { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
