@@ -24,7 +24,7 @@ useHead({
     { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
     { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
     { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-    { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500&display=swap' }
+    { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500&family=Big+Shoulders+Display:wght@900&display=swap' }
   ],
   htmlAttrs: { lang: 'en', class: 'dark' }
 })
@@ -39,8 +39,8 @@ useSeoMeta({
   <UApp>
     <header class="topbar">
       <NuxtLink to="/" class="brand">
-        <span class="dot" />
-        <span>DeepFrag</span>
+        <img src="/favicon.svg" alt="" class="brand-mark">
+        <span class="brand-word">Deep<em>Frag</em></span>
       </NuxtLink>
       <nav class="nav">
         <NuxtLink to="/">Rankings</NuxtLink>
@@ -128,12 +128,17 @@ body {
 }
 .topbar .brand {
   display: flex; align-items: center; gap: 10px;
-  font-weight: 800; font-size: 17px; letter-spacing: -0.02em;
   color: var(--fg); text-decoration: none;
 }
-.topbar .brand .dot {
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--accent); box-shadow: 0 0 12px var(--accent-glow);
+.topbar .brand-mark { width: 26px; height: 26px; border-radius: 6px; }
+.topbar .brand-word {
+  font-family: 'Big Shoulders Display', sans-serif; font-weight: 900;
+  font-size: 22px; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1;
+}
+.topbar .brand-word em {
+  font-style: normal;
+  background: linear-gradient(135deg, #ffb347 0%, #ff7a1a 45%, #e5330f 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .topbar .nav { display: flex; gap: 4px; }
 .topbar .nav a {
