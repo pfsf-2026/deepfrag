@@ -857,6 +857,24 @@ def _ladder_tick(cur):
     counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0, "bo3_normalized": 0,
               "auto_resolved": 0, "nudged_3d": 0, "auto_forfeited": 0}
 
+    # One-shot data fix (2026-08-26, Cronus): record challenge 69 (Tardy Party
+    # vs $$$) from the captain-supplied game ids. The bo3 was played ~20h
+    # BEFORE the challenge was filed, and a second same-teams session on 08-25
+    # makes any auto-resolve lookback ambiguous — the exact ids are the only
+    # safe source. Goes through _try_report_games so every normal gate still
+    # applies (reuse guard, roster match, frags decide). No-ops once the
+    # challenge leaves 'open'; delete this block after it lands.
+    try:
+        _fix_ch = _report_load_challenge(cur, 69)
+        if _fix_ch and _fix_ch["status"] == "open":
+            _fix_out, _fix_pay = _try_report_games(cur, _fix_ch, [234835, 234836, 234837],
+                                                   "admin data-fix (Cronus)")
+            counts["ch69_datafix"] = _fix_out
+    except HTTPException as _fix_e:
+        counts["ch69_datafix"] = f"rejected: {_fix_e.detail}"
+    except Exception as _fix_e:  # never break the tick over a data fix
+        counts["ch69_datafix"] = f"error: {_fix_e}"
+
     # Self-heal: enforce Bo3-only. A match's maps = the DECISIVE set up to the
     # clinching 2nd win; games after that are "for fun" and don't count. Trim
     # them, recompute score/winner/hub_game_ids, and set played_at to the last
