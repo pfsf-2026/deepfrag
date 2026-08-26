@@ -6192,10 +6192,22 @@ def _try_report_games(cur, ch, game_ids, reporter):
     missing = [g for g in game_ids if int(g) not in rows]
     if missing:
         return "pending", {"missing": missing}
-    # Window: inside the challenge's life, with slack for clock drift and
-    # just-past-deadline finishes.
-    lo = ch["created_at"] - timedelta(hours=6) if ch.get("created_at") else None
-    hi = (ch["deadline"] + timedelta(hours=24)) if ch.get("deadline") else None
+    # Reuse guard: a hub game can only ever count toward ONE recorded ladder
+    # match. This (plus full-roster matching) is the real integrity anchor, so
+    # the time window below can stay generous.
+    cur.execute("SELECT hub_game_ids FROM ladder_matches WHERE ladder_id=%s", (ch["ladder_id"],))
+    used = {int(g) for r2 in cur.fetchall() for g in (r2["hub_game_ids"] or [])}
+    dup = sorted(int(g) for g in game_ids if int(g) in used)
+    if dup:
+        raise HTTPException(400, f"game(s) {dup} already count toward a recorded ladder match")
+    # Window: generous by design — manual reporting exists precisely for
+    # matches played off-schedule (before the challenge was filed, or past the
+    # deadline). 14 days of slack each way; identity comes from the reuse
+    # guard + exact game ids + full rosters, not the clock. (2026-08-26:
+    # Tardy Party vs $$$ played first and filed the challenge after — the old
+    # created_at-6h floor rejected legit games.)
+    lo = ch["created_at"] - timedelta(days=14) if ch.get("created_at") else None
+    hi = (ch["deadline"] + timedelta(days=14)) if ch.get("deadline") else None
     ordered = sorted(rows.values(), key=lambda r: str(r["match_date"]))
     for r in ordered:
         try:
@@ -6205,8 +6217,8 @@ def _try_report_games(cur, ch, game_ids, reporter):
         except Exception:
             continue
         if (lo and d < lo) or (hi and d > hi):
-            raise HTTPException(400, f"game {r['hub_game_id']} ({r['match_map']}) was played outside "
-                                     f"this challenge's window — check the game IDs")
+            raise HTTPException(400, f"game {r['hub_game_id']} ({r['match_map']}) was played more than "
+                                     f"two weeks outside this challenge's window — check the game IDs")
     # Chronological first-to-2 walk over ONLY the submitted games.
     aw = bw = 0
     decisive = []
