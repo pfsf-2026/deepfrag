@@ -125,6 +125,40 @@ movement and divisional cutoffs; "who's playing right now" regional server
 coverage; team-balance fairness (the calibrated 4on4 predictor described
 above).
 
+## Ground truth — QuakeWorld facts writers MUST get right
+
+These corrections come from real editorial review by the community. Violating
+them destroys credibility with the exact audience the content targets.
+
+- **QuakeWorld ≠ the 2021 KEX remaster.** The path into this community is
+  **nQuake** (ezQuake client) → QuakeWorld servers. NEVER recommend the KEX
+  remaster, Ironwail, or vkQuake as the way in — those are NetQuake-family
+  paths that route players AWAY from QuakeWorld servers and this community.
+- **A 4on4 is 8 players and a 20-minute timelimit.** One person calling a
+  pickup needs seven more. Matches are best-of-3 maps in organized play.
+- **There are no "loadouts", "builds", or "classes"** in QuakeWorld. Everyone
+  spawns equal and fights over map resources: weapons, armors (green/yellow/
+  red), mega health, and Quad Damage. Never import hero-shooter vocabulary.
+- **Team comms today:** NA pickups mostly run voice (Discord or in-game mm3);
+  mm2 text reports are used sparingly in NA but heavily in EU.
+- **The NA community Discord is called NAQW** (North American QuakeWorld).
+  There is no "DeepFrag Discord".
+- **Servers span five continents** (EU, NA, OC, SA, AS per the live tracker) —
+  verify against the `live-servers` / `/api/servers` data before claiming a
+  number.
+- **Skill returns slowly.** Movement (bunnyhop rhythm, ramp timing) takes
+  weeks of games to come back for returning players, not a few warmups. Do
+  not promise fast rust removal; point to ratings/balancer keeping games fair
+  meanwhile.
+- **Map facts:** the 4on4 "big four" are dm2, dm3, schloss, e1m2. e1m2 has no
+  red armor at all. Schloss is the big-four map where quad control least
+  predicts the winner (65.2% quad-majority win rate vs 80.7% on dm3). Never
+  claim a map lacks or has an item/weapon without checking.
+- **Every statistic must come from a connector dataset or the public API.**
+  If the data is not available, write without the number — never approximate,
+  never invent, never attribute untracked metrics ("return rate", "first-night
+  rating drop", counts of games "in our logs") to DeepFrag.
+
 ## Writing rules for generated articles
 
 1. Never invent numbers — every stat must come from one of these endpoints
