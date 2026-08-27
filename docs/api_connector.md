@@ -142,7 +142,16 @@ them destroys credibility with the exact audience the content targets.
 - **Team comms today:** NA pickups mostly run voice (Discord or in-game mm3);
   mm2 text reports are used sparingly in NA but heavily in EU.
 - **The NA community Discord is called NAQW** (North American QuakeWorld).
-  There is no "DeepFrag Discord".
+  There is no "DeepFrag Discord". Regional Discords: NAQW
+  (discord.gg/3UwkkwaWrQ), Europe (discord.gg/quake-world-166866762787192833),
+  Australia (discord.gg/T95V57Jy74), South America
+  (discord.com/invite/xy9WagvMBE).
+- **unezQuake is the NA client of choice** — a community-maintained ezQuake
+  fork (github.com/dusty-qw/unezquake) with antilag/prediction refinements
+  for higher-ping play. Install = drop the executable into the nQuake folder
+  and launch it instead of ezQuake; same install, same config. Recommend
+  nQuake first, unezQuake as the NA upgrade on top — never as a replacement
+  for installing nQuake.
 - **Servers span five continents** (EU, NA, OC, SA, AS per the live tracker) —
   verify against the `live-servers` / `/api/servers` data before claiming a
   number.
