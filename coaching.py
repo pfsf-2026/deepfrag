@@ -32,6 +32,7 @@ MVD_API = os.environ.get(
     "MVD_API_BASE", "https://deepfrag-mvd-api-751658372467.us-central1.run.app"
 )
 STACK_ARMOR = 50            # "stacked" armor floor (duel-relevant)
+CHAIN_DEATH_SEC = 14        # a death <14s after the previous one = spawn-cycle death
 BUCKET_MS = 50              # resolution for stack/position walk
 MAJOR_ITEMS = ("ra", "mh", "ya", "quad", "ga")
 
@@ -251,12 +252,15 @@ def match_metrics(game_id: int, player: str, item_locs: list | None = None) -> d
     # frags: stack at my kills/deaths + enemy stack at those moments
     frags = _get(f"/v1/demos/gameId:{game_id}/frags")
     my_kill_stack, my_kill_enemy, my_death_stack, my_death_enemy = [], [], [], []
+    my_death_times = []  # ALL my deaths (incl. suicides) for chained-death detection
     death_wpns = defaultdict(int)
     if frags:
         for f in frags.get("frags", []):
             t = f.get("time", 0)
             idx = min(int(t / BUCKET_MS), n - 1)
             k, v, wpn = f.get("killer"), f.get("victim"), f.get("weapon", "?")
+            if v == player:
+                my_death_times.append(t / 1000.0)
             if k == player and v != player:
                 my_kill_stack.append(stack_at(me, idx))
                 my_kill_enemy.append(stack_at(en, idx))
@@ -324,6 +328,13 @@ def match_metrics(game_id: int, player: str, item_locs: list | None = None) -> d
         "enemy_stack_at_my_death": avg(my_death_enemy),
         "n_kills": len(my_kill_stack),
         "n_deaths": len(my_death_stack),
+        # % of deaths arriving <CHAIN_DEATH_SEC after the previous one — the
+        # spawn-cycle signature (2026-08-30, mined from the cronus-yeti series:
+        # 64% chained in a blowout loss vs the winner's near-zero).
+        "chained_death_pct": (round(sum(1 for a, b in zip(sorted(my_death_times), sorted(my_death_times)[1:])
+                                        if b - a < CHAIN_DEATH_SEC) / len(my_death_times), 3)
+                              if my_death_times else None),
+        "deaths_total": len(my_death_times),
         "item_control": item_ctrl,
         "restack_med_sec": (sorted(restacks)[len(restacks) // 2] if restacks else None),
         "restack_avg_sec": avg(restacks),
@@ -379,6 +390,10 @@ def aggregate(per_match: list, results: list) -> dict:
         "mh_control": split("mh_control"),
         "mh_latency": split("mh_latency"),
         "restack_avg_sec": split("restack_avg_sec"),
+        "chained_death_pct": split("chained_death_pct"),
+        "spawnfrags": split("spawnfrags"),
+        "opp_spawnfrags": split("opp_spawnfrags"),
+        "spawnfrag_diff": split("spawnfrag_diff"),
         "armor_first_rate": {"win": armor_first_rate(W), "loss": armor_first_rate(L),
                              "all": armor_first_rate([m for m, _ in rows])},
         "item_control": {

@@ -29,6 +29,12 @@ BENCHMARKS_1ON1 = {
     # Average stack (armor+health) over the game — elites live at ~180 (mined from
     # close top-5 games 2026-06-03). Top-line "how stacked do you stay" signal.
     "avg_stack":      {"label": "Average stack held", "elite": 180, "higher_better": True, "fmt": "num"},
+    # PROVISIONAL anchors (2026-08-30, single-series mined from cronus-yeti:
+    # blowout-loser chained 64%, winner ~0; spawnfrag diff -17 over 7 games).
+    # Validate against the elite corpus before trusting the tier-gap reading —
+    # the win/loss self-split is the reliable signal until then.
+    "chained_death_pct": {"label": "Chained deaths (re-dying <14s)", "elite": 0.35, "higher_better": False, "fmt": "pct"},
+    "spawnfrag_diff": {"label": "Spawnfrag differential per game", "elite": 0.0, "higher_better": True, "fmt": "num"},
     # NOTE: armor-first-off-spawn lever REMOVED 2026-06-03 — it was provisional,
     # computed across all spawns (not first-spawn), and meaningless on maps where
     # armor isn't adjacent to spawns. Replaced by stack_discipline (mined from the
@@ -51,6 +57,8 @@ def _extract(agg: dict):
         "restack_sec":  agg.get("restack_avg_sec", {}),
         "enemy_stack_at_my_death": agg.get("enemy_stack_at_my_death", {}),
         "avg_stack":    agg.get("avg_stack", {}),
+        "chained_death_pct": agg.get("chained_death_pct", {}),
+        "spawnfrag_diff": agg.get("spawnfrag_diff", {}),
     }
 
 

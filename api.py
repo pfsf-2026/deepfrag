@@ -3327,7 +3327,8 @@ def coaching_metrics(
         # hash but hub_game_id was backfilled from the demo filename).
         cur.execute("""
             SELECT m.hub_game_id AS game_id, m.match_map AS map,
-                   p.player_frags AS mf, opp.player_frags AS of
+                   p.player_frags AS mf, opp.player_frags AS of,
+                   p.player_spawnfrags AS my_sf, opp.player_spawnfrags AS opp_sf
             FROM players p
             JOIN matches m ON m.match_id = p.match_id AND m.match_mode = %(mode)s
             JOIN players opp ON opp.match_id = p.match_id AND opp.canonical_id <> p.canonical_id
@@ -3342,6 +3343,12 @@ def coaching_metrics(
     for mrow in matches:
         m = coaching_mod.match_metrics(mrow["game_id"], display,
                                        item_locs=items_by_map.get(mrow["map"]))
+        if m is not None:
+            # KTX-side spawn stats ride in from the DB row (not demo-derived).
+            my_sf, opp_sf = mrow["my_sf"] or 0, mrow["opp_sf"] or 0
+            m["spawnfrags"] = my_sf
+            m["opp_spawnfrags"] = opp_sf
+            m["spawnfrag_diff"] = my_sf - opp_sf
         per_match.append(m)
         results.append("W" if (mrow["mf"] or 0) > (mrow["of"] or 0) else "L")
     parsed = [m for m in per_match if m]
