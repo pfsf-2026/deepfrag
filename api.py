@@ -857,6 +857,22 @@ def _ladder_tick(cur):
     counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0, "bo3_normalized": 0,
               "auto_resolved": 0, "nudged_3d": 0, "auto_forfeited": 0}
 
+    # One-shot (2026-08-31, Cronus): archive Super Cool Awesome Time (team 1)
+    # — flynn is taking a break. Stats stay viewable on the team page; open
+    # challenges cancel; rungs below compact. No-ops once archived; delete
+    # this block after it lands.
+    try:
+        _arch = _ladder.archive_team(cur, 1)
+        if _arch is not None:
+            counts["team1_archived"] = _arch
+            try:
+                notify.send(content=("📦 **Super Cool Awesome Time** has stepped off the ladder for now "
+                                     "(flynn's on a break). Their record stays on the books — rungs below move up one."))
+            except Exception:
+                pass
+    except Exception as _arch_e:
+        counts["team1_archived"] = f"error: {_arch_e}"
+
 
     # Self-heal: enforce Bo3-only. A match's maps = the DECISIVE set up to the
     # clinching 2nd win; games after that are "for fun" and don't count. Trim
@@ -4081,7 +4097,14 @@ def ladder_detail(ladder_id: int, response: Response):
                            proposed=r["proposed"] or [],
                            picks=r["picks"] or {})
                       for r in cur.fetchall()]
-    return {"ladder": lad, "teams": teams, "koth": koth, "challenges": challenges}
+        # Archived teams: off the board, stats preserved — listed so the UI can
+        # link their team pages from a quiet "Retired" section.
+        cur.execute("""SELECT id, name, tag, (logo IS NOT NULL) AS has_logo
+                       FROM ladder_teams WHERE ladder_id=%s AND status='archived'
+                       ORDER BY name""", (ladder_id,))
+        retired = [dict(r) for r in cur.fetchall()]
+    return {"ladder": lad, "teams": teams, "koth": koth, "challenges": challenges,
+            "retired": retired}
 
 
 @app.post("/api/admin/ladder/create")

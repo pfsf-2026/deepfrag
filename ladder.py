@@ -137,6 +137,33 @@ def standings(cur, ladder_id):
     return cur.fetchall()
 
 
+def archive_team(cur, team_id):
+    """Retire a team from the board: drop it from standings, close its rung
+    gap, cancel its open/scheduled challenges. Stats and match history stay
+    intact — the team page still resolves by id; the team just stops
+    occupying a rung. Idempotent (archiving an archived team is a no-op)."""
+    cur.execute("SELECT id, ladder_id, rung, status FROM ladder_teams WHERE id=%s", (team_id,))
+    t = cur.fetchone()
+    if not t or t["status"] == "archived":
+        return None
+    ladder_id, old_rung = t["ladder_id"], t["rung"]
+    cur.execute("""UPDATE ladder_challenges SET status='cancelled'
+                   WHERE (challenger_id=%s OR challenged_id=%s)
+                     AND status IN ('open','scheduled')
+                   RETURNING id""", (team_id, team_id))
+    cancelled = [r["id"] for r in cur.fetchall()]
+    cur.execute("UPDATE ladder_teams SET status='archived', active=FALSE, rung=NULL WHERE id=%s", (team_id,))
+    cur.execute("""INSERT INTO ladder_movements (ladder_id, team_id, from_rung, to_rung, reason)
+                   VALUES (%s,%s,%s,NULL,'archived')""", (ladder_id, team_id, old_rung))
+    if old_rung is not None:
+        cur.execute("""SELECT id, rung FROM ladder_teams
+                       WHERE ladder_id=%s AND active AND rung > %s ORDER BY rung""",
+                    (ladder_id, old_rung))
+        for r in cur.fetchall():
+            _set_rung(cur, r["id"], r["rung"] - 1, ladder_id, "compact-archived", from_rung=r["rung"])
+    return {"cancelled_challenges": cancelled, "from_rung": old_rung}
+
+
 def _team(cur, team_id):
     cur.execute("SELECT id, ladder_id, rung FROM ladder_teams WHERE id=%s", (team_id,))
     return cur.fetchone()

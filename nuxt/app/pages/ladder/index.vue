@@ -130,6 +130,7 @@ const ladder = ref(null)
 const teams = ref([])
 const koth = ref(null)
 const challenges = ref([])
+const retired = ref([])
 const loading = ref(true)
 const err = ref(null)
 // home cards
@@ -140,6 +141,7 @@ const openMatchId = ref(null)
 async function loadDetail(id, bust = true) {
   const d = await $fetch(`${base}/api/ladder/${id}`, { query: bust ? { _: Date.now() } : {} })
   ladder.value = d.ladder; teams.value = d.teams || []; koth.value = d.koth; challenges.value = d.challenges || []
+  retired.value = d.retired || []
   loadHomeExtras(id)
 }
 async function loadHomeExtras(id) {
@@ -501,6 +503,15 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
             </div>
           </details>
         </section>
+
+        <!-- Retired teams: off the board, stats preserved -->
+        <section v-if="retired.length" class="retired-strip">
+          <span class="retired-label">Retired</span>
+          <NuxtLink v-for="t in retired" :key="t.id" :to="`/ladder/team/${t.id}`" class="retired-team">
+            {{ t.tag || t.name }}
+          </NuxtLink>
+          <span class="retired-note">off the ladder — records preserved</span>
+        </section>
       </div>
     </template>
 
@@ -700,4 +711,20 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
   .row { grid-template-columns: 22px minmax(0,1fr) auto auto; }
   .head .koth-logo { max-width: 260px; }
 }
+
+.retired-strip {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 26px; padding: 12px 16px;
+  border: 1px dashed var(--border); border-radius: 8px; opacity: 0.85;
+}
+.retired-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--fg-3);
+}
+.retired-team {
+  color: var(--fg-2); font-size: 13px; font-weight: 600; text-decoration: none;
+  padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px;
+}
+.retired-team:hover { color: var(--fg); border-color: var(--border-2); }
+.retired-note { font-size: 11.5px; color: var(--fg-3); margin-left: auto; }
 </style>
