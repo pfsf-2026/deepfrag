@@ -857,21 +857,6 @@ def _ladder_tick(cur):
     counts = {"reminded_1h": 0, "reminded_10m": 0, "overdue": 0, "bo3_normalized": 0,
               "auto_resolved": 0, "nudged_3d": 0, "auto_forfeited": 0}
 
-    # One-shot (2026-08-31, Cronus): archive Super Cool Awesome Time (team 1)
-    # — flynn is taking a break. Stats stay viewable on the team page; open
-    # challenges cancel; rungs below compact. No-ops once archived; delete
-    # this block after it lands.
-    try:
-        _arch = _ladder.archive_team(cur, 1)
-        if _arch is not None:
-            counts["team1_archived"] = _arch
-            try:
-                notify.send(content=("📦 **Super Cool Awesome Time** has stepped off the ladder for now "
-                                     "(flynn's on a break). Their record stays on the books — rungs below move up one."))
-            except Exception:
-                pass
-    except Exception as _arch_e:
-        counts["team1_archived"] = f"error: {_arch_e}"
 
 
     # Self-heal: enforce Bo3-only. A match's maps = the DECISIVE set up to the
