@@ -5,10 +5,13 @@ Two questions in one ballot:
   1. Map-pool size for a bo3 format — 5 / 7 / 9 / 11 maps.
   2. Which maps belong in the pool, clicked in preference order (ranked).
 
-Voting requires Discord auth (the app's existing OAuth) — deliberately NOT
-gated on 2v2 ladder membership: this is the wider community's league to shape.
-One ballot per Discord account, re-submitting updates it. Results are shown
-only after you have voted (admins can always see them).
+Voting is deliberately low-friction (Nin: "don't want too many hurdles"):
+no login — you vote as your in-game handle. "No randoms" is enforced by the
+handle having to resolve to a KNOWN DeepFrag player (someone with rated
+games in the corpus). One ballot per canonical player; re-submitting
+updates it. Honor-system caveat, accepted knowingly: without auth, someone
+could vote as a player they are not — this is a community map poll, not an
+election, and the tradeoff was chosen explicitly.
 
 Candidate maps = the 16 most-played duel maps in the DeepFrag corpus at poll
 creation. Map scoring is Borda-style: rank 1 earns MAX_RANKED points, each
@@ -40,20 +43,23 @@ def _deps():
 
 
 def _ensure(cur):
+    # v2 table (poll_ballots): keyed on canonical player id, not discord id —
+    # Nin's no-auth revision. The v1 poll_votes table was created but never
+    # collected a ballot; left in place, unused.
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS poll_votes (
+        CREATE TABLE IF NOT EXISTS poll_ballots (
           poll_id     TEXT NOT NULL,
-          discord_id  TEXT NOT NULL,
-          username    TEXT,
+          voter_id    TEXT NOT NULL,
+          handle      TEXT,
           pool_size   INT,
           map_ranking JSONB NOT NULL DEFAULT '[]',
           updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-          PRIMARY KEY (poll_id, discord_id)
+          PRIMARY KEY (poll_id, voter_id)
         )""")
 
 
 def _results(cur):
-    cur.execute("SELECT pool_size, map_ranking FROM poll_votes WHERE poll_id=%s", (POLL_ID,))
+    cur.execute("SELECT pool_size, map_ranking FROM poll_ballots WHERE poll_id=%s", (POLL_ID,))
     rows = cur.fetchall()
     sizes = {str(s): 0 for s in POOL_SIZES}
     maps = {m: {"points": 0, "first": 0, "picks": 0} for m in CANDIDATE_MAPS}
@@ -71,41 +77,43 @@ def _results(cur):
     return {"votes": len(rows), "pool_size": sizes, "maps": board}
 
 
-def _my_vote(cur, discord_id):
-    cur.execute("""SELECT pool_size, map_ranking, updated_at FROM poll_votes
-                   WHERE poll_id=%s AND discord_id=%s""", (POLL_ID, discord_id))
+def _my_vote(cur, voter_id):
+    cur.execute("""SELECT handle, pool_size, map_ranking, updated_at FROM poll_ballots
+                   WHERE poll_id=%s AND voter_id=%s""", (POLL_ID, voter_id))
     r = cur.fetchone()
-    return ({"pool_size": r["pool_size"], "map_ranking": r["map_ranking"],
+    return ({"handle": r["handle"], "pool_size": r["pool_size"], "map_ranking": r["map_ranking"],
              "updated_at": str(r["updated_at"])} if r else None)
 
 
 @router.get("/api/vote/duel-league")
-def vote_get(response: Response, authorization: str | None = Header(default=None)):
-    pg, current_user = _deps()
+def vote_get(response: Response, player: str | None = None):
+    """Poll config + results. `player` (canonical_id) returns that player's
+    stored ballot so a returning voter sees their own picks prefilled."""
+    pg, _ = _deps()
     response.headers["Cache-Control"] = "no-store"
-    user = current_user(authorization, required=False)
     with pg() as conn:
         cur = conn.cursor()
         _ensure(cur)
-        my = _my_vote(cur, user["discord_id"]) if user else None
-        show_results = bool(my) or bool(user and user.get("is_admin"))
+        my = _my_vote(cur, player.strip().lower()) if player else None
         out = {
             "poll_id": POLL_ID,
             "question_1": {"label": "Total map pool for the bo3 format", "options": POOL_SIZES},
             "question_2": {"label": "Click the maps you want in the pool, in ranking order",
                            "candidates": CANDIDATE_MAPS, "max_ranked": MAX_RANKED},
-            "logged_in": bool(user),
             "my_vote": my,
-            "results": _results(cur) if show_results else None,
+            "results": _results(cur),
         }
         conn.commit()
     return out
 
 
 @router.post("/api/vote/duel-league")
-def vote_post(body: dict = Body(...), authorization: str | None = Header(default=None)):
-    pg, current_user = _deps()
-    user = current_user(authorization, required=True)
+def vote_post(body: dict = Body(...)):
+    pg, _ = _deps()
+    # "No randoms": the handle must resolve to a known player in the corpus.
+    handle = (body.get("handle") or "").strip()
+    if not handle:
+        raise HTTPException(400, "handle required — vote as your in-game name")
 
     pool_size = body.get("pool_size")
     if pool_size not in POOL_SIZES:
@@ -124,15 +132,24 @@ def vote_post(body: dict = Body(...), authorization: str | None = Header(default
     with pg() as conn:
         cur = conn.cursor()
         _ensure(cur)
+        # Resolve handle -> canonical player (exact canonical_id, or exact
+        # display-name match, case-insensitive). Must exist in the corpus.
+        cur.execute("""SELECT pc.canonical_id, COALESCE(pc.display_name, pc.canonical_id) AS display
+                       FROM players_canonical pc
+                       WHERE pc.canonical_id = %(h)s OR LOWER(pc.display_name) = LOWER(%(h)s)
+                       LIMIT 1""", {"h": handle.lower()})
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "handle not found — use the in-game name DeepFrag knows you by")
+        voter_id, display = row["canonical_id"], row["display"]
         cur.execute("""
-            INSERT INTO poll_votes (poll_id, discord_id, username, pool_size, map_ranking, updated_at)
+            INSERT INTO poll_ballots (poll_id, voter_id, handle, pool_size, map_ranking, updated_at)
             VALUES (%s, %s, %s, %s, %s, now())
-            ON CONFLICT (poll_id, discord_id) DO UPDATE
+            ON CONFLICT (poll_id, voter_id) DO UPDATE
               SET pool_size=EXCLUDED.pool_size, map_ranking=EXCLUDED.map_ranking,
-                  username=EXCLUDED.username, updated_at=now()
-        """, (POLL_ID, user["discord_id"], user.get("global_name") or user.get("username"),
-              pool_size, json.dumps(ranking)))
-        my = _my_vote(cur, user["discord_id"])
+                  handle=EXCLUDED.handle, updated_at=now()
+        """, (POLL_ID, voter_id, display, pool_size, json.dumps(ranking)))
+        my = _my_vote(cur, voter_id)
         results = _results(cur)
         conn.commit()
-    return {"ok": True, "my_vote": my, "results": results}
+    return {"ok": True, "voter_id": voter_id, "my_vote": my, "results": results}

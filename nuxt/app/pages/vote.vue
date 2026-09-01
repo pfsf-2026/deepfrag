@@ -1,35 +1,58 @@
 <script setup>
 // Community vote: the upcoming KOTH duel (1v1) league — pool size + ranked
-// map picks. Discord auth required to vote (NOT ladder membership); results
-// reveal after you submit. One ballot per account, editable any time.
-const { loggedIn, ready, login, authHeader, fetchMe } = useAuth()
-
+// map picks. Nin's spec: NO login, no hurdles — you vote as your in-game
+// handle. "No randoms": the handle must resolve to a known DeepFrag player
+// (autocomplete below is the player DB). One ballot per player, editable.
 const poll = ref(null)
 const loading = ref(true)
 const err = ref(null)
 const submitting = ref(false)
 const editing = ref(false)
 
+// who am I voting as
+const handleQuery = ref('')
+const picked = ref(null)          // {canonical_id, display}
+const players = ref([])
+const showDrop = ref(false)
+
 const poolSize = ref(null)
 const ranking = ref([])
+const voted = ref(false)          // this browser submitted (results gate)
 
-const showForm = computed(() => poll.value && loggedIn.value && (editing.value || !poll.value.my_vote))
-const showResults = computed(() => poll.value?.results && !editing.value && poll.value?.my_vote)
+const VOTE_KEY = 'df_vote_duel_league'
 const maxRanked = computed(() => poll.value?.question_2?.max_ranked || 11)
+const matches = computed(() => {
+  const q = handleQuery.value.trim().toLowerCase()
+  if (!q || q.length < 2) return []
+  return players.value.filter(p =>
+    p.display.toLowerCase().includes(q) || p.canonical_id.includes(q)).slice(0, 8)
+})
 
 async function load() {
   loading.value = true
   try {
-    poll.value = await $fetch('/api/vote/duel-league', { headers: authHeader() })
-    if (poll.value.my_vote) {
+    let saved = null
+    try { saved = JSON.parse(localStorage.getItem(VOTE_KEY) || 'null') } catch {}
+    const q = saved?.canonical_id ? { player: saved.canonical_id } : {}
+    poll.value = await $fetch('/api/vote/duel-league', { query: q })
+    if (saved?.canonical_id && poll.value.my_vote) {
+      picked.value = { canonical_id: saved.canonical_id, display: poll.value.my_vote.handle || saved.display }
       poolSize.value = poll.value.my_vote.pool_size
       ranking.value = [...(poll.value.my_vote.map_ranking || [])]
+      voted.value = true
     }
   } catch (e) { err.value = 'Could not load the poll — try a refresh.' }
   loading.value = false
 }
-onMounted(async () => { await fetchMe(); load() })
+onMounted(() => {
+  load()
+  $fetch('/api/players?limit=5000').then(d => {
+    players.value = (d.players || d || []).map(p => ({
+      canonical_id: p.canonical_id, display: p.display || p.canonical_id }))
+  }).catch(() => {})
+})
 
+function pick(p) { picked.value = p; handleQuery.value = p.display; showDrop.value = false }
 function toggleMap(m) {
   const i = ranking.value.indexOf(m)
   if (i >= 0) ranking.value.splice(i, 1)
@@ -38,16 +61,17 @@ function toggleMap(m) {
 function rankOf(m) { const i = ranking.value.indexOf(m); return i >= 0 ? i + 1 : null }
 
 async function submit() {
-  if (!poolSize.value || !ranking.value.length) return
+  if (!picked.value || !poolSize.value || !ranking.value.length) return
   submitting.value = true
   err.value = null
   try {
     const r = await $fetch('/api/vote/duel-league', {
       method: 'POST',
-      headers: authHeader(),
-      body: { pool_size: poolSize.value, map_ranking: ranking.value },
+      body: { handle: picked.value.canonical_id, pool_size: poolSize.value, map_ranking: ranking.value },
     })
     poll.value = { ...poll.value, my_vote: r.my_vote, results: r.results }
+    try { localStorage.setItem(VOTE_KEY, JSON.stringify({ canonical_id: r.voter_id, display: r.my_vote.handle })) } catch {}
+    voted.value = true
     editing.value = false
   } catch (e) {
     err.value = e?.data?.detail || 'Vote failed — try again.'
@@ -55,6 +79,8 @@ async function submit() {
   submitting.value = false
 }
 
+const showForm = computed(() => poll.value && (editing.value || !voted.value))
+const showResults = computed(() => poll.value?.results && voted.value && !editing.value)
 const sizeTotal = computed(() => {
   const s = poll.value?.results?.pool_size || {}
   return Object.values(s).reduce((a, b) => a + b, 0) || 1
@@ -71,23 +97,30 @@ useSeoMeta({ title: 'Duel League Vote · DeepFrag' })
       <h1>KOTH Duel League</h1>
       <p class="sub">The 1v1 league is coming. Before signups open, the community picks the format:
         how big the bo3 map pool should be, and which maps belong in it.
-        One ballot per Discord account — you can change yours any time.
-        Results unlock after you vote.</p>
+        Vote as your in-game handle — no login, one ballot per player, change it any time.
+        Results show after you vote.</p>
     </div>
 
-    <div v-if="loading || !ready" class="card quiet">Loading…</div>
+    <div v-if="loading" class="card quiet">Loading…</div>
     <div v-else-if="err && !poll" class="card quiet">{{ err }}</div>
 
-    <!-- Sign-in gate: Discord auth only, no ladder signup needed -->
-    <div v-else-if="!loggedIn" class="card gate">
-      <p><strong>Sign in with Discord to vote.</strong></p>
-      <p class="hint">Any Discord account works — you do not need to be on the 2v2 ladder.</p>
-      <button class="btn primary" @click="login">Sign in with Discord</button>
-    </div>
-
     <template v-else>
-      <!-- Ballot -->
       <div v-if="showForm" class="ballot">
+        <div class="card">
+          <h2><span class="qnum">0</span> Who's voting?</h2>
+          <p class="hint">Type your in-game name — it has to be a player DeepFrag knows (no randoms, Nin's orders).</p>
+          <div class="who">
+            <input v-model="handleQuery" class="who-input" placeholder="your in-game handle…"
+                   @focus="showDrop = true" @input="showDrop = true; picked = null">
+            <div v-if="showDrop && matches.length && !picked" class="drop">
+              <button v-for="p in matches" :key="p.canonical_id" class="drop-item" @click="pick(p)">
+                {{ p.display }}
+              </button>
+            </div>
+            <span v-if="picked" class="who-ok">✓ voting as {{ picked.display }}</span>
+          </div>
+        </div>
+
         <div class="card">
           <h2><span class="qnum">1</span> Total map pool for the best-of-3 format</h2>
           <div class="sizes">
@@ -116,13 +149,12 @@ useSeoMeta({ title: 'Duel League Vote · DeepFrag' })
 
         <div class="submitrow">
           <span v-if="err" class="err">{{ err }}</span>
-          <button class="btn primary big" :disabled="!poolSize || !ranking.length || submitting" @click="submit">
-            {{ submitting ? 'Submitting…' : (poll.my_vote ? 'Update my vote' : 'Submit my vote') }}
+          <button class="btn primary big" :disabled="!picked || !poolSize || !ranking.length || submitting" @click="submit">
+            {{ submitting ? 'Submitting…' : (voted ? 'Update my vote' : 'Submit my vote') }}
           </button>
         </div>
       </div>
 
-      <!-- Results (after voting) -->
       <div v-if="showResults" class="results">
         <div class="card">
           <div class="res-head">
@@ -146,7 +178,7 @@ useSeoMeta({ title: 'Duel League Vote · DeepFrag' })
           </div>
 
           <p class="hint" style="margin-top:14px">
-            Your ballot: {{ poll.my_vote.pool_size }} maps ·
+            Your ballot ({{ poll.my_vote.handle }}): {{ poll.my_vote.pool_size }} maps ·
             {{ (poll.my_vote.map_ranking || []).join(' → ') }}
           </p>
         </div>
@@ -162,13 +194,21 @@ useSeoMeta({ title: 'Duel League Vote · DeepFrag' })
 .head .sub { color: var(--fg-2); max-width: 62ch; line-height: 1.6; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 22px 24px; margin-top: 18px; }
 .card.quiet { color: var(--fg-3); }
-.card.gate { text-align: center; padding: 40px 24px; }
-.card.gate .hint { margin: 8px 0 18px; }
 .hint { color: var(--fg-3); font-size: 13px; }
-h2 { font-size: 17px; margin: 0 0 14px; display: flex; align-items: center; gap: 10px; }
+h2 { font-size: 17px; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
 h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--fg-2); margin: 20px 0 10px; }
 .qnum { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
         border-radius: 50%; background: var(--accent); color: #06251f; font-size: 13px; font-weight: 800; }
+.who { position: relative; max-width: 380px; }
+.who-input { width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+             color: var(--fg); padding: 11px 14px; font-size: 15px; }
+.who-input:focus { outline: none; border-color: var(--accent); }
+.drop { position: absolute; top: 100%; left: 0; right: 0; z-index: 20; margin-top: 4px;
+        background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 8px; overflow: hidden; }
+.drop-item { display: block; width: 100%; text-align: left; background: none; border: none;
+             color: var(--fg-2); padding: 9px 14px; cursor: pointer; font-size: 14px; }
+.drop-item:hover { background: var(--panel-3); color: var(--fg); }
+.who-ok { display: inline-block; margin-top: 8px; color: var(--accent); font-size: 13px; font-weight: 600; }
 .sizes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .size { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 8px;
         cursor: pointer; color: var(--fg-2); transition: all .12s; }
