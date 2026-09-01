@@ -8796,3 +8796,8 @@ def admin_seed_map_geometry(authorization: str | None = Header(default=None)):
 # ── Sage data connector (read-only, key-authenticated) — see connector.py ─────
 from connector import router as _connector_router  # noqa: E402
 app.include_router(_connector_router)
+
+
+# ── Community polls (standalone vote pages) — see vote.py ─────────────────────
+from vote import router as _vote_router  # noqa: E402
+app.include_router(_vote_router)
