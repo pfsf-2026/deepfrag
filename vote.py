@@ -2,7 +2,7 @@
 
 First poll (Nin's request, 2026-08-31): the upcoming KOTH **duel** league.
 Two questions in one ballot:
-  1. Map-pool size for a bo3 format — 5 / 7 / 9 / 11 maps.
+  1. Map-pool size for a bo5 format — 5 / 7 / 9 / 11 maps.
   2. Which maps belong in the pool, clicked in preference order (ranked).
 
 Voting is deliberately low-friction (Nin: "don't want too many hurdles"):
@@ -97,7 +97,7 @@ def vote_get(response: Response, player: str | None = None):
         my = _my_vote(cur, player.strip().lower()) if player else None
         out = {
             "poll_id": POLL_ID,
-            "question_1": {"label": "Total map pool for the bo3 format", "options": POOL_SIZES},
+            "question_1": {"label": "Total map pool for the bo5 format", "options": POOL_SIZES},
             "question_2": {"label": "Click the maps you want in the pool, in ranking order",
                            "candidates": CANDIDATE_MAPS, "max_ranked": MAX_RANKED},
             "my_vote": my,

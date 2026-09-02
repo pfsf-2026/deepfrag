@@ -96,7 +96,7 @@ useSeoMeta({ title: 'Duel League Vote · DeepFrag' })
       <div class="kicker">COMMUNITY VOTE</div>
       <h1>KOTH Duel League</h1>
       <p class="sub">The 1v1 league is coming. Before signups open, the community picks the format:
-        how big the bo3 map pool should be, and which maps belong in it.
+        how big the bo5 map pool should be, and which maps belong in it.
         Vote as your in-game handle — no login, one ballot per player, change it any time.
         Results show after you vote.</p>
     </div>
@@ -108,7 +108,7 @@ useSeoMeta({ title: 'Duel League Vote · DeepFrag' })
       <div v-if="showForm" class="ballot">
         <div class="card">
           <h2><span class="qnum">0</span> Who's voting?</h2>
-          <p class="hint">Type your in-game name — it has to be a player DeepFrag knows (no randoms, Nin's orders).</p>
+          <p class="hint">Type your in-game name — it has to be a player DeepFrag knows (no randoms).</p>
           <div class="who">
             <input v-model="handleQuery" class="who-input" placeholder="your in-game handle…"
                    @focus="showDrop = true" @input="showDrop = true; picked = null">
@@ -122,7 +122,7 @@ useSeoMeta({ title: 'Duel League Vote · DeepFrag' })
         </div>
 
         <div class="card">
-          <h2><span class="qnum">1</span> Total map pool for the best-of-3 format</h2>
+          <h2><span class="qnum">1</span> Total map pool for the best-of-5 format</h2>
           <div class="sizes">
             <button v-for="s in poll.question_1.options" :key="s"
                     class="size" :class="{ on: poolSize === s }" @click="poolSize = s">
