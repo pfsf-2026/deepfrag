@@ -31,6 +31,7 @@ POOL_SIZES = [5, 7, 9, 11]
 CANDIDATE_MAPS = [
     "aerowalk", "ztndm3", "dm4", "bravado", "dm6", "dm2", "skull", "pocket",
     "metron", "shifter", "katt", "catalyst", "toxicity", "tron", "zite", "sabbath",
+    "nova",  # added 2026-08-31 by request
 ]
 MAX_RANKED = 11  # matches the largest pool option
 
