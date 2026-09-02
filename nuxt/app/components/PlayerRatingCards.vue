@@ -58,7 +58,7 @@ function sortedPlayers(players) {
 
 // Madden-style colour ramp for a 0-99 rating.
 function ratingColor(v) {
-  if (v == null) return 'var(--fg-3, #64748b)'
+  if (v == null) return 'var(--fg-3, #988977)'
   if (v >= 90) return '#fbbf24'
   if (v >= 80) return '#22c55e'
   if (v >= 68) return '#84cc16'
@@ -167,7 +167,7 @@ function confTitle(p) {
 </template>
 
 <style scoped>
-.prc { --fg: #e8edf5; --fg-2: #9fb0c5; --fg-3: #64748b; --panel: #131a26; --panel-2: #1a2433; --border: #2b3445; --accent: #14e6c0; color: var(--fg); font-family: 'Inter', -apple-system, system-ui, sans-serif; }
+.prc { --fg: #f2ead9; --fg-2: #c9bca9; --fg-3: #988977; --panel: #14100c; --panel-2: #1c1610; --border: #2a2018; --accent: #ff7a1a; color: var(--fg); font-family: 'Inter', -apple-system, system-ui, sans-serif; }
 .pad { padding: 16px; } .small { font-size: 12px; } .muted { color: var(--fg-3); } .err { color: #ef4444; }
 .sub { color: var(--fg-2); font-size: 13px; margin: 0 0 18px; } .sub strong { color: var(--accent); }
 
@@ -181,7 +181,7 @@ function confTitle(p) {
 .tbl th.num { text-align: right; } .tbl th.sortable { cursor: pointer; user-select: none; } .tbl th.sortable:hover { color: var(--fg); } .tbl th.on { color: var(--accent); }
 .tbl td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .tbl tr:last-child td { border-bottom: 0; }
-.tbl tr:hover td { background: rgba(20,230,192,0.03); }
+.tbl tr:hover td { background: rgba(255,122,26,0.03); }
 .num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'JetBrains Mono', monospace; }
 .dim { color: var(--fg-3); } .lcell { white-space: nowrap; }
 .rt { font-weight: 700; } .ovr { font-weight: 800; }
@@ -196,7 +196,7 @@ function confTitle(p) {
 .tierpill { display: inline-block; margin-left: 8px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid; border-radius: 4px; padding: 1px 5px; }
 
 /* Modal card */
-.modal-back { position: fixed; inset: 0; background: rgba(2,6,14,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; font-family: 'Inter', -apple-system, system-ui, sans-serif; color: #e8edf5; }
+.modal-back { position: fixed; inset: 0; background: rgba(7,6,5,0.72); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; font-family: 'Inter', -apple-system, system-ui, sans-serif; color: #f2ead9; }
 .card { width: 100%; max-width: 420px; background: linear-gradient(160deg, #18222f, #0f1620); border: 1px solid var(--border); border-radius: 16px; padding: 22px; position: relative; box-shadow: 0 24px 60px rgba(0,0,0,0.5); }
 .x { position: absolute; top: 12px; right: 12px; background: var(--panel-2); border: 1px solid var(--border); color: var(--fg-2); width: 28px; height: 28px; border-radius: 8px; cursor: pointer; font-size: 12px; }
 .x:hover { color: var(--fg); }

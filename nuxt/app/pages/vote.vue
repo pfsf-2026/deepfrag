@@ -198,7 +198,7 @@ useSeoMeta({ title: 'Duel League Vote · DeepFrag' })
 h2 { font-size: 17px; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
 h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--fg-2); margin: 20px 0 10px; }
 .qnum { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
-        border-radius: 50%; background: var(--accent); color: #06251f; font-size: 13px; font-weight: 800; }
+        border-radius: 50%; background: var(--accent); color: #1a0d03; font-size: 13px; font-weight: 800; }
 .who { position: relative; max-width: 380px; }
 .who-input { width: 100%; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
              color: var(--fg); padding: 11px 14px; font-size: 15px; }
@@ -220,7 +220,7 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: v
            padding: 12px 8px; cursor: pointer; color: var(--fg-2); font-size: 14px; font-weight: 600; transition: all .12s; }
 .maptile.on { border-color: var(--accent); color: var(--fg); box-shadow: 0 0 0 1px var(--accent); }
 .maptile .rank { position: absolute; top: -8px; right: -8px; width: 22px; height: 22px; border-radius: 50%;
-                 background: var(--accent); color: #06251f; font-size: 12px; font-weight: 800;
+                 background: var(--accent); color: #1a0d03; font-size: 12px; font-weight: 800;
                  display: flex; align-items: center; justify-content: center; }
 .myorder { margin-top: 14px; color: var(--fg-3); font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .chip { background: var(--panel-3); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; color: var(--fg-2); }
@@ -229,7 +229,7 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: v
 .err { color: var(--loss); font-size: 13px; }
 .btn { border-radius: 8px; padding: 10px 18px; cursor: pointer; font-weight: 700; border: 1px solid var(--border);
        background: var(--panel-2); color: var(--fg); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #06251f; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #1a0d03; }
 .btn.primary:disabled { opacity: 0.45; cursor: default; }
 .btn.big { padding: 12px 26px; font-size: 15px; }
 .btn.ghost { margin-left: auto; }

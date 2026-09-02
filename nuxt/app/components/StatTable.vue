@@ -71,9 +71,9 @@ function barW(v) { return Math.max(0, Math.min(100, Math.round((v || 0) * 100)))
 .stab th.on { color: var(--accent); }
 .stab th .arr { margin-left: 3px; }
 .stab td.num, .stab th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.stab td.win { color: var(--win, #34e6b0); } .stab td.loss { color: var(--loss, #ff5d6c); }
-.chip { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--panel-2, #1a2433); }
-.barwrap { display: inline-block; width: 54px; height: 6px; background: var(--panel-2, #1a2433); border-radius: 3px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
+.stab td.win { color: var(--win, #ffb347); } .stab td.loss { color: var(--loss, #ff5d6c); }
+.chip { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--panel-2, #1c1610); }
+.barwrap { display: inline-block; width: 54px; height: 6px; background: var(--panel-2, #1c1610); border-radius: 3px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
 .bar { display: block; height: 100%; background: var(--accent); }
 .barval { font-variant-numeric: tabular-nums; }
 .empty { text-align: center; color: var(--fg-3); padding: 20px; }

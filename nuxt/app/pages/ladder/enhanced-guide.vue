@@ -66,17 +66,17 @@ const stats = [
 </template>
 
 <style scoped>
-.guide { max-width: 760px; margin: 0 auto; padding: 14px 18px 60px; color: var(--fg, #e8edf5); line-height: 1.6; }
-.back { display: inline-block; margin: 12px 0; font-size: 13px; color: var(--accent, #14e6c0); text-decoration: none; }
+.guide { max-width: 760px; margin: 0 auto; padding: 14px 18px 60px; color: var(--fg, #f2ead9); line-height: 1.6; }
+.back { display: inline-block; margin: 12px 0; font-size: 13px; color: var(--accent, #ff7a1a); text-decoration: none; }
 h1 { font-size: 26px; font-weight: 800; margin: 6px 0 12px; }
-.intro { color: var(--fg-2, #94a3b8); font-size: 14px; background: var(--panel, #131820); border: 1px solid var(--border, #2b3445); border-left: 3px solid var(--accent, #14e6c0); border-radius: 10px; padding: 14px 16px; }
-.intro strong { color: var(--fg, #e8edf5); }
+.intro { color: var(--fg-2, #c9bca9); font-size: 14px; background: var(--panel, #14100c); border: 1px solid var(--border, #2a2018); border-left: 3px solid var(--accent, #ff7a1a); border-radius: 10px; padding: 14px 16px; }
+.intro strong { color: var(--fg, #f2ead9); }
 .stat { margin-top: 22px; }
 .stat h2 { font-size: 16px; font-weight: 800; margin: 0 0 4px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.col { font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--accent, #14e6c0); background: rgba(20,230,192,.1); border: 1px solid rgba(20,230,192,.3); border-radius: 5px; padding: 1px 7px; }
-.stat p { margin: 4px 0; font-size: 14px; color: #cfd8e6; }
-.stat p :deep(strong) { color: var(--fg, #e8edf5); }
-.why { color: var(--fg-2, #94a3b8) !important; font-size: 13px !important; }
-.why strong { color: var(--accent, #14e6c0); }
+.col { font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--accent, #ff7a1a); background: rgba(255,122,26,.1); border: 1px solid rgba(255,122,26,.3); border-radius: 5px; padding: 1px 7px; }
+.stat p { margin: 4px 0; font-size: 14px; color: #d9cfbd; }
+.stat p :deep(strong) { color: var(--fg, #f2ead9); }
+.why { color: var(--fg-2, #c9bca9) !important; font-size: 13px !important; }
+.why strong { color: var(--accent, #ff7a1a); }
 .caveat { color: var(--draw, #f59e0b) !important; font-size: 12.5px !important; }
 </style>

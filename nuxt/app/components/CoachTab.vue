@@ -280,7 +280,7 @@ function runManual() {
 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .steps li { font-size: 13px; color: var(--fg-3); display: flex; gap: 8px; align-items: center; transition: color .2s; }
 .steps li .dot { width: 14px; text-align: center; }
-.steps li.done { color: var(--fg-2); } .steps li.done .dot { color: var(--win, #34e6b0); }
+.steps li.done { color: var(--fg-2); } .steps li.done .dot { color: var(--win, #ffb347); }
 .steps li.active { color: var(--fg); font-weight: 600; } .steps li.active .dot { color: var(--accent); }
 .loadnote { margin-top: 12px; font-size: 12px; color: var(--fg-3); font-style: italic; }
 .reanalyze { background: none; border: 1px solid var(--b); color: var(--fg-2); border-radius: 6px; padding: 3px 9px; font-size: 11px; cursor: pointer; margin-left: 8px; }
@@ -293,7 +293,7 @@ function runManual() {
 .sectitle.small { font-size: 11px; margin-bottom: 8px; }
 .muted { color: var(--fg-3); font-weight: 500; text-transform: none; letter-spacing: 0; }
 .card { background: var(--p2); border: 1px solid var(--b); border-radius: 10px; padding: 16px; }
-.win { color: var(--win, #34e6b0); } .loss { color: var(--loss, #ff5d6c); } .accent { color: var(--accent); }
+.win { color: var(--win, #ffb347); } .loss { color: var(--loss, #ff5d6c); } .accent { color: var(--accent); }
 
 .read { font-size: 14px; line-height: 1.7; }
 .read :deep(strong) { color: var(--accent); }
@@ -301,7 +301,7 @@ function runManual() {
 .readmore { background: none; border: 0; color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; padding: 8px 0 0; }
 .foot { color: var(--fg-3); font-size: 11px; margin-top: 10px; }
 
-.primary { background: linear-gradient(180deg, rgba(52,230,176,.06), var(--p2)); border: 1px solid rgba(52,230,176,.3); border-radius: 12px; padding: 18px; }
+.primary { background: linear-gradient(180deg, rgba(255,122,26,.06), var(--p2)); border: 1px solid rgba(255,122,26,.3); border-radius: 12px; padding: 18px; }
 .primary .rank { font-size: 11px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; }
 .primary .ptitle { font-size: 20px; font-weight: 800; margin: 4px 0 10px; }
 .cmp { display: flex; gap: 22px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -309,7 +309,7 @@ function runManual() {
 .cmp .item .n { font-size: 22px; font-weight: 800; display: block; }
 .cmp .you .n { color: var(--loss); } .cmp .best .n { color: var(--win); } .cmp .elite .n { color: var(--fg-2); }
 .trend { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 20px; display: inline-block; }
-.trend.up { background: rgba(52,230,176,.14); color: var(--win); }
+.trend.up { background: rgba(255,122,26,.14); color: var(--win); }
 .trend.down { background: rgba(255,93,108,.14); color: var(--loss); }
 .trend.flat { background: rgba(155,176,197,.12); color: var(--fg-2); }
 .minis { margin-top: 10px; }

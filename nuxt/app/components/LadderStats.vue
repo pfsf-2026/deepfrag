@@ -204,7 +204,7 @@ table.stats th, table.stats td { padding: 7px 9px; text-align: right; white-spac
 table.stats th { font-size: 11px; color: var(--fg-3); font-weight: 700; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
 table.stats th.sorted { color: var(--accent); }
 table.stats th.team, table.stats td.team { text-align: left; }
-table.stats td { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; border-bottom: 1px solid rgba(43,54,80,.45); }
+table.stats td { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; border-bottom: 1px solid rgba(42,32,24,.45); }
 table.stats tbody tr:hover { background: var(--panel-2); }
 .colgrp { border-left: 1px solid var(--border); }
 .tc { display: flex; align-items: center; gap: 8px; font-family: system-ui, sans-serif; font-weight: 700; }
@@ -218,7 +218,7 @@ table.stats tbody tr:hover { background: var(--panel-2); }
 .mcard { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; }
 .mcard .mh { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); font-weight: 800; margin-bottom: 7px; }
 .mcard .mh small { color: var(--fg-3); text-transform: none; font-weight: 400; }
-.mrow { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px solid rgba(43,54,80,.4); }
+.mrow { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px solid rgba(42,32,24,.4); }
 .mrow:last-child { border-bottom: 0; }
 .mrow .k { color: var(--fg-2); font-family: 'JetBrains Mono', monospace; }
 .mrow .v { font-family: 'JetBrains Mono', monospace; font-weight: 700; } .mrow .v small { color: var(--fg-3); font-weight: 400; }

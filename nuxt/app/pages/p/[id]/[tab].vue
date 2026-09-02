@@ -135,7 +135,7 @@ const trendCards = computed(() => {
       good = m.hb ? diff > 0 : diff < 0
       deltaTxt = (diff > 0 ? '+' : '') + (m.pp ? (diff * 100).toFixed(1) + 'pp' : (Math.abs(diff) >= 100 ? Math.round(diff) : diff.toFixed(1)))
     }
-    return { label: m.label, value: m.fmt(cur), series, deltaTxt, good, color: good === false ? '#ff5d6c' : '#34e6b0' }
+    return { label: m.label, value: m.fmt(cur), series, deltaTxt, good, color: good === false ? '#ff5d6c' : '#ffb347' }
   })
 })
 
@@ -408,9 +408,9 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .rtab th { color: var(--fg-3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
 .rtab td.num, .rtab th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .small { font-size: 12px; } .muted { color: var(--fg-3); }
-.chip { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--panel-2, #1a2433); }
+.chip { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; background: var(--panel-2, #1c1610); }
 .result-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-.result-pill.win { background: rgba(52,230,176,0.16); color: #34e6b0; }
+.result-pill.win { background: rgba(255,122,26,0.16); color: #ffb347; }
 .result-pill.loss { background: rgba(255,93,108,0.16); color: #ff5d6c; }
 .result-pill.draw { background: rgba(245,158,11,0.16); color: #f59e0b; }
 .placeholder { padding: 50px; text-align: center; color: var(--fg-3); }
@@ -419,10 +419,10 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
 .stat-card .l { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
 .stat-card .v { font-size: 24px; font-weight: 800; margin-top: 4px; font-variant-numeric: tabular-nums; }
-.stat-card .v.win { color: var(--win, #34e6b0); } .stat-card .v.loss { color: var(--loss, #ff5d6c); }
+.stat-card .v.win { color: var(--win, #ffb347); } .stat-card .v.loss { color: var(--loss, #ff5d6c); }
 .stat-card .s { font-size: 11px; color: var(--fg-3); margin-top: 3px; }
 .stat-card .s.delta { font-weight: 700; font-variant-numeric: tabular-nums; }
-.stat-card .s.delta.up { color: var(--win, #34e6b0); } .stat-card .s.delta.down { color: var(--loss, #ff5d6c); }
+.stat-card .s.delta.up { color: var(--win, #ffb347); } .stat-card .s.delta.down { color: var(--loss, #ff5d6c); }
 .donuts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; padding: 14px 4px; }
 @media (max-width: 760px) { .donuts { grid-template-columns: repeat(3, 1fr); } }
 .pill-row { display: flex; gap: 4px; margin-bottom: 14px; }
@@ -433,7 +433,7 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .tc-top { display: flex; justify-content: space-between; align-items: baseline; }
 .tc-l { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
 .tc-d { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.tc-d.up { color: var(--win, #34e6b0); } .tc-d.down { color: var(--loss, #ff5d6c); }
+.tc-d.up { color: var(--win, #ffb347); } .tc-d.down { color: var(--loss, #ff5d6c); }
 .tc-v { font-size: 22px; font-weight: 800; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
 .ptlabel { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
 .cmp-table { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 6px 14px 14px; }
@@ -444,7 +444,7 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .cmp-val { text-align: right; font-variant-numeric: tabular-nums; }
 .cmp-val.prv { color: var(--fg-3); }
 .cmp-diff { text-align: right; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.cmp-diff.up { color: var(--win, #34e6b0); } .cmp-diff.down { color: var(--loss, #ff5d6c); }
+.cmp-diff.up { color: var(--win, #ffb347); } .cmp-diff.down { color: var(--loss, #ff5d6c); }
 
 @media (max-width: 640px) {
   .page { padding: 16px 12px 64px; }

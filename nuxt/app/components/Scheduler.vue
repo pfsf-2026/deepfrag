@@ -395,7 +395,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
 .slot:not(.past):hover { border-color: var(--accent); }
 .picklist { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .pickrow { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; font-size: 14px; }
-.pickrow.on { border-color: var(--accent); background: rgba(20,230,192,0.08); }
+.pickrow.on { border-color: var(--accent); background: rgba(255,122,26,0.08); }
 .fld { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .fld > span { font-size: 12px; color: var(--fg-3); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
 .muted { color: var(--fg-3); font-weight: 400; text-transform: none; }
@@ -403,7 +403,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
 .fld input:focus { outline: none; border-color: var(--accent); }
 .sug-list { display: flex; flex-direction: column; gap: 6px; }
 .sug { text-align: left; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; cursor: pointer; font-family: inherit; }
-.sug.on { border-color: var(--accent); background: rgba(20,230,192,0.08); }
+.sug.on { border-color: var(--accent); background: rgba(255,122,26,0.08); }
 .sug-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg); flex-wrap: wrap; }
 .sug-head .best { background: var(--accent); color: var(--bg); font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 4px; }
 .sug-head .sug-ping { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-2); }

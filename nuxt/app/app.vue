@@ -112,18 +112,18 @@ useSeoMeta({
 
 <style>
 :root {
-  --bg: #0a0d12;
-  --panel: #131820;
-  --panel-2: #1c2330;
-  --panel-3: #252e3d;
-  --border: #2b3445;
-  --border-2: #3a4458;
-  --fg: #f1f5f9;
-  --fg-2: #94a3b8;
-  --fg-3: #64748b;
-  --accent: #14e6c0;
-  --accent-2: #06b6d4;
-  --accent-glow: rgba(20, 230, 192, 0.25);
+  --bg: #070605;
+  --panel: #14100c;
+  --panel-2: #1c1610;
+  --panel-3: #262017;
+  --border: #2a2018;
+  --border-2: #3a2f22;
+  --fg: #f2ead9;
+  --fg-2: #c9bca9;
+  --fg-3: #988977;
+  --accent: #ff7a1a;
+  --accent-2: #e0a33c;
+  --accent-glow: rgba(255, 122, 26, 0.25);
   --win: #22c55e;
   --loss: #ef4444;
   --draw: #f59e0b;
@@ -137,11 +137,16 @@ body {
 * { box-sizing: border-box; }
 
 .topbar {
-  background: rgba(10, 13, 18, 0.85); backdrop-filter: blur(12px);
+  background: rgba(7, 6, 5, 0.85); backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   padding: 14px 40px;
   display: flex; align-items: center; gap: 32px;
   position: sticky; top: 0; z-index: 50;
+}
+.topbar::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+  background: linear-gradient(90deg, transparent 5%, rgba(255, 122, 26, 0.5) 50%, transparent 95%);
+  pointer-events: none;
 }
 .topbar .brand {
   display: flex; align-items: center; gap: 10px;

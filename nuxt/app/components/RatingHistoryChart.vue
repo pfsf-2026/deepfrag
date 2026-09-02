@@ -39,8 +39,8 @@ function build() {
       datasets: [{
         label: 'Rating (μ)',
         data: mu,
-        borderColor: '#14e6c0',
-        backgroundColor: 'rgba(20, 230, 192, 0.12)',
+        borderColor: '#ff7a1a',
+        backgroundColor: 'rgba(255, 122, 26, 0.12)',
         borderWidth: 1.8,
         pointRadius: 0,
         pointHoverRadius: 4,
@@ -69,7 +69,7 @@ function build() {
       scales: {
         x: { display: false },
         y: {
-          ticks: { color: '#64748b', font: { size: 10, family: 'JetBrains Mono' } },
+          ticks: { color: '#988977', font: { size: 10, family: 'JetBrains Mono' } },
           grid: { color: 'rgba(100, 116, 139, 0.08)' }
         }
       }

@@ -148,12 +148,12 @@ useHead({ title: () => `${mapName.value} ${mode.value} rankings · DeepFrag` })
   font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
   text-transform: uppercase; letter-spacing: 0.06em;
 }
-.head h1 .chip-1on1 { background: rgba(20,230,192,0.12); color: var(--accent); }
+.head h1 .chip-1on1 { background: rgba(255,122,26,0.12); color: var(--accent); }
 .head h1 .chip-4on4 { background: rgba(34,197,94,0.12); color: var(--win); }
 .head h1 .chip-2on2 { background: rgba(245,158,11,0.12); color: var(--draw); }
 .head .sub { color: var(--fg-2); margin: 0; font-size: 13px; }
-.head .fs-link { display: inline-block; margin-top: 10px; color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 600; padding: 6px 12px; border: 1px solid rgba(20,230,192,0.3); border-radius: 8px; background: rgba(20,230,192,0.06); }
-.head .fs-link:hover { background: rgba(20,230,192,0.14); }
+.head .fs-link { display: inline-block; margin-top: 10px; color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 600; padding: 6px 12px; border: 1px solid rgba(255,122,26,0.3); border-radius: 8px; background: rgba(255,122,26,0.06); }
+.head .fs-link:hover { background: rgba(255,122,26,0.14); }
 
 .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 24px; }
 .controls .label { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }
@@ -178,7 +178,7 @@ useHead({ title: () => `${mapName.value} ${mode.value} rankings · DeepFrag` })
 
 .row .rank { font-size: 18px; font-weight: 800; color: var(--fg-3); font-variant-numeric: tabular-nums; text-align: center; }
 .row.top1 .rank { color: #fbbf24; }
-.row.top2 .rank { color: #cbd5e1; }
+.row.top2 .rank { color: #d9cfbd; }
 .row.top3 .rank { color: #b87333; }
 
 .row .avatar { width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 900; color: var(--bg); }

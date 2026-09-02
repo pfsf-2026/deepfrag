@@ -97,6 +97,6 @@ onMounted(async () => {
 table.pl { border-collapse: collapse; width: 100%; font-size: 12px; }
 table.pl th { font-size: 10px; color: var(--fg-3); text-transform: uppercase; text-align: right; padding: 5px 7px; border-bottom: 1px solid var(--border); }
 table.pl th.l, table.pl td.l { text-align: left; }
-table.pl td { font-family: 'JetBrains Mono', monospace; text-align: right; padding: 6px 7px; border-bottom: 1px solid rgba(43,54,80,.4); }
+table.pl td { font-family: 'JetBrains Mono', monospace; text-align: right; padding: 6px 7px; border-bottom: 1px solid rgba(42,32,24,.4); }
 table.pl td.l { font-family: system-ui, sans-serif; font-weight: 700; }
 </style>

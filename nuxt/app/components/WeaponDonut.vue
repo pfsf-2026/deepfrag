@@ -22,7 +22,7 @@ function pctTxt(v) { return v == null ? '—' : Math.round(v * 100) + '%' }
 <template>
   <div class="donut">
     <svg viewBox="0 0 92 92">
-      <circle cx="46" cy="46" :r="R" stroke="var(--panel-3, #1a2433)" stroke-width="8" fill="none" />
+      <circle cx="46" cy="46" :r="R" stroke="var(--panel-3, #1c1610)" stroke-width="8" fill="none" />
       <circle v-if="avgPct != null" cx="46" cy="46" :r="R" stroke="var(--fg-3)" stroke-width="2" fill="none"
               :stroke-dasharray="`${avgFilled} ${C}`" transform="rotate(-90 46 46)" opacity="0.45" />
       <circle cx="46" cy="46" :r="R" :stroke="`url(#${gid})`" stroke-width="8" fill="none"

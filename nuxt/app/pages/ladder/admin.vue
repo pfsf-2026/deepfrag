@@ -490,10 +490,10 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .btn.sm { padding: 5px 11px; font-size: 12px; }
 .btn.ghost { background: transparent; color: var(--fg-2); border: 1px solid var(--border); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.auto-banner { background: rgba(20,230,192,.1); border: 1px solid rgba(20,230,192,.4); color: var(--accent-2, #5eead4); border-radius: 8px; padding: 8px 11px; font-size: 12px; margin-bottom: 10px; }
+.auto-banner { background: rgba(255,122,26,.1); border: 1px solid rgba(255,122,26,.4); color: var(--accent-2, #ffb347); border-radius: 8px; padding: 8px 11px; font-size: 12px; margin-bottom: 10px; }
 .cand-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; margin-bottom: 12px; }
 .cand { display: flex; align-items: center; gap: 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 11px; cursor: pointer; font-size: 13px; }
-.cand.on { border-color: var(--accent); background: rgba(20,230,192,0.08); }
+.cand.on { border-color: var(--accent); background: rgba(255,122,26,0.08); }
 .cand-map { font-family: 'JetBrains Mono', monospace; font-weight: 700; width: 76px; }
 .cand-score { font-family: 'JetBrains Mono', monospace; width: 72px; color: var(--fg-3); }
 .cand-score b { color: var(--fg-2); } .cand-score b.win { color: var(--accent); }
@@ -524,7 +524,7 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .resched input:focus { outline: none; border-color: var(--accent); }
 .srv-chip { display: inline-flex; gap: 6px; align-items: baseline; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 12px; color: var(--fg); cursor: pointer; font-family: inherit; }
 .srv-chip:hover { border-color: var(--accent); }
-.srv-chip.on { border-color: var(--accent); background: rgba(20,230,192,0.08); }
+.srv-chip.on { border-color: var(--accent); background: rgba(255,122,26,0.08); }
 .srv-chip .muted { font-size: 11px; }
 .shots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .shot-thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); cursor: zoom-in; background: var(--bg); }

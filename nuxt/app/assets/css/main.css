@@ -47,15 +47,15 @@ html, body { font-family: 'Inter', -apple-system, system-ui, sans-serif; }
   bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%) translateY(4px);
-  background: #1c2330;
-  color: #f1f5f9;
+  background: #1c1610;
+  color: #f2ead9;
   font-size: 12px;
   line-height: 1.45;
   font-weight: 500;
   padding: 7px 11px;
   border-radius: 8px;
   white-space: nowrap;
-  border: 1px solid #2b3445;
+  border: 1px solid #2a2018;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   max-width: 280px;
 }
@@ -66,9 +66,9 @@ html, body { font-family: 'Inter', -apple-system, system-ui, sans-serif; }
   transform: translateX(-50%) translateY(4px) rotate(45deg);
   width: 8px;
   height: 8px;
-  background: #1c2330;
-  border-left: 1px solid #2b3445;
-  border-top: 1px solid #2b3445;
+  background: #1c1610;
+  border-left: 1px solid #2a2018;
+  border-top: 1px solid #2a2018;
 }
 [data-tip]:hover::after,
 [data-tip]:focus-visible::after { transform: translateX(-50%) translateY(0); }
@@ -130,8 +130,8 @@ html, body { font-family: 'Inter', -apple-system, system-ui, sans-serif; }
   position: fixed; z-index: 10000; top: 0; left: 0;
   box-sizing: border-box;
   width: 300px; max-width: 92vw;
-  background: #131820;
-  border: 1px solid #2b3445;
+  background: #14100c;
+  border: 1px solid #2a2018;
   border-radius: 10px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
   padding: 14px 16px;
@@ -153,26 +153,26 @@ html, body { font-family: 'Inter', -apple-system, system-ui, sans-serif; }
 .df-rtip-card h4 {
   margin: 0 0 6px;
   font-size: 13px; font-weight: 700;
-  color: #f1f5f9;
+  color: #f2ead9;
   letter-spacing: -0.01em;
 }
 .df-rtip-card p {
   margin: 0 0 8px;
   font-size: 12px;
-  color: #94a3b8;
+  color: #c9bca9;
   line-height: 1.5;
 }
 .df-rtip-card .df-rtip-foot {
   display: flex; align-items: center; justify-content: space-between;
   gap: 8px;
   font-size: 11px;
-  color: #64748b;
-  border-top: 1px solid #2b3445;
+  color: #988977;
+  border-top: 1px solid #2a2018;
   padding-top: 8px;
   margin-top: 8px;
 }
 .df-rtip-card .df-rtip-foot a {
-  color: #14e6c0;
+  color: #ff7a1a;
   text-decoration: none;
   font-weight: 600;
 }
@@ -180,9 +180,9 @@ html, body { font-family: 'Inter', -apple-system, system-ui, sans-serif; }
 .df-rtip-card kbd {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 10px;
-  background: #1c2330;
-  border: 1px solid #2b3445;
+  background: #1c1610;
+  border: 1px solid #2a2018;
   border-radius: 3px;
   padding: 1px 5px;
-  color: #f1f5f9;
+  color: #f2ead9;
 }

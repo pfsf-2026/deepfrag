@@ -83,10 +83,10 @@ function hideTip() { tooltip.value.visible = false }
 .hm-cell { display: inline-block; border-radius: 2px; background: var(--panel-3); transition: outline 0.1s; }
 .hm-cell:hover { outline: 1px solid var(--accent); }
 .hm-cell.l0 { background: var(--panel-3); }
-.hm-cell.l1 { background: rgba(20,230,192,0.20); }
-.hm-cell.l2 { background: rgba(20,230,192,0.42); }
-.hm-cell.l3 { background: rgba(20,230,192,0.66); }
-.hm-cell.l4 { background: rgba(20,230,192,0.92); }
+.hm-cell.l1 { background: rgba(255,122,26,0.20); }
+.hm-cell.l2 { background: rgba(255,122,26,0.42); }
+.hm-cell.l3 { background: rgba(255,122,26,0.66); }
+.hm-cell.l4 { background: rgba(255,122,26,0.92); }
 
 .hm-legend { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
 .hm-legend .hm-cell { width: 10px; height: 10px; }

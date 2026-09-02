@@ -257,10 +257,10 @@ useHead({ title: 'Rankings · DeepFrag' })
 .head-top { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 .maps-link {
   color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 600;
-  padding: 8px 14px; border: 1px solid rgba(20,230,192,0.3); border-radius: 8px;
-  background: rgba(20,230,192,0.06); transition: all 0.12s;
+  padding: 8px 14px; border: 1px solid rgba(255,122,26,0.3); border-radius: 8px;
+  background: rgba(255,122,26,0.06); transition: all 0.12s;
 }
-.maps-link:hover { background: rgba(20,230,192,0.12); border-color: var(--accent); }
+.maps-link:hover { background: rgba(255,122,26,0.12); border-color: var(--accent); }
 
 .controls {
   display: flex; gap: 8px; align-items: center; margin-bottom: 24px; flex-wrap: nowrap;
@@ -335,7 +335,7 @@ useHead({ title: 'Rankings · DeepFrag' })
   font-variant-numeric: tabular-nums; text-align: center;
 }
 .row.top1 .rank { color: #fbbf24; }
-.row.top2 .rank { color: #cbd5e1; }
+.row.top2 .rank { color: #d9cfbd; }
 .row.top3 .rank { color: #b87333; }
 
 .row .avatar {

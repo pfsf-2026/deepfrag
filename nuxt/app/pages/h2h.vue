@@ -458,18 +458,18 @@ function tsBetter(split, cid, k) {
           <svg viewBox="-110 -100 220 200" class="wo-svg">
             <!-- background rings -->
             <polygon v-for="frac in [0.25, 0.5, 0.75, 1.0]" :key="'r' + frac"
-                     :points="ringPath(frac)" fill="none" stroke="#2b3445" stroke-width="0.7" />
+                     :points="ringPath(frac)" fill="none" stroke="#2a2018" stroke-width="0.7" />
             <!-- axes -->
             <line v-for="(a, i) in radarAngles" :key="'ax' + i"
                   x1="0" y1="0"
                   :x2="Math.cos(a) * radarR" :y2="Math.sin(a) * radarR"
-                  stroke="#2b3445" stroke-width="0.7" />
+                  stroke="#2a2018" stroke-width="0.7" />
             <!-- Player B (drawn first so A overlays cleaner) -->
             <polygon :points="dataPath(data.player_b.weapon_shape)"
                      fill="rgba(168,85,247,0.18)" stroke="#a855f7" stroke-width="1.8" stroke-linejoin="round" />
             <!-- Player A -->
             <polygon :points="dataPath(data.player_a.weapon_shape)"
-                     fill="rgba(20,230,192,0.18)" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" />
+                     fill="rgba(255,122,26,0.18)" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" />
             <!-- labels -->
             <text v-for="(w, i) in weaponAxes" :key="'l' + i"
                   :x="Math.cos(radarAngles[i]) * (radarR + 14)"
@@ -730,7 +730,7 @@ function tsBetter(split, cid, k) {
 .window-pill:hover { color: var(--fg); border-color: var(--accent); }
 .window-pill.active {
   color: var(--accent); border-color: var(--accent);
-  background: rgba(20,230,192,0.06);
+  background: rgba(255,122,26,0.06);
 }
 
 /* Weapon shape overlay card — two players' radars on the same pentagon */
@@ -793,7 +793,7 @@ table.matchup th.sortable:hover { color: var(--fg); }
 table.matchup th .arrow { color: var(--accent); font-size: 9px; margin-left: 4px; }
 table.matchup td { padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
 table.matchup tr:last-child td { border-bottom: 0; }
-table.matchup tr:hover td { background: rgba(20,230,192,0.02); }
+table.matchup tr:hover td { background: rgba(255,122,26,0.02); }
 table.matchup .map { font-weight: 700; color: var(--fg); }
 table.matchup .totalmatches { color: var(--fg-3); font-size: 11px; margin-top: 2px; }
 table.matchup .a-cell { color: var(--accent); font-weight: 700; font-family: 'JetBrains Mono', monospace; text-align: right; }

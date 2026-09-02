@@ -176,7 +176,7 @@ function drawMap(ctx, w, h) {
     for (let i = 0; i + 5 < t.length; i += 6) {
       ctx.moveTo(toX(t[i]), toY(t[i + 1])); ctx.lineTo(toX(t[i + 2]), toY(t[i + 3])); ctx.lineTo(toX(t[i + 4]), toY(t[i + 5])); ctx.closePath()
     }
-    ctx.fillStyle = 'rgba(40,50,70,0.85)'; ctx.fill()
+    ctx.fillStyle = 'rgba(38,32,23,0.85)'; ctx.fill()
     ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 0.4; ctx.stroke()
   }
   ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
@@ -228,7 +228,7 @@ function drawAll() {
   }
   // spawn marker
   const st = trace[0]
-  ctx.fillStyle = 'rgba(20,230,192,0.7)'; ctx.strokeStyle = 'rgba(20,230,192,1)'; ctx.lineWidth = 2
+  ctx.fillStyle = 'rgba(255,122,26,0.7)'; ctx.strokeStyle = 'rgba(255,122,26,1)'; ctx.lineWidth = 2
   ctx.beginPath(); ctx.arc(toX(st.x), toY(st.y), 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
   // death marker
   if (ar.death_ms != null) {
@@ -279,9 +279,9 @@ const stackSvg = computed(() => {
   }
   let hp = ''
   for (let i = 0; i < n; i++) if ((trace[i].h || 0) > 0) hp += (i === 0 ? 'M ' : 'L ') + toX(i) + ' ' + toY(trace[i].h) + ' '
-  out += `<path d="${hp}" fill="none" stroke="#14e6c0" stroke-width="1.6" opacity="0.95"/>`
+  out += `<path d="${hp}" fill="none" stroke="#ff7a1a" stroke-width="1.6" opacity="0.95"/>`
   const px = toX(off)
-  out += `<line x1="${px}" y1="${padT - 4}" x2="${px}" y2="${H - padB + 4}" stroke="#14e6c0" stroke-width="2" opacity="0.85"/><circle cx="${px}" cy="${toY((trace[off].h || 0) + (trace[off].a || 0))}" r="4" fill="#14e6c0"/>`
+  out += `<line x1="${px}" y1="${padT - 4}" x2="${px}" y2="${H - padB + 4}" stroke="#ff7a1a" stroke-width="2" opacity="0.85"/><circle cx="${px}" cy="${toY((trace[off].h || 0) + (trace[off].a || 0))}" r="4" fill="#ff7a1a"/>`
   return out
 })
 
@@ -408,7 +408,7 @@ useHead({ title: () => `${mapName.value} first-spawn training · DeepFrag` })
 .head .back { color: var(--fg-2); text-decoration: none; font-size: 13px; font-weight: 600; display: inline-block; margin-bottom: 8px; }
 .head .back:hover { color: var(--accent); }
 .head h1 { margin: 0 0 6px; font-size: 30px; font-weight: 800; letter-spacing: -0.02em; display: flex; align-items: center; gap: 12px; }
-.map-chip { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: rgba(20,230,192,0.12); color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; }
+.map-chip { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: rgba(255,122,26,0.12); color: var(--accent); text-transform: uppercase; letter-spacing: 0.06em; }
 .head .sub { color: var(--fg-2); margin: 0; font-size: 13px; max-width: 760px; }
 
 .controls, .filt-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -469,7 +469,7 @@ useHead({ title: () => `${mapName.value} first-spawn training · DeepFrag` })
 .it-ra { background: rgba(239,68,68,0.16); color: #f87171; }
 .it-mh_only { background: rgba(96,165,250,0.16); color: #93c5fd; }
 .it-ya_ga { background: rgba(234,179,8,0.16); color: #facc15; }
-.it-nothing { background: rgba(95,113,134,0.18); color: #9fb0c3; }
+.it-nothing { background: rgba(152,137,119,0.18); color: #9fb0c3; }
 .res { font-weight: 700; }
 .r-won { color: #22c55e; } .r-traded { color: #eab308; } .r-lost { color: #ef4444; } .r-survived { color: #60a5fa; }
 .placeholder { padding: 60px; text-align: center; color: var(--fg-3); }

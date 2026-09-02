@@ -300,7 +300,7 @@ useHead({ title: 'Stats leaderboards · DeepFrag' })
 .stbl th.sorted, .stbl td.sorted { color: var(--accent); }
 .stbl th.rk, .stbl td.rk { text-align: right; color: var(--fg-3); font-family: 'JetBrains Mono', monospace; }
 .stbl th.nm, .stbl td.nm, .stbl th.rg, .stbl td.rg { text-align: left; }
-.stbl td { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; border-bottom: 1px solid rgba(43,54,80,.4); color: var(--fg-2); }
+.stbl td { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; border-bottom: 1px solid rgba(42,32,24,.4); color: var(--fg-2); }
 .stbl td.nm { font-family: system-ui, sans-serif; }
 .stbl td.nm .name { color: var(--fg); font-weight: 700; text-decoration: none; }
 .stbl td.nm .name:hover { color: var(--accent); }

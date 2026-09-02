@@ -547,7 +547,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .tcount { background: var(--panel-3); color: var(--fg-2); border-radius: 999px; font-size: 11px; padding: 0 7px; font-family: 'JetBrains Mono', monospace; }
 
 .note { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; color: var(--fg-2); font-size: 14px; }
-.note.tip { background: rgba(20,230,192,0.08); border-color: rgba(20,230,192,0.3); cursor: pointer; }
+.note.tip { background: rgba(255,122,26,0.08); border-color: rgba(255,122,26,0.3); cursor: pointer; }
 .note.err { border-color: var(--loss); color: #fca5a5; }
 .note strong { color: var(--fg); }
 .empty { text-align: center; padding: 60px 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
@@ -563,10 +563,10 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .card h3 .exp { margin-left: auto; background: none; border: 0; color: var(--accent); font-size: 11px; cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 600; font-family: inherit; }
 .board-card { padding-bottom: 6px; }
 
-.notopen { display: flex; align-items: center; gap: 14px; background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(20,230,192,0.05)); border-color: rgba(245,158,11,0.4); }
+.notopen { display: flex; align-items: center; gap: 14px; background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(255,122,26,0.05)); border-color: rgba(245,158,11,0.4); }
 .notopen .lock { font-size: 26px; } .notopen-title { font-size: 16px; font-weight: 800; } .notopen-sub { color: var(--fg-2); font-size: 13px; } .notopen-sub strong { color: var(--fg); }
 
-.koth { display: flex; align-items: center; gap: 14px; background: linear-gradient(135deg, rgba(245,158,11,0.14), rgba(20,230,192,0.06)); border-color: rgba(245,158,11,0.35); }
+.koth { display: flex; align-items: center; gap: 14px; background: linear-gradient(135deg, rgba(245,158,11,0.14), rgba(255,122,26,0.06)); border-color: rgba(245,158,11,0.35); }
 .koth .crown { font-size: 26px; }
 .koth-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--draw); font-weight: 700; }
 .koth-team { font-size: 18px; font-weight: 800; }
@@ -579,7 +579,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .board-head .c-rec { font-size: 11px; }
 .rec-lbl { display: none; }   /* shown only on mobile, where the header row is hidden */
 .board-head { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; border-bottom: 1px solid var(--border); }
-.row { border-top: 1px solid rgba(43,54,80,.5); font-size: 14px; }
+.row { border-top: 1px solid rgba(42,32,24,.5); font-size: 14px; }
 .row:first-of-type { border-top: 0; }
 .row .c-rung { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--fg-2); }
 .row.top { background: rgba(245,158,11,0.07); } .row.top .c-rung { color: var(--draw); display: flex; align-items: center; gap: 10px; }
@@ -588,7 +588,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .tlogo { width: 22px; height: 22px; border-radius: 5px; object-fit: cover; flex: 0 0 22px; }
 .tlogo-ph { display: inline-flex; align-items: center; justify-content: center; background: var(--panel-2, rgba(255,255,255,0.05)); border: 1px solid var(--border); color: var(--fg-3); font-size: 11px; font-weight: 700; }
 .tlogo-ph { display: inline-flex; align-items: center; justify-content: center; background: var(--panel-3); font-size: 12px; opacity: 0.55; }
-.ttag { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(20,230,192,0.12); border: 1px solid rgba(20,230,192,0.3); border-radius: 5px; padding: 1px 4px; flex: 0 0 auto; min-width: 42px; text-align: center; box-sizing: border-box; }
+.ttag { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(255,122,26,0.12); border: 1px solid rgba(255,122,26,0.3); border-radius: 5px; padding: 1px 4px; flex: 0 0 auto; min-width: 42px; text-align: center; box-sizing: border-box; }
 .tname { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tlink { color: var(--fg); text-decoration: none; cursor: pointer; } .tlink:hover { color: var(--accent); text-decoration: underline; }
 .edit { background: none; border: 0; color: var(--fg-3); cursor: pointer; font-size: 13px; padding: 2px 4px; opacity: .7; } .edit:hover { color: var(--accent); opacity: 1; }
@@ -609,10 +609,10 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .chal-btn:hover { background: rgba(239,68,68,0.28); }
 
 /* small card rows */
-.mrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid rgba(43,54,80,.4); }
+.mrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid rgba(42,32,24,.4); }
 .mrow:last-child { border-bottom: 0; } .mrow .mr-t { font-weight: 600; }
 /* Upcoming card row: team tags + nowrap time on one line, Preview link indented below */
-.uprow { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 10px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid rgba(43,54,80,.4); }
+.uprow { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 10px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid rgba(42,32,24,.4); }
 .uprow:last-child { border-bottom: 0; }
 .up-teams { font-weight: 700; display: flex; align-items: center; gap: 7px; min-width: 0; }
 .up-tag { font-family: 'JetBrains Mono', monospace; color: var(--fg); text-decoration: none; }
@@ -621,13 +621,13 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .up-when { white-space: nowrap; text-align: right; justify-self: end; }
 .up-prev { grid-column: 1 / 2; margin-left: 4px; font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; }
 .up-prev:hover { text-decoration: underline; }
-.res { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; border-bottom: 1px solid rgba(43,54,80,.4); padding: 7px 4px; cursor: pointer; color: var(--fg); font-family: inherit; font-size: 13px; text-align: left; border-radius: 6px; }
+.res { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; border-bottom: 1px solid rgba(42,32,24,.4); padding: 7px 4px; cursor: pointer; color: var(--fg); font-family: inherit; font-size: 13px; text-align: left; border-radius: 6px; }
 .res:last-child { border-bottom: 0; } .res:hover { background: var(--panel-2); }
 .res-t { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .res-t.right { text-align: right; }
 .res-s { font-family: 'JetBrains Mono', monospace; font-weight: 800; } .res-s b { color: var(--fg-3); } .res-s b.w { color: var(--accent); }
 .chal { font-size: 10px; opacity: .5; margin: 0 3px; cursor: help; }
 .kpi { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: 13px; }
-.kpi b { font-family: 'JetBrains Mono', monospace; color: var(--accent-2, #5eead4); }
+.kpi b { font-family: 'JetBrains Mono', monospace; color: var(--accent-2, #ffb347); }
 .more .soon { margin-left: auto; color: var(--fg-3); font-weight: 400; text-transform: none; font-size: 11px; }
 
 /* schedule */
@@ -640,7 +640,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .rail-btn.ghost:hover, .sched-btn.ghost:hover { color: var(--loss); border-color: var(--loss); filter: none; }
 .rail-btn:disabled, .sched-btn:disabled { opacity: 0.6; cursor: default; }
 .lnk { color: var(--accent); cursor: pointer; }
-.chal-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 0; border-top: 1px solid rgba(43,54,80,.5); font-size: 14px; }
+.chal-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 0; border-top: 1px solid rgba(42,32,24,.5); font-size: 14px; }
 .chal-row .arrow { color: var(--accent); } .chal-row .cstatus { color: var(--fg-2); font-size: 12px; } .chal-row .spacer { flex: 1; }
 .chal-row .deadline { color: var(--draw); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
 .sched-btn { background: var(--accent); color: var(--bg); border: 0; border-radius: 6px; padding: 4px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }

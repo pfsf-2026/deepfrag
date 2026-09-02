@@ -1778,7 +1778,7 @@ function shortStatus(s) {
 .group h4 { font-size: 9px; color: var(--fg-3); font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; padding: 0 6px; }
 .nav-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 6px; color: var(--fg-2); cursor: pointer; font-size: 13px; font-weight: 500; }
 .nav-item:hover { background: var(--panel-2); color: var(--fg); }
-.nav-item.active { background: rgba(20,230,192,0.08); color: var(--accent); font-weight: 700; }
+.nav-item.active { background: rgba(255,122,26,0.08); color: var(--accent); font-weight: 700; }
 
 /* Scheduler on/off pill inside nav-item */
 .sched-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer; }
@@ -1832,7 +1832,7 @@ function shortStatus(s) {
 .card h3 .link:hover { text-decoration: underline; }
 
 /* Deploy lines in the dashboard mini-card */
-.deploy-line.active { background: rgba(20,230,192,0.04); border-left: 2px solid var(--accent); padding-left: 8px; }
+.deploy-line.active { background: rgba(255,122,26,0.04); border-left: 2px solid var(--accent); padding-left: 8px; }
 .deploy-line .rev-name { color: var(--fg); font-weight: 700; }
 
 /* Deploy log full table */
@@ -1843,7 +1843,7 @@ function shortStatus(s) {
 .deploy-table tr:last-child td { border-bottom: 0; }
 .deploy-table td.num { text-align: right; font-family: 'JetBrains Mono', monospace; }
 .deploy-table .rev-name { font-weight: 700; color: var(--fg); font-family: 'JetBrains Mono', monospace; }
-.deploy-table tr.active td { background: rgba(20,230,192,0.04); }
+.deploy-table tr.active td { background: rgba(255,122,26,0.04); }
 .deploy-table tr.active td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .deploy-table .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace; letter-spacing: 0.04em; }
 .deploy-table .badge.ok { background: rgba(34,197,94,0.15); color: var(--win); }
@@ -1868,7 +1868,7 @@ function shortStatus(s) {
 .region-tabs { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 22px; }
 .region-tabs .rt { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 12px; cursor: pointer; transition: all 0.15s; position: relative; text-align: center; }
 .region-tabs .rt:hover { border-color: var(--accent); transform: translateY(-1px); }
-.region-tabs .rt.active { border-color: var(--accent); background: linear-gradient(180deg, rgba(20,230,192,0.12), var(--panel)); }
+.region-tabs .rt.active { border-color: var(--accent); background: linear-gradient(180deg, rgba(255,122,26,0.12), var(--panel)); }
 .region-tabs .rt.active::after { content: ''; position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 7px solid var(--accent); }
 .region-tabs .rt .rt-flag { font-size: 24px; line-height: 1; margin-bottom: 5px; }
 .region-tabs .rt .rt-name { font-size: 10px; color: var(--fg-2); text-transform: uppercase; font-weight: 700; letter-spacing: 0.06em; margin-bottom: 6px; }
@@ -1904,11 +1904,11 @@ function shortStatus(s) {
 .heatmap { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
 .hm { aspect-ratio: 1; border-radius: 2px; background: var(--panel-3); cursor: default; }
 .hm.l0 { background: var(--panel-3); }
-.hm.l1 { background: rgba(20,230,192,0.18); }
-.hm.l2 { background: rgba(20,230,192,0.35); }
-.hm.l3 { background: rgba(20,230,192,0.55); }
-.hm.l4 { background: rgba(20,230,192,0.75); }
-.hm.l5 { background: rgba(20,230,192,1); }
+.hm.l1 { background: rgba(255,122,26,0.18); }
+.hm.l2 { background: rgba(255,122,26,0.35); }
+.hm.l3 { background: rgba(255,122,26,0.55); }
+.hm.l4 { background: rgba(255,122,26,0.75); }
+.hm.l5 { background: rgba(255,122,26,1); }
 .hm:hover { outline: 1px solid var(--accent); }
 .hm-day-row { display: grid; grid-template-columns: 30px 1fr; gap: 6px; align-items: center; margin-bottom: 3px; }
 .hm-day-row .d { font-size: 10px; color: var(--fg-3); text-transform: uppercase; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
@@ -1916,11 +1916,11 @@ function shortStatus(s) {
 .hm-hours .h { display: flex; justify-content: space-between; }
 .hm-legend { display: flex; align-items: center; gap: 5px; margin-top: 12px; font-size: 10px; color: var(--fg-3); }
 .hm-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--panel-3); }
-.hm-legend i.l1-i { background: rgba(20,230,192,0.18); }
-.hm-legend i.l2-i { background: rgba(20,230,192,0.35); }
-.hm-legend i.l3-i { background: rgba(20,230,192,0.55); }
-.hm-legend i.l4-i { background: rgba(20,230,192,0.75); }
-.hm-legend i.l5-i { background: rgba(20,230,192,1); }
+.hm-legend i.l1-i { background: rgba(255,122,26,0.18); }
+.hm-legend i.l2-i { background: rgba(255,122,26,0.35); }
+.hm-legend i.l3-i { background: rgba(255,122,26,0.55); }
+.hm-legend i.l4-i { background: rgba(255,122,26,0.75); }
+.hm-legend i.l5-i { background: rgba(255,122,26,1); }
 
 /* Matches leaderboards */
 .m-lb { display: flex; flex-direction: column; }
@@ -1964,8 +1964,8 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .players-table td { padding: 8px 14px; border-bottom: 1px solid var(--panel-2); font-size: 12px; }
 .players-table td.num { text-align: right; font-family: 'JetBrains Mono', monospace; }
 .players-table tbody tr { cursor: pointer; }
-.players-table tbody tr:hover td { background: rgba(20,230,192,0.02); }
-.players-table tbody tr.selected td { background: rgba(20,230,192,0.08); }
+.players-table tbody tr:hover td { background: rgba(255,122,26,0.02); }
+.players-table tbody tr.selected td { background: rgba(255,122,26,0.08); }
 .players-table tbody tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .players-table .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; border: 1px solid; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
 
@@ -2006,7 +2006,7 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .deploy-table .av { display: inline-block; }
 .btn.sm { padding: 4px 10px; font-size: 11px; }
 .pill { border: 1px solid; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; cursor: pointer; font-family: inherit; }
-.pill.on { background: rgba(20,230,192,0.12); color: var(--accent); border-color: rgba(20,230,192,0.4); }
+.pill.on { background: rgba(255,122,26,0.12); color: var(--accent); border-color: rgba(255,122,26,0.4); }
 .pill.off { background: var(--panel-2); color: var(--fg-3); border-color: var(--border); }
 .pill:hover { filter: brightness(1.2); }
 .mono { font-family: 'JetBrains Mono', monospace; }
@@ -2018,7 +2018,7 @@ input.dd { padding-right: 12px; background-image: none; cursor: text; }
 .form-grid input, .form-grid select { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 8px 12px; border-radius: 6px; font-family: inherit; font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: 0; }
 .form-grid input:focus, .form-grid select:focus { outline: none; border-color: var(--accent); }
 .slot { display: flex; flex-direction: column; gap: 4px; }
-.slot-picked { display: flex; align-items: center; justify-content: space-between; background: rgba(20,230,192,0.1); border: 1px solid rgba(20,230,192,0.3); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+.slot-picked { display: flex; align-items: center; justify-content: space-between; background: rgba(255,122,26,0.1); border: 1px solid rgba(255,122,26,0.3); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
 .slot-picked .x { background: none; border: 0; color: var(--fg-3); cursor: pointer; }
 .slot-res { display: flex; flex-direction: column; gap: 3px; }
 .slot-res button { text-align: left; background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }

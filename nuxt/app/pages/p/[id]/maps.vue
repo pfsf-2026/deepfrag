@@ -384,7 +384,7 @@ useHead({ title: () => profile.value ? `Maps · ${profile.value.player} · DeepF
   padding: 4px 10px; border-radius: 5px; cursor: pointer; font-family: inherit; font-weight: 600;
 }
 .table-controls .sort-btn:hover { color: var(--fg); }
-.table-controls .sort-btn.active { color: var(--accent); background: rgba(20,230,192,0.08); }
+.table-controls .sort-btn.active { color: var(--accent); background: rgba(255,122,26,0.08); }
 
 table { width: 100%; border-collapse: collapse; }
 thead th {
@@ -503,7 +503,7 @@ tr.detail-row td { padding: 0; border-bottom: 1px solid var(--border); backgroun
   font-size: 12px; color: var(--fg-2); line-height: 1.5;
 }
 .ai-placeholder .ai-icon {
-  width: 26px; height: 26px; border-radius: 6px; background: rgba(20,230,192,0.12);
+  width: 26px; height: 26px; border-radius: 6px; background: rgba(255,122,26,0.12);
   color: var(--accent); display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 800; flex: 0 0 26px;
 }
@@ -516,13 +516,13 @@ tr.detail-row td { padding: 0; border-bottom: 1px solid var(--border); backgroun
 .summary-row .v { font-family: 'JetBrains Mono', monospace; color: var(--fg); }
 
 .ai-card {
-  background: linear-gradient(135deg, rgba(20,230,192,0.06), rgba(6,182,212,0.04));
-  border: 1px solid rgba(20,230,192,0.18);
+  background: linear-gradient(135deg, rgba(255,122,26,0.06), rgba(224,163,60,0.04));
+  border: 1px solid rgba(255,122,26,0.18);
   border-radius: 10px; padding: 14px 16px;
   display: flex; gap: 12px; align-items: flex-start;
 }
 .ai-card .ai-icon {
-  width: 28px; height: 28px; border-radius: 7px; background: rgba(20,230,192,0.12);
+  width: 28px; height: 28px; border-radius: 7px; background: rgba(255,122,26,0.12);
   color: var(--accent); display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 800; flex: 0 0 28px;
 }

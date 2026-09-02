@@ -182,7 +182,7 @@ useHead({ title: 'Servers · DeepFrag' })
               <td class="num">{{ (s.games || 0).toLocaleString() }}</td>
               <td>
                 <div class="mode-bar" :title="`1on1 ${modePct(s).p1}% · 2on2 ${modePct(s).p2}% · 4on4 ${modePct(s).p4}%`">
-                  <span :style="{ width: modePct(s).p1 + '%', height: '100%', background: '#14e6c0', display: 'block' }"></span>
+                  <span :style="{ width: modePct(s).p1 + '%', height: '100%', background: '#ff7a1a', display: 'block' }"></span>
                   <span :style="{ width: modePct(s).p2 + '%', height: '100%', background: '#f59e0b', display: 'block' }"></span>
                   <span :style="{ width: modePct(s).p4 + '%', height: '100%', background: '#22c55e', display: 'block' }"></span>
                 </div>
@@ -338,7 +338,7 @@ thead th.num { text-align: right; }
 
 .mode-legend { display: inline-flex; gap: 8px; margin-left: 12px; font-size: 9px; color: var(--fg-3); font-weight: 600; }
 .mode-legend .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
-.dot.d-1 { background: #14e6c0; }
+.dot.d-1 { background: #ff7a1a; }
 .dot.d-2 { background: #f59e0b; }
 .dot.d-4 { background: #22c55e; }
 
@@ -383,7 +383,7 @@ tbody tr.server-row.open td:first-child { border-left: 2px solid var(--accent); 
 
 .mode-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--panel-3); min-width: 140px; }
 .mode-bar > span { display: block; height: 100%; }
-.m-1 { background: #14e6c0; }
+.m-1 { background: #ff7a1a; }
 .m-2 { background: #f59e0b; }
 .m-4 { background: #22c55e; }
 

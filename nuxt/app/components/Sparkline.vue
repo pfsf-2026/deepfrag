@@ -8,7 +8,7 @@ if (!Chart.registry?.controllers?.get('line')) {
 
 const props = defineProps({
   data: { type: Array, default: () => [] },
-  color: { type: String, default: '#14e6c0' },
+  color: { type: String, default: '#ff7a1a' },
   height: { type: Number, default: 36 }
 })
 

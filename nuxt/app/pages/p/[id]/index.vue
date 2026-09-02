@@ -765,7 +765,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   display: flex; align-items: center; justify-content: center;
   font-size: 36px; font-weight: 900; color: var(--bg);
-  box-shadow: 0 10px 28px rgba(20,230,192,0.20);
+  box-shadow: 0 10px 28px rgba(255,122,26,0.20);
 }
 .hero .id { flex: 1; min-width: 0; }
 .hero .id h1 { margin: 0; font-size: 38px; font-weight: 800; letter-spacing: -0.02em; }
@@ -797,7 +797,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
   padding: 3px 9px; border-radius: 999px;
   font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
 }
-.chip-1on1 { background: rgba(20,230,192,0.12); color: var(--accent); }
+.chip-1on1 { background: rgba(255,122,26,0.12); color: var(--accent); }
 .chip-4on4 { background: rgba(34,197,94,0.12); color: var(--win); }
 .chip-2on2 { background: rgba(245,158,11,0.12); color: var(--draw); }
 .rt-val {
@@ -827,7 +827,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
 .rh-empty { color: var(--fg-3); padding: 30px; text-align: center; font-size: 13px; }
 
 /* AI Coach card */
-.coach-section { background: linear-gradient(135deg, rgba(20,230,192,0.05), var(--panel)); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px 18px; margin-bottom: 24px; }
+.coach-section { background: linear-gradient(135deg, rgba(255,122,26,0.05), var(--panel)); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px 18px; margin-bottom: 24px; }
 .coach-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
 .coach-head h3 { margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-2); }
 .coach-head .coach-sub { color: var(--fg-3); font-weight: 400; text-transform: none; letter-spacing: 0; }
@@ -892,7 +892,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
 .ptab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .ptab-coach { color: var(--accent); font-weight: 600; }
 .window-select {
-  background: rgba(20, 230, 192, 0.08);
+  background: rgba(255, 122, 26, 0.08);
   border: 1px solid var(--accent);
   color: var(--accent);
   padding: 7px 14px; border-radius: 999px;
@@ -909,8 +909,8 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
   padding-right: 28px;
   transition: background-color 0.12s, box-shadow 0.12s;
 }
-.window-select:hover { background-color: rgba(20, 230, 192, 0.15); box-shadow: 0 0 0 3px rgba(20, 230, 192, 0.08); }
-.window-select:focus { outline: none; box-shadow: 0 0 0 3px rgba(20, 230, 192, 0.18); }
+.window-select:hover { background-color: rgba(255, 122, 26, 0.15); box-shadow: 0 0 0 3px rgba(255, 122, 26, 0.08); }
+.window-select:focus { outline: none; box-shadow: 0 0 0 3px rgba(255, 122, 26, 0.18); }
 .window-select option { background: var(--panel-2); color: var(--fg); font-weight: 600; }
 .ctl-label {
   color: var(--fg-3); font-size: 11px; text-transform: uppercase;
