@@ -117,6 +117,7 @@ war:
     - tardface
     - igor
     - pikachu
+    - georges     # 2026-09-04 (Peter): played as georges on The-Den 4on4s; confirmed war
 
 blood_dog_d_p:
   # (D_P) clan tag; the closing ')' was being trimmed and the prefix-tag spelling
