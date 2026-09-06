@@ -1063,7 +1063,8 @@ def _ladder_tick(cur):
     # automatic forfeits by explicitly setting rules.auto_forfeit = true.
     cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.deadline,
                           c.agreed_at, c.created_at,
-                          c.overdue_flagged, c.proposed, c.proposed_by, l.rules, ca.name AS a, cd.name AS b,
+                          c.overdue_flagged, c.proposed, c.proposed_by, c.proposed_at,
+                          l.rules, ca.name AS a, cd.name AS b,
                           ca.members AS a_members, cd.members AS b_members
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -1118,6 +1119,26 @@ def _ladder_tick(cur):
                                      f"{_team_label(cur, r['challenged_id'])} offered times but "
                                      f"{_team_label(cur, r['challenger_id'])} never picked one. "
                                      f"Cancelled with **no ladder movement**."))
+            except Exception:
+                pass
+            continue
+        # Minimum-offer window (2026-09-06, ch71 post-mortem): a forfeit needs the
+        # challenger's offer to have been on the table for at least
+        # rules.min_offer_hours (default 48) before the deadline. Otherwise a
+        # challenger can sit on the challenged team's counter-offer for days,
+        # re-post hours before the deadline, and flip the blame. Legacy rows
+        # (no proposed_at) fall back to created_at — the original opening offer.
+        offered_at = r.get("proposed_at") or r.get("created_at")
+        min_hours = (r["rules"] or {}).get("min_offer_hours", 48)
+        if r.get("deadline") and offered_at and (r["deadline"] - offered_at) < timedelta(hours=min_hours):
+            cur.execute("UPDATE ladder_challenges SET status='cancelled', resolved_at=now() WHERE id=%s",
+                        (r["id"],))
+            counts["expired_late_offer"] = counts.get("expired_late_offer", 0) + 1
+            try:
+                notify.send(content=(f"⌛ The challenge {_team_label(cur, r['challenger_id'])} vs "
+                                     f"{_team_label(cur, r['challenged_id'])} expired — the offer on the table "
+                                     f"was posted less than {min_hours}h before the deadline, so nobody forfeits. "
+                                     f"Cancelled with **no ladder movement**; re-issue to try again."))
             except Exception:
                 pass
             continue
@@ -4148,7 +4169,7 @@ def admin_ladder_rules(ladder_id: int, authorization: str | None = Header(defaul
     movement; otherwise the challenged team forfeits per the ladder rules."""
     import ladder as _ladder
     _check_ladder_admin(authorization)
-    ALLOWED = {"auto_forfeit": bool, "auto_resolve": bool,
+    ALLOWED = {"auto_forfeit": bool, "auto_resolve": bool, "min_offer_hours": int,
                "forfeit_days": int, "short_window_days": int,
                "loss_cooldown_days": int, "best_of": int, "rung_jump": int,
                "timelimit": int}
@@ -5519,10 +5540,13 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
             window_days = (lad.get("rules") or {}).get("short_window_days", 3)
         deadline = datetime.now(timezone.utc) + timedelta(days=window_days)
         cur.execute("""INSERT INTO ladder_challenges
-                       (ladder_id, challenger_id, challenged_id, rungs_up, deadline, proposed, proposed_by)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                       (ladder_id, challenger_id, challenged_id, rungs_up, deadline, proposed, proposed_by,
+                        proposed_at, proposal_log)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s, now(), %s::jsonb) RETURNING id""",
                     (ladder_id, challenger_id, challenged_id, gap, deadline,
-                     json.dumps(clean), challenger_id))
+                     json.dumps(clean), challenger_id,
+                     json.dumps([{"at": datetime.now(timezone.utc).isoformat(), "by": challenger_id,
+                                  "slots": clean}])))
         chid = cur.fetchone()["id"]
         cl_lbl = _team_label(cur, challenger_id)
         cd_lbl = _team_label(cur, challenged_id)
@@ -5826,8 +5850,13 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
         elif not _user_on_team(cur, user, turn):
             raise HTTPException(403, "it's not your team's turn to suggest times")
         clean = sorted(clean)   # chronological in the Discord message + pick list
-        cur.execute("UPDATE ladder_challenges SET proposed=%s, proposed_by=%s WHERE id=%s",
-                    (json.dumps(clean), turn, challenge_id))
+        cur.execute("""UPDATE ladder_challenges
+                       SET proposed=%s, proposed_by=%s, proposed_at=now(),
+                           proposal_log = COALESCE(proposal_log, '[]'::jsonb) || %s::jsonb
+                       WHERE id=%s""",
+                    (json.dumps(clean), turn,
+                     json.dumps([{"at": datetime.now(timezone.utc).isoformat(), "by": turn, "slots": clean}]),
+                     challenge_id))
         cl_lbl = _team_label(cur, ch["challenger_id"])
         cd_lbl = _team_label(cur, ch["challenged_id"])
         conn.commit()
@@ -6744,6 +6773,118 @@ def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(d
     except Exception:
         pass
     return {"forfeited": True, "moves": moves}
+
+
+@app.get("/api/admin/ladder/challenge/{challenge_id}")
+def admin_ladder_challenge_detail(challenge_id: int, authorization: str | None = Header(default=None)):
+    """Full challenge row for disputes: who posted the offer on the table and
+    when, the whole proposal history, picks, deadline, resolution. Ladder-admin."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT c.*, ca.name AS challenger, cd.name AS challenged
+                       FROM ladder_challenges c
+                       JOIN ladder_teams ca ON ca.id=c.challenger_id
+                       JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        cur.execute("""SELECT m.at, m.team_id, t.name, m.from_rung, m.to_rung, m.reason
+                       FROM ladder_movements m JOIN ladder_teams t ON t.id=m.team_id
+                       WHERE m.team_id IN (%s,%s) AND m.at >= %s
+                       ORDER BY m.at, m.id""", (ch["challenger_id"], ch["challenged_id"], ch["created_at"]))
+        moves = [dict(r) for r in cur.fetchall()]
+    out = dict(ch)
+    for k, v in list(out.items()):
+        if hasattr(v, "isoformat"):
+            out[k] = v.isoformat()
+    for m in moves:
+        m["at"] = m["at"].isoformat()
+    out["movements_since_created"] = moves
+    return out
+
+
+@app.post("/api/admin/ladder/challenge/{challenge_id}/unforfeit")
+def admin_ladder_unforfeit(challenge_id: int, authorization: str | None = Header(default=None),
+                           notify_discord: bool = Body(default=False, embed=True)):
+    """Reverse a forfeit: put both teams back on the rungs they held before the
+    forfeit swap and mark the challenge cancelled (no movement). Only valid when
+    the two teams still sit exactly where the forfeit left them — if anything
+    moved since, refuse and let the admin use /reorder. Ladder-admin."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT * FROM ladder_challenges WHERE id=%s", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] != "forfeited":
+            raise HTTPException(409, f"challenge is {ch['status']}, not forfeited")
+        # The forfeit's movement rows share the challenge's resolved_at (same
+        # transaction => same now()).
+        cur.execute("""SELECT team_id, from_rung, to_rung FROM ladder_movements
+                       WHERE ladder_id=%s AND at=%s AND team_id IN (%s,%s)""",
+                    (ch["ladder_id"], ch["resolved_at"], ch["challenger_id"], ch["challenged_id"]))
+        rows = cur.fetchall()
+        if len(rows) != 2:
+            raise HTTPException(409, f"expected 2 forfeit movement rows at {ch['resolved_at']}, found {len(rows)}")
+        cur.execute("SELECT id, rung FROM ladder_teams WHERE id IN (%s,%s)", (ch["challenger_id"], ch["challenged_id"]))
+        cur_rung = {r["id"]: r["rung"] for r in cur.fetchall()}
+        for r in rows:
+            if cur_rung.get(r["team_id"]) != r["to_rung"]:
+                raise HTTPException(409, f"team {r['team_id']} is at rung {cur_rung.get(r['team_id'])}, "
+                                         f"not {r['to_rung']} where the forfeit left it — use /reorder")
+        moves = {}
+        for r in rows:
+            _ladder._set_rung(cur, r["team_id"], r["from_rung"], ch["ladder_id"], "unforfeit",
+                              from_rung=r["to_rung"])
+            moves[r["team_id"]] = r["from_rung"]
+        cur.execute("UPDATE ladder_challenges SET status='cancelled', resolved_at=now() WHERE id=%s", (challenge_id,))
+        cl_lbl = _team_label(cur, ch["challenger_id"])
+        cd_lbl = _team_label(cur, ch["challenged_id"])
+        conn.commit()
+    if notify_discord:
+        try:
+            import notify
+            notify.send(content=(f"↩️ Correction: the auto-forfeit of {cl_lbl} vs {cd_lbl} has been reversed — "
+                                 f"both teams are back on their previous rungs and the challenge is cancelled "
+                                 f"with **no ladder movement**."))
+        except Exception:
+            pass
+    return {"challenge_id": challenge_id, "status": "cancelled", "restored": moves}
+
+
+@app.post("/api/admin/ladder/team/{team_id}/archive")
+def admin_ladder_team_archive(team_id: int, authorization: str | None = Header(default=None),
+                              notify_discord: bool = Body(default=False, embed=True)):
+    """Retire a team (it is stepping away, not being removed for cause): off the
+    board, rungs compacted, open challenges cancelled, stats + team page kept
+    and listed under 'Retired'. Ladder-admin."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT name FROM ladder_teams WHERE id=%s", (team_id,))
+        t = cur.fetchone()
+        if not t:
+            raise HTTPException(404, "team not found")
+        res = _ladder.archive_team(cur, team_id)
+        conn.commit()
+    if res is None:
+        raise HTTPException(409, "team is already archived")
+    if notify_discord:
+        try:
+            import notify
+            notify.send(content=(f"🪦 **{t['name']}** has retired from the KOTH ladder — teams below shift up one rung. "
+                                 f"Their stats and match history stay on their team page."))
+        except Exception:
+            pass
+    return {"archived": team_id, "name": t["name"], **res}
 
 
 @app.get("/api/admin/ladder/movements")

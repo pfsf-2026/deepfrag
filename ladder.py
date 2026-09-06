@@ -100,6 +100,12 @@ def ensure_schema(cur):
     # counter-proposes). agreed_at + server recorded once a slot is picked.
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS server TEXT")
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS proposed_by BIGINT")
+    # 2026-09-06: when the CURRENT offer was posted + the full proposal history
+    # ({at, by, slots} per post). The forfeit clock needs proposed_at — a
+    # challenger who ignores the challenged team's offer for days and then
+    # re-posts hours before the deadline must not flip the blame (ch71).
+    cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS proposed_at TIMESTAMPTZ")
+    cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS proposal_log JSONB NOT NULL DEFAULT '[]'::jsonb")
     # Reminder + forfeit-clock bookkeeping (fired-once flags, set by the cron tick).
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS reminded_24h BOOLEAN NOT NULL DEFAULT FALSE")
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS reminded_soon BOOLEAN NOT NULL DEFAULT FALSE")  # ~1h
