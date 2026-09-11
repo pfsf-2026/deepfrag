@@ -46,3 +46,17 @@ victim debited in full. Zero-sum between teams (winner nets ~+100 pp per map; th
 without a kill, item pickups, respawns — those inflate totals and are covered by stacked-DDR
 and the items term in AGI. Scripts expect to run from the scratchpad root with f4/ paths;
 adjust paths when productionizing.
+
+## Corpus as built 2026-09-11 (`data/mvd_features.sqlite`, 1.25 GB, gitignored)
+
+| | games | span |
+|---|---|---|
+| 4on4, The-Den + la.quake.world | 2,485 | 2023-09-26 to 2026-09-11 |
+| 1on1, The-Den + LA + Mom's Basement + ny.quake.world | 14,028 | 2024-03-11 to 2026-09-11 |
+
+12.26M events, 47,751 player-game rows, 592,652 team-state samples, 12 unparseable games
+(aborted matches with <2 players in the streams). Extraction cost: ~0.2 s per duel, ~0.7 s per
+fours game with 6 workers, demos streamed from d.quake.world and discarded.
+
+`fight_table_1on1.json` — duel fight odds on 13,417 duels / 609,678 frags: 12/30/50/70/88 by
+stack edge with no power-up (fours: 6/20/50/80/94). Power-up cells are thin in duels (n~100).
