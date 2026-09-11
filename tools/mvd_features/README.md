@@ -29,3 +29,20 @@ chained deaths, multi-kills, item takes, and an AGI v0 composite normalized to t
 
 Scope of the first corpus: The-Den + la.quake.world fours, plus Mom's Basement and ny.quake.world
 duels, all time in the hub (from 2023-09). The sqlite lives in data/ (gitignored).
+
+## Swing (2026-09-11, v0)
+
+`winprob_4on4.json` — logistic map win-probability model fitted on 591k 10-second team-state
+samples from 2,443 Den/LA fours (held out by game: log-loss 0.401, AUC 0.894, well calibrated).
+Features: frag diff (with time interactions), stack diff (effective HP), alive diff, power-up,
+RL/LG counts, RA holders, fraction of time left. At even score with 10 min left: +300 stack
+= 0.58, quad = 0.52, +2 RL = 0.58; -20 frags = 0.31 with 10 min left, 0.06 with 1 min left.
+
+`swing_v0.py` — per-player swing, HLTV-style: only kill events move it. A kill = +1 frag diff
+plus the victim's remaining stack, weapons and power-up removed (alive count held constant,
+respawn is near-instant). Credit 15% finisher + 85% damage share over the victim's last 10s;
+victim debited in full. Zero-sum between teams (winner nets ~+100 pp per map; the rest of the
+0.5 -> 1.0 move is time drift, unattributed). Report as pp per minute. NOT included: damage
+without a kill, item pickups, respawns — those inflate totals and are covered by stacked-DDR
+and the items term in AGI. Scripts expect to run from the scratchpad root with f4/ paths;
+adjust paths when productionizing.

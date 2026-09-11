@@ -1,4 +1,5 @@
-import json, math, bisect, collections, statistics, sys
+import json, math, bisect, collections, statistics, sys, importlib.util
+_sp=importlib.util.spec_from_file_location('swing_v0','f4/swing_v0.py'); swing_v0=importlib.util.module_from_spec(_sp); _sp.loader.exec_module(swing_v0)
 RATIO={'ra':0.8,'ya':0.6,'ga':0.3,'':0.0}
 def eff(h,a,at):
     r=RATIO.get(at,0)
@@ -73,6 +74,8 @@ def score(path):
         r=R[n]; items=r['take_ra']*1.0+r['take_ya']*0.6+r['take_mh']*0.8+r['take_quad']*2.0+r['take_pent']*2.0
         rows.append(dict(name=n,team=team[n],frags=fr[n],kills=r['kills'],adj=r['adj'],dmg=r['dmg'],taken=r['taken'],sddr=(r['stk_given']/max(1,r['stk_taken'])),
                          deaths=r['deaths'],spawn=r['spawn_deaths'],chained=r['chained'],multi=r['multi'],items=items,quad=r['take_quad'],ra=r['take_ra']))
+    _,_,srows=swing_v0.compute(path); SWG={r[0]:r[2] for r in srows}; END_MIN=END/60000
+    for x in rows: x['swing']=SWG.get(x['name'],0)*100/END_MIN
     def norm(key,inv=False):
         m=statistics.mean(x[key] for x in rows) or 1
         for x in rows: x['n_'+key]=(m/max(0.5,x[key])) if inv else (x[key]/m)
@@ -83,8 +86,12 @@ def score(path):
     for x in rows: x['AGI']=0.30*x['n_adj']+0.15*x['n_dmg']+0.15*x['n_sddr']+0.15*x['n_deaths']+0.05*min(2.0,x['n_multi'])+0.20*x['n_items']
     m=statistics.mean(x['AGI'] for x in rows)
     for x in rows: x['AGI']/=m
+    # v0.2: swing folded in at 20% — swing is zero-sum around 0, so map it to a 1.0-centred scale first (1 + swing/10 pp-per-min, clipped)
+    for x in rows: x['AGI2']=0.8*x['AGI']+0.2*max(0.2,1+x['swing']/10)
+    m=statistics.mean(x['AGI2'] for x in rows)
+    for x in rows: x['AGI2']/=m
     print(f"\n=== {d['demoInfo']['map']}  {d['match']['teams'][0]['name']} {d['match']['teams'][0]['frags']} - {d['match']['teams'][1]['name']} {d['match']['teams'][1]['frags']} ===")
-    print(f"{'player':16s} {'team':5s} {'frags':>5s} {'adjK':>6s} {'dmg':>6s} {'sDDR':>5s} {'D':>3s} {'spwD':>4s} {'chn':>3s} {'multi':>5s} {'RA':>3s} {'Q':>2s} {'items':>5s} | {'AGI':>5s}")
-    for x in sorted(rows,key=lambda x:-x['AGI']):
-        print(f"{x['name']:16s} {x['team']:5s} {x['frags']:5d} {x['adj']:6.1f} {x['dmg']:6d} {x['sddr']:5.2f} {x['deaths']:3d} {x['spawn']:4d} {x['chained']:3d} {x['multi']:5d} {x['ra']:3d} {x['quad']:2d} {x['items']:5.1f} | {x['AGI']:5.2f}")
+    print(f"{'player':16s} {'team':5s} {'frags':>5s} {'adjK':>6s} {'dmg':>6s} {'sDDR':>5s} {'D':>3s} {'spwD':>4s} {'chn':>3s} {'multi':>5s} {'RA':>3s} {'Q':>2s} {'items':>5s} {'swing/min':>9s} | {'AGI':>5s} {'AGI+sw':>6s}")
+    for x in sorted(rows,key=lambda x:-x['AGI2']):
+        print(f"{x['name']:16s} {x['team']:5s} {x['frags']:5d} {x['adj']:6.1f} {x['dmg']:6d} {x['sddr']:5.2f} {x['deaths']:3d} {x['spawn']:4d} {x['chained']:3d} {x['multi']:5d} {x['ra']:3d} {x['quad']:2d} {x['items']:5.1f} {x['swing']:+9.1f} | {x['AGI']:5.2f} {x['AGI2']:6.2f}")
 for p in sys.argv[1:]: score(p)
