@@ -58,3 +58,4 @@ Thumbs.db
 
 # Claude working scratch (durable, but not committed)
 work/
+data/*.sqlite
