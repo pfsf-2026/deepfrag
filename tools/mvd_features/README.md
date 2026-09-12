@@ -60,3 +60,22 @@ fours game with 6 workers, demos streamed from d.quake.world and discarded.
 
 `fight_table_1on1.json` — duel fight odds on 13,417 duels / 609,678 frags: 12/30/50/70/88 by
 stack edge with no power-up (fours: 6/20/50/80/94). Power-up cells are thin in duels (n~100).
+
+## Corpus scoring (2026-09-12)
+
+Pipeline order: `extract.py` (games/players/events/state10s) -> `player_state_pass.py` (one row per
+player per 10s incl. ammo + zone; `player_shots` rocket/LG efficiency) -> `items_pass.py`
+(`item_takes`, `powerups` intervals) -> `swing_corpus.py` (`player_swing`) -> `score_corpus.py`
+(`player_agi` per player-game, `player_career` aggregates).
+
+Findings that shaped the model (all held-out by game):
+- Alive-count term dropped: it proxies "who just lost the last fight"; removing it costs 0.002 log-loss.
+- LG ammo / RL rockets add nothing to win probability (dm3 log-loss 0.4003 base vs 0.4009 with cells);
+  LG carriers on dm3 are <15 cells 38% of the time and still the gun is the signal (territory).
+- Zone possession (players in zone, yours minus theirs) adds <0.001 once stack + launchers are in
+  (`winprob_4on4_zones.json` keeps the per-map fit for reference). The anchor's value flows via stack.
+- Per map: dm3 RL +0.19 vs LG +0.13 per launcher; LG only exists on dm3 among Den/LA maps.
+- Swing is 57% frag differential (R²); the rest is leverage. Split-half reliability of a player's
+  swing/min across games = 0.95 (as stable as frag rate). Swing residual is NEGATIVELY correlated
+  with winning (garbage-time discount) -> use AGI for "who played well", swing for "who decided it";
+  never sit someone for low swing after a blowout win.
