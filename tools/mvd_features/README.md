@@ -79,3 +79,12 @@ Findings that shaped the model (all held-out by game):
   swing/min across games = 0.95 (as stable as frag rate). Swing residual is NEGATIVELY correlated
   with winning (garbage-time discount) -> use AGI for "who played well", swing for "who decided it";
   never sit someone for low swing after a blowout win.
+
+## Power-up runs and RA timing (2026-09-12)
+
+`powerup_runs.py` -> `powerup_runs` (one row per quad/pent/ring interval: holder frags, team frags,
+enemy frags, holder damage, died-with-it and when, team deaths, frag-diff change, P(win) before/after,
+wasted = died <10s or 0 frags on a full run) and `ra_timing` (per player-game: RA takes, median wait
+after RA spawn, on-timer takes <=3s, YA/MH/quad takes). Corpus: 48,529 quad runs — holder dies during
+45% of them, 27% inside 10 seconds; a full run averages 3.9 holder frags, +4.5 frag diff, +4.1 pts of
+win probability. Pent: 2.5 holder frags, never dies. Ring: least valuable (+1.2).
