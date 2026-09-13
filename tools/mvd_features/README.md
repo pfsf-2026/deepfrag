@@ -88,3 +88,17 @@ wasted = died <10s or 0 frags on a full run) and `ra_timing` (per player-game: R
 after RA spawn, on-timer takes <=3s, YA/MH/quad takes). Corpus: 48,529 quad runs — holder dies during
 45% of them, 27% inside 10 seconds; a full run averages 3.9 holder frags, +4.5 frag diff, +4.1 pts of
 win probability. Pent: 2.5 holder frags, never dies. Ring: least valuable (+1.2).
+
+## +/- and Quake WAR (2026-09-13)
+
+The leverage-weighted frag differential is called **+/-** everywhere (columns `plus_minus`,
+`plus_minus_pm`), unit = frag-equivalents (1.0 = a frag at even score with 10 min left). Not a percentage.
+
+`war.py` -> `player_war`, `career_war`. Expected +/- per minute for a player-game is a regression on the
+player's own strength (leave-one-game-out career +/- per minute, shrunk with a 60-minute prior), teammates'
+mean strength, opponents' mean strength and map (R² 0.41; own +0.99, mates -0.53, opps -0.46).
+- **above average** = actual minus what an average active player (mean strength of players with 15+ games in
+  the last 12 months) would post in that slot -> the rating input.
+- **above replacement** = same with the 25th-percentile active player as the baseline -> the counting stat.
+- **WAR** = above-replacement points x wins-per-point, where wins-per-point is the team-level slope of win on
+  team +/- total (0.0040, i.e. ~250 points = 1 win). Career WAR: BD +390 over 2,114 games, yeti +250, bogo +164.

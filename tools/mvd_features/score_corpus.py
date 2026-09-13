@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS player_agi;
 CREATE TABLE player_agi(game_id INT, ts TEXT, map TEXT, name TEXT, team TEXT, win INT, minutes REAL,
   frags INT, kills INT, deaths INT, adj_kills REAL, dmg INT, taken INT, sddr REAL, ddr REAL,
   spawn_deaths INT, chained INT, chained_real INT, multi INT, items REAL, take_ra INT, take_quad INT, take_pent INT,
-  swing REAL, swing_pm REAL, rockets_fired INT, rl_direct_hits INT, rl_dmg INT, rl_dmg_per_rocket REAL, rl_connect_pct REAL,
+  plus_minus REAL, plus_minus_pm REAL, rockets_fired INT, rl_direct_hits INT, rl_dmg INT, rl_dmg_per_rocket REAL, rl_connect_pct REAL,
   cells_fired INT, lg_dmg INT, agi REAL, agi_sw REAL);
 """)
 rows=con.execute("""SELECT p.game_id, g.ts, g.map, p.name, p.team, g.team_a, g.team_b, g.score_a, g.score_b, g.dur_ms,
@@ -53,7 +53,7 @@ SELECT name, COUNT(*) AS games, ROUND(SUM(minutes),0) AS minutes, ROUND(AVG(win)
   ROUND(SUM(dmg)/SUM(minutes),0) AS dmg_pm, ROUND(SUM(dmg)*1.0/MAX(1,SUM(taken)),3) AS ddr, ROUND(AVG(sddr),3) AS sddr,
   ROUND(SUM(spawn_deaths)*100.0/MAX(1,SUM(deaths)),1) AS spawn_death_pct, ROUND(SUM(chained_real)*100.0/MAX(1,SUM(deaths)),1) AS chained_real_pct,
   ROUND(SUM(items)/SUM(minutes),3) AS items_pm, ROUND(SUM(take_ra)/SUM(minutes),3) AS ra_pm, ROUND(SUM(take_quad)*1.0/COUNT(*),2) AS quads_pg,
-  ROUND(SUM(swing)/SUM(minutes),3) AS swing_pm, ROUND(SUM(rl_dmg)*1.0/MAX(1,SUM(rockets_fired)),1) AS rl_dmg_per_rocket,
+  ROUND(SUM(plus_minus)/SUM(minutes),3) AS plus_minus_pm, ROUND(SUM(rl_dmg)*1.0/MAX(1,SUM(rockets_fired)),1) AS rl_dmg_per_rocket,
   ROUND(SUM(rl_direct_hits)*100.0/MAX(1,SUM(rockets_fired)),1) AS rl_direct_pct, ROUND(SUM(lg_dmg)*1.0/MAX(1,SUM(cells_fired)),2) AS lg_dmg_per_cell,
   ROUND(AVG(agi),3) AS agi, ROUND(AVG(agi_sw),3) AS agi_sw, MAX(ts) AS last_game
 FROM player_agi GROUP BY name;
