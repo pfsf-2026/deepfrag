@@ -204,6 +204,29 @@ The "rejected" entry is important to preserve: in hockey analytics, "shifts per 
 
 ---
 
+### 4b. Demo-derived advanced metrics (added 2026-09-13, corpus: Den+LA fours since 2023)
+
+All computed from parsed MVDs by `tools/mvd_features/` (see its README). Every damage number is
+KTX-capped (overkill excluded) so it matches the in-game stats page.
+
+| metric | definition | status |
+|---|---|---|
+| **+/-** | Leverage-weighted frag differential: each kill/death scored by how much it moved the map win probability at that moment (fitted per-map logistic model on frag diff x time, stack, launchers, power-ups). Unit: frag-equivalents (1.0 = a frag at even score, 10 min left). Zero-sum between teams. Credit per kill: 15% finisher + 85% damage share over the victim's last 10 s. | built (`player_agi.plus_minus`) |
+| **Above average / game** | Actual +/- minus what an average active player would post in the same slot (own strength, teammates, opponents, map). The individual-performance input for the rating blend. | built (`player_war.above_avg`) |
+| **Above replacement / game** | Same with the 25th-percentile active player as baseline. The counting stat. | built (`player_war.above_repl`) |
+| **WAR** | Career above-replacement points x fitted wins-per-point (team-level slope, ~250 pts = 1 win). | built (`career_war.wins_above_repl`) |
+| **Adjusted kills** | Frags re-weighted by fight difficulty: 0.5 / P(win the fight) from the stack-edge table (edge at first contact, power-up state as its own dimension), cap 3; same credit split as +/-. | built |
+| **Stacked DDR** | Damage dealt while effective HP >= 150 / damage taken while >= 150. | built |
+| **Game Impact Score (AGI)** | Composite normalized to the game mean: adjusted kills, damage, stacked DDR, deaths, items, multi-kills. Weights are provisional (hand-set) until the out-of-sample fit. | built, weights TBD |
+| Spawn deaths / chained (real) | Death within 3 s of spawning (the map: 13-14% for everyone) / death within 14 s of the previous one after living > 3 s (the habit). | built |
+| Quad/pent efficiency | Frags per full run, died-with-it rate, dead-inside-10-s rate, run P(win) change. | built (`powerup_runs`) |
+| RA per game, on-timer % | Red-armor pickups per game and share taken within 3 s of spawn. | built (`ra_timing`) |
+| Rocket efficiency | Damage per rocket fired, share of rockets that did any damage (splash included). | built (`player_shots`) |
+
+Tested and rejected as rating inputs: LG cells / RL rockets (no predictive value once launcher counts
+are in), zone possession (< 0.001 log-loss once stack and launchers are in), alive-count (proxy for who
+just lost the last fight), "time holding a dry LG" (dropped 2026-09-12).
+
 ## 5. MVD data requirements for stacked-DDR
 
 Stacked-DDR is the killer stat but requires data we may not currently extract. Audit needed:
