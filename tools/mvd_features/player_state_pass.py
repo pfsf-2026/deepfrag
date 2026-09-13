@@ -27,6 +27,8 @@ def process(g):
         out=subprocess.run([ANALYZER,'-view','full','-include','positions',mvd],capture_output=True,timeout=120)
         d=json.loads(out.stdout); END=d['streams']['global']['matchEnd']
         team={p['name']:p['team'] for p in d['match']['players']}
+        for sp_ in d['streams']['players']:
+            if sp_['name'] not in team and sp_.get('team'): team[sp_['name']]=sp_['team']
         P={p['name']:p for p in d['streams']['players'] if p['name'] in team and p.get('h') is not None}
         if len(P)<2: return {'id':gid,'rows':[],'shots':[]}
         H={n:S(P[n].get('h',[]),100) for n in P}; A={n:S(P[n].get('a',[]),0) for n in P}; AT={n:S(P[n].get('at',[]),'') for n in P}

@@ -11,6 +11,8 @@ def process(g):
         out=subprocess.run([ANALYZER,'-view','full',mvd],capture_output=True,timeout=120)
         d=json.loads(out.stdout); END=d['streams']['global']['matchEnd']
         team={p['name']:p['team'] for p in d['match']['players']}
+        for sp_ in d['streams']['players']:
+            if sp_['name'] not in team and sp_.get('team'): team[sp_['name']]=sp_['team']
         takes=[]; pws=[]
         for it in (d.get('items') or {}).get('items') or []:
             for ph in it.get('phases') or []:
@@ -37,7 +39,7 @@ def main():
     with Pool(6) as pool:
         for res in pool.imap_unordered(process, games, chunksize=2):
             n+=1
-            if 'error' in res: errs+=1
+            if 'error' in res: errs+=1; print('ERR',res['id'],res['error'],flush=True)
             else:
                 con.executemany("INSERT INTO item_takes VALUES (?,?,?,?,?,?,?,?,?)",res['takes'])
                 con.executemany("INSERT INTO powerups VALUES (?,?,?,?,?,?)",res['pws'])

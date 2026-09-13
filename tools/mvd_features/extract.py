@@ -39,6 +39,11 @@ def process(g):
 def rows_for(g,d):
     gid=g['id']; END=d['streams']['global']['matchEnd']
     mp=d['match']['players']; team={p['name']:p['team'] for p in mp}; fr={p['name']:p['frags'] for p in mp}
+    for sp_ in d['streams']['players']:   # players who left before the end are missing from match.players but have full streams
+        if sp_['name'] not in team and sp_.get('team'):
+            team[sp_['name']]=sp_['team']
+            k=sum(1 for f in d['frags']['frags'] if f['killer']==sp_['name'] and f['victim']!=sp_['name'] and team.get(f['victim'])!=sp_['team'])
+            fr[sp_['name']]=k-sum(1 for f in d['frags']['frags'] if f['killer']==sp_['name'] and (f['victim']==sp_['name'] or team.get(f['victim'])==sp_['team']))
     P={p['name']:p for p in d['streams']['players'] if p['name'] in team and p.get('pos') and p.get('h') is not None}
     for n in P:  # tolerate missing series (late joiners, ghosts)
         for k,dflt in (('h',[]),('a',[]),('at',[]),('sp',[]),('d',[]),('rk',[]),('cl',[]),('sh',[]),('nl',[])):
