@@ -65,10 +65,12 @@ const byMap = computed(() => d.value['by_map_' + tab.value] || [])
 const divisions = ref({})
 const divSlug = computed(() => profile.value?.ratings?.[tab.value]?.tier?.slug || null)
 function divAvg(k) { return (divisions.value[divSlug.value] || {})[k] ?? null }
+// Weapon hues (Quake-native, not the page accent) so the row reads as five
+// different guns rather than five copies of the theme colour.
 const WEAPONS = [
-  { name: 'LG', key: 'lg_accuracy', max: 0.35 }, { name: 'RL', key: 'rl_accuracy', max: 0.50 },
-  { name: 'SSG', key: 'ssg_accuracy', max: 0.40 }, { name: 'SG', key: 'sg_accuracy', max: 0.30 },
-  { name: 'GL', key: 'gl_accuracy', max: 0.30 },
+  { name: 'LG', key: 'lg_accuracy', max: 0.35, color: '#38bdf8' }, { name: 'RL', key: 'rl_accuracy', max: 0.50, color: '#ff7a1a' },
+  { name: 'SSG', key: 'ssg_accuracy', max: 0.40, color: '#e0a33c' }, { name: 'SG', key: 'sg_accuracy', max: 0.30, color: '#c9a66b' },
+  { name: 'GL', key: 'gl_accuracy', max: 0.30, color: '#4ade80' },
 ]
 function dec(v, n = 1) { return v == null ? '—' : Number(v).toFixed(n) }
 function delta(cur, prv, fmtFn, higherBetter = true) {
@@ -94,8 +96,8 @@ const itemCards = computed(() => {
   const s = modeStats.value
   if (!s) return []
   return [
-    { label: 'Red armor', value: dec(s.avg_ra, 1) }, { label: 'Yellow armor', value: dec(s.avg_ya, 1) },
-    { label: 'Green armor', value: dec(s.avg_ga, 1) }, { label: 'Megahealth', value: dec(s.avg_mh, 1) }, { label: 'Quads', value: dec(s.avg_quads, 2) },
+    { label: 'Red armor', value: dec(s.avg_ra, 1), color: '#ef4444' }, { label: 'Yellow armor', value: dec(s.avg_ya, 1), color: '#facc15' },
+    { label: 'Green armor', value: dec(s.avg_ga, 1), color: '#22c55e' }, { label: 'Megahealth', value: dec(s.avg_mh, 1), color: '#60a5fa' }, { label: 'Quads', value: dec(s.avg_quads, 2), color: '#a78bfa' },
   ]
 })
 const mapCols = [
@@ -313,14 +315,14 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
         </div>
 
         <div class="section-h" style="margin-top:20px"><h2>Weapon proficiency</h2>
-          <span v-if="divSlug" class="meta">reference arc = your division average</span></div>
+          <span v-if="divSlug" class="meta"><i class="lg-you" />you &nbsp; <i class="lg-avg" />division average</span></div>
         <div class="panel"><div class="donuts">
-          <WeaponDonut v-for="w in WEAPONS" :key="w.name" :name="w.name" :val="modeStats[w.key]" :max="w.max" :div-avg="divAvg(w.key)" />
+          <WeaponDonut v-for="w in WEAPONS" :key="w.name" :name="w.name" :val="modeStats[w.key]" :max="w.max" :div-avg="divAvg(w.key)" :color="w.color" />
         </div></div>
 
         <div class="section-h" style="margin-top:20px"><h2>Item pickups / match</h2></div>
         <div class="grid5">
-          <div v-for="c in itemCards" :key="c.label" class="stat-card"><div class="l">{{ c.label }}</div><div class="v">{{ c.value }}</div></div>
+          <div v-for="c in itemCards" :key="c.label" class="stat-card item-card" :style="{ '--item': c.color }"><div class="l">{{ c.label }}</div><div class="v">{{ c.value }}</div></div>
         </div>
 
         <template v-if="byMap.length">
@@ -423,8 +425,14 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .stat-card .s { font-size: 11px; color: var(--fg-3); margin-top: 3px; }
 .stat-card .s.delta { font-weight: 700; font-variant-numeric: tabular-nums; }
 .stat-card .s.delta.up { color: var(--win, #ffb347); } .stat-card .s.delta.down { color: var(--loss, #ff5d6c); }
-.donuts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; padding: 14px 4px; }
-@media (max-width: 760px) { .donuts { grid-template-columns: repeat(3, 1fr); } }
+.donuts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; padding: 16px 4px 12px; }
+@media (max-width: 760px) { .donuts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; } }
+@media (max-width: 400px) { .donuts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.section-h .meta i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+.section-h .meta i.lg-you { background: linear-gradient(90deg, #38bdf8, #ff7a1a, #4ade80); }
+.section-h .meta i.lg-avg { background: var(--fg-2); opacity: 0.7; height: 3px; }
+.item-card { border-top: 3px solid var(--item, var(--border)); }
+.item-card .v { color: var(--item, var(--fg)); }
 .pill-row { display: flex; gap: 4px; margin-bottom: 14px; }
 .mpill { background: var(--panel); border: 1px solid var(--border); color: var(--fg-2); border-radius: 7px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .mpill.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
