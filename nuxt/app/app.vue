@@ -208,6 +208,15 @@ body {
 .topbar .discord-btn:hover { background: #4752c4; }
 
 /* ── Mobile app shell ───────────────────────────────────────────────────── */
+/* tablet range: the full row does not fit (nav + auth ran to ~900px at 768) — tighten and let the nav scroll in place */
+@media (max-width: 960px) and (min-width: 761px) {
+  .topbar { padding: 12px 18px; gap: 14px; }
+  .topbar .nav { min-width: 0; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .topbar .nav::-webkit-scrollbar { display: none; }
+  .topbar .nav a { flex: 0 0 auto; white-space: nowrap; padding: 7px 10px; font-size: 13px; }
+  .topbar .discord-btn span { display: none; }
+  .topbar .discord-btn { padding: 8px 10px; }
+}
 @media (max-width: 760px) {
   .topbar { padding: 10px 14px; gap: 10px 12px; flex-wrap: wrap; }
   .topbar .brand { font-size: 16px; }

@@ -12,9 +12,13 @@ const props = defineProps({
 })
 const R = 46
 const C = 2 * Math.PI * R
-const pct = computed(() => props.val == null ? 0 : Math.min(1, props.val / props.max))
+// Ring scale: the configured ceiling, or 20% above whichever is larger of your
+// value and the division average — so a 61% RL in fours never pins the ring
+// and the average tick stays visible.
+const scale = computed(() => Math.max(props.max, (props.val || 0) * 1.2, (props.divAvg || 0) * 1.2))
+const pct = computed(() => props.val == null ? 0 : Math.min(1, props.val / scale.value))
 const filled = computed(() => C * pct.value)
-const avgPct = computed(() => props.divAvg == null ? null : Math.min(1, props.divAvg / props.max))
+const avgPct = computed(() => props.divAvg == null ? null : Math.min(1, props.divAvg / scale.value))
 const avgFilled = computed(() => avgPct.value == null ? 0 : C * avgPct.value)
 const tickAngle = computed(() => avgPct.value == null ? null : -90 + 360 * avgPct.value)
 const deltaPp = computed(() => (props.val == null || props.divAvg == null) ? null : Math.round((props.val - props.divAvg) * 100))
