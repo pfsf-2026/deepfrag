@@ -7,6 +7,7 @@ Living design documents for the rating and stats systems. Each "bible" captures 
 | 1on1 | ✅ Shipped, in production | [1on1_methodology.md](./1on1_methodology.md) |
 | 2on2 | 🔜 Designed, not yet built | [2on2_methodology.md](./2on2_methodology.md) |
 | 4on4 | 🔜 Designed, not yet built | [4on4_methodology.md](./4on4_methodology.md) |
+| 4on4 advanced metrics | 📐 Corpus built, metrics scored (2026-09) | [advanced_metrics.md](./advanced_metrics.md) — +/-, above avg/repl, WAR, Game Impact Score, adjusted kills, stacked DDR, power-ups, RA, deaths, map profile; pipeline in `tools/mvd_features/` |
 
 ## API docs
 
