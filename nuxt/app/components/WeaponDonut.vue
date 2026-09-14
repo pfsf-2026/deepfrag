@@ -38,8 +38,8 @@ function pctTxt(v) { return v == null ? '—' : Math.round(v * 100) + '%' }
               :stroke-dasharray="`${filled} ${C}`" transform="rotate(-90 60 60)" stroke-linecap="round" />
       <line v-if="tickAngle != null" x1="60" :y1="60 - R - 8" x2="60" :y2="60 - R + 8"
             stroke="var(--fg)" stroke-width="2" :transform="`rotate(${tickAngle} 60 60)`" opacity="0.9" />
-      <text x="60" y="58" text-anchor="middle" class="t-val">{{ pctTxt(val) }}</text>
-      <text x="60" y="76" text-anchor="middle" class="t-name" :style="{ fill: val != null ? color : 'var(--fg-3)' }">{{ name }}</text>
+      <text x="60" y="60" text-anchor="middle" class="t-val">{{ pctTxt(val) }}</text>
+      <text x="60" y="77" text-anchor="middle" class="t-name" :style="{ fill: val != null ? color : 'var(--fg-3)' }">{{ name }}</text>
     </svg>
     <div class="sub">
       <template v-if="divAvg != null">
