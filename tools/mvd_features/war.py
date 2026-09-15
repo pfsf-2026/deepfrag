@@ -6,7 +6,8 @@ Writes player_war (per player-game) and career_war."""
 import sqlite3, sys, collections, numpy as np
 DB=sys.argv[1] if len(sys.argv)>1 else '/Users/peteryeargin/Projects/qw-stats/data/mvd_features.sqlite'
 con=sqlite3.connect(DB, timeout=120)
-rows=con.execute("SELECT game_id, ts, map, name, team, minutes, plus_minus, win FROM player_agi").fetchall()
+# keyed by canonical_id (player_agi.cid, from canon.py / aliases.yaml) so george + [george] + War/george all count as war
+rows=con.execute("SELECT game_id, ts, map, cid, team, minutes, plus_minus, win FROM player_agi").fetchall()
 tot=collections.defaultdict(float); mins=collections.defaultdict(float); n=collections.defaultdict(int)
 for gid,ts,mp,name,team,m,pm,win in rows: tot[name]+=pm; mins[name]+=m; n[name]+=1
 def loo(name,m,pm):  # strength without this game, per minute; shrink toward 0 for thin histories
@@ -34,7 +35,7 @@ act=[name for name in n if n[name]>=15 and any(r[3]==name and r[1]>='2025-09-12'
 strength={name:tot[name]/(mins[name]+60) for name in n}
 repl=np.percentile([strength[a] for a in act],25); avg=np.mean([strength[a] for a in act])
 print(f"active players {len(act)}: replacement strength (p25) {repl:+.3f} /min, average {avg:+.3f} /min")
-con.executescript("DROP TABLE IF EXISTS player_war; CREATE TABLE player_war(game_id INT, ts TEXT, map TEXT, name TEXT, team TEXT, minutes REAL, plus_minus REAL, expected REAL, above_avg REAL, above_repl REAL, win INT);")
+con.executescript("DROP TABLE IF EXISTS player_war; CREATE TABLE player_war(game_id INT, ts TEXT, map TEXT, canonical_id TEXT, team TEXT, minutes REAL, plus_minus REAL, expected REAL, above_avg REAL, above_repl REAL, win INT);")
 # wins per +/- point: linear-probability slope of team win on the team's +/- total per game
 tp=collections.defaultdict(float); tw={}
 for gid,ts,mp,name,team,m,pm,win in rows: tp[(gid,team)]+=pm; tw[(gid,team)]=win
@@ -48,11 +49,13 @@ for (gid,ts,mp,name,team,m,pm,win,s),p,r in zip(meta,pred,res):
     out.append((gid,ts,mp,name,team,m,pm,round(p*m,2),round(above_avg,2),round(above_repl,2),win))
 con.executemany("INSERT INTO player_war VALUES (?,?,?,?,?,?,?,?,?,?,?)",out)
 con.executescript(("""DROP TABLE IF EXISTS career_war;
-CREATE TABLE career_war AS SELECT name, COUNT(*) games, ROUND(SUM(minutes),0) minutes, ROUND(AVG(win)*100,1) win_pct,
+CREATE TABLE career_war AS SELECT canonical_id,
+  (SELECT b.name FROM player_agi b WHERE b.cid=w.canonical_id GROUP BY b.name ORDER BY COUNT(*) DESC, b.name LIMIT 1) AS name,
+  COUNT(*) games, ROUND(SUM(minutes),0) minutes, ROUND(AVG(win)*100,1) win_pct,
   ROUND(SUM(plus_minus),0) plus_minus_total, ROUND(SUM(plus_minus)/COUNT(*),1) plus_minus_pg,
   ROUND(SUM(above_avg),0) above_avg_total, ROUND(SUM(above_avg)/COUNT(*),1) above_avg_pg,
   ROUND(SUM(above_repl),0) above_repl_total, ROUND(SUM(above_repl)/COUNT(*),1) above_repl_pg,
-  ROUND(SUM(above_repl)*%.6f,1) wins_above_repl, MAX(ts) last_game FROM player_war GROUP BY name;""") % k_win)
+  ROUND(SUM(above_repl)*%.6f,1) wins_above_repl, MAX(ts) last_game FROM player_war w GROUP BY canonical_id;""") % k_win)
 con.commit()
 print("\n== career, 100+ games: +/- total | above average per game | above replacement total | Wins Above Replacement (points x fitted wins-per-point) ==")
 for r in con.execute("SELECT name, games, win_pct, plus_minus_total, plus_minus_pg, above_avg_pg, above_repl_total, wins_above_repl FROM career_war WHERE games>=100 ORDER BY above_repl_total DESC LIMIT 15"):
@@ -61,5 +64,5 @@ print("\n== above average per game, 30+ games (the rating input) ==")
 for r in con.execute("SELECT name, games, win_pct, plus_minus_pg, above_avg_pg FROM career_war WHERE games>=30 ORDER BY above_avg_pg DESC LIMIT 12"):
     print(f"  {r[0]:16s} g={r[1]:5d} win {r[2]:4.0f}% | +/- {r[3]:+5.1f}/g | above avg {r[4]:+5.1f}/g")
 print("  regulars:")
-for r in con.execute("SELECT name, games, win_pct, plus_minus_pg, above_avg_pg, above_repl_pg, wins_above_repl FROM career_war WHERE name IN ('cronus','BLooD_DoG(D_P)','omicron','george','war','Pred','sane','yeti','dusty','bogojoker','evalcat','Schotty','namtsui','powerzord') ORDER BY above_avg_pg DESC"):
+for r in con.execute("SELECT name, games, win_pct, plus_minus_pg, above_avg_pg, above_repl_pg, wins_above_repl FROM career_war WHERE canonical_id IN ('cronus','blood_dog_d_p','omicron','war','pred','sane','yeti','dusty','bogojoker','evalcat','schotty','namtsui','powerzord') ORDER BY above_avg_pg DESC"):
     print(f"  {r[0]:16s} g={r[1]:5d} win {r[2]:4.0f}% | +/- {r[3]:+5.1f}/g | above avg {r[4]:+5.1f}/g | above repl {r[5]:+5.1f}/g | WAR {r[6]:+6.1f}")

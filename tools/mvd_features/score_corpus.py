@@ -1,15 +1,17 @@
 """Build player_agi (one row per player per fours game: AGI v0 components, swing, rocket efficiency) and
 player_career (per-player aggregates) from the extracted corpus. Run after extract.py, swing_corpus, state_v2, items_pass."""
-import sqlite3, sys, statistics, collections
+import sqlite3, sys, statistics, collections, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import canon
 DB=sys.argv[1] if len(sys.argv)>1 else '/Users/peteryeargin/Projects/qw-stats/data/mvd_features.sqlite'
 con=sqlite3.connect(DB, timeout=120)
+CANON=canon.load(con)   # raw in-game name -> canonical_id (aliases.yaml: george/[george]/War/george -> war)
 con.executescript("""
 DROP TABLE IF EXISTS player_agi;
 CREATE TABLE player_agi(game_id INT, ts TEXT, map TEXT, name TEXT, team TEXT, win INT, minutes REAL,
   frags INT, kills INT, deaths INT, adj_kills REAL, dmg INT, taken INT, sddr REAL, ddr REAL,
   spawn_deaths INT, chained INT, chained_real INT, multi INT, items REAL, take_ra INT, take_quad INT, take_pent INT,
   plus_minus REAL, plus_minus_pm REAL, rockets_fired INT, rl_direct_hits INT, rl_dmg INT, rl_dmg_per_rocket REAL, rl_connect_pct REAL,
-  cells_fired INT, lg_dmg INT, agi REAL, agi_sw REAL);
+  cells_fired INT, lg_dmg INT, agi REAL, agi_sw REAL, cid TEXT);
 """)
 rows=con.execute("""SELECT p.game_id, g.ts, g.map, p.name, p.team, g.team_a, g.team_b, g.score_a, g.score_b, g.dur_ms,
                            p.frags, p.kills, p.deaths, p.dmg_given, p.dmg_taken, p.stacked_given, p.stacked_taken, p.spawn_deaths, p.chained, p.multi,
@@ -25,7 +27,7 @@ for r in rows:
     if sw is None: continue
     win=1 if (team==ta and sa>sb) or (team==tb and sb>sa) else 0; mins=dur/60000
     items=ra+0.6*ya+0.8*mh+2*q+2*pe
-    by[gid].append(dict(gid=gid,ts=ts,map=mp,name=n,team=team,win=win,minutes=mins,frags=fr,kills=k,deaths=d,adj=adj,dmg=dg,taken=dt,
+    by[gid].append(dict(gid=gid,ts=ts,map=mp,name=n,cid=CANON.get(n,n),team=team,win=win,minutes=mins,frags=fr,kills=k,deaths=d,adj=adj,dmg=dg,taken=dt,
         sddr=sg/max(1,st),ddr=dg/max(1,dt),spawn=spd,chained=ch,chained_real=max(0,ch-spd),multi=mu,items=items,ra=ra,q=q,pe=pe,
         swing=sw*100,swing_pm=sw*100/mins,rk=rk or 0,rdh=rdh or 0,rl_dmg=(rdd or 0)+(rsd or 0),
         rl_dpr=((rdd or 0)+(rsd or 0))/max(1,rk or 0),rl_conn=(rwd or 0)/max(1,rk or 0)*100,cl=cl or 0,lg_dmg=lgd or 0))
@@ -43,12 +45,16 @@ for gid,L in by.items():
     for x in L:
         x['agi_sw']/=m2
         out.append((x['gid'],x['ts'],x['map'],x['name'],x['team'],x['win'],round(x['minutes'],2),x['frags'],x['kills'],x['deaths'],round(x['adj'],2),x['dmg'],x['taken'],round(x['sddr'],3),round(x['ddr'],3),
-                    x['spawn'],x['chained'],x['chained_real'],x['multi'],round(x['items'],1),x['ra'],x['q'],x['pe'],round(x['swing'],2),round(x['swing_pm'],3),x['rk'],x['rdh'],x['rl_dmg'],round(x['rl_dpr'],1),round(x['rl_conn'],1),x['cl'],x['lg_dmg'],round(x['agi'],3),round(x['agi_sw'],3)))
-con.executemany("INSERT INTO player_agi VALUES ("+",".join("?"*34)+")",out)
+                    x['spawn'],x['chained'],x['chained_real'],x['multi'],round(x['items'],1),x['ra'],x['q'],x['pe'],round(x['swing'],2),round(x['swing_pm'],3),x['rk'],x['rdh'],x['rl_dmg'],round(x['rl_dpr'],1),round(x['rl_conn'],1),x['cl'],x['lg_dmg'],round(x['agi'],3),round(x['agi_sw'],3),x['cid']))
+con.executemany("INSERT INTO player_agi VALUES ("+",".join("?"*35)+")",out)
 con.executescript("""
+CREATE INDEX IF NOT EXISTS pa_n ON player_agi(name); CREATE INDEX IF NOT EXISTS pa_g ON player_agi(game_id); CREATE INDEX IF NOT EXISTS pa_c ON player_agi(cid);
 DROP TABLE IF EXISTS player_career;
+-- one row per canonical player (aliases folded); name = the raw name he used most
 CREATE TABLE player_career AS
-SELECT name, COUNT(*) AS games, ROUND(SUM(minutes),0) AS minutes, ROUND(AVG(win)*100,1) AS win_pct,
+SELECT cid AS canonical_id,
+  (SELECT b.name FROM player_agi b WHERE b.cid=a.cid GROUP BY b.name ORDER BY COUNT(*) DESC, b.name LIMIT 1) AS name,
+  COUNT(*) AS games, ROUND(SUM(minutes),0) AS minutes, ROUND(AVG(win)*100,1) AS win_pct,
   ROUND(SUM(frags)/SUM(minutes),3) AS frags_pm, ROUND(SUM(deaths)/SUM(minutes),3) AS deaths_pm, ROUND(SUM(adj_kills)/SUM(minutes),3) AS adj_kills_pm,
   ROUND(SUM(dmg)/SUM(minutes),0) AS dmg_pm, ROUND(SUM(dmg)*1.0/MAX(1,SUM(taken)),3) AS ddr, ROUND(AVG(sddr),3) AS sddr,
   ROUND(SUM(spawn_deaths)*100.0/MAX(1,SUM(deaths)),1) AS spawn_death_pct, ROUND(SUM(chained_real)*100.0/MAX(1,SUM(deaths)),1) AS chained_real_pct,
@@ -56,8 +62,8 @@ SELECT name, COUNT(*) AS games, ROUND(SUM(minutes),0) AS minutes, ROUND(AVG(win)
   ROUND(SUM(plus_minus)/SUM(minutes),3) AS plus_minus_pm, ROUND(SUM(rl_dmg)*1.0/MAX(1,SUM(rockets_fired)),1) AS rl_dmg_per_rocket,
   ROUND(SUM(rl_direct_hits)*100.0/MAX(1,SUM(rockets_fired)),1) AS rl_direct_pct, ROUND(SUM(lg_dmg)*1.0/MAX(1,SUM(cells_fired)),2) AS lg_dmg_per_cell,
   ROUND(AVG(agi),3) AS agi, ROUND(AVG(agi_sw),3) AS agi_sw, MAX(ts) AS last_game
-FROM player_agi GROUP BY name;
-CREATE INDEX IF NOT EXISTS pa_n ON player_agi(name); CREATE INDEX IF NOT EXISTS pa_g ON player_agi(game_id);
+FROM player_agi a GROUP BY cid;
+CREATE INDEX IF NOT EXISTS pc_c ON player_career(canonical_id);
 """)
 con.commit()
 print('player_agi rows', con.execute("SELECT count(*) FROM player_agi").fetchone()[0], ' careers', con.execute("SELECT count(*) FROM player_career").fetchone()[0])

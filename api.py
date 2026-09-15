@@ -1561,10 +1561,43 @@ def players_map(response: Response):
         return {"players": cur.fetchall()}
 
 
+def _resolve_merged_canonical(cur, canonical_id: str) -> str:
+    """Follow a profile that an alias/merge emptied to the profile that now owns
+    its matches. aliases.yaml folds `george` into `war`, so the `george` row in
+    players_canonical is left hidden with ZERO player rows — and until 2026-09-15
+    /api/players/george answered 200 with matches=0 and null ratings instead of
+    war's 3,300+ games. Only fires when the requested id has no player rows (a
+    live profile is never rerouted). Order: canon_merges (admin merges) →
+    player_name_map (a raw name whose slug is this id now maps elsewhere).
+    Returns the id unchanged when nothing better exists."""
+    cur.execute("SELECT 1 FROM players WHERE canonical_id = %s LIMIT 1", (canonical_id,))
+    if cur.fetchone():
+        return canonical_id
+    cur.execute("SELECT to_regclass('canon_merges') IS NOT NULL AS ok")
+    if cur.fetchone()["ok"]:
+        cur.execute("SELECT target_canonical_id FROM canon_merges WHERE source_canonical_id = %s",
+                    (canonical_id,))
+        r = cur.fetchone()
+        if r and r["target_canonical_id"] != canonical_id:
+            return r["target_canonical_id"]
+    # Same slug rule as name_canon._mint_new_canonical: lowercase, runs of
+    # non-alphanumerics -> '_', trimmed ('War/george' -> 'war_george').
+    cur.execute("""
+        SELECT canonical_id, COUNT(*) AS n FROM player_name_map
+        WHERE trim(both '_' from regexp_replace(lower(raw_name), '[^a-z0-9]+', '_', 'g')) = %s
+          AND canonical_id <> %s
+        GROUP BY canonical_id ORDER BY n DESC LIMIT 1
+    """, (canonical_id, canonical_id))
+    r = cur.fetchone()
+    return r["canonical_id"] if r else canonical_id
+
+
 @app.get("/api/players/{canonical_id}")
 def player_profile(canonical_id: str):
+    requested = canonical_id
     with pg() as conn:
         cur = conn.cursor()
+        canonical_id = _resolve_merged_canonical(cur, canonical_id)
         cur.execute("""
             SELECT canonical_id, display_name, login, created_at, updated_at,
                    region, region_confidence, region_distribution
@@ -1618,13 +1651,16 @@ def player_profile(canonical_id: str):
                 "updated_at": r["updated_at"],
             }
 
-    return {
+    out = {
         "canonical_id": canon["canonical_id"],
         "display": canon["display_name"],
         "login": canon["login"],
         "career": dict(career),
         "ratings": ratings,
     }
+    if canonical_id != requested:
+        out["resolved_from"] = requested   # alias/merge target — client should redirect
+    return out
 
 
 # ── Stats leaderboards (mechanical-skill: accuracy, damage, items, etc.) ──────
@@ -2939,9 +2975,11 @@ def player_profile_full(
         if days < 1 or days > 3650:
             raise HTTPException(400, "window out of range")
 
+    requested = canonical_id
     with pg() as conn:
         cur = conn.cursor()
-        # Player resolution
+        # Player resolution — follow an alias/merge-emptied id (george -> war)
+        canonical_id = _resolve_merged_canonical(cur, canonical_id)
         cur.execute("""
             SELECT canonical_id, display_name, login,
                    region, region_confidence, region_distribution
@@ -3100,6 +3138,7 @@ def player_profile_full(
         "career": career,
         "ratings": ratings,
         "map_ratings_1on1": map_ratings_1on1,
+        **({"resolved_from": requested} if canonical_id != requested else {}),
         "windows_available": ["7", "30", "90", "365", "all"],
         "default_window": window_key,
         "windows": {window_key: win_payload},
@@ -8761,6 +8800,69 @@ def _assign_canonical_from_map(conn):
     return assigned
 
 
+def _apply_alias_drift(conn, var2cid: dict, login2cid: dict, displays: dict) -> dict:
+    """aliases.yaml is authoritative, but until 2026-09-15 only the manual
+    /api/admin/apply-aliases click ever re-pointed names that were ALREADY in
+    player_name_map when an alias was added — a committed `war/george -> war`
+    sat unapplied until someone remembered, leaving a stray `war_george`
+    profile with its own 17 matches and a phantom rating. This runs the same
+    repoint inside every 2h sync: for each mapped raw name whose normalized
+    form (or hub login) is an explicit alias variant but whose canonical
+    differs, re-point players + name_map, make sure the target profile row
+    exists, hide the profile it emptied, and drop that profile's now-orphaned
+    rating rows (its matches rate under the target on the next full re-rate).
+    O(name_map) in Python + a few bulk UPDATEs — no fuzzy pass, no full scan
+    of players by name."""
+    import name_canon
+    now = datetime.now(timezone.utc).isoformat()
+    cur = conn.cursor()
+    cur.execute("SELECT raw_name, canonical_id FROM player_name_map")
+    rows = cur.fetchall()
+    login_by_name = {}
+    if login2cid:
+        cur.execute("""SELECT DISTINCT player_name, player_login FROM players
+                       WHERE player_login = ANY(%s)""", (list(login2cid),))
+        login_by_name = {r["player_name"]: r["player_login"] for r in cur.fetchall()}
+    repoint, emptied = [], set()
+    for r in rows:
+        raw, current = r["raw_name"], r["canonical_id"]
+        target = login2cid.get(login_by_name.get(raw)) or var2cid.get(name_canon.normalize(raw))
+        if target and target != current:
+            repoint.append((target, raw))
+            emptied.add(current)
+    if not repoint:
+        return {"alias_repointed": 0, "alias_orphans_hidden": 0}
+    _ensure_canon_review_schema(cur)
+    targets = sorted({t for t, _ in repoint})
+    psycopg2.extras.execute_values(cur,
+        "INSERT INTO players_canonical (canonical_id, display_name, login, created_at, updated_at) "
+        "VALUES %s ON CONFLICT (canonical_id) DO NOTHING",
+        [(t, displays.get(t, t), "", now, now) for t in targets], page_size=500)
+    psycopg2.extras.execute_values(cur,
+        "UPDATE players SET canonical_id=data.cid FROM (VALUES %s) AS data(cid, raw) "
+        "WHERE players.player_name = data.raw", repoint, page_size=2000)
+    psycopg2.extras.execute_values(cur,
+        "UPDATE player_name_map SET canonical_id=data.cid, source='manual' "
+        "FROM (VALUES %s) AS data(cid, raw) WHERE player_name_map.raw_name = data.raw",
+        repoint, page_size=2000)
+    cur.execute("""UPDATE players_canonical SET hidden=TRUE
+                   WHERE canonical_id = ANY(%s)
+                     AND NOT EXISTS (SELECT 1 FROM players p
+                                     WHERE p.canonical_id = players_canonical.canonical_id)
+                   RETURNING canonical_id""", (sorted(emptied),))
+    hidden = [r["canonical_id"] for r in cur.fetchall()]
+    if hidden:
+        cur.execute("DELETE FROM ratings WHERE canonical_id = ANY(%s)", (hidden,))
+        cur.execute("SELECT to_regclass('map_residuals') IS NOT NULL AS ok")
+        if cur.fetchone()["ok"]:
+            cur.execute("DELETE FROM map_residuals WHERE canonical_id = ANY(%s)", (hidden,))
+    conn.commit()
+    print(f"[canonicalize] alias drift: re-pointed {len(repoint)} name(s) -> {targets[:10]}; "
+          f"hid emptied profile(s) {hidden[:10]}", flush=True)
+    return {"alias_repointed": len(repoint), "alias_targets": targets[:20],
+            "alias_orphans_hidden": len(hidden), "alias_orphans": hidden[:20]}
+
+
 def _canonicalize_incremental(conn):
     """INCREMENTAL canonicalize — replaces the O(n) full pass that re-resolved and
     re-upserted EVERY distinct name (16k+ per-row round trips) on every run and
@@ -8771,6 +8873,12 @@ def _canonicalize_incremental(conn):
     O(new names), not O(all names). Returns a small summary."""
     import name_canon
     c = name_canon.Canonicalizer.load()
+    # Snapshot the EXPLICIT aliases.yaml index before resolve() starts minting
+    # new canonicals / recording fuzzy variants into c.records — the drift pass
+    # below must only enforce what a human wrote in the file.
+    alias_var2cid = {v: cid for cid, rec in c.records.items() for v in rec.variants}
+    alias_login2cid = dict(c.login_index)
+    alias_display = {cid: rec.display for cid, rec in c.records.items()}
     now = datetime.now(timezone.utc).isoformat()
     cur = conn.cursor()
     # Distinct player names with no map entry yet — most common first so each new
@@ -8811,10 +8919,14 @@ def _canonicalize_incremental(conn):
             "VALUES %s ON CONFLICT (raw_name) DO UPDATE SET canonical_id=EXCLUDED.canonical_id, source=EXCLUDED.source",
             map_rows, page_size=1000)
         conn.commit()
+    # Existing names whose mapping disagrees with aliases.yaml (alias added
+    # after the name was first seen) — re-point before linking NULL rows.
+    drift = _apply_alias_drift(conn, alias_var2cid, alias_login2cid, alias_display)
     assigned = _assign_canonical_from_map(conn)
     cur.execute("SELECT count(*) AS n FROM players WHERE canonical_id IS NULL")
     still = cur.fetchone()["n"]
-    return {"new_names_resolved": len(map_rows), "rows_assigned": assigned, "still_unassigned": still}
+    return {"new_names_resolved": len(map_rows), "rows_assigned": assigned,
+            "still_unassigned": still, **drift}
 
 
 @app.post("/api/admin/canon/backfill-unassigned")

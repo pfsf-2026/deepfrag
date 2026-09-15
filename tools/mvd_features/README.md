@@ -89,6 +89,20 @@ after RA spawn, on-timer takes <=3s, YA/MH/quad takes). Corpus: 48,529 quad runs
 45% of them, 27% inside 10 seconds; a full run averages 3.9 holder frags, +4.5 frag diff, +4.1 pts of
 win probability. Pent: 2.5 holder frags, never dies. Ring: least valuable (+1.2).
 
+## Canonical player ids (2026-09-15)
+
+The corpus keys raw rows on the in-game name, and one human plays under many:
+`war` also appears as `george`, `[george]`, `War/george`, `georges`, `george?`,
+`Igor`, `tardface`, `fok`, `allufok`, `Whodat`, `pikachu` (all in `aliases.yaml`).
+`canon.py` resolves every distinct `players.name` with the production resolver
+(`name_canon.py` + `aliases.yaml`) into `name_canon(name, canonical_id, decision)`.
+`score_corpus.py` stamps each `player_agi` row with `cid` and builds `player_career`
+per `canonical_id` (`name` = the raw name used most); `war.py` fits strength and
+writes `player_war` / `career_war` per `canonical_id` the same way. Rebuild order
+after an alias change: `canon.py` -> `score_corpus.py` -> `war.py`. Raw per-game
+tables (`players`, `events`, `player_swing`, `player_shots`) keep the raw name —
+join through `name_canon` when aggregating them.
+
 ## +/- and Quake WAR (2026-09-13)
 
 The leverage-weighted frag differential is called **+/-** everywhere (columns `plus_minus`,

@@ -27,6 +27,12 @@ async function load() {
     const url = df.useApi ? `${df.profileUrl(id.value)}/full?window=${windowKey.value}&v=3` : df.profileUrl(id.value)
     const r = await fetch(url)
     profile.value = r.ok ? await r.json() : null
+    // Alias/merge-emptied id (e.g. /p/george/recent): the API answers with the
+    // owning profile — move to its id so sub-fetches and the URL agree.
+    const real = profile.value?.canonical_id
+    if (real && real !== id.value) {
+      return navigateTo(`/p/${encodeURIComponent(real)}/${tab.value}`, { replace: true })
+    }
     // Mode tabs need division averages for the weapon-donut reference arcs.
     if (MODES.includes(tab.value) && !divisions.value[tab.value + '_loaded']) {
       try {

@@ -22,6 +22,13 @@ async function loadProfile() {
     const r = await fetch(url)
     if (!r.ok) throw new Error(r.status)
     profile.value = await r.json()
+    // The API follows alias/merge-emptied ids to the profile that owns the games
+    // (/p/george -> war, per aliases.yaml). Land on the real id so every sub-fetch
+    // (maps, rating history, coach) and the share URL use it too.
+    const real = profile.value?.canonical_id
+    if (real && real !== id.value) {
+      return navigateTo(`/p/${encodeURIComponent(real)}`, { replace: true })
+    }
   } catch {
     profile.value = null
   } finally {

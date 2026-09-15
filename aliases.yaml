@@ -118,6 +118,8 @@ war:
     - igor
     - pikachu
     - georges     # 2026-09-04 (Peter): played as georges on The-Den 4on4s; confirmed war
+    - "war/george" # 2026-09-15: "War/george" on The-Den 4on4s 2024-07..2025-02 (17g) minted a
+                  #   stray war_george profile — the "/" defeats the normalizer
 
 blood_dog_d_p:
   # (D_P) clan tag; the closing ')' was being trimmed and the prefix-tag spelling
