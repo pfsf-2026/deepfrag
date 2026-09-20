@@ -455,8 +455,16 @@ const ladders = ref([])
 const ladderId = ref(null)
 const ladderDetail = ref(null)
 const ladderLoading = ref(false)
-const newLadder = ref({ name: 'King of the Hill 2v2', season: 'Xmas 2026', team_size: 2 })
+const newLadder = ref({ name: 'King of the Hill 1v1', season: 'Fall 2026', team_size: 1 })
 const DEFAULT_MAPS = ['aerowalk', 'ztndm3', 'dm2', 'dm4', 'bravado', 'nova', 'shifter']
+// Duel pool: placeholder until the duel-league poll (vote.py) is read out.
+const DUEL_MAPS = ['aerowalk', 'ztndm3', 'dm4', 'dm6', 'bravado', 'skull', 'phantombase']
+const newLadderMaps = computed(() => Number(newLadder.value.team_size) === 1 ? DUEL_MAPS : DEFAULT_MAPS)
+watch(() => newLadder.value.team_size, (n) => {
+  const size = Number(n)
+  if (size === 1 && /2v2/.test(newLadder.value.name)) newLadder.value.name = 'King of the Hill 1v1'
+  if (size === 2 && /1v1/.test(newLadder.value.name)) newLadder.value.name = 'King of the Hill 2v2'
+})
 const newTeam = ref({ name: '', members: '', rung: '' })
 const reportFor = ref(null)        // challenge being reported
 const reportForm = ref({ winner_id: null, score_a: null, score_b: null, hub: '' })
@@ -548,8 +556,9 @@ async function createLadder() {
         name: newLadder.value.name,
         season: newLadder.value.season,
         team_size: Number(newLadder.value.team_size) || 2,
-        map_pool: DEFAULT_MAPS,
-        rules: { rung_jump: 2, forfeit_days: 7, best_of: 3, ruleset: 'smackdown', timelimit: 10 }
+        map_pool: newLadderMaps.value,
+        rules: { rung_jump: 2, forfeit_days: 7, short_window_days: 3, loss_cooldown_days: 3, min_offer_hours: 48,
+                 best_of: 3, ruleset: 'smackdown', timelimit: 10, auto_resolve: true, auto_forfeit: false }
       }
     })
     pushEvent('ok', 'LADDER', `created "${r.name}" (id ${r.ladder_id})`)
@@ -1337,17 +1346,23 @@ function shortStatus(s) {
             </div>
           </div>
 
-          <!-- No ladder yet → create form -->
-          <div v-if="!ladderLoading && !ladders.length" class="card" style="max-width: 520px;">
-            <h3>Create the ladder</h3>
-            <div class="form-grid">
+          <!-- Create a ladder: the first one, or a second ladder (e.g. the 1v1 duel ladder next to the 2v2) -->
+          <details v-if="!ladderLoading" class="card" style="max-width: 520px;" :open="!ladders.length">
+            <summary><h3 style="display:inline">{{ ladders.length ? 'Create another ladder' : 'Create the ladder' }}</h3></summary>
+            <div class="form-grid" style="margin-top:10px;">
               <label>Name<input v-model="newLadder.name"></label>
               <label>Season<input v-model="newLadder.season"></label>
-              <label>Team size<input v-model="newLadder.team_size" type="number"></label>
+              <label>Team size
+                <select v-model="newLadder.team_size">
+                  <option :value="1">1 — duels (1on1)</option>
+                  <option :value="2">2 — 2v2 teams (2on2)</option>
+                  <option :value="4">4 — 4v4 teams (4on4)</option>
+                </select>
+              </label>
             </div>
-            <p class="muted small" style="margin:10px 0;">Maps: {{ DEFAULT_MAPS.join(' · ') }} · Bo3 · 1–2 rung challenges · 7-day forfeit window.</p>
+            <p class="muted small" style="margin:10px 0;">Maps: {{ newLadderMaps.join(' · ') }} · Bo3 · 1–2 rung challenges · 7-day forfeit window · closed until you open it.</p>
             <button class="btn" @click="createLadder">Create ladder</button>
-          </div>
+          </details>
 
           <template v-else-if="ladderDetail">
             <!-- Pending team signups -->

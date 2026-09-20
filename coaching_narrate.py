@@ -125,3 +125,81 @@ def narrate(display: str, mode: str, weakness: dict) -> dict:
     if text:
         return {"text": text, "source": "llm", "model": MODEL}
     return {"text": _template_narrate(payload), "source": "template"}
+
+
+# ── 4on4 coach narration ─────────────────────────────────────────────────────
+SYSTEM_4ON4 = (
+    "You are a QuakeWorld 4on4 coach for a North American pickup community. You receive ONE "
+    "player's computed report from the demo corpus: their LEVEL (1 Survive, 2 Stack, 3 Fight, "
+    "4 Control, 5 Carry — bands of +/- above an average player), the two GATES to the next level "
+    "with their numbers, ONE focus lever with the player's number, their own wins-vs-losses split, "
+    "their level's median and the next level's target, the RESULT of the previous prescription if "
+    "there was one, the top levers, and their last games with the two metrics that explain each. "
+    "RULES: (1) Use only the numbers given; never invent a metric, a number or a game. (2) One focus. "
+    "Do not list other things to work on beyond one sentence. (3) If a previous prescription exists, "
+    "open with its result honestly (hit, improved, flat, worse) in one or two sentences. (4) Explain the "
+    "focus lever in Quake terms with the player's own numbers against their wins, their level and the "
+    "next level, then give the drill as concrete in-game behaviour. (5) Register by level: levels 1-2 "
+    "get three plain rules and short sentences, no theory; level 3 gets fight selection and stack talk; "
+    "levels 4-5 get leverage, quad escorting and map control. (6) Reference the last games only through "
+    "the cards given, and only where they show the focus lever. (7) Never generic advice: if a sentence "
+    "could be sent to any player, cut it. Under 200 words for levels 1-2, under 300 otherwise. "
+    "Markdown, no headings."
+)
+
+
+def _fours_payload(report: dict) -> dict:
+    lv = report.get("level") or {}
+    keep = ("key", "label", "you", "win", "loss", "level_median", "target", "is_gate", "why")
+    return {
+        "display": report.get("display"), "record": report.get("record"),
+        "level": {k: lv.get(k) for k in ("level", "name", "blurb", "above_avg_pg", "games", "ready")},
+        "gates": lv.get("gates"), "previous": report.get("previous"),
+        "focus": {k: v for k, v in (report.get("focus") or {}).items() if k in ("lever", "label", "you_fmt", "target_fmt", "status", "games_since", "now_fmt", "why", "drill", "window_games")},
+        "levers": [{k: l.get(k) for k in keep} for l in (report.get("levers") or [])[:3]],
+        "games": [{k: g.get(k) for k in ("map", "win", "frags", "deaths", "agi", "above_avg", "explain")} for g in (report.get("games") or [])[:4]],
+        "maps": (report.get("metrics") or {}).get("maps"),
+    }
+
+
+def _fours_template(report: dict) -> str:
+    lv = report.get("level") or {}; f = report.get("focus"); prev = report.get("previous"); rec = report.get("record") or {}
+    if not lv.get("placed"):
+        return (f"**{report.get('display')}** has {lv.get('games', 0)} scored fours; a level needs 15. "
+                "Play a few more pickup nights and the coach will place you.")
+    lines = [f"**{report.get('display')}** — Level {lv['level']} {lv['name']}, {lv.get('above_avg_pg')} above average per game "
+             f"over the last {lv.get('games')} fours ({rec.get('wins')}W/{rec.get('losses')}L)."]
+    if prev and prev.get("status") != "pending":
+        verdict = {"hit": "you hit it", "improved": "it moved the right way but is not there yet", "flat": "it did not move", "worse": "it went the wrong way"}[prev["status"]]
+        lines.append(f"\nLast focus, **{prev['label']}**: {prev['at_issue_fmt']} at issue, target {prev['target_fmt']}, now {prev['now_fmt']} over {prev['games_since']} games — {verdict}.")
+    if f:
+        if f.get("status") == "in_progress":
+            lines.append(f"\n**Focus stays: {f['label']}.** {f.get('games_since', 0)} of {f.get('window_games')} games in; you are at {f.get('now_fmt')} against a target of {f.get('target_fmt')}.")
+        else:
+            lines.append(f"\n**Your one focus: {f['label']}.** You are at {f.get('you_fmt')}; the next level sits at {f.get('target_fmt')}. {f.get('why')}")
+        lines.append(f"\n**The drill:** {f.get('drill')}")
+    g = lv.get("gates") or []
+    if g:
+        lines.append("\nGates to the next level: " + "; ".join(f"{x['label']} {x['you']} vs {x['target']} ({'passed' if x['passed'] else 'not yet'})" for x in g) + ".")
+    lines.append("\n_(Auto-generated from your demo metrics. Richer AI narration activates once the coaching model is connected.)_")
+    return "\n".join(lines)
+
+
+def narrate_fours(report: dict) -> dict:
+    """{text, source} for the 4on4 coach. LLM when a key is configured, else template."""
+    text = None
+    if ANTHROPIC_KEY and (report.get("level") or {}).get("placed"):
+        payload = _fours_payload(report)
+        lvl = (report.get("level") or {}).get("level") or 3
+        body = {"model": MODEL, "max_tokens": 900, "system": SYSTEM_4ON4,
+                "messages": [{"role": "user", "content": f"Player level {lvl}. Report JSON:\n{json.dumps(payload, indent=1, default=str)}\n\nWrite the coaching read."}]}
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
+                                     headers={"content-type": "application/json", "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = json.loads(r.read()); text = "".join(b.get("text", "") for b in data.get("content", [])) or None
+        except Exception:
+            text = None
+    if text:
+        return {"text": text, "source": "llm"}
+    return {"text": _fours_template(report), "source": "template"}

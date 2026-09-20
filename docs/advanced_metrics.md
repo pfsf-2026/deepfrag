@@ -205,3 +205,26 @@ The metrics answer four questions in order, and a profile is laid out the same w
 - **Where?** The map profile.
 
 Two rules for reading them together. Never sit a player for low +/- after a blowout win, because the leverage discount guarantees it; sit on the Game Impact Score and break ties on +/-. And when a habit number looks bad, check the context column first: spawn deaths are the map, chained deaths on a locked-out team are the lock, and a bad rocket connect rate on a night of long-range dm2 pokes is the map choice. The stats find the players who are genuinely bad at something, which is what they are for, but only after the context has had its say.
+
+## Duel side (added 2026-09-17)
+
+The same machinery scores every 1on1 in the corpus (`tools/mvd_features/duel_corpus.py`, tables
+`player_duel` / `player_duel_career`; production table `duel_advanced_stats`, endpoint
+`GET /api/players/{id}/advanced`, profile tab "Advanced").
+
+- **Duel win-probability model** (`winprob_1on1.json`): logistic on frag difference (with time
+  interactions), stack difference, launcher difference, power-up difference and fraction of time
+  left, fitted on 1.42 M state samples rebuilt from the events of 13,857 decided duels (duels carry no
+  10-s state rows; every hit records both players' pre-hit state). Held out by game: log-loss 0.288,
+  AUC 0.947, calibrated within a point in every decile. One frag at even score with half the duel
+  left moves the win probability by about 7 points (versus 1 in fours), so duel +/- values are
+  smaller numbers than fours +/- and are not comparable across modes.
+- **Adjusted kills** use the duel fight table (12 / 30 / 50 / 70 / 88 % by stack edge, 609,678 frags)
+  with no credit split.
+- **Fights** are damage clusters with no gap over 4 s; the starter is whoever landed the first hit.
+  Even = edge within 60 effective HP at first contact; behind / ahead beyond that. Records are kept
+  only for fights that ended in a frag.
+- **Item-first spawns**: after each death, did the player take an armor or mega before the next
+  damage exchange. Needs `items_pass.py 1on1` (item takes) to have run.
+- Not available in duels: the per-minute "fights started while behind and in range" version (needs
+  position samples), multi-kills, power-up runs (rare in the duel pool).

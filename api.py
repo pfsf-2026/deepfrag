@@ -24,6 +24,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import psycopg2
+import time
 import psycopg2.extras
 from fastapi import Body, FastAPI, Header, HTTPException, Query, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -282,6 +283,13 @@ def auth_me(authorization: str | None = Header(default=None), response: Response
             tm = cur.fetchone()
             if tm:
                 u["team"] = dict(tm)
+            # 2026-09-17: a player can sit on more than one ladder (2v2 team + 1v1
+            # entry). `teams` lists all of them; `team` stays the first for the topbar.
+            cur.execute(f"""SELECT id, ladder_id, name, tag, status, rung
+                            FROM ladder_teams
+                            WHERE status IN ('pending','active') AND ({' OR '.join(where)})
+                            ORDER BY ladder_id, (status='active') DESC, id""", params)
+            u["teams"] = [dict(r) for r in cur.fetchall()]
         except Exception:
             pass
     return u
@@ -922,7 +930,8 @@ def _ladder_tick(cur):
     for ch in cur.fetchall():
         if not (ch["rules"] or {}).get("auto_resolve", True):
             continue
-        det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"))
+        det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"),
+                          ladder_id=ch.get("ladder_id"))
         if not det["complete"]:
             continue
         # SAFETY GATE: only auto-resolve when EVERY decisive game had all four
@@ -935,7 +944,7 @@ def _ladder_tick(cur):
                 try:
                     bad = [f"{d['map']} (matched {d['a_n']}v{d['b_n']})" for d in det["decisive"] if not d["full"]]
                     notify.send(content=(f"⚠️ **Needs manual review** — {_team_label(cur, ch['challenger_id'])} vs "
-                                         f"{_team_label(cur, ch['challenged_id'])}: the Bo3 looks complete but not all 4 "
+                                         f"{_team_label(cur, ch['challenged_id'])}: the series looks complete but not all {2*det.get('team_size', 2)} "
                                          f"players matched in: {', '.join(bad)}. A roster id is likely wrong "
                                          f"(an in-game name didn't link to a profile) — fix the roster, then re-resolve. "
                                          f"Auto-resolve skipped."))
@@ -1078,7 +1087,7 @@ def _ladder_tick(cur):
         # cancelling/forfeiting a played challenge at the deadline.
         try:
             pend = _detect_bo3(cur, list(r["a_members"] or []), list(r["b_members"] or []),
-                               r.get("agreed_at"), r.get("deadline"), r.get("created_at"))
+                               r.get("agreed_at"), r.get("deadline"), r.get("created_at"), ladder_id=r.get("ladder_id"))
             if pend["complete"] and pend["full_match"]:
                 continue
         except Exception:
@@ -3131,6 +3140,7 @@ def player_profile_full(
         """, {"cid": canonical_id})
         recent_matches = [dict(r) for r in cur.fetchall()]
 
+    level_info = _fours_level(cur, canonical_id)
     return {
         "player": canon["display_name"],
         "canonical_id": canon["canonical_id"],
@@ -3143,6 +3153,7 @@ def player_profile_full(
         "default_window": window_key,
         "windows": {window_key: win_payload},
         "recent_matches": recent_matches,
+        "level": level_info,
     }
 
 
@@ -4049,7 +4060,7 @@ def ladder_list():
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("SELECT id, name, season, team_size, map_pool, rules, status FROM ladders WHERE status='active' ORDER BY id")
+        cur.execute("SELECT id, name, season, team_size, mode, map_pool, rules, status FROM ladders WHERE status='active' ORDER BY id")
         return {"ladders": cur.fetchall()}
 
 
@@ -4062,7 +4073,7 @@ def ladder_detail(ladder_id: int, response: Response):
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("SELECT id, name, season, team_size, map_pool, rules, status FROM ladders WHERE id=%s", (ladder_id,))
+        cur.execute("SELECT id, name, season, team_size, mode, map_pool, rules, status FROM ladders WHERE id=%s", (ladder_id,))
         lad = cur.fetchone()
         if not lad:
             raise HTTPException(404, "ladder not found")
@@ -4158,17 +4169,23 @@ def admin_ladder_create(authorization: str | None = Header(default=None),
                         map_pool: list = Body(default=[], embed=True),
                         rules: dict = Body(default={}, embed=True),
                         team_size: int = Body(default=2, embed=True),
+                        mode: str | None = Body(default=None, embed=True),
                         season: str | None = Body(default=None, embed=True)):
-    """Create a ladder (ladder-admin). Idempotent on name."""
+    """Create a ladder (ladder-admin). Idempotent on name. team_size=1 makes a
+    1v1 (duel) ladder: each "team" is one player and games are matched in the
+    hub's 1on1 mode. `mode` defaults from team_size."""
     import ladder as _ladder
     _check_ladder_admin(authorization)
+    if team_size not in (1, 2, 4):
+        raise HTTPException(400, "team_size must be 1, 2 or 4")
+    mode = mode or _ladder.mode_for_size(team_size)
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("""INSERT INTO ladders (name, season, team_size, map_pool, rules)
-                       VALUES (%s,%s,%s,%s,%s)
+        cur.execute("""INSERT INTO ladders (name, season, team_size, mode, map_pool, rules)
+                       VALUES (%s,%s,%s,%s,%s,%s)
                        ON CONFLICT DO NOTHING RETURNING id""",
-                    (name, season, team_size, json.dumps(map_pool), json.dumps(rules)))
+                    (name, season, team_size, mode, json.dumps(map_pool), json.dumps(rules)))
         row = cur.fetchone()
         if not row:
             cur.execute("SELECT id FROM ladders WHERE name=%s", (name,))
@@ -4270,50 +4287,66 @@ def _norm_tag(tag: str | None) -> str | None:
 
 @app.post("/api/ladder/{ladder_id}/team/signup")
 def ladder_team_signup(ladder_id: int, authorization: str | None = Header(default=None),
-                       name: str = Body(..., embed=True),
+                       name: str | None = Body(default=None, embed=True),
                        tag: str | None = Body(default=None, embed=True),
                        teammate_canonical_id: str | None = Body(default=None, embed=True),
+                       members: list | None = Body(default=None, embed=True),
                        logo: str | None = Body(default=None, embed=True)):
-    """A captain registers a team: themselves + a teammate (by canonical_id),
-    a team name, and an optional logo (data URI). Lands as PENDING for admin
-    approval — never auto-placed. Requires a linked player profile."""
+    """A captain registers a team: themselves + (team_size - 1) teammates (by
+    canonical_id; `teammate_canonical_id` is the 2v2 form, `members` the generic
+    list), a team name, and an optional logo (data URI). On a 1v1 ladder the
+    "team" is just the player — no teammate, and the name defaults to their
+    display name. Lands as PENDING for admin approval — never auto-placed.
+    Requires a linked player profile."""
     import ladder as _ladder
     user = _current_user(authorization, required=True)
     cid = user.get("canonical_id")
     if not cid:
         raise HTTPException(403, "link your player profile first")
-    members = [cid]
-    if teammate_canonical_id and teammate_canonical_id != cid:
-        members.append(teammate_canonical_id)
     logo_bytes, logo_type = _parse_logo_data_uri(logo)
     tag = _norm_tag(tag)
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("SELECT 1 FROM ladders WHERE id=%s AND status='active'", (ladder_id,))
-        if not cur.fetchone():
+        cur.execute("SELECT id, team_size FROM ladders WHERE id=%s AND status='active'", (ladder_id,))
+        lad = cur.fetchone()
+        if not lad:
             raise HTTPException(404, "ladder not found")
-        # validate teammate exists
-        if teammate_canonical_id:
-            cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id=%s", (teammate_canonical_id,))
+        size = int(lad["team_size"] or 2)
+        roster = [cid]
+        extra = [(m or "").strip() for m in (members or []) if (m or "").strip() and m != cid]
+        if teammate_canonical_id and teammate_canonical_id != cid and teammate_canonical_id not in extra:
+            extra.append(teammate_canonical_id)
+        if size <= 1:
+            extra = []          # a duel entry is one player, whatever the client sent
+        if len(extra) > size - 1:
+            raise HTTPException(400, f"teams on this ladder have {size} players")
+        for m in extra:
+            cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id=%s", (m,))
             if not cur.fetchone():
-                raise HTTPException(404, "teammate player not found")
+                raise HTTPException(404, f"teammate player not found: {m}")
+            roster.append(m)
+        name = (name or "").strip()
+        if not name:
+            if size > 1:
+                raise HTTPException(400, "give your team a name")
+            cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id=%s", (cid,))
+            r = cur.fetchone()
+            name = (r and r["display_name"]) or cid
         try:
             cur.execute("""INSERT INTO ladder_teams
-                           (ladder_id, name, tag, members, rung, active, status, created_by, logo, logo_type)
+                             (ladder_id, name, tag, members, rung, active, status, created_by, logo, logo_type)
                            VALUES (%s,%s,%s,%s,NULL,FALSE,'pending',%s,%s,%s) RETURNING id""",
-                        (ladder_id, name, tag, json.dumps(members), user["discord_id"],
+                        (ladder_id, name, tag, json.dumps(roster), user["discord_id"],
                          psycopg2.Binary(logo_bytes) if logo_bytes else None, logo_type))
         except psycopg2.errors.UniqueViolation:
             conn.rollback()
-            raise HTTPException(409, "that team name is already taken")
+            raise HTTPException(409, "that team name is already taken" if size > 1 else "you're already signed up on this ladder")
         tid = cur.fetchone()["id"]
         # resolve member display names for the notification
-        names = []
-        if members:
-            cur.execute("SELECT canonical_id, display_name FROM players_canonical WHERE canonical_id = ANY(%s)", (members,))
-            dn = {r["canonical_id"]: r["display_name"] for r in cur.fetchall()}
-            names = [dn.get(m, m) for m in members]
+        cur.execute("SELECT canonical_id, display_name FROM players_canonical WHERE canonical_id = ANY(%s)", (roster,))
+        dn = {r["canonical_id"]: r["display_name"] for r in cur.fetchall()}
+        names = [dn.get(m, m) for m in roster]
         conn.commit()
     try:
         import notify
@@ -4349,10 +4382,12 @@ def ladder_team_edit(team_id: int, authorization: str | None = Header(default=No
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("SELECT id, ladder_id, members, created_by FROM ladder_teams WHERE id=%s", (team_id,))
+        cur.execute("""SELECT t.id, t.ladder_id, t.members, t.created_by, l.team_size
+                       FROM ladder_teams t JOIN ladders l ON l.id=t.ladder_id WHERE t.id=%s""", (team_id,))
         t = cur.fetchone()
         if not t:
             raise HTTPException(404, "team not found")
+        team_size = int(t.get("team_size") or 2)
         existing = list(t["members"] or [])
         if not is_admin:
             cid = user.get("canonical_id")
@@ -4376,7 +4411,7 @@ def ladder_team_edit(team_id: int, authorization: str | None = Header(default=No
                 if not cur.fetchone():
                     raise HTTPException(404, f"player not found: {m}")
                 new_members.append(m)
-        elif teammate_canonical_id is not None:
+        elif teammate_canonical_id is not None and team_size >= 2:
             cap = existing[0] if existing else (user.get("canonical_id") if user else None)
             new_members = [cap] if cap else []
             if teammate_canonical_id and teammate_canonical_id != cap:
@@ -4550,6 +4585,297 @@ _MVD_API = os.environ.get("MVD_API_BASE", "https://deepfrag-mvd-api-751658372467
 # re-parse a game already done at >= this version. **Bump this whenever the
 # mvd-api image is rebuilt off a newer schema** so existing games re-ingest.
 ENH_PARSER_VERSION = 37
+
+
+# ── Duel advanced metrics (demo-derived) ────────────────────────────────────
+# Per player per duel, computed from the demo by tools/mvd_features/duel_corpus.py
+# (fight table + duel win-probability model) and pushed here in batches by
+# tools/mvd_features/push_duel_adv.py. Definitions: docs/advanced_metrics.md.
+# Keyed on hub_game_id like ladder_enh_stats (the demo-addressing key).
+DUEL_ADV_VERSION = 1
+DUEL_ADV_COLS = ["hub_game_id", "canonical_id", "played_at", "map", "opponent_id", "win", "minutes",
+                 "frags", "kills", "deaths", "adj_kills", "dmg", "taken", "stacked_given", "stacked_taken",
+                 "spawn_deaths", "spawnfrags_vs", "chained_real",
+                 "fights", "started", "started_behind", "started_ahead",
+                 "even_w", "even_n", "behind_w", "behind_n", "ahead_w", "ahead_n",
+                 "item_first", "ra", "ra_on_timer", "ya", "mh", "plus_minus", "model_version"]
+
+
+def _duel_adv_ensure(cur):
+    cur.execute("""CREATE TABLE IF NOT EXISTS duel_advanced_stats (
+        hub_game_id BIGINT NOT NULL, canonical_id TEXT NOT NULL,
+        played_at TIMESTAMPTZ, map TEXT, opponent_id TEXT, win SMALLINT, minutes REAL,
+        frags INT, kills INT, deaths INT, adj_kills REAL, dmg INT, taken INT,
+        stacked_given INT, stacked_taken INT,
+        spawn_deaths INT, spawnfrags_vs INT, chained_real INT,
+        fights INT, started INT, started_behind INT, started_ahead INT,
+        even_w INT, even_n INT, behind_w INT, behind_n INT, ahead_w INT, ahead_n INT,
+        item_first INT, ra INT, ra_on_timer INT, ya INT, mh INT,
+        plus_minus REAL, model_version INT NOT NULL DEFAULT 1,
+        PRIMARY KEY (hub_game_id, canonical_id))""")
+    cur.execute("CREATE INDEX IF NOT EXISTS duel_adv_cid ON duel_advanced_stats (canonical_id, played_at DESC)")
+
+
+def _check_sync_secret(authorization):
+    expected = os.environ.get("SYNC_SECRET")
+    if not expected or authorization != f"Bearer {expected}":
+        raise HTTPException(401, "unauthorized")
+
+
+@app.post("/api/admin/duel-advanced/load")
+def admin_duel_adv_load(authorization: str | None = Header(default=None), rows: list = Body(..., embed=True)):
+    """Bulk upsert of per-player-per-duel advanced rows (god key). Batches of up
+    to 2000; a row is the DUEL_ADV_COLS dict. Re-sending a game overwrites it, so
+    a model refit just re-pushes with a higher model_version."""
+    _check_sync_secret(authorization)
+    if not isinstance(rows, list) or len(rows) > 2000:
+        raise HTTPException(400, "rows must be a list of at most 2000")
+    cols = DUEL_ADV_COLS
+    vals = []
+    for r in rows:
+        try:
+            vals.append(tuple(r.get(c) if c != "model_version" else int(r.get(c) or DUEL_ADV_VERSION) for c in cols))
+        except Exception:
+            raise HTTPException(400, "bad row")
+    with pg() as conn:
+        cur = conn.cursor()
+        _duel_adv_ensure(cur)
+        sets = ", ".join(f"{c}=EXCLUDED.{c}" for c in cols if c not in ("hub_game_id", "canonical_id"))
+        psycopg2.extras.execute_values(
+            cur, f"INSERT INTO duel_advanced_stats ({', '.join(cols)}) VALUES %s "
+                 f"ON CONFLICT (hub_game_id, canonical_id) DO UPDATE SET {sets}", vals, page_size=500)
+        conn.commit()
+    return {"upserted": len(vals)}
+
+
+_DUEL_ADV_AGG = """
+    COUNT(*) AS games, ROUND(AVG(win)*100.0, 1) AS win_pct, ROUND(SUM(minutes)::numeric, 0) AS minutes,
+    ROUND((SUM(frags)/NULLIF(SUM(minutes),0))::numeric, 2) AS frags_pm,
+    ROUND((SUM(deaths)/NULLIF(SUM(minutes),0))::numeric, 2) AS deaths_pm,
+    ROUND((SUM(adj_kills)/NULLIF(SUM(minutes),0))::numeric, 2) AS adj_kills_pm,
+    ROUND((SUM(dmg)/NULLIF(SUM(minutes),0))::numeric, 0) AS dmg_pm,
+    ROUND((SUM(dmg)::float/NULLIF(SUM(taken),0))::numeric, 3) AS ddr,
+    ROUND((SUM(stacked_given)::float/NULLIF(SUM(stacked_taken),0))::numeric, 3) AS sddr,
+    ROUND((100.0*SUM(spawn_deaths)/NULLIF(SUM(deaths),0))::numeric, 1) AS spawn_death_pct,
+    ROUND((100.0*SUM(chained_real)/NULLIF(SUM(deaths),0))::numeric, 1) AS chained_real_pct,
+    ROUND((100.0*SUM(started)/NULLIF(SUM(fights),0))::numeric, 1) AS started_pct,
+    ROUND((100.0*SUM(started_behind)/NULLIF(SUM(started),0))::numeric, 1) AS started_behind_pct,
+    ROUND((100.0*SUM(even_w)/NULLIF(SUM(even_n),0))::numeric, 1) AS even_win_pct, SUM(even_n) AS even_n,
+    ROUND((100.0*SUM(behind_w)/NULLIF(SUM(behind_n),0))::numeric, 1) AS behind_win_pct, SUM(behind_n) AS behind_n,
+    ROUND((100.0*SUM(ahead_w)/NULLIF(SUM(ahead_n),0))::numeric, 1) AS ahead_win_pct, SUM(ahead_n) AS ahead_n,
+    ROUND((100.0*SUM(item_first)/NULLIF(SUM(deaths),0))::numeric, 1) AS item_first_pct,
+    ROUND(AVG(ra)::numeric, 2) AS ra_pg, ROUND((100.0*SUM(ra_on_timer)/NULLIF(SUM(ra),0))::numeric, 1) AS ra_on_timer_pct,
+    ROUND(AVG(ya)::numeric, 2) AS ya_pg, ROUND(AVG(mh)::numeric, 2) AS mh_pg,
+    ROUND((SUM(plus_minus)/COUNT(*))::numeric, 2) AS plus_minus_pg,
+    ROUND((SUM(plus_minus)/NULLIF(SUM(minutes),0))::numeric, 3) AS plus_minus_pm
+"""
+
+
+@app.get("/api/players/{canonical_id}/advanced")
+def player_advanced(canonical_id: str, response: Response,
+                    window: str = Query("365", description="'30' | '90' | '365' | 'all'"),
+                    limit: int = Query(25, le=100)):
+    """Demo-derived duel metrics for one player: window aggregates, per-map split,
+    the last N games, and a pool baseline (players with 50+ duels in the same
+    window) so every number has a reference. Public."""
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=1800"
+    days = None if window == "all" else int(window) if window.isdigit() else 365
+    since_sql = "AND played_at >= now() - (%(days)s || ' days')::interval" if days else ""
+    params = {"cid": canonical_id, "days": str(days) if days else None, "lim": limit}
+    with pg() as conn:
+        cur = conn.cursor()
+        _duel_adv_ensure(cur)
+        cur.execute(f"SELECT {_DUEL_ADV_AGG} FROM duel_advanced_stats WHERE canonical_id=%(cid)s {since_sql}", params)
+        career = cur.fetchone()
+        if not career or not career["games"]:
+            return {"canonical_id": canonical_id, "mode": "1on1", "window": window, "games": 0,
+                    "career": None, "by_map": [], "recent": [], "baseline": None, "model_version": DUEL_ADV_VERSION}
+        cur.execute(f"""SELECT map, {_DUEL_ADV_AGG} FROM duel_advanced_stats
+                        WHERE canonical_id=%(cid)s {since_sql} GROUP BY map ORDER BY COUNT(*) DESC""", params)
+        by_map = cur.fetchall()
+        cur.execute("""SELECT hub_game_id, played_at, map, opponent_id, win, minutes, frags, deaths, adj_kills, dmg, taken,
+                              CASE WHEN stacked_taken > 0 THEN ROUND((stacked_given::float/stacked_taken)::numeric, 2) END AS sddr,
+                              spawn_deaths, chained_real, started, started_behind, even_w, even_n, item_first, ra, ra_on_timer,
+                              ROUND(plus_minus::numeric, 1) AS plus_minus
+                       FROM duel_advanced_stats WHERE canonical_id=%(cid)s ORDER BY played_at DESC LIMIT %(lim)s""", params)
+        recent = cur.fetchall()
+        # pool baseline: the average active duelist over the same window
+        cur.execute(f"""SELECT {_DUEL_ADV_AGG} FROM duel_advanced_stats
+                        WHERE canonical_id IN (SELECT canonical_id FROM duel_advanced_stats WHERE TRUE {since_sql}
+                                               GROUP BY canonical_id HAVING COUNT(*) >= 50) {since_sql}""", params)
+        baseline = cur.fetchone()
+    return {"canonical_id": canonical_id, "mode": "1on1", "window": window, "games": career["games"],
+            "career": career, "by_map": by_map, "recent": recent, "baseline": baseline,
+            "model_version": DUEL_ADV_VERSION}
+
+
+# ── Fours advanced metrics + the 4on4 coach ─────────────────────────────────
+# Per player per fours game from the demo corpus (tools/mvd_features, pushed by
+# push_fours_adv.py). The coach (coaching_fours.py) reads this table only — no
+# per-report demo parsing. Framework: docs/coaching_4on4.md.
+FOURS_ADV_VERSION = 1
+FOURS_ADV_COLS = ["hub_game_id", "canonical_id", "played_at", "map", "team", "win", "minutes",
+                  "frags", "kills", "deaths", "adj_kills", "dmg", "taken", "stacked_given", "stacked_taken",
+                  "spawn_deaths", "chained_real", "multi", "take_ra", "take_ya", "take_mh", "take_quad", "take_pent",
+                  "ra_on_timer", "ra_median_wait_s", "quad_runs", "quad_full_runs", "quad_frags_full", "quad_died", "quad_wasted",
+                  "rockets_fired", "rl_dmg", "rl_connect_pct",
+                  "fights", "started", "started_behind", "started_ahead", "even_w", "even_n", "behind_w", "behind_n", "ahead_w", "ahead_n",
+                  "teamkills", "tk_launcher", "team_dmg",
+                  "plus_minus", "expected", "above_avg", "above_repl", "agi", "model_version"]
+
+
+def _fours_adv_ensure(cur):
+    cur.execute("""CREATE TABLE IF NOT EXISTS fours_advanced_stats (
+        hub_game_id BIGINT NOT NULL, canonical_id TEXT NOT NULL,
+        played_at TIMESTAMPTZ, map TEXT, team TEXT, win SMALLINT, minutes REAL,
+        frags INT, kills INT, deaths INT, adj_kills REAL, dmg INT, taken INT, stacked_given INT, stacked_taken INT,
+        spawn_deaths INT, chained_real INT, multi INT, take_ra INT, take_ya INT, take_mh INT, take_quad INT, take_pent INT,
+        ra_on_timer INT, ra_median_wait_s REAL, quad_runs INT, quad_full_runs INT, quad_frags_full INT, quad_died INT, quad_wasted INT,
+        rockets_fired INT, rl_dmg INT, rl_connect_pct REAL,
+        fights INT, started INT, started_behind INT, started_ahead INT, even_w INT, even_n INT, behind_w INT, behind_n INT, ahead_w INT, ahead_n INT,
+        teamkills INT, tk_launcher INT, team_dmg INT,
+        plus_minus REAL, expected REAL, above_avg REAL, above_repl REAL, agi REAL, model_version INT NOT NULL DEFAULT 1,
+        PRIMARY KEY (hub_game_id, canonical_id))""")
+    cur.execute("CREATE INDEX IF NOT EXISTS fours_adv_cid ON fours_advanced_stats (canonical_id, played_at DESC)")
+
+
+@app.post("/api/admin/fours-advanced/load")
+def admin_fours_adv_load(authorization: str | None = Header(default=None), rows: list = Body(..., embed=True)):
+    """Bulk upsert of per-player-per-fours rows (god key), batches of up to 2000."""
+    _check_sync_secret(authorization)
+    if not isinstance(rows, list) or len(rows) > 2000:
+        raise HTTPException(400, "rows must be a list of at most 2000")
+    cols = FOURS_ADV_COLS
+    vals = [tuple(r.get(c) if c != "model_version" else int(r.get(c) or FOURS_ADV_VERSION) for c in cols) for r in rows]
+    with pg() as conn:
+        cur = conn.cursor()
+        _fours_adv_ensure(cur)
+        sets = ", ".join(f"{c}=EXCLUDED.{c}" for c in cols if c not in ("hub_game_id", "canonical_id"))
+        psycopg2.extras.execute_values(
+            cur, f"INSERT INTO fours_advanced_stats ({', '.join(cols)}) VALUES %s "
+                 f"ON CONFLICT (hub_game_id, canonical_id) DO UPDATE SET {sets}", vals, page_size=500)
+        conn.commit()
+    return {"upserted": len(vals)}
+
+
+def _fours_rows(cur, canonical_id, limit=None):
+    cur.execute("SELECT * FROM fours_advanced_stats WHERE canonical_id=%s ORDER BY played_at" + (f" DESC LIMIT {int(limit)}" if limit else ""),
+                (canonical_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    return list(reversed(rows)) if limit else rows
+
+
+_FOURS_POOL = {"at": 0.0, "base": None}
+
+
+def _fours_pool(cur):
+    """Level medians + pool SDs from every active player's last 40 fours (15+ games
+    in the last year). Cached 10 minutes per instance — it moves nightly, not per request."""
+    import coaching_fours as CF
+    now = time.time()
+    if _FOURS_POOL["base"] and now - _FOURS_POOL["at"] < 600:
+        return _FOURS_POOL["base"]
+    cur.execute("""SELECT * FROM fours_advanced_stats
+                   WHERE canonical_id IN (SELECT canonical_id FROM fours_advanced_stats
+                                          WHERE played_at >= now() - interval '365 days'
+                                          GROUP BY canonical_id HAVING COUNT(*) >= %s)
+                   ORDER BY canonical_id, played_at""", (CF.LEVEL_MIN_GAMES,))
+    players = {}
+    for r in cur.fetchall():
+        players.setdefault(r["canonical_id"], []).append(dict(r))
+    base = CF.pool_baselines({k: v[-CF.LEVEL_WINDOW:] for k, v in players.items()})
+    _FOURS_POOL.update(at=now, base=base)
+    return base
+
+
+def _fours_level(cur, canonical_id):
+    """Compact public level for the profile header (None when the table is empty
+    or the player has no fours). Never raises."""
+    try:
+        import coaching_fours as CF
+        _fours_adv_ensure(cur)
+        rows = _fours_rows(cur, canonical_id, limit=CF.LEVEL_WINDOW)
+        if not rows:
+            return None
+        m = CF.metrics(rows)
+        lvl = CF.level_for(m.get("above_avg"), m.get("games", 0))
+        gates = CF.gate_status(m, lvl["level"], _fours_pool(cur)) if lvl["placed"] else []
+        return {"level": lvl["level"], "name": lvl["name"], "placed": lvl["placed"], "blurb": lvl["blurb"],
+                "above_avg_pg": round(m["above_avg"], 1), "games": m["games"], "window": CF.LEVEL_WINDOW,
+                "gates_passed": sum(1 for g in gates if g["passed"]), "gates": len(gates),
+                "last_game": str(rows[-1].get("played_at"))}
+    except Exception:
+        return None
+
+
+@app.get("/api/coaching/fours/levels")
+def coaching_fours_levels(response: Response):
+    """The level system explained from the engine itself: the five levels and
+    their bands, the gates out of each level, the lever library (what is coached
+    at each level, why, and the drill), the focus rules, and the live medians of
+    every lever per level from the active pool. Public; feeds /levels."""
+    import coaching_fours as CF
+    response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
+    pool = None
+    try:
+        with pg() as conn:
+            cur = conn.cursor()
+            _fours_adv_ensure(cur)
+            pool = _fours_pool(cur)
+    except Exception:
+        pool = None
+    levers = {k: {"key": k, "label": L["label"], "higher_better": L["higher_better"], "fmt": L["fmt"],
+                  "levels": sorted(L["levels"]), "why": L["why"], "drill": L["drill"],
+                  "map_excl": sorted(L.get("map_excl", []))} for k, L in CF.LEVERS.items()}
+    return {
+        "levels": [{**L, "gates": CF.GATES.get(L["level"], [])} for L in CF.LEVELS],
+        "levers": levers, "outcomes": CF.OUTCOMES,
+        "rules": {"level_window_games": CF.LEVEL_WINDOW, "min_games": CF.LEVEL_MIN_GAMES, "focus_window_games": CF.FOCUS_WINDOW_GAMES,
+                  "min_split": CF.MIN_SPLIT, "active_days": CF.ACTIVE_DAYS, "ra_excluded_maps": sorted(CF.RA_EXCLUDED_MAPS)},
+        "pool": ({"n": pool["n"], "levels": {str(k): {"n": v["n"], "median": v["median"], "line": v.get("line", {})} for k, v in pool["levels"].items()}} if pool else None),
+    }
+
+
+@app.get("/api/players/{canonical_id}/coaching/fours")
+def coaching_fours_report(canonical_id: str, response: Response, narrate: bool = Query(True)):
+    """The 4on4 coach: level + gates, ranked levers for that level, the single
+    focus prescription (kept open for 10 games, then graded), last games with the
+    two metrics that explain each, and a narration. Persists the day's run to
+    coaching_runs (mode='4on4') so the next run can grade this prescription."""
+    import coaching_fours as CF
+    import coaching_narrate
+    response.headers["Cache-Control"] = "private, max-age=600"
+    with pg() as conn:
+        cur = conn.cursor()
+        _fours_adv_ensure(cur); _ensure_coaching_tables(cur)
+        cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id=%s", (canonical_id,))
+        pr = cur.fetchone(); display = (pr and pr["display_name"]) or canonical_id
+        rows = _fours_rows(cur, canonical_id)
+        if not rows:
+            return {"canonical_id": canonical_id, "display": display, "mode": "4on4", "games": 0,
+                    "level": {"level": 0, "name": "Unplaced", "placed": False}, "narration": None}
+        base = _fours_pool(cur)
+        cur.execute("""SELECT levers FROM coaching_runs WHERE canonical_id=%s AND mode='4on4'
+                       ORDER BY run_date DESC, id DESC LIMIT 1""", (canonical_id,))
+        prev_run = cur.fetchone()
+        prev_focus = ((prev_run or {}).get("levers") or {}).get("focus") if prev_run else None
+        report = CF.build_report(rows, base, prev_focus, display)
+        report["canonical_id"] = canonical_id; report["games_total"] = len(rows)
+        report["narration"] = coaching_narrate.narrate_fours(report) if narrate else None
+        try:
+            cur.execute("""INSERT INTO coaching_runs (canonical_id, mode, run_date, matches_analyzed, wins, losses, metrics, levers, narration, narration_source)
+                           VALUES (%s,'4on4',CURRENT_DATE,%s,%s,%s,%s,%s,%s,%s)
+                           ON CONFLICT (canonical_id, mode, run_date) DO UPDATE SET matches_analyzed=EXCLUDED.matches_analyzed,
+                             wins=EXCLUDED.wins, losses=EXCLUDED.losses, metrics=EXCLUDED.metrics, levers=EXCLUDED.levers,
+                             narration=EXCLUDED.narration, narration_source=EXCLUDED.narration_source""",
+                        (canonical_id, report["level"]["games"], report["record"]["wins"], report["record"]["losses"],
+                         json.dumps(report["metrics"], default=str),
+                         json.dumps({"focus": report["focus"], "previous": report["previous"], "ranked": report["levers"], "level": report["level"]}, default=str),
+                         (report["narration"] or {}).get("text"), (report["narration"] or {}).get("source")))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+    return report
 
 
 def _enh_ensure(cur):
@@ -6115,49 +6441,41 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
     return {"challenge_id": challenge_id, "status": "open"}
 
 
-def _detect_bo3(cur, a_roster, b_roster, agreed_at, deadline=None, created_at=None):
-    """Find candidate 2on2 hub games involving BOTH rosters around the scheduled
-    time, then walk them in time order into the decisive Bo3 set (first to 2).
-    Shared by the admin candidate-games view AND the cron auto-resolver so they
-    always agree. Returns candidates (all, each tagged .suggested), the decisive
-    set, the score, whether it's complete, and the last decisive game's time."""
+def _detect_bo3(cur, a_roster, b_roster, agreed_at, deadline=None, created_at=None, ladder_id=None):
+    """Find candidate hub games (in the ladder's match_mode — 2on2 for the 2v2
+    ladder, 1on1 for the duel ladder) involving BOTH rosters around the
+    scheduled time, then walk them in time order into the decisive set (first to
+    wins_needed, 2 for a Bo3). Shared by the admin candidate-games view AND the
+    cron auto-resolver so they always agree. Returns candidates (all, each
+    tagged .suggested), the decisive set, the score, whether it's complete, and
+    the last decisive game's time. `ladder_id` picks the shape; None = 2v2."""
+    import ladder as _ladder
+    shp = _ladder.shape(cur, ladder_id)
+    mode, size, wins = shp["mode"], shp["team_size"], shp["wins_needed"]
     if not a_roster or not b_roster:
-        return {"candidates": [], "decisive": [], "aw": 0, "bw": 0, "complete": False, "full_match": False, "last_played": None}
-    if agreed_at:
-        lo = (agreed_at - timedelta(hours=18)).isoformat()
-        # Upper bound: 30h past the agreed slot, extended to the challenge
-        # DEADLINE when that's later (2026-07-30, Zero Day/Tardy Party: the real
-        # bo3 was played ~48h after the agreed slot — inside the play-by window,
-        # outside the old +30h horizon, so auto-resolve never saw it). The
-        # chronological walk still takes the FIRST decisive games, so widening
-        # the tail can't displace an earlier completed set.
-        hi_dt = agreed_at + timedelta(hours=30)
-        if deadline is not None and deadline > hi_dt:
-            hi_dt = deadline
-        hi = hi_dt.isoformat()
-    elif created_at:
-        # Never scheduled through the site (2026-08-02 Tardy Party/FIWN: teams
-        # agreed off-platform and just played). Search the challenge's whole
-        # life: creation → deadline. The exact-roster gate is what keeps this
-        # window safe at up-to-7-days wide.
-        lo = created_at.isoformat()
-        hi = (deadline or (datetime.now(timezone.utc) + timedelta(hours=1))).isoformat()
-    else:
-        lo = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
-        hi = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        return {"candidates": [], "decisive": [], "aw": 0, "bw": 0, "complete": False, "full_match": False,
+                "last_played": None, "team_size": size, "wins_needed": wins}
+    # Window: issued → 7 days after the scheduled slot (or the deadline), see
+    # ladder.search_window. History: +30h tail (2026-07-30 Zero Day/Tardy Party
+    # played 48h late), creation→deadline for never-scheduled challenges
+    # (2026-08-02 Tardy Party/FIWN), and from creation for scheduled ones too
+    # (2026-09-18 WoD/Habs played 3 days EARLY). The chronological walk still
+    # takes the FIRST decisive games, so widening can't displace an earlier set.
+    lo_dt, hi_dt = _ladder.search_window(agreed_at, deadline, created_at)
+    lo, hi = lo_dt.isoformat(), hi_dt.isoformat()
     cur.execute("""SELECT mt.hub_game_id, mt.match_map, mt.match_date,
                           SUM(CASE WHEN p.canonical_id = ANY(%(a)s) THEN p.player_frags ELSE 0 END) AS a_frags,
                           SUM(CASE WHEN p.canonical_id = ANY(%(b)s) THEN p.player_frags ELSE 0 END) AS b_frags,
                           COUNT(DISTINCT p.canonical_id) FILTER (WHERE p.canonical_id = ANY(%(a)s)) AS a_n,
                           COUNT(DISTINCT p.canonical_id) FILTER (WHERE p.canonical_id = ANY(%(b)s)) AS b_n
                    FROM matches mt JOIN players p ON p.match_id = mt.match_id
-                   WHERE mt.match_mode='2on2' AND mt.hub_game_id IS NOT NULL
+                   WHERE mt.match_mode=%(mode)s AND mt.hub_game_id IS NOT NULL
                      AND mt.match_date > %(lo)s AND mt.match_date < %(hi)s
                    GROUP BY mt.hub_game_id, mt.match_map, mt.match_date
                    HAVING COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(a)s)) >= 1
                       AND COUNT(*) FILTER (WHERE p.canonical_id = ANY(%(b)s)) >= 1
                    ORDER BY mt.match_date""",
-                {"a": a_roster, "b": b_roster, "lo": lo, "hi": hi})
+                {"a": a_roster, "b": b_roster, "lo": lo, "hi": hi, "mode": mode})
     cands = []
     for r in cur.fetchall():
         a, b = r["a_frags"] or 0, r["b_frags"] or 0
@@ -6168,7 +6486,7 @@ def _detect_bo3(cur, a_roster, b_roster, agreed_at, deadline=None, created_at=No
         # WoD/SD bug: wd.char→wdchar ≠ roster 'char', so char's frags vanished).
         cands.append({"hub_game_id": r["hub_game_id"], "map": r["match_map"],
                       "played_at": str(r["match_date"]), "a_frags": a, "b_frags": b,
-                      "a_n": an, "b_n": bn, "full": an >= 2 and bn >= 2,
+                      "a_n": an, "b_n": bn, "full": an >= size and bn >= size,
                       "winner": "a" if a > b else "b" if b > a else "tie"})
     aw = bw = 0
     decisive = []
@@ -6183,14 +6501,15 @@ def _detect_bo3(cur, a_roster, b_roster, agreed_at, deadline=None, created_at=No
             aw += 1
         else:
             bw += 1
-        if aw == 2 or bw == 2:
+        if aw == wins or bw == wins:
             done = True
     # full_match = every decisive game had all 4 rostered players matched. Only
     # then is the frag count trustworthy enough to AUTO-resolve unattended.
     full_match = bool(decisive) and all(c["full"] for c in decisive)
     return {"candidates": cands, "decisive": decisive, "aw": aw, "bw": bw,
             "complete": done, "full_match": full_match,
-            "last_played": decisive[-1]["played_at"] if decisive else None}
+            "last_played": decisive[-1]["played_at"] if decisive else None,
+            "team_size": size, "wins_needed": wins}
 
 
 @app.get("/api/admin/ladder/challenge/{challenge_id}/candidate-games")
@@ -6204,7 +6523,7 @@ def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = 
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.agreed_at, c.deadline, c.created_at,
+        cur.execute("""SELECT c.ladder_id, c.challenger_id, c.challenged_id, c.agreed_at, c.deadline, c.created_at,
                               ca.name AS a_name, cd.name AS b_name,
                               ca.members AS a_members, cd.members AS b_members
                        FROM ladder_challenges c
@@ -6217,7 +6536,7 @@ def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = 
         b_roster = list(ch["b_members"] or [])
         if not a_roster or not b_roster:
             return {"challenge_id": challenge_id, "candidates": [], "note": "rosters not fully linked yet"}
-        det = _detect_bo3(cur, a_roster, b_roster, ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"))
+        det = _detect_bo3(cur, a_roster, b_roster, ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"), ladder_id=ch.get("ladder_id"))
     return {"challenge_id": challenge_id, "a_name": ch["a_name"], "b_name": ch["b_name"],
             "challenger_id": ch["challenger_id"], "challenged_id": ch["challenged_id"],
             "candidates": det["candidates"],
@@ -6259,6 +6578,9 @@ def _try_report_games(cur, ch, game_ids, reporter):
       flagged  — complete series but rosters didn't fully match → admin review
       pending  — some games not ingested yet (retry from the tick)
     Raises HTTPException for reporter-fixable input problems."""
+    import ladder as _ladder
+    shp = _ladder.shape(cur, ch.get("ladder_id"))
+    mode, size, wins = shp["mode"], shp["team_size"], shp["wins_needed"]
     a_roster = list(ch["a_members"] or [])
     b_roster = list(ch["b_members"] or [])
     if not a_roster or not b_roster:
@@ -6269,9 +6591,9 @@ def _try_report_games(cur, ch, game_ids, reporter):
                           COUNT(DISTINCT p.canonical_id) FILTER (WHERE p.canonical_id = ANY(%(a)s)) AS a_n,
                           COUNT(DISTINCT p.canonical_id) FILTER (WHERE p.canonical_id = ANY(%(b)s)) AS b_n
                    FROM matches mt JOIN players p ON p.match_id = mt.match_id
-                   WHERE mt.match_mode='2on2' AND mt.hub_game_id = ANY(%(ids)s)
+                   WHERE mt.match_mode=%(mode)s AND mt.hub_game_id = ANY(%(ids)s)
                    GROUP BY mt.hub_game_id, mt.match_map, mt.match_date""",
-                {"a": a_roster, "b": b_roster, "ids": list(game_ids)})
+                {"a": a_roster, "b": b_roster, "ids": list(game_ids), "mode": mode})
     rows = {int(r["hub_game_id"]): r for r in cur.fetchall()}
     missing = [g for g in game_ids if int(g) not in rows]
     if missing:
@@ -6308,26 +6630,26 @@ def _try_report_games(cur, ch, game_ids, reporter):
     decisive = []
     for r in ordered:
         a, b = r["a_frags"] or 0, r["b_frags"] or 0
-        if aw == 2 or bw == 2 or a == b:
+        if aw == wins or bw == wins or a == b:
             continue
         decisive.append(r)
         if a > b:
             aw += 1
         else:
             bw += 1
-    if aw < 2 and bw < 2:
-        raise HTTPException(400, f"these games only score {aw}-{bw} — a bo3 needs a winner with 2. "
+    if aw < wins and bw < wins:
+        raise HTTPException(400, f"these games only score {aw}-{bw} — a best-of needs a winner with {wins}. "
                                  f"Add the missing game ID.")
-    full = all((r["a_n"] or 0) >= 2 and (r["b_n"] or 0) >= 2 for r in decisive)
+    full = all((r["a_n"] or 0) >= size and (r["b_n"] or 0) >= size for r in decisive)
     if not full:
         bad = [f"{r['match_map']} (matched {r['a_n']}v{r['b_n']})" for r in decisive
-               if (r["a_n"] or 0) < 2 or (r["b_n"] or 0) < 2]
+               if (r["a_n"] or 0) < size or (r["b_n"] or 0) < size]
         if not ch.get("flagged_review"):
             try:
                 import notify
                 notify.send(content=(f"🚩 **Match report needs review** — {_team_label(cur, ch['challenger_id'])} vs "
                                      f"{_team_label(cur, ch['challenged_id'])}: {reporter or 'a player'} reported games "
-                                     f"{[int(g) for g in game_ids]}, but not all 4 rostered players matched in: "
+                                     f"{[int(g) for g in game_ids]}, but not all {2*size} rostered players matched in: "
                                      f"{', '.join(bad)} (name not linked, or a stand-in played). Nothing recorded — "
                                      f"admins please review."))
             except Exception:
@@ -6424,7 +6746,7 @@ def ladder_challenge_report_search(challenge_id: int, authorization: str | None 
         # Reuse the open-challenge window branch: created_at→deadline become our
         # explicit search bounds.
         det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []),
-                          None, anchor + timedelta(hours=8), anchor - timedelta(hours=2))
+                          None, anchor + timedelta(hours=8), anchor - timedelta(hours=2), ladder_id=ch.get("ladder_id"))
     return {"challenge_id": challenge_id,
             "candidates": det["candidates"],
             "suggested_score": {"a": det["aw"], "b": det["bw"]},
@@ -6500,12 +6822,13 @@ def admin_ladder_reresolve(challenge_id: int, authorization: str | None = Header
         ch = cur.fetchone()
         if not ch:
             raise HTTPException(404, "challenge not found")
-        det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"))
+        det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"),
+                          ladder_id=ch.get("ladder_id"))
         if not det["complete"]:
             raise HTTPException(409, "corrected detection is not a complete Bo3 — fix rosters first")
         if not det.get("full_match"):
             bad = [f"{d['map']} ({d['a_n']}v{d['b_n']})" for d in det["decisive"] if not d["full"]]
-            raise HTTPException(409, f"not all 4 players match in: {', '.join(bad)} — fix the roster id, then re-resolve")
+            raise HTTPException(409, f"not all {2*det.get('team_size', 2)} players match in: {', '.join(bad)} — fix the roster id, then re-resolve")
         # Reverse the old match's standings: restore each moved team's pre-match rung.
         cur.execute("SELECT id FROM ladder_matches WHERE challenge_id=%s ORDER BY id DESC LIMIT 1", (challenge_id,))
         old = cur.fetchone()

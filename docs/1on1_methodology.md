@@ -258,6 +258,28 @@ In addition to OpenSkill (who you BEAT), we expose mechanical leaderboards (how 
 
 Default filter: `min_matches >= 100`. Region and map filters available.
 
+### 7b. Demo-derived duel metrics (added 2026-09-17, profile "Advanced" tab)
+
+Computed from the match demo by `tools/mvd_features/duel_corpus.py` (fight table `fight_table_1on1.json`
++ duel win-probability model `winprob_1on1.json`: held-out log-loss 0.288, AUC 0.947 on 13,857 duels), pushed
+to `duel_advanced_stats` (keyed `hub_game_id, canonical_id`) by `push_duel_adv.py`, served by
+`GET /api/players/{id}/advanced`. Full definitions: [advanced_metrics.md](./advanced_metrics.md).
+
+| Stat | Direction | Notes |
+|---|---|---|
+| **+/-** per game | desc | leverage-weighted frag differential; 1.0 = a frag at even score with half the duel left (≈ 7 pp of win probability) |
+| Adjusted kills / min | desc | each frag worth 0.5 / P(win fight) from both players' stack at first contact, cap 3 |
+| Stacked DDR | desc | damage given at ≥150 effective HP / taken at ≥150 |
+| Even-fight win % | desc | fights decided by a frag where the edge at first contact was within 60 eff HP |
+| Fights started from behind % | asc | share of the fights you opened while ≥60 eff HP down |
+| Item-first spawns % | desc | after a death, took an armor/mega before the next damage exchange |
+| Chained deaths % | asc | died within 14 s of the previous death after living > 3 s (spawn deaths excluded) |
+| RA / game · on-timer % | desc | red armors taken; taken within 3 s of the respawn |
+
+Reference on the tab = the average active duelist (50+ duels) over the same window. Units and the
+"tested and rejected" list are in the advanced-metrics doc; the corpus covers Den, LA, Mom's Basement
+and NY duels from 2024-03 (14,028 games as of 2026-09-17).
+
 **The DDR/Net-damage story** is the QW-equivalent of hockey's Corsi: damage is the "shot attempts" underlying frags. A high DDR with low OpenSkill rating suggests "actually better, getting unlucky"; the inverse suggests "fragile, due to regress." See [4on4_methodology.md](./4on4_methodology.md#corsi-narrative) for the full theoretical framing — it informs team-mode design more than 1on1.
 
 ---

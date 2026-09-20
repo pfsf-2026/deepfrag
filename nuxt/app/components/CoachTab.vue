@@ -5,6 +5,8 @@
 // it's gated behind a button). Data: coaching/report + coaching/history +
 // per-match deep-analyze endpoints.
 const props = defineProps({ cid: { type: String, required: true } })
+// 4on4 is the default coach (2026-09-18); 1on1 keeps the demo-parsing flow.
+const coachMode = ref('4on4')
 const df = useDeepFrag()
 
 const report = ref(null)
@@ -148,6 +150,12 @@ function runManual() {
 
 <template>
   <div class="coach">
+    <div class="modebar" role="tablist" aria-label="Coach mode">
+      <button class="mbtn" :class="{ on: coachMode === '4on4' }" role="tab" :aria-selected="coachMode === '4on4'" @click="coachMode = '4on4'">4on4</button>
+      <button class="mbtn" :class="{ on: coachMode === '1on1' }" role="tab" :aria-selected="coachMode === '1on1'" @click="coachMode = '1on1'">1on1</button>
+    </div>
+    <CoachFours v-if="coachMode === '4on4'" :cid="props.cid" />
+    <template v-else>
     <!-- gate -->
     <div v-if="!requested" class="intro">
       <p>Get a data-driven read on your 1on1 game — item control, stack management, first-spawn efficiency, and the specific levers separating your wins from losses.</p>
@@ -261,6 +269,7 @@ function runManual() {
         </div>
       </section>
     </template>
+    </template>
   </div>
 </template>
 
@@ -331,4 +340,7 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--b); } td.num { text-align:
 .mrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .minfo { font-size: 13px; }
 .deepout { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--b); }
+.modebar { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; }
+.mbtn { background: none; border: 0; color: var(--fg-2); font-family: inherit; font-weight: 800; font-size: 13px; padding: 6px 14px; border-radius: 999px; cursor: pointer; min-height: 32px; }
+.mbtn.on { background: var(--accent); color: #140a03; }
 </style>

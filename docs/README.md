@@ -8,6 +8,8 @@ Living design documents for the rating and stats systems. Each "bible" captures 
 | 2on2 | 🔜 Designed, not yet built | [2on2_methodology.md](./2on2_methodology.md) |
 | 4on4 | 🔜 Designed, not yet built | [4on4_methodology.md](./4on4_methodology.md) |
 | 4on4 advanced metrics | 📐 Corpus built, metrics scored (2026-09) | [advanced_metrics.md](./advanced_metrics.md) — +/-, above avg/repl, WAR, Game Impact Score, adjusted kills, stacked DDR, power-ups, RA, deaths, map profile; pipeline in `tools/mvd_features/` |
+| KOTH ladders (2v2 + 1v1) | ✅ 2v2 live; 1v1 built 2026-09 | [ladder_koth.md](./ladder_koth.md) — one engine keyed by ladder_id/team_size/mode; rules JSON; result matching; seeding the duel ladder |
+| 4on4 coach | 📐 Built 2026-09-18, not yet deployed | [coaching_4on4.md](./coaching_4on4.md) — five levels from above-average, gates, lever library, one focus at a time with follow-up grading |
 
 ## API docs
 

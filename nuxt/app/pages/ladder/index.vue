@@ -1,7 +1,10 @@
 <script setup>
-// KOTH 2v2 ladder — tabbed hub: Standings (bento home) · Schedule · Stats · Rules.
-// Reads /api/ladder then /api/ladder/{id}. Captain self-serve is Discord-gated.
+// KOTH ladders — tabbed hub: Standings (bento home) · Schedule · Stats · Rules.
+// Reads /api/ladder (every active ladder: 2v2 teams, 1v1 duels) then
+// /api/ladder/{id} for the one picked by ?l=2v2|1v1 (useLadders). Captain
+// self-serve is Discord-gated. `words` swaps team/player vocabulary per ladder.
 const { user, loggedIn, login } = useAuth()
+const { ladders, loadList, switchTo, isDuel, words, ladderSlug } = useLadders()
 const showSettings = useState('show-settings', () => false)
 const openTeamSettings = useState('open-team-settings', () => false)
 const showAvail = useState('show-availability', () => false)
@@ -164,10 +167,9 @@ async function load({ silent = false, bust = true } = {}) {
   if (!silent) loading.value = true
   err.value = null
   try {
-    const list = await $fetch(`${base}/api/ladder`, { query: bust ? { _: Date.now() } : {} })
-    const first = (list.ladders || [])[0]
-    if (!first) { ladder.value = null; return }
-    await loadDetail(first.id, bust)
+    const picked = await loadList(bust)
+    if (!picked) { ladder.value = null; return }
+    await loadDetail(picked.id, bust)
   } catch (e) { if (!silent) err.value = 'Could not load the ladder.'; console.error('[ladder]', e) }
   finally { if (!silent) loading.value = false }
 }
@@ -176,6 +178,15 @@ onMounted(() => {
   const h = isBrowser ? location.hash.replace('#', '') : ''
   if (TABS.includes(h)) tab.value = h
 })
+async function pickLadder(l) {
+  if (ladder.value && l.id === ladder.value.id) return
+  switchTo(l)
+  loading.value = true; err.value = null
+  try { await loadDetail(l.id, true) } catch (e) { err.value = 'Could not load the ladder.' } finally { loading.value = false }
+}
+const mapPool = computed(() => (ladder.value?.map_pool || []).length
+  ? ladder.value.map_pool
+  : ['Aerowalk', 'ztndm3', 'DM2', 'DM4', 'Bravado', 'Nova', 'Shifter'])
 
 let pollTimer = null
 function refreshIfVisible() { if (typeof document !== 'undefined' && document.visibilityState === 'visible') load({ silent: true, bust: false }) }
@@ -194,8 +205,10 @@ onBeforeUnmount(() => {
 })
 
 async function openMyTeamSettings() {
-  if (!user.value?.team) { openTeamSettings.value = false; return }
-  try { editingTeam.value = await $fetch(`${base}/api/ladder/team/${user.value.team.id}`) }
+  // the entry on THIS ladder (a player can hold a 2v2 team and a 1v1 entry)
+  const mine = (user.value?.teams || []).find(t => t.ladder_id === ladder.value?.id) || user.value?.team
+  if (!mine) { openTeamSettings.value = false; return }
+  try { editingTeam.value = await $fetch(`${base}/api/ladder/team/${mine.id}`) }
   catch { /* ignore */ } finally { openTeamSettings.value = false }
 }
 watch(openTeamSettings, (v) => { if (v) openMyTeamSettings() })
@@ -235,19 +248,25 @@ function myChallengeAction(c) {
   return (c.proposed || []).length ? 'Pick a time' : 'Waiting on opponent'
 }
 
-useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
+useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
 </script>
 
 <template>
   <div class="wrap">
     <header class="head">
-      <img src="/koth-ladder.jpg" alt="KOTH — 2v2 Ladder" class="koth-logo">
-      <p class="sub">Challenge up. Win to climb. Hold the hill till Christmas.</p>
+      <img v-if="!isDuel" src="/koth-ladder.jpg" alt="KOTH — 2v2 Ladder" class="koth-logo">
+      <h1 v-else class="koth-title">KOTH <span>1v1</span> Ladder</h1>
+      <p class="sub">{{ isDuel ? 'Challenge up. Win the duel to climb. Hold the hill.' : 'Challenge up. Win to climb. Hold the hill till Christmas.' }}</p>
+      <div v-if="ladders.length > 1" class="lswitch" role="tablist" aria-label="Ladder">
+        <button v-for="l in ladders" :key="l.id" class="lbtn" :class="{ on: ladder && l.id === ladder.id }" role="tab" :aria-selected="!!ladder && l.id === ladder.id" @click="pickLadder(l)">
+          <span class="lslug">{{ ladderSlug(l).toUpperCase() }}</span><span class="lname">{{ Number(l.team_size) === 1 ? 'duels' : 'teams' }}</span>
+        </button>
+      </div>
       <div class="head-actions">
         <button v-if="!loggedIn" class="cta" @click="login">Sign in with Discord to play</button>
         <ClientOnly>
           <button v-if="loggedIn && user?.canonical_id" class="cta ghost" @click="showAvail = true">📅 My availability</button>
-          <button v-if="canAddTeam" class="cta" @click="showAddTeam = true">+ Add your team</button>
+          <button v-if="canAddTeam" class="cta" @click="showAddTeam = true">{{ words.join }}</button>
         </ClientOnly>
       </div>
     </header>
@@ -256,7 +275,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
     <div v-else-if="err" class="muted pad">{{ err }}</div>
     <div v-else-if="!ladder" class="empty">
       <h2>The ladder isn't open yet</h2>
-      <p>Teams are being seeded. Sign in with Discord and you'll be ready to challenge the moment it goes live.</p>
+      <p>{{ words.Teams }} are being seeded. Sign in with Discord and you'll be ready to challenge the moment it goes live.</p>
       <button v-if="!loggedIn" class="cta" @click="login">Sign in with Discord</button>
     </div>
 
@@ -273,9 +292,9 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
       <ClientOnly>
         <ClaimProfile v-if="needsClaim" />
         <div v-else-if="user?.pending_claim" class="note">⏳ Profile claim for <strong>{{ user.pending_claim.display }}</strong> is awaiting admin approval.</div>
-        <div v-if="teamSubmitted" class="note">✅ Team <strong>{{ teamSubmitted }}</strong> submitted — an admin will approve it and you'll appear on the board.</div>
+        <div v-if="teamSubmitted" class="note">✅ {{ isDuel ? 'Entry' : 'Team' }} <strong>{{ teamSubmitted }}</strong> submitted — an admin will approve it and you'll appear on the board.</div>
         <div v-if="needsLocation" class="note tip" @click="showSettings = true">📍 Add your location (Personal settings) to sharpen server suggestions.</div>
-        <div v-if="myCooldown" class="note cooldown-note">⏳ Your team lost recently — you can't issue challenges for <strong>{{ myCooldown }}</strong>. You can still be challenged.</div>
+        <div v-if="myCooldown" class="note cooldown-note">⏳ {{ isDuel ? 'You' : 'Your team' }} lost recently — you can't issue challenges for <strong>{{ myCooldown }}</strong>. You can still be challenged.</div>
         <div v-if="challengeErr" class="note err">{{ challengeErr }}</div>
       </ClientOnly>
 
@@ -284,14 +303,14 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
         <section v-if="!ladderOpen" class="card notopen span2">
           <div class="lock">🔒</div>
           <div><div class="notopen-title">The ladder isn't open yet</div>
-            <div class="notopen-sub">Opens at {{ TEAMS_TO_OPEN }} seeded teams — <strong>{{ teams.length }}/{{ TEAMS_TO_OPEN }}</strong> so far. Challenging is disabled until then.</div></div>
+            <div class="notopen-sub">Opens at {{ TEAMS_TO_OPEN }} seeded {{ words.teams }} — <strong>{{ teams.length }}/{{ TEAMS_TO_OPEN }}</strong> so far. Challenging is disabled until then.</div></div>
         </section>
 
         <!-- Standings board (big) -->
         <section class="card board-card">
           <h3>🏆 Standings <button class="exp" @click="setTab('rules')">how it works ⓘ</button></h3>
           <div class="board">
-            <div class="board-head"><span class="c-rung">#</span><span class="c-team">Team</span><span class="c-members">Players</span><span class="c-rec" title="Match record (won–lost)">Match</span><span class="c-rec" title="Game/map record (won–lost)">Games</span><span class="c-status">Status</span></div>
+            <div class="board-head"><span class="c-rung">#</span><span class="c-team">{{ words.Team }}</span><span class="c-members">{{ isDuel ? 'Profile' : 'Players' }}</span><span class="c-rec" title="Match record (won–lost)">Match</span><span class="c-rec" title="Game/map record (won–lost)">Games</span><span class="c-status">Status</span></div>
             <div v-for="t in teams" :key="t.id" class="row" :class="{ top: t.rung === 1 }">
               <span class="c-rung">{{ t.rung }}<span v-if="t.rung === 1" class="koth-crown" title="King of the Hill — holds rung 1">👑</span></span>
               <span class="c-team">
@@ -299,7 +318,7 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
                 <span v-else class="tlogo tlogo-ph">{{ (t.tag || t.name || '?')[0].toUpperCase() }}</span>
                 <span class="ttag">{{ t.tag || '—' }}</span>
                 <NuxtLink class="tname tlink" :to="`/ladder/team/${t.id}`" title="View team page">{{ t.name }}</NuxtLink>
-                <button v-if="isMyTeam(t)" class="edit" title="Team settings" @click="editTeam(t)">✎</button>
+                <button v-if="isMyTeam(t)" class="edit" :title="words.settings" @click="editTeam(t)">✎</button>
               </span>
               <span class="c-members">
                 <template v-for="(m, i) in (t.members || [])" :key="m.id">
@@ -389,9 +408,9 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
                 <button v-if="canWithdraw(myOpenChallenge)" class="rail-btn ghost" :disabled="withdrawingId === myOpenChallenge.id" @click="doWithdraw(myOpenChallenge)">{{ withdrawingId === myOpenChallenge.id ? 'Withdrawing…' : 'Withdraw' }}</button>
               </div>
             </template>
-            <p v-else-if="myTeam" class="muted small">No active match. Go to <a class="lnk" @click="setTab('standings')">Standings</a> and hit ⚔ Challenge on a team 1–2 rungs above you.</p>
-            <p v-else-if="loggedIn && user?.canonical_id" class="muted small">Join or create a team to start scheduling matches.</p>
-            <p v-else class="muted small">Sign in and join a team to schedule matches.</p>
+            <p v-else-if="myTeam" class="muted small">No active match. Go to <a class="lnk" @click="setTab('standings')">Standings</a> and hit ⚔ Challenge on a {{ words.team }} 1–2 rungs above you.</p>
+            <p v-else-if="loggedIn && user?.canonical_id" class="muted small">{{ isDuel ? 'Join the ladder to start scheduling matches.' : 'Join or create a team to start scheduling matches.' }}</p>
+            <p v-else class="muted small">Sign in and {{ isDuel ? 'join the ladder' : 'join a team' }} to schedule matches.</p>
           </ClientOnly>
 
           <h3 style="margin-top:18px">Active challenges</h3>
@@ -433,25 +452,25 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
           <h3>Format</h3>
           <ul>
             <li><strong>Ruleset:</strong> {{ ladder?.rules?.ruleset || 'smackdown' }} <span class="muted">(KTX competitive standard)</span></li>
-            <li><strong>Mode:</strong> 2on2 (TDM) · <strong>Best of {{ ladder?.rules?.best_of || 3 }}</strong></li>
+            <li><strong>Mode:</strong> {{ words.mode }} ({{ isDuel ? 'duel' : 'TDM' }}) · <strong>Best of {{ ladder?.rules?.best_of || 3 }}</strong></li>
             <li><strong>Timelimit:</strong> {{ ladder?.rules?.timelimit || 10 }} min per map · overtime on a draw</li>
-            <li><strong>Maps:</strong> Aerowalk · ztndm3 · DM2 · DM4 · Bravado · Nova · Shifter</li>
+            <li><strong>Maps:</strong> {{ mapPool.join(' · ') }}</li>
           </ul>
         </section>
         <section class="card rules">
           <h3>How it works</h3>
           <ul>
-            <li>Challenge a team <strong>1 or 2 rungs</strong> above you.</li>
-            <li><strong>Issuing a challenge includes your availability</strong> — you pick your team's playable time slots as part of the challenge (at least one required). The challenged team then just picks one.</li>
+            <li>Challenge a {{ words.team }} <strong>1 or 2 rungs</strong> above you.</li>
+            <li><strong>Issuing a challenge includes your availability</strong> — you pick {{ isDuel ? 'your' : "your team's" }} playable time slots as part of the challenge (at least one required). The challenged {{ words.team }} then just picks one.</li>
             <li><strong>Offer times on at least 2 different days</strong> to get the full <strong>7-day</strong> window. An offer covering <strong>only 1 day</strong> gets a short <strong>3-day</strong> window and, if unplayed, the challenge simply <strong>expires with no ladder movement</strong> — a single take-it-or-leave-it time can't earn a forfeit.</li>
-            <li><strong>Either team may re-post availability</strong> at any point before a time is locked — scheduling is never stuck waiting on one side.</li>
+            <li><strong>Either {{ words.team }} may re-post availability</strong> at any point before a time is locked — scheduling is never stuck waiting on one side.</li>
             <li><strong>Win a 1-rung challenge</strong> → swap places.</li>
-            <li><strong>Win a 2-rung challenge</strong> → swap places too. The two teams that played simply exchange rungs; no other team moves (e.g. rung 5 beats rung 3 → 5 and 3 swap, rung 4 is untouched).</li>
-            <li><strong>Forfeit</strong> (no game within the window, with a valid 2-day offer on the table) → the challenged team drops a rung.</li>
+            <li><strong>Win a 2-rung challenge</strong> → swap places too. The two {{ words.teams }} that played simply exchange rungs; no other {{ words.team }} moves (e.g. rung 5 beats rung 3 → 5 and 3 swap, rung 4 is untouched).</li>
+            <li><strong>Forfeit</strong> (no game within the window, with a valid 2-day offer on the table) → the challenged {{ words.team }} drops a rung.</li>
             <li>Best of 3 (first to 2) sets the ladder W/L. Natural Bo3 only — a 2–0 is two games, a 2–1 is three; only those games count toward stats, no extra/dead-rubber games. Winners may challenge again immediately.</li>
-            <li><strong>Withdraw:</strong> the <strong>challenging</strong> team can pull a challenge any time <strong>before it's scheduled</strong> (no agreed time yet) — this frees both teams. The challenged team can't withdraw; only the side that issued it.</li>
-            <li><strong>After a loss</strong> your team <strong>can't issue challenges for 3 days</strong> — you can still be challenged. (A live countdown shows on your row.)</li>
-            <li><strong>Win a defense, lift the cooldown:</strong> if a team in cooldown is challenged and <strong>wins</strong>, the cooldown clears <strong>immediately</strong> and they can challenge again right away.</li>
+            <li><strong>Withdraw:</strong> the <strong>challenging</strong> {{ words.team }} can pull a challenge any time <strong>before it's scheduled</strong> (no agreed time yet) — this frees both sides. The challenged {{ words.team }} can't withdraw; only the side that issued it.</li>
+            <li><strong>After a loss</strong> {{ isDuel ? 'you' : 'your team' }} <strong>can't issue challenges for 3 days</strong> — you can still be challenged. (A live countdown shows on your row.)</li>
+            <li><strong>Win a defense, lift the cooldown:</strong> if a {{ words.team }} in cooldown is challenged and <strong>wins</strong>, the cooldown clears <strong>immediately</strong> and they can challenge again right away.</li>
           </ul>
         </section>
         </div>
@@ -459,11 +478,11 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
         <section class="card rules">
           <h3>Servers &amp; ping</h3>
           <ul>
-            <li><strong>NA servers</strong> for any match involving a North American team. This is a North American tournament.</li>
-            <li><strong>Exception — Brazil vs Brazil:</strong> two Brazilian teams may play on a BR server. DeepFrag picks it automatically.</li>
+            <li><strong>NA servers</strong> for any match involving a North American {{ words.team }}. This is a North American tournament.</li>
+            <li><strong>Exception — Brazil vs Brazil:</strong> two Brazilian {{ words.teams }} may play on a BR server. DeepFrag picks it automatically.</li>
             <li><strong>Ping-ups optional (not required).</strong> We match average ping as closely as possible on one server. Players may optionally even up — we recommend a max of <strong>50ms</strong> since this is an NA-focused ladder, with <code>cl_delay_packet_target 50</code>.</li>
             <li>Brazil vs NA plays the <strong>closest-proximity NA server</strong> (e.g. Brazil on Miami, ~100–130ms).</li>
-            <li><strong>DeepFrag suggests the server automatically</strong> from both teams' player locations.</li>
+            <li><strong>DeepFrag suggests the server automatically</strong> from both {{ isDuel ? "players'" : "teams' player" }} locations.</li>
             <li>Pool: Denver · Miami · Chicago · Dallas · New York · LA · Iowa · Washington.</li>
           </ul>
         </section>
@@ -471,18 +490,18 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
         </div>
         <section class="card rules">
           <details class="ruleset" open>
-            <summary><span class="rs-title">📋 Full match ruleset</span><span class="rs-sum">smackdown · 2on2 · Bo3 · 10-min maps</span></summary>
+            <summary><span class="rs-title">📋 Full match ruleset</span><span class="rs-sum">smackdown · {{ words.mode }} · Bo{{ ladder?.rules?.best_of || 3 }} · {{ ladder?.rules?.timelimit || 10 }}-min maps</span></summary>
             <div class="rs-body">
               <h4>Format</h4>
-              <ul><li>2on2 TDM, ruleset <strong>smackdown</strong>, <strong>best of 3</strong>, 10-minute maps.</li>
-                <li>Recent <strong>ezQuake</strong> / <strong>unEzQuake</strong>. In-game: <code>2on2</code>, <code>ruleset smackdown</code>.</li>
-                <li><strong>SmackDrive is not permitted.</strong></li></ul>
-              <h4>Maps &amp; picks (Bo3)</h4>
-              <ul><li>Pool: Aerowalk · ztndm3 · DM2 · DM4 · Bravado · Nova · Shifter.</li>
-                <li><code>rnd team1 team2</code> decides the first-pick team (<strong>Team A</strong>; the other is Team B).</li>
-                <li><strong>Game 1:</strong> Team A picks. <strong>Game 2:</strong> Team B picks.</li>
-                <li><strong>Decider (Game 3, only if 1–1):</strong> from the 5 remaining maps, <strong>Team B tosses first</strong>, then teams <strong>alternate tossing</strong> (B, A, B, A) until <strong>one map remains</strong> — that's the decider.</li>
-                <li>No map is played twice.</li></ul>
+              <ul><li>{{ words.mode }}{{ isDuel ? '' : ' TDM' }}, ruleset <strong>smackdown</strong>, <strong>best of {{ ladder?.rules?.best_of || 3 }}</strong>, {{ ladder?.rules?.timelimit || 10 }}-minute maps.</li>
+              <li>Recent <strong>ezQuake</strong> / <strong>unEzQuake</strong>. In-game: <code>{{ words.mode }}</code>, <code>ruleset smackdown</code>.</li>
+              <li><strong>SmackDrive is not permitted.</strong></li></ul>
+              <h4>Maps &amp; picks (Bo{{ ladder?.rules?.best_of || 3 }})</h4>
+              <ul><li>Pool: {{ mapPool.join(' · ') }}.</li>
+              <li><code>rnd</code> (coin toss) decides the first-pick side (<strong>{{ words.Team }} A</strong>; the other is {{ words.Team }} B).</li>
+              <li><strong>Game 1:</strong> {{ words.Team }} A picks. <strong>Game 2:</strong> {{ words.Team }} B picks.</li>
+              <li><strong>Decider (Game 3, only if 1–1):</strong> from the remaining maps, <strong>{{ words.Team }} B tosses first</strong>, then sides <strong>alternate tossing</strong> (B, A, B, A) until <strong>one map remains</strong> — that's the decider.</li>
+              <li>No map is played twice.</li></ul>
               <h4>Servers &amp; ping</h4>
               <ul><li><strong>NA servers only</strong> (a Brazil-vs-Brazil match may use a BR server).</li>
                 <li>Even pings on the closest-proximity NA server. <strong>Ping-ups optional</strong> (not required) — NA recommended max <strong>50ms</strong> via <code>cl_delay_packet_target 50</code>.</li>
@@ -490,14 +509,16 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
               <h4>Client integrity</h4>
               <ul><li>unEzQuake must pass the ruleset check (<strong>CLEAR</strong>).</li>
                 <li><strong>unEzQuake only</strong> — required: <code>scr_allowsnap 1</code>, <code>tp_triggers 0</code>, <code>allow_scripts 0</code>.</li>
-                <li><strong>Allowed:</strong> the standard team HUD — <code>teamoverlay</code> / <code>show teaminfo</code> (teammate location, health, armor &amp; weapons).</li>
-                <li>Banned: anything that changes gameplay/graphics vs ezQuake — jump automation, <em>enemy</em> radar/wallhack overlays, colored backpacks, smartspawn (NOT the teammate overlay above).</li></ul>
-              <h4>Match conduct</h4>
-              <ul><li><strong>Names:</strong> consistent clan tags + player names all season — critical for stats.</li>
+                <li v-if="!isDuel"><strong>Allowed:</strong> the standard team HUD — <code>teamoverlay</code> / <code>show teaminfo</code> (teammate location, health, armor &amp; weapons).</li>
+                <li>Banned: anything that changes gameplay/graphics vs ezQuake — jump automation, <em>enemy</em> radar/wallhack overlays, colored backpacks, smartspawn{{ isDuel ? '' : ' (NOT the teammate overlay above)' }}.</li></ul>
+                <h4>Match conduct</h4>
+                <ul><li><strong>Names:</strong> consistent {{ isDuel ? 'player names' : 'clan tags + player names' }} all season — critical for stats.</li>
                 <li><strong>Pacing:</strong> ≥1 ladder match/week; prioritize ladder over pracs.</li>
-                <li><strong>Pauses:</strong> one per team per map. <strong>Sportsmanship</strong> always.</li></ul>
-              <h4>Roster</h4>
-              <ul><li>Declare full roster at signup. No playing for multiple teams. Changes need admin approval. No stand-ins.</li></ul>
+                <li><strong>Pauses:</strong> one per {{ words.team }} per map. <strong>Sportsmanship</strong> always.</li></ul>
+                <h4 v-if="!isDuel">Roster</h4>
+                <ul v-if="!isDuel"><li>Declare full roster at signup. No playing for multiple teams. Changes need admin approval. No stand-ins.</li></ul>
+                <h4 v-if="isDuel">Identity</h4>
+                <ul v-if="isDuel"><li>Play your ladder games on the nick linked to your DeepFrag profile — that's how results are matched to your entry. No playing someone else's ladder game.</li></ul>
               <h4>Admins</h4>
               <ul><li>Head admins: <strong>Cronus, Nin, Bance</strong>. Disputes → the KOTH Discord channel.</li></ul>
             </div>
@@ -517,8 +538,8 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 
     <!-- modals -->
     <ClientOnly>
-      <AddTeam v-if="showAddTeam && ladder" :ladder-id="ladder.id" @done="onTeamAdded" @close="showAddTeam = false" />
-      <AddTeam v-if="editingTeam && ladder" :ladder-id="ladder.id" :edit-team="editingTeam" @done="onTeamAdded" @close="editingTeam = null" />
+      <AddTeam v-if="showAddTeam && ladder" :ladder-id="ladder.id" :team-size="Number(ladder.team_size) || 2" @done="onTeamAdded" @close="showAddTeam = false" />
+      <AddTeam v-if="editingTeam && ladder" :ladder-id="ladder.id" :team-size="Number(ladder.team_size) || 2" :edit-team="editingTeam" @done="onTeamAdded" @close="editingTeam = null" />
       <Scheduler v-if="schedulerChallenge" :challenge="schedulerChallenge" :user-team-id="myTeam?.id" @done="onScheduled" @saved="load" @close="schedulerChallenge = null" />
       <Scheduler v-if="createTarget && !schedulerChallenge" :create-target="createTarget" :user-team-id="myTeam?.id" @done="onChallengeCreated" @close="createTarget = null" />
       <ReportMatch v-if="reportChallenge" :challenge="reportChallenge" :user-team-id="myTeam?.id" @done="onReported" @close="reportChallenge = null" />
@@ -532,6 +553,14 @@ useHead({ title: 'KOTH 2v2 Ladder · DeepFrag' })
 .head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; margin-bottom: 18px; }
 .head .koth-logo { width: 100%; max-width: 440px; height: auto; display: block; filter: drop-shadow(0 6px 24px rgba(0,0,0,0.5)); }
 .head .sub { color: var(--fg-2); margin: 0; font-size: 15px; }
+.koth-title { margin: 6px 0 0; font-size: clamp(30px, 6vw, 46px); font-weight: 900; letter-spacing: 0.01em; line-height: 1; }
+.koth-title span { color: var(--accent); }
+.lswitch { display: inline-flex; gap: 4px; padding: 4px; margin-top: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; }
+.lbtn { display: inline-flex; align-items: baseline; gap: 6px; background: none; border: 0; color: var(--fg-2); font-family: inherit; font-weight: 800; font-size: 13px; padding: 7px 14px; border-radius: 999px; cursor: pointer; min-height: 34px; }
+.lbtn .lname { font-weight: 500; font-size: 11px; color: var(--fg-3); }
+.lbtn:hover { color: var(--fg); }
+.lbtn.on { background: var(--accent); color: #140a03; }
+.lbtn.on .lname { color: rgba(20,10,3,0.7); }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
 .cta { background: #5865f2; color: #fff; border: none; white-space: nowrap; padding: 9px 16px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; }
 .cta:hover { background: #4752c4; }

@@ -11,7 +11,17 @@ const id = computed(() => String(route.params.id))
 const tab = computed(() => String(route.params.tab || ''))
 const windowKey = ref('90')
 
-const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2', 'trends', 'compare', 'dmm', 'servers'])
+const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2', 'trends', 'compare', 'dmm', 'servers', 'advanced'])
+// Advanced (demo-derived duel metrics): /api/players/{id}/advanced — see docs/advanced_metrics.md
+const adv = ref(null)
+const advPending = ref(false)
+async function loadAdvanced() {
+  advPending.value = true
+  try {
+    const r = await fetch(`/api/players/${encodeURIComponent(id.value)}/advanced?window=${windowKey.value}`)
+    adv.value = r.ok ? await r.json() : null
+  } catch { adv.value = null } finally { advPending.value = false }
+}
 
 const profile = ref(null)
 const pending = ref(true)
@@ -27,6 +37,7 @@ async function load() {
     const url = df.useApi ? `${df.profileUrl(id.value)}/full?window=${windowKey.value}&v=3` : df.profileUrl(id.value)
     const r = await fetch(url)
     profile.value = r.ok ? await r.json() : null
+        if (tab.value === 'advanced') loadAdvanced()
     // Alias/merge-emptied id (e.g. /p/george/recent): the API answers with the
     // owning profile — move to its id so sub-fetches and the URL agree.
     const real = profile.value?.canonical_id
@@ -231,6 +242,7 @@ const TABS = computed(() => {
   const defs = [
     { key: 'overview', label: 'Overview', to: b },
     { key: 'coach', label: '🎯 Coach', to: { path: b, query: { view: 'coach' } } },
+    { key: 'advanced', label: 'Advanced' },
     { key: 'trends', label: 'Trends' }, { key: 'compare', label: 'Compare' },
     { key: '1on1', label: '1on1' }, { key: '4on4', label: '4on4' }, { key: '2on2', label: '2on2' },
     { key: 'dmm', label: 'By DMM' },
@@ -247,6 +259,25 @@ const TABS = computed(() => {
 })
 
 function fmtDate(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? d : x.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
+function fmtSigned(v) { if (v == null) return '—'; const n = Number(v); return (n > 0 ? '+' : '') + n.toFixed(1) }
+function signCls(v) { const n = Number(v); return n > 0 ? 'pos' : n < 0 ? 'neg' : '' }
+function pct(v) { return v == null ? '—' : `${v}%` }
+const advCards = computed(() => {
+  const c = adv.value?.career, b = adv.value?.baseline || {}
+  if (!c) return []
+  const better = (v, base, higher = true) => (v == null || base == null) ? '' : ((higher ? v > base : v < base) ? 'good' : (v === base ? '' : 'bad'))
+  return [
+    { key: 'pm', label: '+/- per game', val: fmtSigned(c.plus_minus_pg), base: fmtSigned(b.plus_minus_pg), tone: better(c.plus_minus_pg, b.plus_minus_pg) },
+    { key: 'adj', label: 'adjusted kills / min', val: c.adj_kills_pm, base: b.adj_kills_pm, tone: better(c.adj_kills_pm, b.adj_kills_pm) },
+    { key: 'sddr', label: 'stacked DDR', val: c.sddr, base: b.sddr, tone: better(c.sddr, b.sddr) },
+    { key: 'even', label: 'even-fight win %', val: pct(c.even_win_pct), base: pct(b.even_win_pct), tone: better(c.even_win_pct, b.even_win_pct) },
+    { key: 'behind', label: 'fights started from behind', val: pct(c.started_behind_pct), base: pct(b.started_behind_pct), tone: better(c.started_behind_pct, b.started_behind_pct, false) },
+    { key: 'itemfirst', label: 'item-first spawns', val: pct(c.item_first_pct), base: pct(b.item_first_pct), tone: better(c.item_first_pct, b.item_first_pct) },
+    { key: 'chained', label: 'chained deaths', val: pct(c.chained_real_pct), base: pct(b.chained_real_pct), tone: better(c.chained_real_pct, b.chained_real_pct, false) },
+    { key: 'ra', label: 'red armors / game · on timer', val: `${c.ra_pg ?? '—'} · ${pct(c.ra_on_timer_pct)}`, base: `${b.ra_pg ?? '—'} · ${pct(b.ra_on_timer_pct)}`, tone: better(c.ra_pg, b.ra_pg) },
+  ]
+})
+watch(windowKey, () => { if (tab.value === 'advanced') loadAdvanced() })
 function fmtPct(v) { return v == null ? '—' : Math.round(v * 100) + '%' }
 
 useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
@@ -256,6 +287,7 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
   <div class="page">
     <div class="head">
       <NuxtLink :to="`/p/${enc(id)}`" class="back">← {{ id }} overview</NuxtLink>
+      <span v-if="profile?.level?.placed" class="lvl-badge" :class="'lvl-' + profile.level.level" :title="`4on4 level · ${profile.level.above_avg_pg} above average per game`">L{{ profile.level.level }} · {{ profile.level.name }}</span>
     </div>
 
     <div class="profile-tabbar">
@@ -272,6 +304,60 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
     </div>
 
     <div v-if="pending" class="placeholder">Loading…</div>
+
+    <!-- ADVANCED (demo-derived duel metrics) -->
+    <template v-else-if="tab === 'advanced'">
+      <div class="section-h"><h2>Advanced duel metrics</h2><span class="muted small">from the demo · window {{ windowKey === 'all' ? 'all time' : 'last ' + windowKey + 'd' }}</span></div>
+      <div v-if="advPending" class="placeholder">Loading…</div>
+      <div v-else-if="!adv || !adv.games" class="panel muted" style="padding:20px">No scored duels in this window yet. Duels are scored from the demo nightly; Den, LA, Mom's Basement and NY servers are covered.</div>
+      <template v-else>
+        <div class="panel adv-grid">
+          <div v-for="c in advCards" :key="c.key" class="adv-card" :class="c.tone">
+            <div class="adv-v">{{ c.val }}</div>
+            <div class="adv-k">{{ c.label }}</div>
+            <div class="adv-b muted small">avg {{ c.base }}</div>
+          </div>
+        </div>
+        <p class="muted small" style="margin:8px 2px 18px">{{ adv.games }} duels · adjusted kills weight each frag by the stack edge at first contact · +/- is the frag differential weighted by how much each kill moved the win probability (1.0 = a frag at even score, half the game left) · even fights = first contact within 60 effective HP · "avg" is the active duelist over the same window.</p>
+
+        <div class="section-h"><h2>By map</h2></div>
+        <div class="panel">
+          <table class="rtab">
+            <thead><tr><th>Map</th><th class="num">Games</th><th class="num">Win%</th><th class="num">+/- /g</th><th class="num">Adj K/min</th><th class="num">sDDR</th><th class="num">Even fights</th><th class="num">Started behind</th><th class="num">Item-first</th><th class="num">Chained</th><th class="num">RA/g</th></tr></thead>
+            <tbody>
+              <tr v-for="m in adv.by_map" :key="m.map">
+                <td>{{ m.map }}</td><td class="num">{{ m.games }}</td><td class="num">{{ m.win_pct }}%</td>
+                <td class="num" :class="signCls(m.plus_minus_pg)">{{ fmtSigned(m.plus_minus_pg) }}</td>
+                <td class="num">{{ m.adj_kills_pm }}</td><td class="num">{{ m.sddr }}</td>
+                <td class="num">{{ m.even_win_pct ?? '—' }}%<span class="muted small"> ({{ m.even_n }})</span></td>
+                <td class="num">{{ m.started_behind_pct ?? '—' }}%</td><td class="num">{{ m.item_first_pct ?? '—' }}%</td>
+                <td class="num">{{ m.chained_real_pct }}%</td><td class="num">{{ m.ra_pg ?? '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section-h"><h2>Recent duels</h2></div>
+        <div class="panel">
+          <table class="rtab">
+            <thead><tr><th>When</th><th>Map</th><th>Opp</th><th>Result</th><th class="num">F / D</th><th class="num">Adj K</th><th class="num">Dmg</th><th class="num">sDDR</th><th class="num">Fights started</th><th class="num">From behind</th><th class="num">Even W-L</th><th class="num">Chained</th><th class="num">RA</th><th class="num">+/-</th></tr></thead>
+            <tbody>
+              <tr v-for="g in adv.recent" :key="g.hub_game_id">
+                <td>{{ fmtDate(g.played_at) }}</td><td>{{ g.map }}</td>
+                <td><NuxtLink v-if="g.opponent_id" :to="`/p/${enc(g.opponent_id)}`">{{ g.opponent_id }}</NuxtLink><span v-else>—</span></td>
+                <td><span class="result-pill" :class="g.win ? 'W' : 'L'">{{ g.win ? 'W' : 'L' }}</span></td>
+                <td class="num">{{ g.frags }} / {{ g.deaths }}</td><td class="num">{{ g.adj_kills }}</td>
+                <td class="num">{{ g.dmg }}</td><td class="num">{{ g.sddr ?? '—' }}</td>
+                <td class="num">{{ g.started }}</td><td class="num">{{ g.started_behind }}</td>
+                <td class="num">{{ g.even_w }}-{{ (g.even_n || 0) - (g.even_w || 0) }}</td>
+                <td class="num">{{ g.chained_real }}</td><td class="num">{{ g.ra ?? '—' }}</td>
+                <td class="num" :class="signCls(g.plus_minus)">{{ fmtSigned(g.plus_minus) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+    </template>
 
     <!-- RECENT -->
     <template v-else-if="tab === 'recent'">
@@ -467,4 +553,14 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
   .cmp-row .cmp-val.prv { display: none; }
   .cmp-headrow .cmp-val.prv { display: none; }
 }
+.adv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 14px; }
+.adv-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 12px 10px; min-width: 0; }
+.adv-card .adv-v { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.adv-card .adv-k { font-size: 12px; color: var(--fg-2); margin-top: 4px; }
+.adv-card .adv-b { margin-top: 2px; }
+.adv-card.good .adv-v { color: var(--win, #34d67a); }
+.adv-card.bad .adv-v { color: var(--loss, #ff5d6c); }
+.rtab .pos { color: var(--win, #34d67a); } .rtab .neg { color: var(--loss, #ff5d6c); }
+.lvl-badge { display: inline-flex; align-items: center; margin-left: 10px; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
+.lvl-badge.lvl-1 { color: #ff5d6c; } .lvl-badge.lvl-2 { color: #e0a33c; } .lvl-badge.lvl-3 { color: #c9a66b; } .lvl-badge.lvl-4 { color: #38bdf8; } .lvl-badge.lvl-5 { color: #34d67a; }
 </style>
