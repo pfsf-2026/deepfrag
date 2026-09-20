@@ -31,6 +31,7 @@ def process(g):
         SP = [(ph['availableFrom'], ph.get('takenBy')) for ph in q['phases'] if ph.get('availableFrom') is not None and ph['availableFrom'] <= END]
         rows = []
         for n, p in P.items():
+            if not p.get('pos') or not p['pos'].get('t'): continue   # no position stream (joined late / spectator)
             sp = p.get('sp', []); dd = p.get('d', []); pt = p['pos']['t']; px, py, pz = p['pos']['x'], p['pos']['y'], p['pos']['z']
             def alive(t):
                 ls = max([x for x in sp if x <= t], default=0); ld = max([x for x in dd if x <= t], default=-1); return ls >= ld
