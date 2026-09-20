@@ -96,7 +96,7 @@ function md(t) {
       <section v-if="report.narration" class="sec">
         <div class="sectitle">🗣️ Your coach</div>
         <div class="card"><div class="read" v-html="md(report.narration.text)" />
-          <div class="foot muted small">narration: {{ report.narration.source === 'llm' ? 'AI' : 'auto' }} · pool: {{ report.pool?.n }} active players</div>
+          <div class="foot muted small">narration: {{ report.narration.source === 'llm' ? 'AI' : (report.narration.reason === 'model_error' ? 'auto (the coaching model is unavailable right now)' : 'auto') }} · pool: {{ report.pool?.n }} active players</div>
         </div>
       </section>
 

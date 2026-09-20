@@ -372,7 +372,9 @@ def choose_focus(ranked: list[dict], prev: dict | None, graded: dict | None, row
     if graded and graded["status"] == "pending":
         top = next((l for l in ranked if l["key"] == prev["lever"]), None)
         if top:
-            return {**prev, "status": "in_progress", "games_since": graded["games_since"], "now_fmt": graded["now_fmt"],
+            # no games since the prescription yet -> show the at-issue value, not a dash
+            now_fmt = graded["now_fmt"] if graded.get("now") is not None else _fmt(_num(prev.get("you")), LEVERS[prev["lever"]]["fmt"])
+            return {**prev, "status": "in_progress", "games_since": graded["games_since"], "now_fmt": now_fmt,
                     "label": top["label"], "why": top["why"], "drill": top["drill"]}
     top = ranked[0]
     return {"lever": top["key"], "label": top["label"], "you": top["you_raw"], "you_fmt": top["you"],

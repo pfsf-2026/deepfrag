@@ -205,14 +205,21 @@ def _fours_template(report: dict) -> str:
 
 
 def narrate_fours(report: dict) -> dict:
-    """{text, source} for the 4on4 coach. LLM when a key is configured, else template."""
-    text = None
+    """{text, source, reason} for the 4on4 coach. LLM when a key is configured and the call
+    succeeds, else the template with reason = no_key | unplaced | model_error."""
+    text = None; reason = None
+    if not ANTHROPIC_KEY:
+        reason = "no_key"
+    elif not (report.get("level") or {}).get("placed"):
+        reason = "unplaced"
     if ANTHROPIC_KEY and (report.get("level") or {}).get("placed"):
         payload = _fours_payload(report)
         lvl = (report.get("level") or {}).get("level") or 3
         body = {"model": MODEL, "max_tokens": 900, "system": SYSTEM_4ON4,
                 "messages": [{"role": "user", "content": f"Player level {lvl}. Report JSON:\n{json.dumps(payload, indent=1, default=str)}\n\nWrite the coaching read."}]}
         text = _post(body)
+        if not text:
+            reason = "model_error"      # the cause is in the Cloud Run log ([coaching_narrate] ...)
     if text:
-        return {"text": text, "source": "llm"}
-    return {"text": _fours_template(report), "source": "template"}
+        return {"text": text, "source": "llm", "reason": None}
+    return {"text": _fours_template(report), "source": "template", "reason": reason}
