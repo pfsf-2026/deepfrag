@@ -17,9 +17,42 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
+import urllib.error
 
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY")
-MODEL = os.environ.get("COACHING_MODEL", "claude-opus-4-8")
+MODEL = os.environ.get("COACHING_MODEL", "claude-opus-5")
+# Server-side refusal fallback (beta): on a policy decline the API re-runs the request on a
+# fallback model inside the same call, so a coaching read never silently drops to the template.
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
+import sys
+
+
+def _post(body: dict) -> str | None:
+    """One Messages API call. Returns the text, or None after logging WHY it failed —
+    the coach was falling back to the template with no trace of the cause (2026-09-20)."""
+    body = {**body, "fallbacks": "default"}
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
+        headers={"content-type": "application/json", "x-api-key": ANTHROPIC_KEY,
+                 "anthropic-version": "2023-06-01", "anthropic-beta": FALLBACK_BETA})
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            data = json.loads(r.read())
+        if data.get("stop_reason") == "refusal":
+            print(f"[coaching_narrate] refusal: {data.get('stop_details')}", file=sys.stderr, flush=True)
+            return None
+        text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+        return text or None
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode()[:400]
+        except Exception:
+            detail = ""
+        print(f"[coaching_narrate] HTTP {e.code} from the Messages API (model {body.get('model')}): {detail}", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"[coaching_narrate] {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+    return None
+
 
 SYSTEM = (
     "You are a QuakeWorld 1on1 dueling coach. You receive a player's COMPUTED "
@@ -58,21 +91,7 @@ def _llm_narrate(payload: dict) -> str | None:
                        ),
         }],
     }
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=json.dumps(body).encode(),
-        headers={
-            "content-type": "application/json",
-            "x-api-key": ANTHROPIC_KEY,
-            "anthropic-version": "2023-06-01",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            data = json.loads(r.read())
-            return "".join(b.get("text", "") for b in data.get("content", []))
-    except Exception:
-        return None
+    return _post(body)
 
 
 def _template_narrate(payload: dict) -> str:
@@ -193,13 +212,7 @@ def narrate_fours(report: dict) -> dict:
         lvl = (report.get("level") or {}).get("level") or 3
         body = {"model": MODEL, "max_tokens": 900, "system": SYSTEM_4ON4,
                 "messages": [{"role": "user", "content": f"Player level {lvl}. Report JSON:\n{json.dumps(payload, indent=1, default=str)}\n\nWrite the coaching read."}]}
-        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
-                                     headers={"content-type": "application/json", "x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01"})
-        try:
-            with urllib.request.urlopen(req, timeout=60) as r:
-                data = json.loads(r.read()); text = "".join(b.get("text", "") for b in data.get("content", [])) or None
-        except Exception:
-            text = None
+        text = _post(body)
     if text:
         return {"text": text, "source": "llm"}
     return {"text": _fours_template(report), "source": "template"}
