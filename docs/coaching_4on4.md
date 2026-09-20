@@ -143,11 +143,12 @@ across maps and the pooled level medians were unfair to one-red maps.
 
 ## Quad attendance (2026-09-20)
 
-Peter's rule: a player **contested** a quad spawn if he was within ~400 u of the quad at any point
-from 10 s before it spawned up to the spawn, including the times he died there before it spawned
-("you're attacking quad and die before it spawns"). Single-game analyses use exact demo positions.
-The corpus carries a 10-second named-zone proxy (`tools/mvd_features/quad_contest_pass.py` ->
-`player_quad`; zones per map in `quad_zones.json` = named spots within 450 u of the quad entity),
+Peter's rule: a player **contested** a quad spawn if he was within 650 u of the quad at any point
+in the last 10 s before it spawned, up to the spawn (nothing after counts), including the times he
+died there before it spawned ("you're attacking quad and die before it spawns"). The standard is the
+exact 100-ms-position count (`tools/mvd_features/quad_exact_pass.py` -> `player_quad_exact`).
+The corpus also carries a 10-second named-zone proxy (`tools/mvd_features/quad_contest_pass.py` ->
+`player_quad`; zones per map in `quad_zones.json`, radii calibrated per map against exact counts),
 which agrees with the exact count to about ±2 spawns a game. Lever `quad_contests_pg` (L3-L4)
 is the attendance behind `quads per game`; `quad_conversion` = takes / contests.
 

@@ -1,11 +1,11 @@
 """Fours re-pass: quad CONTESTS per player per game -> `player_quad`.
 
-Peter's definition (2026-09-20): a player contested a quad spawn if he was within ~400 u of
-the quad at any point from 10 s before it spawned up to the spawn, including the case where
-he died there before it spawned. Single-game analyses use exact positions from the demo; this
-corpus pass approximates it from the 10-second state samples (`player_state10s.loc`, a named
-spot) using each map's quad zone = named spots within 450 u of the quad entity
-(`quad_zones.json`, measured from demos), so it is a 10-s-resolution named-zone proxy.
+Peter's definition (2026-09-20): a player contested a quad spawn if he was within 650 u of
+the quad at any point in the last 10 s before it spawned, up to the spawn, including the case
+where he died there before it spawned. The exact count comes from quad_exact_pass.py (100 ms
+positions); this pass is the FALLBACK for games without exact rows: it approximates the rule
+from the 10-second state samples (`player_state10s.loc`, a named spot) using each map's quad
+zone (`quad_zones.json`, per-map radius calibrated so the proxy matches the exact count).
 
 Spawn times come from `item_takes` (t - wait_ms). Untaken quad spawns are not recorded, but
 nearly every quad is taken.
