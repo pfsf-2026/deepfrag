@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Speakeasy 2v2 ladder — schema + movement engine.
+"""DeepFrag King-of-the-Hill ladders — schema + movement engine.
+
+One engine, many ladders: every table is keyed by ladder_id and a "team" is a
+roster of `team_size` canonical ids (2 for the 2v2 ladder, 1 for the 1v1 duel
+ladder added 2026-09-17). `ladders.mode` ('2on2' | '1on1' | '4on4') is the hub
+match_mode the auto-resolver searches for that ladder's games.
 
 Rungs are integer positions, 1 = top. Rules (locked w/ Peter 2026-06-04):
   - Challenge 1 or 2 rungs up.
@@ -11,10 +16,60 @@ Rungs are integer positions, 1 = top. Rules (locked w/ Peter 2026-06-04):
   - Loser waits 1 week before re-challenging; winner may re-challenge immediately.
 King of the Hill = current rung-1 team; weeks-held derived from ladder_movements.
 
-Multi-ladder (a 4s ladder drops in later via a separate ladders row + team_size).
 DB-backed (psycopg2 cursor passed in), mirrors the rest of the codebase.
 """
 from __future__ import annotations
+
+MODE_BY_SIZE = {1: "1on1", 2: "2on2", 4: "4on4"}
+
+
+def mode_for_size(team_size) -> str:
+    """Hub match_mode for a roster size (1 → '1on1', 2 → '2on2', 4 → '4on4')."""
+    n = int(team_size or 2)
+    return MODE_BY_SIZE.get(n, f"{n}on{n}")
+
+
+def search_window(agreed_at, deadline=None, created_at=None, now=None):
+    """(lo, hi) datetimes the game matcher searches for a challenge's games.
+
+    Scheduled through the site (agreed_at set): from the moment the challenge
+    was ISSUED (created_at) to 7 days after the agreed slot, stretched to the
+    deadline when that is later. Rule set by Peter 2026-09-18 after ch78
+    (WoD/Habs) was played three days BEFORE its scheduled slot and the old
+    slot-centred window (-18h/+30h) never saw the games. Never scheduled on
+    the site: creation to deadline. Nothing known: the last 3 days. The
+    full-roster gate and the one-game-one-match reuse guard are what keep a
+    wide window safe.
+    """
+    from datetime import datetime, timedelta, timezone
+    now = now or datetime.now(timezone.utc)
+    if agreed_at:
+        lo = agreed_at - timedelta(hours=18)
+        if created_at and created_at < lo:
+            lo = created_at
+        hi = agreed_at + timedelta(days=7)
+        if deadline is not None and deadline > hi:
+            hi = deadline
+        return lo, hi
+    if created_at:
+        return created_at, (deadline or (now + timedelta(hours=1)))
+    return now - timedelta(days=3), now + timedelta(hours=1)
+
+
+def shape(cur, ladder_id):
+    """{mode, team_size, wins_needed, rules} for a ladder — what the game matcher
+    and the roster gates need. Defaults to the 2v2 shape when the ladder is
+    unknown (legacy callers)."""
+    if ladder_id is not None:
+        cur.execute("SELECT mode, team_size, rules FROM ladders WHERE id=%s", (ladder_id,))
+        row = cur.fetchone()
+        if row:
+            size = int(row["team_size"] or 2)
+            rules = row["rules"] or {}
+            best_of = int(rules.get("best_of") or 3)
+            return {"mode": row["mode"] or mode_for_size(size), "team_size": size,
+                    "wins_needed": max(1, (best_of + 1) // 2), "rules": rules}
+    return {"mode": "2on2", "team_size": 2, "wins_needed": 2, "rules": {}}
 
 DDL = """
 CREATE TABLE IF NOT EXISTS ladders (
@@ -98,6 +153,12 @@ def ensure_schema(cur):
     # Scheduler: teams propose availability slots (proposed JSONB) back and forth;
     # proposed_by = team that posted the current slots (the OTHER team picks or
     # counter-proposes). agreed_at + server recorded once a slot is picked.
+    # 2026-09-17: multi-ladder. mode = the hub match_mode this ladder's games are
+    # played in; backfilled from team_size for rows created before the column.
+    cur.execute("ALTER TABLE ladders ADD COLUMN IF NOT EXISTS mode TEXT")
+    cur.execute("""UPDATE ladders SET mode = CASE team_size WHEN 1 THEN '1on1' WHEN 2 THEN '2on2' WHEN 4 THEN '4on4'
+                                                ELSE team_size::text || 'on' || team_size::text END
+                   WHERE mode IS NULL""")
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS server TEXT")
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS proposed_by BIGINT")
     # 2026-09-06: when the CURRENT offer was posted + the full proposal history

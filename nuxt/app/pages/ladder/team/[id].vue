@@ -1,5 +1,5 @@
 <script setup>
-// KOTH 2v2 ladder — team home page. Mirrors thebig4 Team Details: header + record,
+// KOTH ladder — team home page (2v2 team or 1v1 entry). Mirrors thebig4 Team Details: header + record,
 // match history (us/them), per-map record, aggregate team stats, per-player stats.
 // Reads /api/ladder/team/{id}/summary (client-side; matches the ladder hub pattern).
 const route = useRoute()
@@ -28,12 +28,12 @@ async function load() {
   finally { loading.value = false }
 }
 // team switcher (dropdown, like the big4 "Select Team")
+// The switcher lists the teams on THIS team's ladder (2v2 or 1v1), not ladders[0].
 async function loadTeams() {
   try {
-    const list = await $fetch(`${base}/api/ladder`)
-    const first = (list.ladders || [])[0]
-    if (!first) return
-    const d = await $fetch(`${base}/api/ladder/${first.id}`)
+    const lid = data.value?.team?.ladder_id
+    if (!lid) return
+    const d = await $fetch(`${base}/api/ladder/${lid}`)
     allTeams.value = (d.teams || []).slice().sort((a, b) => (a.rung || 99) - (b.rung || 99))
   } catch { /* non-fatal */ }
 }
@@ -46,8 +46,8 @@ const teamStats = computed(() => data.value?.team_stats || {})
 const players = computed(() => data.value?.players || [])
 const hasStats = computed(() => (teamStats.value?.maps || 0) > 0)
 
-onMounted(() => { load(); loadTeams() })
-watch(() => route.params.id, () => { load() })
+onMounted(async () => { await load(); loadTeams() })
+watch(() => route.params.id, async () => { await load(); loadTeams() })
 useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepFrag` : 'Team · DeepFrag' }))
 </script>
 

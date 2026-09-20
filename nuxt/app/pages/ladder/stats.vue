@@ -3,22 +3,20 @@
 // ladder's Stats tab.
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
-const ladderId = ref(null)
+const { loadList, current, words, ladderSlug } = useLadders()
+const ladderId = computed(() => current.value?.id || null)
 const ready = ref(false)
 onMounted(async () => {
-  try {
-    const list = await $fetch(`${base}/api/ladder`, { query: { _: Date.now() } })
-    ladderId.value = (list.ladders || [])[0]?.id || null
-  } catch { /* ignore */ } finally { ready.value = true }
+  try { await loadList() } catch { /* ignore */ } finally { ready.value = true }
 })
-useHead({ title: 'KOTH Stats · DeepFrag' })
+useHead(() => ({ title: `KOTH ${words.value.short} Stats · DeepFrag` }))
 </script>
 
 <template>
   <div class="wrap">
     <header class="head">
-      <div><h1>KOTH — Stats</h1><p class="sub">Per-map averages &amp; map analytics from reported ladder matches.</p></div>
-      <NuxtLink to="/ladder#stats" class="back">← Ladder</NuxtLink>
+      <div><h1>KOTH {{ words.short }} — Stats</h1><p class="sub">Per-map averages &amp; map analytics from reported ladder matches.</p></div>
+      <NuxtLink :to="`/ladder?l=${ladderSlug(current)}#stats`" class="back">← Ladder</NuxtLink>
     </header>
     <ClientOnly>
       <div v-if="!ready" class="muted pad">Loading…</div>

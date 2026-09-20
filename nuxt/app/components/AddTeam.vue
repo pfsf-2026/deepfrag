@@ -7,8 +7,10 @@
 // admin), team keeps its current ladder position.
 const props = defineProps({
   ladderId: { type: Number, required: true },
+  teamSize: { type: Number, default: 2 },      // 1 on the duel ladder: no teammate, name optional
   editTeam: { type: Object, default: null }   // {id, name, tag, members:[{id,display}], has_logo}
 })
+const solo = computed(() => Number(props.teamSize) === 1)
 const emit = defineEmits(['done', 'close'])
 const { authHeader } = useAuth()
 const isBrowser = typeof window !== 'undefined'
@@ -75,7 +77,7 @@ const currentLogo = computed(() => {
 
 async function submit() {
   err.value = ''
-  if (!teamName.value.trim()) { err.value = 'Give your team a name'; return }
+  if (!solo.value && !teamName.value.trim()) { err.value = 'Give your team a name'; return }
   submitting.value = true
   try {
     if (editing.value) {
@@ -84,7 +86,7 @@ async function submit() {
         body: {
           name: teamName.value.trim(),
           tag: teamTag.value.trim(),
-          teammate_canonical_id: mate.value?.canonical_id ?? null,
+          teammate_canonical_id: solo.value ? null : (mate.value?.canonical_id ?? null),
           logo: logoData.value || null,
           remove_logo: removeLogo.value
         }
@@ -95,12 +97,12 @@ async function submit() {
         body: {
           name: teamName.value.trim(),
           tag: teamTag.value.trim(),
-          teammate_canonical_id: mate.value?.canonical_id || null,
+          teammate_canonical_id: solo.value ? null : (mate.value?.canonical_id || null),
           logo: logoData.value || null
         }
       })
     }
-    emit('done', teamName.value.trim())
+    emit('done', teamName.value.trim() || (solo.value ? 'your entry' : ''))
   } catch (e) {
     err.value = e?.data?.detail || e?.message || 'Could not save team'
   } finally {
@@ -113,19 +115,19 @@ async function submit() {
   <div class="modal-bg" @click.self="emit('close')">
     <div class="modal">
       <div class="m-head">
-        <h3>{{ editing ? 'Team settings' : 'Add your team' }}</h3>
+        <h3>{{ editing ? (solo ? 'Ladder entry' : 'Team settings') : (solo ? 'Join the 1v1 ladder' : 'Add your team') }}</h3>
         <button class="x" @click="emit('close')">✕</button>
       </div>
       <p class="lede">
         {{ editing
-          ? 'Update your team name, tag, teammate, or logo. Changes apply right away.'
-          : "Register for the KOTH ladder. An admin approves it, then you're on the board." }}
+          ? (solo ? 'Update your ladder name, tag, or logo. Changes apply right away.' : 'Update your team name, tag, teammate, or logo. Changes apply right away.')
+          : (solo ? "Sign up for the KOTH duel ladder as yourself. An admin approves it, then you're on the board." : "Register for the KOTH ladder. An admin approves it, then you're on the board.") }}
       </p>
 
       <div class="row2">
         <label class="fld grow">
-          <span>Team name</span>
-          <input v-model="teamName" placeholder="e.g. Team Scat" maxlength="40">
+          <span>{{ solo ? 'Ladder name (optional — defaults to your nick)' : 'Team name' }}</span>
+          <input v-model="teamName" :placeholder="solo ? 'your QW nick' : 'e.g. Team Scat'" maxlength="40">
         </label>
         <label class="fld">
           <span>Tag</span>
@@ -134,6 +136,7 @@ async function submit() {
       </div>
       <p class="hint">Tag = the 2–4 char clan tag you wear in QW (e.g. <strong>SCAT</strong>).</p>
 
+      <template v-if="!solo">
       <label class="fld">
         <span>Teammate nickname</span>
         <input v-model="mateQuery" placeholder="Start typing your teammate's QW name…">
@@ -146,6 +149,7 @@ async function submit() {
       </div>
       <div v-if="mate" class="picked">✓ Teammate: <strong>{{ mate.display }}</strong></div>
       <div v-else-if="mateQuery && !results.length && !searching" class="hint">No exact match — submit anyway, an admin can fix it.</div>
+      </template>
 
       <label class="fld">
         <span>Team logo <span class="muted">(optional)</span></span>

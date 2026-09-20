@@ -7,6 +7,7 @@
 const { user, loggedIn, ready, authHeader, fetchMe, login } = useAuth()
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
+const { ladders, current: pickedLadder, loadList, switchTo, words: lw, ladderSlug } = useLadders()
 
 const ladder = ref(null)
 const teams = ref([])
@@ -57,8 +58,7 @@ async function load() {
   loading.value = true
   err.value = ''
   try {
-    const list = await $fetch(`${base}/api/ladder`, { query: { _: Date.now() } })
-    ladder.value = (list.ladders || [])[0] || null
+    ladder.value = await loadList()
     if (ladder.value) {
       const d = await $fetch(`${base}/api/ladder/${ladder.value.id}`, { query: { _: Date.now() } })
       teams.value = d.teams || []
@@ -256,6 +256,9 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
 <template>
   <div class="wrap">
     <h1>KOTH Ladder — Admin</h1>
+    <div v-if="ladders.length > 1" class="lswitch">
+      <button v-for="l in ladders" :key="l.id" class="lbtn" :class="{ on: ladder && l.id === ladder.id }" @click="switchTo(l); load()">{{ ladderSlug(l).toUpperCase() }} <span class="lname">{{ l.name }}</span></button>
+    </div>
 
     <ClientOnly>
       <div v-if="!ready" class="muted pad">Loading…</div>
@@ -429,7 +432,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
         <div v-if="autoDetected" class="auto-banner">🤖 Auto-detected Bo3 — review the pre-ticked maps and confirm. Untick a warm-up / extra game if needed.</div>
         <div v-if="candLoading" class="muted small pad">Finding played games…</div>
         <div v-else-if="!candGames.length" class="muted small" style="padding:8px 0;">
-          No ingested 2on2 games found for these two teams yet. They appear here ~within the 2h sync after the match is played (rosters must be linked to profiles).
+          No ingested {{ ladder?.mode || '2on2' }} games found for these two sides yet. They appear here ~within the 2h sync after the match is played (rosters must be linked to profiles).
         </div>
         <div v-else class="cand-list">
           <label v-for="g in candGames" :key="g.hub_game_id" class="cand" :class="{ on: g.picked }">
@@ -531,4 +534,9 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .shot-thumb:hover { border-color: var(--accent); }
 .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 200; cursor: zoom-out; padding: 30px; }
 .lightbox img { max-width: 95vw; max-height: 92vh; border-radius: 8px; }
+.lswitch { display: inline-flex; gap: 4px; padding: 4px; margin: 0 0 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; }
+.lbtn { background: none; border: 0; color: var(--fg-2); font-family: inherit; font-weight: 800; font-size: 13px; padding: 7px 14px; border-radius: 999px; cursor: pointer; min-height: 34px; }
+.lbtn .lname { font-weight: 500; font-size: 11px; color: var(--fg-3); }
+.lbtn.on { background: var(--accent); color: #140a03; }
+.lbtn.on .lname { color: rgba(20,10,3,0.7); }
 </style>
