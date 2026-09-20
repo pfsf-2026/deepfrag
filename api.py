@@ -4722,7 +4722,8 @@ FOURS_ADV_COLS = ["hub_game_id", "canonical_id", "played_at", "map", "team", "wi
                   "rockets_fired", "rl_dmg", "rl_connect_pct",
                   "fights", "started", "started_behind", "started_ahead", "even_w", "even_n", "behind_w", "behind_n", "ahead_w", "ahead_n",
                   "teamkills", "tk_launcher", "team_dmg",
-                  "plus_minus", "expected", "above_avg", "above_repl", "agi", "model_version"]
+                  "plus_minus", "expected", "above_avg", "above_repl", "agi",
+                  "game_ra", "game_ya", "game_mh", "game_quad", "model_version"]
 
 
 def _fours_adv_ensure(cur):
@@ -4738,6 +4739,9 @@ def _fours_adv_ensure(cur):
         plus_minus REAL, expected REAL, above_avg REAL, above_repl REAL, agi REAL, model_version INT NOT NULL DEFAULT 1,
         PRIMARY KEY (hub_game_id, canonical_id))""")
     cur.execute("CREATE INDEX IF NOT EXISTS fours_adv_cid ON fours_advanced_stats (canonical_id, played_at DESC)")
+    # 2026-09-20: per-game item totals so item levers can be SHARES (map-fair: dm2 has two reds)
+    for c in ("game_ra", "game_ya", "game_mh", "game_quad"):
+        cur.execute(f"ALTER TABLE fours_advanced_stats ADD COLUMN IF NOT EXISTS {c} INT")
 
 
 @app.post("/api/admin/fours-advanced/load")
@@ -4835,7 +4839,10 @@ def coaching_fours_levels(response: Response):
         "levers": levers, "outcomes": CF.OUTCOMES,
         "rules": {"level_window_games": CF.LEVEL_WINDOW, "min_games": CF.LEVEL_MIN_GAMES, "focus_window_games": CF.FOCUS_WINDOW_GAMES,
                   "min_split": CF.MIN_SPLIT, "active_days": CF.ACTIVE_DAYS, "ra_excluded_maps": sorted(CF.RA_EXCLUDED_MAPS)},
-        "pool": ({"n": pool["n"], "levels": {str(k): {"n": v["n"], "median": v["median"], "line": v.get("line", {})} for k, v in pool["levels"].items()}} if pool else None),
+        "map_items": CF.MAP_ITEMS, "map_notes": CF.MAP_NOTES,
+        "pool": ({"n": pool["n"], "levels": {str(k): {"n": v["n"], "median": v["median"], "line": v.get("line", {})} for k, v in pool["levels"].items()},
+                  "maps": {mp: {"n": mv["n"], "levels": {str(k): {"n": v["n"], "median": v["median"], "line": v.get("line", {})} for k, v in mv["levels"].items()}}
+                           for mp, mv in (pool.get("maps") or {}).items()}} if pool else None),
     }
 
 

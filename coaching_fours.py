@@ -44,6 +44,32 @@ ACTIVE_DAYS = 365          # pool for level medians: 15+ games in the last year
 FOCUS_WINDOW_GAMES = 10    # a prescription is graded after this many games
 MIN_SPLIT = 5              # wins AND losses needed for the self baseline
 RA_EXCLUDED_MAPS = {"e1m2"}
+MAP_MIN_GAMES = 8          # games on a map before the per-map card / baselines use it
+
+# Armor and power-up inventory per map (counted from the demos, 2026-09-20). Raw counts
+# are not comparable across maps — dm2 has two reds and three yellows — so the coach uses
+# SHARES for items: your takes divided by everything taken in that game (even split = 1/8).
+MAP_ITEMS = {
+    "dm3":     {"ra": 1, "ya": 1, "mh": 3, "quad": 1, "pent": 1, "ring": 1, "rl": 1, "lg": 1},
+    "dm2":     {"ra": 2, "ya": 3, "mh": 2, "quad": 1, "rl": 2},
+    "e1m2":    {"ra": 0, "ya": 1, "ga": 1, "mh": 1, "quad": 1, "rl": 1},
+    "schloss": {"ra": 1, "ya": 2, "mh": 2, "quad": 1, "pent": 1, "ring": 1, "rl": 2},
+}
+# Map-specific drill notes, shown on the per-map "work on this" card when the lever matches.
+MAP_NOTES = {
+    "dm3":     {"ra_share": "One red, 20-second cycle, in the LG room: the RA and the LG are the same territory. Hold the room, not the item.",
+                "quad_pg": "Quad sits below the RA/LG platform: a stacked LG carrier can cover the door from above.",
+                "even_win_pct": "The LG decides dm3's even fights; take the shaft when it is up and do not duel an LG with a rocket launcher in the open."},
+    "dm2":     {"ra_share": "Two reds: low RL and the tele red. You should never be under 12 percent here; the team that holds both locks the map.",
+                "ya_share": "Three yellows on dm2, so stack is cheap: route every respawn through one before you rejoin.",
+                "quad_pg": "Quad is in the water room next to big; leave low RL at 24 on the clock and come through the tunnel."},
+    "e1m2":    {"ya_share": "No red on e1m2. The single yellow on a 20-second cycle is the armor game; the team that owns it owns the map.",
+                "deaths_pm": "Naked deaths are the e1m2 disease: armor or mega before the RL, every spawn.",
+                "quad_pg": "Quad is next to the GL room and is the strongest item on the map; be there stacked at spawn or do not be there."},
+    "schloss": {"ra_share": "One red in the cellar under RA window. Six or more reds a game is the line between your good games and your bad ones here.",
+                "quad_pg": "Quad is two to three seconds from the red area at speed; leave red or tower at 24 on the timer with a yellow on.",
+                "ra_on_timer_pct": "The cellar red is contested from the window and the low door; arrive three seconds early with a rocket ready."},
+}
 
 LEVELS = [
     {"level": 1, "name": "Survive", "lo": None, "hi": -30, "blurb": "Stop feeding. Get on the map: reds, damage, live longer."},
@@ -60,7 +86,8 @@ LEVELS = [
 # across L1..L5 and is the L2 gate instead. Teamkills per game RISE with level (the
 # good players are the stacked ones in the pack), so they are charged per event in
 # +/- but never ranked as a player lever.
-GATES = {1: ["ra_pg", "dmg_pm"], 2: ["deaths_pm", "even_win_pct"], 3: ["quad_pg", "ra_pg"], 4: ["adj_kills_pm", "sddr"], 5: []}
+# 2026-09-20 (Peter): reds are a SHARE of the game's reds, so one-red and two-red maps count the same.
+GATES = {1: ["ra_share", "dmg_pm"], 2: ["deaths_pm", "even_win_pct"], 3: ["quad_pg", "ra_share"], 4: ["adj_kills_pm", "sddr"], 5: []}
 
 # The lever library. `levels` = levels at which the lever is coached.
 LEVERS = {
@@ -74,13 +101,19 @@ LEVERS = {
     "dmg_pm": {"label": "Damage per minute", "higher_better": True, "fmt": "num0", "levels": {1, 2},
                "why": "Damage is the shot attempts under the frags. Low damage per minute means you are not in the fights at all.",
                "drill": "Fire at range with the RL before you close: two rockets at the doorway beat one point-blank. Keep the LG on dm3 and shoot the walls they hide behind."},
-    "ra_pg": {"label": "Red armors per game", "higher_better": True, "fmt": "num1", "levels": {1, 2, 3, 4}, "map_excl": RA_EXCLUDED_MAPS,
+    "ra_share": {"label": "Share of the reds", "higher_better": True, "fmt": "pct", "levels": {1, 2, 3, 4}, "map_excl": RA_EXCLUDED_MAPS,
+                 "why": "Your cut of every red armor taken in the game, so a one-red map and a two-red map count the same. An even split among eight players is 12.5 percent; the top group takes 18 to 20.",
+                 "drill": "Know the cycle, 20 seconds after the last take. Be moving toward it at 15, on it at 18. If a teammate has it, take the yellow instead and say so."},
+    "ya_share": {"label": "Share of the yellows", "higher_better": True, "fmt": "pct", "levels": {1, 2, 3},
+                 "why": "Your cut of the yellows taken in the game. Yellows are the cheap stack, 0.6 of a red in the win model, and on e1m2 the only armor there is.",
+                 "drill": "Route every respawn through a yellow before you rejoin. Say 'yellow' when you take it so the next man goes elsewhere."},
+    "ra_pg": {"label": "Red armors per game", "higher_better": True, "fmt": "num1", "levels": set(), "map_excl": RA_EXCLUDED_MAPS,   # display; the share is the lever
               "why": "The corpus says timing does not separate players, count does. The top group takes nine or ten reds a game, the bottom four to six.",
               "drill": "Learn the red cycle on dm3 and schloss: be moving toward it at 20 s, on it at 25. If a teammate has it, take YA instead and call it."},
     "ra_on_timer_pct": {"label": "Reds taken on the timer", "higher_better": True, "fmt": "pct", "levels": {3, 4, 5}, "map_excl": RA_EXCLUDED_MAPS,
                         "why": "Late reds are contested reds. Everyone is near 60 percent; above it means you are running the cycle rather than reacting to it.",
                         "drill": "Say the red timer out loud when you take it. Arrive three seconds early with a rocket ready for the doorway."},
-    "ya_pg": {"label": "Yellow armors per game", "higher_better": True, "fmt": "num1", "levels": {1, 2, 3},
+    "ya_pg": {"label": "Yellow armors per game", "higher_better": True, "fmt": "num1", "levels": set(),   # display; the share is the lever
               "why": "Yellows are the cheap stack: 0.6 of a red in the win model and nobody fights you for them.",
               "drill": "Route every respawn through a yellow before you rejoin. On e1m2 the yellows are the whole armor game."},
     "sddr": {"label": "Stacked damage ratio", "higher_better": True, "fmt": "num2", "levels": {3, 4, 5},
@@ -141,6 +174,7 @@ def metrics(rows: list[dict]) -> dict:
     ra_rows = [r for r in rows if (r.get("map") or "") not in RA_EXCLUDED_MAPS]
     ra = _sum(ra_rows, "take_ra"); ra_t = _sum(ra_rows, "ra_on_timer")
     st_g = _sum(rows, "stacked_given"); st_t = _sum(rows, "stacked_taken")
+    g_ra = _sum(rows, "game_ra"); g_ya = _sum(rows, "game_ya"); g_mh = _sum(rows, "game_mh"); g_quad = _sum(rows, "game_quad")
     even_n = _sum(rows, "even_n"); started = _sum(rows, "started")
     qr = _sum(rows, "quad_runs"); qfull = _sum(rows, "quad_full_runs")
     rockets = _sum(rows, "rockets_fired")
@@ -155,6 +189,8 @@ def metrics(rows: list[dict]) -> dict:
         "spawn_death_pct": ratio(_sum(rows, "spawn_deaths"), deaths),
         "dmg_pm": ratio(_sum(rows, "dmg"), mins),
         "ra_pg": (ra / len(ra_rows)) if ra_rows else None, "ra_on_timer_pct": ratio(ra_t, ra),
+        "ra_share": ratio(_sum(ra_rows, "take_ra"), g_ra), "ya_share": ratio(_sum(rows, "take_ya"), g_ya),
+        "mh_share": ratio(_sum(rows, "take_mh"), g_mh), "quad_share": ratio(_sum(rows, "take_quad"), g_quad),
         "ya_pg": _sum(rows, "take_ya") / games,
         "sddr": ratio(st_g, st_t), "adj_kills_pm": ratio(_sum(rows, "adj_kills"), mins),
         "even_win_pct": ratio(_sum(rows, "even_w"), even_n), "even_n": int(even_n),
@@ -193,6 +229,29 @@ def pool_baselines(players: dict[str, list[dict]]) -> dict:
         m["level"] = level_for(m["above_avg"], m["games"])["level"]
         per[cid] = m
     keys = list(LEVERS) + list(OUTCOMES)
+    levels = _level_tables(per, keys)
+    # per-map baselines: each player's metrics on that map (last LEVEL_WINDOW games there, MAP_MIN_GAMES minimum)
+    maps = {}
+    for mp in MAP_ITEMS:
+        perm = {}
+        for cid, rows in players.items():
+            mr = [r for r in rows if r.get("map") == mp][-LEVEL_WINDOW:]
+            if len(mr) < MAP_MIN_GAMES or cid not in per:
+                continue
+            m = metrics(mr); m["level"] = per[cid]["level"]; perm[cid] = m
+        if len(perm) >= 6:
+            maps[mp] = {"n": len(perm), "levels": _level_tables(perm, keys)}
+    sd = {}
+    for k in keys:
+        vals = [m[k] for m in per.values() if m.get(k) is not None]
+        sd[k] = statistics.pstdev(vals) if len(vals) >= 3 and statistics.pstdev(vals) > 0 else None
+    return {"levels": levels, "sd": sd, "n": len(per), "maps": maps}
+
+
+def _level_tables(per: dict, keys: list) -> dict:
+    """{lvl: {'n', 'median': {k: v}, 'line': {k: bar}}} for a set of per-player metric dicts
+    (each carrying 'level' and 'above_avg'). The line is the OLS value of each lever at the
+    next band's lower edge, clamped between own median and next median."""
     levels = {}
     for lvl in range(1, 6):
         grp = [m for m in per.values() if m["level"] == lvl]
@@ -201,12 +260,7 @@ def pool_baselines(players: dict[str, list[dict]]) -> dict:
             vals = [m[k] for m in grp if m.get(k) is not None]
             med[k] = statistics.median(vals) if vals else None
         levels[lvl] = {"n": len(grp), "median": med}
-    sd = {}
-    for k in keys:
-        vals = [m[k] for m in per.values() if m.get(k) is not None]
-        sd[k] = statistics.pstdev(vals) if len(vals) >= 3 and statistics.pstdev(vals) > 0 else None
-    # Promotion-line bars: OLS of each lever on above-average across the pool, evaluated
-    # at the lower edge of the next band; clamped between own median and next median.
+    # Promotion-line bars
     for L in LEVELS:
         lvl = L["level"]; nxt = next((x for x in LEVELS if x["level"] == lvl + 1), None)
         line = {}
@@ -227,12 +281,12 @@ def pool_baselines(players: dict[str, list[dict]]) -> dict:
                     bar = nxt_med
                 hb = LEVERS[k]["higher_better"]
                 if bar is not None and own_med is not None:
-                    bar = max(bar, own_med) if hb else min(bar, own_med)      # never easier than your own level
+                    bar = max(bar, own_med) if hb else min(bar, own_med)
                 if bar is not None and nxt_med is not None:
-                    bar = min(bar, nxt_med) if hb else max(bar, nxt_med)      # never harder than the next level's median
+                    bar = min(bar, nxt_med) if hb else max(bar, nxt_med)
                 line[k] = bar
         levels[lvl]["line"] = line
-    return {"levels": levels, "sd": sd, "n": len(per)}
+    return levels
 
 
 def gate_status(m: dict, level: int, base: dict) -> list[dict]:
@@ -262,21 +316,33 @@ def _fmt(v, kind):
     return f"{v:.2f}"
 
 
-def rank_levers(rows: list[dict], level: int, base: dict) -> dict:
-    """Rank the levers active at this level. Score = how far short of the next
-    level's median (in pool SDs) + half the own win/loss split (also in SDs).
-    Returns {'levers': [...], 'self_split': bool, 'all': m}."""
+def _tables(base: dict, level: int, map_: str | None):
+    """(own median, line, next median) dicts — per-map when that map has a baseline
+    with enough players at this level, else pooled."""
+    src = base["levels"]
+    if map_ and base.get("maps", {}).get(map_):
+        mt = base["maps"][map_]["levels"]
+        if mt.get(level, {}).get("n", 0) >= 4 and mt.get(min(level + 1, 5), {}).get("n", 0) >= 2:
+            src = mt
+    own = src.get(level, {}).get("median", {}) if level else {}
+    nxt_lvl = min(level + 1, 5) if level else 0
+    nxt_med = src.get(nxt_lvl, {}).get("median", {}) if level else {}
+    nxt = src.get(level, {}).get("line", {}) if level and level < 5 else nxt_med
+    return own, nxt, nxt_med, (src is not base["levels"])
+
+
+def rank_levers(rows: list[dict], level: int, base: dict, map_: str | None = None) -> dict:
+    """Rank the levers active at this level. Score = distance to the promotion line
+    (in pool SDs) + a capped, discounted own win/loss split + a gate bonus.
+    `map_` ranks against that map's baselines when they exist.
+    Returns {'levers': [...], 'self_split': bool, 'all': m, 'per_map': bool}."""
     m = metrics(rows)
     if not m:
-        return {"levers": [], "self_split": False, "all": {}}
+        return {"levers": [], "self_split": False, "all": {}, "per_map": False}
     wins = [r for r in rows if r.get("win")]; losses = [r for r in rows if not r.get("win")]
     split = len(wins) >= MIN_SPLIT and len(losses) >= MIN_SPLIT
     mw = metrics(wins) if split else {}; ml = metrics(losses) if split else {}
-    own = base["levels"].get(level, {}).get("median", {}) if level else {}
-    nxt_lvl = min(level + 1, 5) if level else 0
-    nxt_med = base["levels"].get(nxt_lvl, {}).get("median", {}) if level else {}
-    # target = the promotion-line bar; at L5 there is no line, so hold the L5 median
-    nxt = base["levels"].get(level, {}).get("line", {}) if level and level < 5 else nxt_med
+    own, nxt, nxt_med, per_map = _tables(base, level, map_)
     active = [k for k, L in LEVERS.items() if (level in L["levels"]) or (k in GATES.get(level, []))]
     out = []
     for k in active:
@@ -299,6 +365,7 @@ def rank_levers(rows: list[dict], level: int, base: dict) -> dict:
         if k in ("started_behind_pct",) and m.get("started", 0) < 30: n_ok = False
         if k in ("quad_died_pct", "quad_frags_per_full") and m.get("quad_runs", 0) < 8: n_ok = False
         if k in ("ra_on_timer_pct",) and (m.get("ra_pg") or 0) * m["games"] < 30: n_ok = False
+        if k in ("ra_share", "ya_share") and m.get(k) is None: n_ok = False
         if not n_ok:
             continue
         out.append({
@@ -311,7 +378,7 @@ def rank_levers(rows: list[dict], level: int, base: dict) -> dict:
             "why": L["why"], "drill": L["drill"],
         })
     out.sort(key=lambda x: (-x["score"], not x["is_gate"]))
-    return {"levers": out, "self_split": split, "all": m, "wins": mw, "losses": ml}
+    return {"levers": out, "self_split": split, "all": m, "wins": mw, "losses": ml, "per_map": per_map}
 
 
 # ── prescriptions ────────────────────────────────────────────────────────────
@@ -420,6 +487,36 @@ def game_cards(rows: list[dict], n: int = 8) -> list[dict]:
 
 
 # ── the report ───────────────────────────────────────────────────────────────
+def map_cards(rows: list[dict], level: int, base: dict, n_cards: int = 4) -> list[dict]:
+    """One card per map the player has MAP_MIN_GAMES+ games on (last LEVEL_WINDOW on that
+    map): his numbers there, the map's level baseline, and the single "work on this" lever
+    ranked against that map's promotion line. The overall focus stays one thing; these say
+    what that level's syllabus looks like on each map."""
+    if not level:
+        return []
+    out = []
+    for mp in MAP_ITEMS:
+        mr = [r for r in rows if r.get("map") == mp][-LEVEL_WINDOW:]
+        if len(mr) < MAP_MIN_GAMES:
+            continue
+        rk = rank_levers(mr, level, base, map_=mp)
+        m = rk["all"]
+        top = rk["levers"][0] if rk["levers"] else None
+        lv_eq = level_for(m.get("above_avg"), m.get("games", 0))
+        card = {"map": mp, "games": m.get("games"), "wins": m.get("wins"), "losses": m.get("losses"),
+                "above_avg_pg": round(m["above_avg"], 1), "plays_like": lv_eq["level"] if lv_eq["placed"] else None,
+                "items": MAP_ITEMS[mp], "per_map_baseline": rk["per_map"],
+                "levers": rk["levers"][:4],
+                "work_on": None}
+        if top:
+            note = MAP_NOTES.get(mp, {}).get(top["key"])
+            card["work_on"] = {**{k: top[k] for k in ("key", "label", "you", "win", "loss", "level_median", "target", "next_median", "is_gate", "why", "drill")},
+                               "map_note": note}
+        out.append(card)
+    out.sort(key=lambda c: -c["games"])
+    return out[:n_cards]
+
+
 def build_report(rows: list[dict], base: dict, prev: dict | None, display: str) -> dict:
     rows = sorted(rows, key=lambda r: str(r.get("played_at") or ""))
     win_rows = rows[-LEVEL_WINDOW:]
@@ -440,5 +537,7 @@ def build_report(rows: list[dict], base: dict, prev: dict | None, display: str) 
         "levers": ranked["levers"][:6], "self_split": ranked["self_split"],
         "previous": graded, "focus": focus,
         "games": game_cards(rows),
-        "pool": {"n": base.get("n"), "levels": {k: v["n"] for k, v in base["levels"].items()}},
+        "maps": map_cards(rows, lvl["level"], base) if lvl["placed"] else [],
+        "pool": {"n": base.get("n"), "levels": {k: v["n"] for k, v in base["levels"].items()},
+                 "maps": {mp: v["n"] for mp, v in base.get("maps", {}).items()}},
     }

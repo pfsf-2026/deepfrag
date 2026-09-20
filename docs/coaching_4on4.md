@@ -119,3 +119,24 @@ with them get demoted to display-only, the way chained deaths already was.
 `/levels` in the app renders the level system from `GET /api/coaching/fours/levels`, which serves
 `LEVELS`, `GATES`, the lever library and the live pool medians straight from `coaching_fours.py`,
 so the page cannot drift from the engine. Linked from the gates block on the Coach tab.
+
+## Maps are not the same game (2026-09-20)
+
+Peter: schloss and dm3 have one red, dm2 has two, e1m2 none, so raw item counts are not comparable
+across maps and the pooled level medians were unfair to one-red maps.
+
+- **Inventory** (`MAP_ITEMS`, counted from demos): dm3 1 RA / 1 YA / 3 MH / LG; dm2 2 RA / 3 YA / 2 MH;
+  schloss 1 RA / 2 YA / 2 MH; e1m2 0 RA / 1 YA / 1 GA / 1 MH. Nearly every spawn is taken (47/47 reds
+  on dm3, 97/98 on dm2), so a share of the game's takes is a share of the spawns.
+- **Item levers are shares.** `ra_share` = your reds / all reds taken in that game (e1m2 excluded),
+  `ya_share` likewise; an even split of eight is 12.5%. The red share separates levels as cleanly as
+  the count did (L1 5% → L5 17%) and is now the L1 and L3 red gate; `ra_pg` / `ya_pg` stay as display.
+  Needs `game_ra/game_ya/game_mh/game_quad` on `fours_advanced_stats` (per-game totals, pushed by the loader).
+- **Per-map baselines.** `pool_baselines` also computes medians and promotion lines per map, from each
+  player's last 40 games on that map (8-game minimum, 6 players minimum per map). The coach's
+  **per-map cards** (`map_cards`) rank the player's levers against that map's line when the map has
+  ≥4 players at his level, else the pooled line, and show one "work on this" per map with a
+  map-specific note (`MAP_NOTES`) where one exists. The overall focus stays single; the cards are
+  the syllabus as it looks on each map. `plays_like` is the level band of the player's per-map
+  above-average, for context only.
+- Per-map medians and L3 lines are on `/levels` (map picker) and `GET /api/coaching/fours/levels` (`pool.maps`).

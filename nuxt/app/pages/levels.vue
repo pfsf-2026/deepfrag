@@ -50,6 +50,13 @@ function leversAt(level) {
   })
 }
 const displayOnly = computed(() => Object.values(levers.value).filter(l => !l.levels.length))
+const mapItems = computed(() => data.value?.map_items || {})
+const mapPool = computed(() => pool.value?.maps || {})
+const mapPick = ref('')
+function medMap(mp, level, key) { return fmtv(key, mapPool.value?.[mp]?.levels?.[String(level)]?.median?.[key]) }
+function lineMap(mp, level, key) { return fmtv(key, mapPool.value?.[mp]?.levels?.[String(level)]?.line?.[key]) }
+const INV = { ra: 'RA', ya: 'YA', ga: 'GA', mh: 'MH', quad: 'Quad', pent: 'Pent', ring: 'Ring', rl: 'RL', lg: 'LG' }
+function inv(items) { return Object.entries(items || {}).filter(([k, v]) => v && INV[k]).map(([k, v]) => `${v} ${INV[k]}`).join(' · ') }
 </script>
 
 <template>
@@ -159,6 +166,34 @@ const displayOnly = computed(() => Object.values(levers.value).filter(l => !l.le
     </section>
 
     <section class="card">
+      <h2>Maps are not the same game</h2>
+      <p>
+        dm2 has two reds and three yellows, schloss and dm3 one red each, e1m2 no red at all. So item levers are <strong>shares</strong>:
+        your take of everything that item taken in the game, where an even split among eight is 12.5%. And each map keeps its own
+        baselines: the coach's per-map "work on this" cards rank your levers against that map's promotion line whenever enough players
+        have a history there.
+      </p>
+      <div class="mapinv">
+        <div v-for="(items, mp) in mapItems" :key="mp" class="mi"><b>{{ mp }}</b><span class="muted small">{{ inv(items) }}</span></div>
+      </div>
+      <div v-if="Object.keys(mapPool).length" class="mappick">
+        <button v-for="(v, mp) in mapPool" :key="mp" class="mbtn" :class="{ on: mapPick === mp }" @click="mapPick = mapPick === mp ? '' : mp">{{ mp }} <span class="muted small">{{ v.n }} players</span></button>
+      </div>
+      <div v-if="mapPick" class="tbl">
+        <table>
+          <thead><tr><th>{{ mapPick }} · lever</th><th v-for="L in levels" :key="L.level" class="num" :style="{ color: COLORS[L.level] }">L{{ L.level }}</th><th class="num">L3 line</th></tr></thead>
+          <tbody>
+            <tr v-for="lv in Object.values(levers).filter(x => x.levels.length)" :key="lv.key">
+              <td>{{ lv.label }}</td>
+              <td v-for="L in levels" :key="L.level" class="num mono">{{ medMap(mapPick, L.level, lv.key) }}</td>
+              <td class="num mono"><b>{{ lineMap(mapPick, 3, lv.key) }}</b></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>Live medians by level</h2>
       <p class="muted small">From the active pool ({{ pool?.n ?? '—' }} players with {{ rules.min_games }}+ games in the last year), each on their last {{ rules.level_window_games }} fours. Your targets are the promotion line, which sits between your column and the next one.</p>
       <div class="tbl">
@@ -222,4 +257,9 @@ td.num, th.num { text-align: right; }
 ul { padding-left: 20px; margin: 0 0 10px; } li { margin: 4px 0; line-height: 1.5; }
 .foot { margin-top: 18px; }
 @media (max-width: 480px) { .lmed { margin-left: 0; } h1 { font-size: 24px; } }
+.mapinv { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin: 6px 0 12px; }
+.mi { display: flex; flex-direction: column; gap: 2px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.mappick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.mbtn { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg-2); font-family: inherit; font-weight: 700; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer; min-height: 32px; }
+.mbtn.on { background: var(--accent); color: #140a03; }
 </style>

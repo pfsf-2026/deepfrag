@@ -26,6 +26,9 @@ const focus = computed(() => report.value?.focus || null)
 const prev = computed(() => report.value?.previous || null)
 const levers = computed(() => report.value?.levers || [])
 const games = computed(() => report.value?.games || [])
+const maps = computed(() => report.value?.maps || [])
+const INV = { ra: 'RA', ya: 'YA', ga: 'GA', mh: 'MH', quad: 'Q', pent: 'P', ring: 'R', rl: 'RL', lg: 'LG' }
+function inv(items) { return Object.entries(items || {}).filter(([k, v]) => v && INV[k]).map(([k, v]) => `${v}×${INV[k]}`).join(' ') }
 const LEVEL_COLORS = { 1: '#ff5d6c', 2: '#e0a33c', 3: '#c9a66b', 4: '#38bdf8', 5: '#34d67a' }
 const levelColor = computed(() => LEVEL_COLORS[lvl.value?.level] || 'var(--fg-3)')
 const VERDICT = { hit: ['✅', 'Hit'], improved: ['▲', 'Improving'], flat: ['▬', 'No change'], worse: ['▼', 'Went the wrong way'], pending: ['◍', 'In progress'] }
@@ -90,6 +93,27 @@ function md(t) {
           <p class="why">{{ focus.why }}</p>
           <p class="drill"><b>Drill:</b> {{ focus.drill }}</p>
         </div>
+      </section>
+
+      <!-- per-map: what this level's syllabus looks like on each map -->
+      <section v-if="maps.length" class="sec">
+        <div class="sectitle">🗺️ Work on this, by map</div>
+        <div class="mcards">
+          <div v-for="c in maps" :key="c.map" class="mcard">
+            <div class="mhead">
+              <span class="mmap">{{ c.map }}</span>
+              <span class="muted small">{{ c.games }} games · {{ c.wins }}-{{ c.losses }} · {{ c.above_avg_pg > 0 ? '+' : '' }}{{ c.above_avg_pg }} above avg<span v-if="c.plays_like && c.plays_like !== lvl.level"> · plays like L{{ c.plays_like }}</span></span>
+              <span class="minv muted small" :title="'items on this map'">{{ inv(c.items) }}</span>
+            </div>
+            <template v-if="c.work_on">
+              <div class="mwork"><span class="mlabel">{{ c.work_on.label }}</span><span v-if="c.work_on.is_gate" class="gtag">gate</span>
+                <span class="mnums mono"><b>{{ c.work_on.you }}</b> → {{ c.work_on.target }}<span class="muted"> · L{{ lvl.level }} here {{ c.work_on.level_median }}</span></span></div>
+              <p class="mnote">{{ c.work_on.map_note || c.work_on.drill }}</p>
+              <div class="mthen muted small">then: <span v-for="(l, i) in c.levers.slice(1, 3)" :key="l.key">{{ i ? ' · ' : '' }}{{ l.label }} {{ l.you }}→{{ l.target }}</span></div>
+            </template>
+          </div>
+        </div>
+        <div class="muted small">Item levers are shares of what the whole game took, so a one-red map and a two-red map count the same. Targets are that map's promotion line when enough players have a baseline there. <NuxtLink to="/levels">how levels work →</NuxtLink></div>
       </section>
 
       <!-- narration -->
@@ -185,4 +209,14 @@ tr.gate td:first-child { color: var(--fg); }
 .ex { font-size: 11px; border-radius: 6px; padding: 2px 7px; background: var(--panel-2); }
 .ex.good { color: #34d67a; } .ex.bad { color: #ff5d6c; }
 @media (max-width: 760px) { .lvlcard { grid-template-columns: auto minmax(0, 1fr); } .gates { grid-column: 1 / -1; } }
+.mcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.mcard { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mhead { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.mmap { font-weight: 800; font-size: 15px; }
+.minv { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; white-space: nowrap; }
+.mwork { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.mlabel { font-weight: 700; color: var(--accent); }
+.mnums { font-size: 13px; font-variant-numeric: tabular-nums; margin-left: auto; }
+.mnote { margin: 0; font-size: 13px; line-height: 1.5; color: var(--fg-2); }
+.mono { font-family: 'JetBrains Mono', monospace; }
 </style>

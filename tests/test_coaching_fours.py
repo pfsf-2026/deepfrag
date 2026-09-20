@@ -17,7 +17,8 @@ def row(i, *, above, deaths=50, dmg=8000, ra=6, quad=2, adj=40, win=None, mapnam
             "stacked_given": sg, "stacked_taken": st, "spawn_deaths": 6, "chained_real": chained, "take_ra": ra, "take_ya": 8, "take_mh": 2,
             "take_quad": quad, "ra_on_timer": ra * 0.6, "quad_runs": quad, "quad_full_runs": max(quad - 1, 0), "quad_frags_full": 3.5 * max(quad - 1, 0),
             "quad_died": quad * 0.4, "rockets_fired": 100, "rl_dmg": 3500, "fights": 40, "started": started[0], "started_behind": started[1],
-            "even_w": even[0], "even_n": even[1], "teamkills": 2, "team_dmg": 300, "plus_minus": above, "above_avg": above, "agi": 1.0 + above / 100}
+            "even_w": even[0], "even_n": even[1], "teamkills": 2, "team_dmg": 300, "plus_minus": above, "above_avg": above, "agi": 1.0 + above / 100,
+            "game_ra": 48 if mapname != "e1m2" else 0, "game_ya": 60, "game_mh": 40, "game_quad": 20}
 
 
 def player(n, above, **kw):
@@ -41,7 +42,10 @@ def pool():
     k = 0
     for above, kw in specs:
         for j in range(4):
-            P[f"p{k}"] = player(30, above, **kw); k += 1
+            rows = player(40, above, **kw)
+            for i, r in enumerate(rows):
+                r["map"] = ["dm3", "dm2", "schloss", "e1m2"][i % 4]
+            P[f"p{k}"] = rows; k += 1
     return P
 
 
@@ -90,17 +94,46 @@ def _():
     assert top["short_sd"] > 0 and top["target"] != "—"
 
 
+@check("shares: reds are a share of the game's reds, e1m2 excluded; per-map baselines exist for maps with players")
+def _():
+    rows = [row(0, above=0, ra=8, mapname="dm3"), row(1, above=0, ra=6, mapname="dm2"), row(2, above=0, ra=0, mapname="e1m2")]
+    m = C.metrics(rows)
+    assert abs(m["ra_share"] - 14 / 96) < 1e-9, m["ra_share"]          # 8+6 of two games' 48 each; e1m2 game excluded
+    assert abs(m["ya_share"] - 24 / 180) < 1e-9
+    base = C.pool_baselines(pool())
+    assert "maps" in base and "dm3" in base["maps"] and base["maps"]["dm3"]["n"] >= 6, base.get("maps", {}).keys()
+    assert base["maps"]["dm3"]["levels"][3]["line"]["ra_share"] is not None
+
+
+@check("map cards: one per map with enough games, each with a work-on lever and a map note when available")
+def _():
+    base = C.pool_baselines(pool())
+    rows = player(28, 25, deaths=53, dmg=9800, ra=7.8, quad=3.4, adj=53, even=(12, 20), sg=8000)
+    for i, r in enumerate(rows):
+        r["map"] = ["dm3", "dm2", "e1m2", "schloss"][i % 4]
+    cards = C.map_cards(rows, 4, base)
+    assert not cards, [c["map"] for c in cards]            # 7 games per map is under MAP_MIN_GAMES
+    rows = player(40, 25, deaths=53, dmg=9800, ra=7.8, quad=3.4, adj=53, even=(12, 20), sg=8000)
+    for i, r in enumerate(rows):
+        r["map"] = ["dm3", "dm2"][i % 2]
+    cards = C.map_cards(rows, 4, base)
+    assert [c["map"] for c in cards] == ["dm3", "dm2"] or [c["map"] for c in cards] == ["dm2", "dm3"], cards
+    assert all(c["work_on"] and c["work_on"]["label"] for c in cards)
+    rep = C.build_report(rows, base, None, "t")
+    assert len(rep["maps"]) == 2 and rep["pool"]["maps"]
+
+
 @check("gates: L1 gates are reds and damage, judged against the promotion-line bar")
 def _():
     base = C.pool_baselines(pool())
     m = C.metrics(player(30, -45, deaths=72, dmg=4600, ra=2.5, quad=0.7, adj=25, even=(7, 20)))
     g = C.gate_status(m, 1, base)
-    assert [x["key"] for x in g] == ["ra_pg", "dmg_pm"] and all(x["passed"] is False for x in g), g
+    assert [x["key"] for x in g] == ["ra_share", "dmg_pm"] and all(x["passed"] is False for x in g), g
     m2 = C.metrics(player(30, -45, deaths=72, dmg=9000, ra=7, quad=0.7, adj=25, even=(7, 20)))
     assert all(x["passed"] for x in C.gate_status(m2, 1, base))
     # the bar is the line, and the line sits between own median and next median
     line = base["levels"][1]["line"]; own = base["levels"][1]["median"]; nxt = base["levels"][2]["median"]
-    for k in ("ra_pg", "dmg_pm"):
+    for k in ("ra_share", "dmg_pm"):
         assert own[k] <= line[k] <= nxt[k], (k, own[k], line[k], nxt[k])
         assert g[[x["key"] for x in g].index(k)]["target_raw"] == line[k]
     # lower-is-better lever: clamped the other way round
