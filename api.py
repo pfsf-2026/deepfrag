@@ -4723,7 +4723,8 @@ FOURS_ADV_COLS = ["hub_game_id", "canonical_id", "played_at", "map", "team", "wi
                   "fights", "started", "started_behind", "started_ahead", "even_w", "even_n", "behind_w", "behind_n", "ahead_w", "ahead_n",
                   "teamkills", "tk_launcher", "team_dmg",
                   "plus_minus", "expected", "above_avg", "above_repl", "agi",
-                  "game_ra", "game_ya", "game_mh", "game_quad", "model_version"]
+                  "game_ra", "game_ya", "game_mh", "game_quad",
+                  "quad_spawns", "quad_contests", "quad_contest_takes", "quad_contest_died", "model_version"]
 
 
 def _fours_adv_ensure(cur):
@@ -4740,7 +4741,7 @@ def _fours_adv_ensure(cur):
         PRIMARY KEY (hub_game_id, canonical_id))""")
     cur.execute("CREATE INDEX IF NOT EXISTS fours_adv_cid ON fours_advanced_stats (canonical_id, played_at DESC)")
     # 2026-09-20: per-game item totals so item levers can be SHARES (map-fair: dm2 has two reds)
-    for c in ("game_ra", "game_ya", "game_mh", "game_quad"):
+    for c in ("game_ra", "game_ya", "game_mh", "game_quad", "quad_spawns", "quad_contests", "quad_contest_takes", "quad_contest_died"):
         cur.execute(f"ALTER TABLE fours_advanced_stats ADD COLUMN IF NOT EXISTS {c} INT")
 
 

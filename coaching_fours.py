@@ -128,6 +128,9 @@ LEVERS = {
     "started_behind_pct": {"label": "Fights started from behind", "higher_better": False, "fmt": "pct", "levels": {2, 3, 4},
                            "why": "Share of the fights you opened while 60+ effective HP down. From there you win a fifth of them at best; against an equal player it is the whole margin.",
                            "drill": "Sixty behind means you do not shoot first. Back off, take an item, let them come to your teammate."},
+    "quad_contests_pg": {"label": "Quad spawns contested per game", "higher_better": True, "fmt": "num1", "levels": {3, 4},
+                         "why": "How many of the twenty quad spawns you were at: within 400 units at any point in the 10 seconds before it spawned, counting the times you died there trying. This is the attendance behind quads per game; conversion is the other half.",
+                         "drill": "Call the time when anyone takes it. Leave the armor room at 24 seconds on the timer with a yellow on and be at the door at 27. Five spawns a game contested is the L3 line; the top players contest eight."},
     "quad_pg": {"label": "Quads per game", "higher_better": True, "fmt": "num1", "levels": {3, 4},
                 "why": "Quad decides fours. Players who take three or more a game sit a full level above those who take two.",
                 "drill": "Own the quad timer: say the spawn time on comms, be there at 5 s before with stack, and have a teammate cover the door."},
@@ -177,6 +180,7 @@ def metrics(rows: list[dict]) -> dict:
     g_ra = _sum(rows, "game_ra"); g_ya = _sum(rows, "game_ya"); g_mh = _sum(rows, "game_mh"); g_quad = _sum(rows, "game_quad")
     even_n = _sum(rows, "even_n"); started = _sum(rows, "started")
     qr = _sum(rows, "quad_runs"); qfull = _sum(rows, "quad_full_runs")
+    qsp = _sum(rows, "quad_spawns"); qc = _sum(rows, "quad_contests")
     rockets = _sum(rows, "rockets_fired")
 
     def ratio(a, b, scale=1.0):
@@ -196,6 +200,10 @@ def metrics(rows: list[dict]) -> dict:
         "even_win_pct": ratio(_sum(rows, "even_w"), even_n), "even_n": int(even_n),
         "started_behind_pct": ratio(_sum(rows, "started_behind"), started), "started": int(started),
         "quad_pg": _sum(rows, "take_quad") / games,
+        # Peter's attendance rule (2026-09-20): within ~400u of the quad at any point in the 10 s before
+        # it spawned, deaths there included. Corpus rows carry the 10-s named-zone proxy from quad_contest_pass.py.
+        "quad_contests_pg": (qc / games) if qsp else None, "quad_contest_rate": ratio(qc, qsp),
+        "quad_conversion": ratio(_sum(rows, "quad_contest_takes"), qc), "quad_contest_died_pg": (_sum(rows, "quad_contest_died") / games) if qsp else None,
         "quad_died_pct": ratio(_sum(rows, "quad_died"), qr), "quad_runs": int(qr),
         "quad_frags_per_full": ratio(_sum(rows, "quad_frags_full"), qfull), "quad_full_runs": int(qfull),
         "tk_pg": _sum(rows, "teamkills") / games, "team_dmg_pg": _sum(rows, "team_dmg") / games,

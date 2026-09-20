@@ -26,7 +26,8 @@ COLS = ["hub_game_id", "canonical_id", "played_at", "map", "team", "win", "minut
         "fights", "started", "started_behind", "started_ahead", "even_w", "even_n", "behind_w", "behind_n", "ahead_w", "ahead_n",
         "teamkills", "tk_launcher", "team_dmg",
         "plus_minus", "expected", "above_avg", "above_repl", "agi",
-        "game_ra", "game_ya", "game_mh", "game_quad", "model_version"]
+        "game_ra", "game_ya", "game_mh", "game_quad",
+        "quad_spawns", "quad_contests", "quad_contest_takes", "quad_contest_died", "model_version"]
 
 Q = """
 WITH q AS (
@@ -41,7 +42,8 @@ SELECT a.game_id, a.cid, a.ts, a.map, a.team, a.win, a.minutes,
        f.fights, f.started, f.started_behind, f.started_ahead, f.even_w, f.even_n, f.behind_w, f.behind_n, f.ahead_w, f.ahead_n,
        f.teamkills, f.tk_launcher, f.team_dmg,
        a.plus_minus, w.expected, w.above_avg, w.above_repl, a.agi,
-       gt.g_ra, gt.g_ya, gt.g_mh, gt.g_quad
+       gt.g_ra, gt.g_ya, gt.g_mh, gt.g_quad,
+       pq.quad_spawns, pq.quad_contests, pq.quad_contest_takes, pq.quad_contest_died
 FROM player_agi a
 JOIN (SELECT game_id, SUM(take_ra) g_ra, SUM(take_ya) g_ya, SUM(take_mh) g_mh, SUM(take_quad) g_quad FROM players GROUP BY game_id) gt ON gt.game_id=a.game_id
 JOIN player_war w ON w.game_id=a.game_id AND w.canonical_id=a.cid
@@ -49,6 +51,7 @@ JOIN players p ON p.game_id=a.game_id AND p.name=a.name
 LEFT JOIN ra_timing r ON r.game_id=a.game_id AND r.name=a.name
 LEFT JOIN q ON q.game_id=a.game_id AND q.holder=a.name
 LEFT JOIN player_fights f ON f.game_id=a.game_id AND f.name=a.name
+LEFT JOIN player_quad pq ON pq.game_id=a.game_id AND pq.name=a.name
 WHERE a.minutes > 0 {since}
 ORDER BY a.ts
 """

@@ -140,3 +140,13 @@ across maps and the pooled level medians were unfair to one-red maps.
   the syllabus as it looks on each map. `plays_like` is the level band of the player's per-map
   above-average, for context only.
 - Per-map medians and L3 lines are on `/levels` (map picker) and `GET /api/coaching/fours/levels` (`pool.maps`).
+
+## Quad attendance (2026-09-20)
+
+Peter's rule: a player **contested** a quad spawn if he was within ~400 u of the quad at any point
+from 10 s before it spawned up to the spawn, including the times he died there before it spawned
+("you're attacking quad and die before it spawns"). Single-game analyses use exact demo positions.
+The corpus carries a 10-second named-zone proxy (`tools/mvd_features/quad_contest_pass.py` ->
+`player_quad`; zones per map in `quad_zones.json` = named spots within 450 u of the quad entity),
+which agrees with the exact count to about ±2 spawns a game. Lever `quad_contests_pg` (L3-L4)
+is the attendance behind `quads per game`; `quad_conversion` = takes / contests.
