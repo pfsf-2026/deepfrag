@@ -19,7 +19,7 @@ def row(i, *, above, deaths=50, dmg=8000, ra=6, quad=2, adj=40, win=None, mapnam
             "quad_died": quad * 0.4, "rockets_fired": 100, "rl_dmg": 3500, "fights": 40, "started": started[0], "started_behind": started[1],
             "even_w": even[0], "even_n": even[1], "teamkills": 2, "team_dmg": 300, "plus_minus": above, "above_avg": above, "agi": 1.0 + above / 100,
             "game_ra": 48 if mapname != "e1m2" else 0, "game_ya": 60, "game_mh": 40, "game_quad": 20,
-            "quad_spawns": 20, "quad_contests": 2 * quad, "quad_contest_takes": quad, "quad_contest_died": 0.5 * quad}
+            "quad_spawns": 20, "quad_contests": 2 * quad + 1, "quad_contest_takes": quad, "quad_contest_died": 0.5 * quad}
 
 
 def player(n, above, **kw):
@@ -105,7 +105,7 @@ def _():
     assert "maps" in base and "dm3" in base["maps"] and base["maps"]["dm3"]["n"] >= 6, base.get("maps", {}).keys()
     assert base["maps"]["dm3"]["levels"][3]["line"]["ra_share"] is not None
     m = C.metrics([row(0, above=0, quad=3)])
-    assert m["quad_contests_pg"] == 6 and abs(m["quad_conversion"] - 0.5) < 1e-9 and abs(m["quad_contest_rate"] - 0.3) < 1e-9
+    assert m["quad_contests_pg"] == 7 and abs(m["quad_conversion"] - 3 / 7) < 1e-9 and abs(m["quad_contest_rate"] - 0.35) < 1e-9
     keys = {l["key"] for l in C.rank_levers(player(30, 0, quad=1.0), 3, base)["levers"]}
     assert "quad_contests_pg" in keys and "quad_conversion" in keys, keys
 
