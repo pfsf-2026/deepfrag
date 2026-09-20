@@ -1,5 +1,5 @@
-"""Fours re-pass (v3): item take events + power-up intervals, for run cards, RA timing and item-control stats."""
-import json, sqlite3, subprocess, os, time, urllib.request, gzip, shutil, tempfile
+"""Item re-pass (v3): item take events + power-up intervals, for run cards, RA timing and item-control stats. Usage: items_pass.py [4on4|1on1]"""
+import json, sqlite3, subprocess, os, sys, time, urllib.request, gzip, shutil, tempfile
 from multiprocessing import Pool
 ANALYZER=os.path.abspath('../qw-analyze'); DB='/Users/peteryeargin/Projects/qw-stats/data/mvd_features.sqlite'
 def process(g):
@@ -33,9 +33,10 @@ def main():
     con.execute("CREATE TABLE IF NOT EXISTS powerups(game_id INT, name TEXT, team TEXT, kind TEXT, s INT, e INT)")
     con.execute("CREATE INDEX IF NOT EXISTS pw_g ON powerups(game_id)"); con.commit()
     done={r[0] for r in con.execute("SELECT DISTINCT game_id FROM item_takes")}
-    ids={r[0] for r in con.execute("SELECT id FROM games WHERE mode='4on4'")}
+    mode=sys.argv[1] if len(sys.argv)>1 else '4on4'
+    ids={r[0] for r in con.execute("SELECT id FROM games WHERE mode=?",(mode,))}
     games=[g for g in json.load(open('manifest_all.json')) if g['id'] in ids and g['id'] not in done]
-    print(f'todo {len(games)} fours', flush=True); t0=time.time(); n=0; errs=0
+    print(f'todo {len(games)} {mode} games', flush=True); t0=time.time(); n=0; errs=0
     with Pool(6) as pool:
         for res in pool.imap_unordered(process, games, chunksize=2):
             n+=1
