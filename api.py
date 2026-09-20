@@ -4631,8 +4631,9 @@ def admin_duel_adv_load(authorization: str | None = Header(default=None), rows: 
     if not isinstance(rows, list) or len(rows) > 2000:
         raise HTTPException(400, "rows must be a list of at most 2000")
     cols = DUEL_ADV_COLS
+    uniq = {(r.get("hub_game_id"), r.get("canonical_id")): r for r in rows}   # last row wins per key
     vals = []
-    for r in rows:
+    for r in uniq.values():
         try:
             vals.append(tuple(r.get(c) if c != "model_version" else int(r.get(c) or DUEL_ADV_VERSION) for c in cols))
         except Exception:
@@ -4746,7 +4747,9 @@ def admin_fours_adv_load(authorization: str | None = Header(default=None), rows:
     if not isinstance(rows, list) or len(rows) > 2000:
         raise HTTPException(400, "rows must be a list of at most 2000")
     cols = FOURS_ADV_COLS
-    vals = [tuple(r.get(c) if c != "model_version" else int(r.get(c) or FOURS_ADV_VERSION) for c in cols) for r in rows]
+    # last row wins per key: ON CONFLICT DO UPDATE cannot touch the same row twice in one statement
+    uniq = {(r.get("hub_game_id"), r.get("canonical_id")): r for r in rows}
+    vals = [tuple(r.get(c) if c != "model_version" else int(r.get(c) or FOURS_ADV_VERSION) for c in cols) for r in uniq.values()]
     with pg() as conn:
         cur = conn.cursor()
         _fours_adv_ensure(cur)
@@ -4773,7 +4776,7 @@ def _fours_pool(cur):
     in the last year). Cached 10 minutes per instance — it moves nightly, not per request."""
     import coaching_fours as CF
     now = time.time()
-    if _FOURS_POOL["base"] and now - _FOURS_POOL["at"] < 600:
+    if _FOURS_POOL["base"] and _FOURS_POOL["base"].get("n") and now - _FOURS_POOL["at"] < 600:
         return _FOURS_POOL["base"]
     cur.execute("""SELECT * FROM fours_advanced_stats
                    WHERE canonical_id IN (SELECT canonical_id FROM fours_advanced_stats

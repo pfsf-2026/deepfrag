@@ -52,6 +52,16 @@ def main():
         rows.append(dict(zip(COLS, [r[0], cid, r[1], r[2], ocid, r[5], r[6], r[7], r[8], r[9], r[10], r[11], r[12], r[13], r[14],
                                      r[15], r[16], r[17], r[18], r[19], r[20], r[21], r[22], r[23], r[24], r[25], r[26], r[27],
                                      r[28], r[29], r[30], r[31], r[32], r[33], VERSION])))
+    # one row per (game, canonical id): a player who reconnected under a second spelling of his
+    # name (crïnus / cronus, BLooD_DoG(D_P / BLooD_DoG(D_P)) resolves to the same id twice in one
+    # game — keep the row with the most minutes, so the upsert never sees the key twice.
+    best = {}
+    for r in rows:
+        k = (r['hub_game_id'], r['canonical_id'])
+        if k not in best or (r.get('minutes') or 0) > (best[k].get('minutes') or 0):
+            best[k] = r
+    dups = len(rows) - len(best); rows = list(best.values())
+    print(f'{dups} duplicate (game, player) rows collapsed', flush=True)
     print(f'{len(rows)} rows to push, {skipped} skipped (name did not resolve)', flush=True)
     if DRY:
         print(json.dumps(rows[:2], indent=1)); return
