@@ -68,6 +68,8 @@ export default defineNuxtConfig({
     '/ladder': { prerender: true, ssr: false },
     '/ladder/admin': { prerender: true, ssr: false },
     '/ladder/stats': { prerender: true, ssr: false },
+    // Level explainer: static shell, definitions + live medians hydrate from /api/coaching/fours/levels.
+    '/levels': { prerender: true },
     '/servers': { prerender: true },
     '/stats': { prerender: true },
     '/h2h': { prerender: true },
