@@ -150,3 +150,7 @@ The corpus carries a 10-second named-zone proxy (`tools/mvd_features/quad_contes
 `player_quad`; zones per map in `quad_zones.json` = named spots within 450 u of the quad entity),
 which agrees with the exact count to about ±2 spawns a game. Lever `quad_contests_pg` (L3-L4)
 is the attendance behind `quads per game`; `quad_conversion` = takes / contests.
+
+Corpus finding with the rule applied (2026-09-20): contested spawns per game barely separate
+levels (L1 5.6 → L5 6.7 a game), **conversion does** (takes/contests: L1 6%, L2 17%, L3 21%,
+L4 29%, L5 33%; BD 43%). So `quad_conversion` is a lever at L3-L5 alongside attendance.

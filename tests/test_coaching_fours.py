@@ -106,7 +106,8 @@ def _():
     assert base["maps"]["dm3"]["levels"][3]["line"]["ra_share"] is not None
     m = C.metrics([row(0, above=0, quad=3)])
     assert m["quad_contests_pg"] == 6 and abs(m["quad_conversion"] - 0.5) < 1e-9 and abs(m["quad_contest_rate"] - 0.3) < 1e-9
-    assert "quad_contests_pg" in {l["key"] for l in C.rank_levers(player(30, 0, quad=1.0), 3, base)["levers"]}
+    keys = {l["key"] for l in C.rank_levers(player(30, 0, quad=1.0), 3, base)["levers"]}
+    assert "quad_contests_pg" in keys and "quad_conversion" in keys, keys
 
 
 @check("map cards: one per map with enough games, each with a work-on lever and a map note when available")
