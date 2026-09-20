@@ -21,8 +21,7 @@ COPY api.py tiers.py export_rankings.py profile_pg.py stats_pg.py \
      assign_player_regions.py sync_live_servers.py geolocate_servers.py \
      seed_map_geometry.py seed_player_configs.py backfill_hub_game_id.py \
      seed_map_entities.py extract_spawn_runs.py \
-     coaching.py coaching_weakness.py coaching_narrate.py \
-COPY coaching_fours.py ./
+     coaching.py coaching_weakness.py coaching_narrate.py coaching_fours.py \
      coaching_fso.py deep_analyze.py ladder.py ladder_preview_narrate.py \
      auth.py notify.py ping_suggest.py connector.py vote.py aliases.yaml ./
 COPY tests/ ./tests/
