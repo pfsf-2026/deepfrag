@@ -129,8 +129,8 @@ LEVERS = {
                            "why": "Share of the fights you opened while 60+ effective HP down. From there you win a fifth of them at best; against an equal player it is the whole margin.",
                            "drill": "Sixty behind means you do not shoot first. Back off, take an item, let them come to your teammate."},
     "quad_contests_pg": {"label": "Quad spawns contested per game", "higher_better": True, "fmt": "num1", "levels": {3, 4},
-                         "why": "How many of the twenty quad spawns you were at: within 400 units at any point in the 10 seconds before it spawned, counting the times you died there trying. This is the attendance behind quads per game; conversion is the other half.",
-                         "drill": "Call the time when anyone takes it. Leave the armor room at 24 seconds on the timer with a yellow on and be at the door at 27. Five spawns a game contested is the L3 line; the top players contest eight."},
+                         "why": "How many of the twenty quad spawns you were at: within 650 units at any point in the last 10 seconds before it spawned, up to the spawn, counting the times you died there trying. This is the attendance behind quads per game; conversion is the other half.",
+                         "drill": "Call the time when anyone takes it. Leave the armor room at 24 seconds on the timer with a yellow on and be at the door at 27. Everyone shows up to about ten a game; the difference is what you do when you get there."},
     "quad_conversion": {"label": "Quad conversion", "higher_better": True, "fmt": "pct", "levels": {3, 4, 5},
                         "why": "Of the quad spawns you contested, the share you took. Attendance barely separates levels (about six contested a game at every level); conversion does: 6 percent at L1, 21 at L3, 33 at L5, 43 for the best quad player in the pool.",
                         "drill": "Arrive with a yellow or better and a teammate at the door, and be the one standing on the spot at the spawn, not the one fighting in the room. If you are under 100 when it spawns, let the stacked teammate take it."},
@@ -203,8 +203,9 @@ def metrics(rows: list[dict]) -> dict:
         "even_win_pct": ratio(_sum(rows, "even_w"), even_n), "even_n": int(even_n),
         "started_behind_pct": ratio(_sum(rows, "started_behind"), started), "started": int(started),
         "quad_pg": _sum(rows, "take_quad") / games,
-        # Peter's attendance rule (2026-09-20): within ~400u of the quad at any point in the 10 s before
-        # it spawned, deaths there included. Corpus rows carry the 10-s named-zone proxy from quad_contest_pass.py.
+        # Peter's attendance rule (2026-09-20): within 650u of the quad at any point in the last 10 s before
+        # it spawned, up to the spawn (nothing after counts), deaths there included. Corpus rows carry the exact
+        # 100-ms-position count (quad_exact_pass.py) where it exists, else the 10-s named-zone proxy.
         "quad_contests_pg": (qc / games) if qsp else None, "quad_contest_rate": ratio(qc, qsp),
         "quad_conversion": ratio(_sum(rows, "quad_contest_takes"), qc), "quad_contest_died_pg": (_sum(rows, "quad_contest_died") / games) if qsp else None,
         "quad_died_pct": ratio(_sum(rows, "quad_died"), qr), "quad_runs": int(qr),

@@ -154,3 +154,9 @@ is the attendance behind `quads per game`; `quad_conversion` = takes / contests.
 Corpus finding with the rule applied (2026-09-20): contested spawns per game barely separate
 levels (L1 5.6 → L5 6.7 a game), **conversion does** (takes/contests: L1 6%, L2 17%, L3 21%,
 L4 29%, L5 33%; BD 43%). So `quad_conversion` is a lever at L3-L5 alongside attendance.
+
+**Rule as finalised (Peter, 2026-09-20 evening):** contested = within **650 u** of the quad at any point in
+the **last 10 s before the spawn, up to the spawn**; nothing after the spawn counts; dying there inside that
+window counts. Exact counts from 100-ms demo positions are the standard (`quad_exact_pass.py` →
+`player_quad_exact`, 400 u kept as a second column); the 10-s proxy is the fallback for games not yet
+re-extracted. The proxy undercounted by ~25% (dm2/e1m2 zones too small) before calibration.

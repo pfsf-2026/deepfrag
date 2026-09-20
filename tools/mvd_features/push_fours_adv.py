@@ -43,7 +43,8 @@ SELECT a.game_id, a.cid, a.ts, a.map, a.team, a.win, a.minutes,
        f.teamkills, f.tk_launcher, f.team_dmg,
        a.plus_minus, w.expected, w.above_avg, w.above_repl, a.agi,
        gt.g_ra, gt.g_ya, gt.g_mh, gt.g_quad,
-       pq.quad_spawns, pq.quad_contests, pq.quad_contest_takes, pq.quad_contest_died
+       COALESCE(qx.quad_spawns, pq.quad_spawns), COALESCE(qx.quad_contests, pq.quad_contests),
+       COALESCE(qx.quad_contest_takes, pq.quad_contest_takes), COALESCE(qx.quad_contest_died, pq.quad_contest_died)
 FROM player_agi a
 JOIN (SELECT game_id, SUM(take_ra) g_ra, SUM(take_ya) g_ya, SUM(take_mh) g_mh, SUM(take_quad) g_quad FROM players GROUP BY game_id) gt ON gt.game_id=a.game_id
 JOIN player_war w ON w.game_id=a.game_id AND w.canonical_id=a.cid
@@ -52,6 +53,7 @@ LEFT JOIN ra_timing r ON r.game_id=a.game_id AND r.name=a.name
 LEFT JOIN q ON q.game_id=a.game_id AND q.holder=a.name
 LEFT JOIN player_fights f ON f.game_id=a.game_id AND f.name=a.name
 LEFT JOIN player_quad pq ON pq.game_id=a.game_id AND pq.name=a.name
+LEFT JOIN player_quad_exact qx ON qx.game_id=a.game_id AND qx.name=a.name
 WHERE a.minutes > 0 {since}
 ORDER BY a.ts
 """

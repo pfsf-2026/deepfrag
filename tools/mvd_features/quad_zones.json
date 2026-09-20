@@ -5,23 +5,20 @@
    296,
    56
   ],
+  "radius": 700,
   "zone": [
-   "window",
-   "Quad",
-   "window.Quad",
+   "bridge.low",
+   "Pent",
    "hill",
-   "lifts.below"
-  ],
-  "dist": {
-   "window": 104,
-   "Quad": 270,
-   "window.Quad": 359,
-   "hill": 386,
-   "lifts.below": 438,
-   "water.GL": 518,
-   "water.tunnel": 612,
-   "lifts": 626
-  }
+   "lifts",
+   "Quad",
+   "window",
+   "water",
+   "lifts.below",
+   "window.Quad",
+   "water.GL",
+   "water.tunnel"
+  ]
  },
  "dm2": {
   "quad": [
@@ -29,24 +26,19 @@
    -704,
    184
   ],
+  "radius": 500,
   "zone": [
+   "secret",
+   "big",
    "Quad",
-   "Quad.high",
-   "Quad.low",
+   "GL",
    "big.wall",
-   "Quad.button",
-   "Quad.way"
-  ],
-  "dist": {
-   "Quad": 54,
-   "Quad.high": 176,
-   "Quad.low": 259,
-   "big.wall": 290,
-   "Quad.button": 332,
-   "Quad.way": 388,
-   "GL": 460,
-   "floating": 468
-  }
+   "Quad.low",
+   "Quad.high",
+   "Quad.way",
+   "floating",
+   "Quad.button"
+  ]
  },
  "e1m2": {
   "quad": [
@@ -54,20 +46,14 @@
    -1360,
    432
   ],
+  "radius": 900,
   "zone": [
-   "Quad.box",
-   "Quad"
-  ],
-  "dist": {
-   "Quad.box": 35,
-   "Quad": 422,
-   "GL.Quad": 602,
-   "Quad.stairs": 667,
-   "GL": 868,
-   "GL.SNG": 1004,
-   "cross": 1090,
-   "GL.rox": 1101
-  }
+   "Quad",
+   "GL.Quad",
+   "GL",
+   "Quad.stairs",
+   "Quad.box"
+  ]
  },
  "schloss": {
   "quad": [
@@ -75,21 +61,12 @@
    -3344,
    456
   ],
+  "radius": 450,
   "zone": [
    "Quad",
+   "Quad.high",
    "Quad.ledge",
-   "cathedral.YA",
-   "Quad.high"
-  ],
-  "dist": {
-   "Quad": 217,
-   "Quad.ledge": 338,
-   "cathedral.YA": 401,
-   "Quad.high": 436,
-   "cathedral": 514,
-   "Quad.low": 644,
-   "tower": 894,
-   "tower.entry": 938
-  }
+   "cathedral.YA"
+  ]
  }
 }
