@@ -61,6 +61,7 @@ useSeoMeta({
       </a>
       <nav class="nav">
         <NuxtLink to="/">Rankings</NuxtLink>
+        <NuxtLink to="/coach" class="coach-link">🎯 Coach</NuxtLink>
         <NuxtLink to="/players">Players</NuxtLink>
         <NuxtLink to="/map">Map</NuxtLink>
         <NuxtLink to="/servers">Servers</NuxtLink>
@@ -78,6 +79,7 @@ useSeoMeta({
             <span class="caret">▾</span>
             <div v-if="menuOpen" class="menu" @click.stop>
               <NuxtLink v-if="user?.canonical_id" :to="`/p/${user.canonical_id}`" class="mi" @click="closeMenu">My profile</NuxtLink>
+              <NuxtLink v-if="user?.canonical_id" :to="`/p/${user.canonical_id}/coach`" class="mi" @click="closeMenu">My coach</NuxtLink>
               <button v-if="user?.team" class="mi" @click="teamSettings">Team settings</button>
               <NuxtLink v-else to="/ladder" class="mi" @click="closeMenu">Join the ladder</NuxtLink>
               <button v-if="user?.canonical_id" class="mi" @click="openAvail">My availability</button>
@@ -170,6 +172,10 @@ body {
 }
 .topbar .nav a:hover { background: var(--panel-2); color: var(--fg); }
 .topbar .nav a.router-link-active { background: var(--panel-2); color: var(--fg); }
+.topbar .nav a { white-space: nowrap; }
+.topbar .discord-btn { white-space: nowrap; }
+.topbar .nav a.coach-link { color: var(--accent); font-weight: 700; }
+.topbar .nav a.coach-link.router-link-active { color: var(--accent); }
 .topbar .spacer { flex: 1; }
 .topbar .meta {
   color: var(--fg-3); font-size: 12px; font-family: 'JetBrains Mono', monospace;

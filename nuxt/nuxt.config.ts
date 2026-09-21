@@ -70,6 +70,7 @@ export default defineNuxtConfig({
     '/ladder/stats': { prerender: true, ssr: false },
     // Level explainer: static shell, definitions + live medians hydrate from /api/coaching/fours/levels.
     '/levels': { prerender: true },
+    '/coach': { prerender: true },
     '/servers': { prerender: true },
     '/stats': { prerender: true },
     '/h2h': { prerender: true },
@@ -77,6 +78,11 @@ export default defineNuxtConfig({
   },
 
   nitro: {
+    // Local dev: the app fetches /api/... relative (in prod a Pages Function proxies it
+    // to Cloud Run); point the dev server at the live API the same way.
+    devProxy: {
+      '/api': { target: 'https://deepfrag-api-751658372467.us-central1.run.app/api', changeOrigin: true }
+    },
     prerender: {
       routes: loadPrerenderRoutes(),
       // crawlLinks would otherwise follow NuxtLinks to /p/[id]/maps and

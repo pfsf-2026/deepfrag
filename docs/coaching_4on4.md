@@ -161,3 +161,27 @@ the **last 10 s before the spawn, up to the spawn**; nothing after the spawn cou
 window counts. Exact counts from 100-ms demo positions are the standard (`quad_exact_pass.py` →
 `player_quad_exact`, 400 u kept as a second column); the 10-s proxy is the fallback for games not yet
 re-extracted. The proxy undercounted by ~25% (dm2/e1m2 zones too small) before calibration.
+
+## The coach in the app (2026-09-21 layout)
+
+Peter's guidance: promote the coach to the top line of the site, stop cramming every map onto one
+screen, and give each map its own tab with a 4on4 / 1on1 dropdown (4on4 only for now).
+
+- **Top nav "Coach"** (`/coach`, `nuxt/app/pages/coach/index.vue`): a signed-in player with a linked
+  profile is sent straight to `/p/{id}/coach`; anyone else gets the pitch, the five levels, a Discord
+  sign-in and a player search that opens any player's coach. "My coach" is also in the user menu.
+- **`/p/{id}/coach`** is a real profile tab now (`[tab].vue`; old `?view=coach` links redirect). The
+  page body is `CoachTab.vue`: a tab strip **Overview · dm3 · dm2 · e1m2 · schloss**. The map and mode
+  live in the URL (`?map=dm2`, `?mode=1on1`) so a map's coach is linkable.
+- **Overview** (`CoachFours.vue`): level + gates, the ONE focus with the next two levers under it,
+  one clickable box per map (record, above average, the map's "work on this" with you → line; a
+  dashed box when the map has fewer than `MAP_MIN_GAMES`), the graded last focus, the narration, the
+  full lever table collapsed, and the last games (map names link to that map's tab).
+- **Map tab** (`CoachFoursMap.vue`): the map's inventory and one-line character, a 4on4/1on1 dropdown,
+  a record strip (W–L, above average, "plays like L_n", map vs pooled baselines), the map's one
+  "work on this" lever with its map note and drill, the rest of the level's levers ranked on that map
+  (each with its map note when one exists), and the last games on that map. 1on1 shows a
+  "coming next" card until the duel coach splits by map.
+- **Data**: one call, `GET /api/players/{id}/coaching/fours`, shared by the tabs through
+  `composables/useFoursCoach.ts`. `map_cards()` now returns every standard map (thin ones flagged
+  with `thin: true` and a games count), all ranked levers with `map_note`, and `games_cards` per map.

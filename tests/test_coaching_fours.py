@@ -117,15 +117,18 @@ def _():
     for i, r in enumerate(rows):
         r["map"] = ["dm3", "dm2", "e1m2", "schloss"][i % 4]
     cards = C.map_cards(rows, 4, base)
-    assert not cards, [c["map"] for c in cards]            # 7 games per map is under MAP_MIN_GAMES
+    assert cards and all(c["thin"] and c["games"] == 7 and not c["work_on"] for c in cards), cards   # 7 per map is under MAP_MIN_GAMES
     rows = player(40, 25, deaths=53, dmg=9800, ra=7.8, quad=3.4, adj=53, even=(12, 20), sg=8000)
     for i, r in enumerate(rows):
         r["map"] = ["dm3", "dm2"][i % 2]
     cards = C.map_cards(rows, 4, base)
-    assert [c["map"] for c in cards] == ["dm3", "dm2"] or [c["map"] for c in cards] == ["dm2", "dm3"], cards
-    assert all(c["work_on"] and c["work_on"]["label"] for c in cards)
+    full = [c for c in cards if not c["thin"]]; thin = [c for c in cards if c["thin"]]
+    assert sorted(c["map"] for c in full) == ["dm2", "dm3"] and sorted(c["map"] for c in thin) == ["e1m2", "schloss"], cards
+    assert cards[:2] == full, "maps with a baseline come first"
+    assert all(c["work_on"] and c["work_on"]["label"] and "map_note" in c["work_on"] for c in full)
+    assert all(len(c["levers"]) >= 2 and c["games_cards"] and c["games_cards"][0]["map"] == c["map"] for c in full)
     rep = C.build_report(rows, base, None, "t")
-    assert len(rep["maps"]) == 2 and rep["pool"]["maps"]
+    assert len(rep["maps"]) == 4 and rep["pool"]["maps"]
 
 
 @check("gates: L1 gates are reds and damage, judged against the promotion-line bar")

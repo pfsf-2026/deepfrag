@@ -11,7 +11,7 @@ const id = computed(() => String(route.params.id))
 const tab = computed(() => String(route.params.tab || ''))
 const windowKey = ref('90')
 
-const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2', 'trends', 'compare', 'dmm', 'servers', 'advanced'])
+const PORTED = new Set(['coach', 'recent', 'opponents', '1on1', '4on4', '2on2', 'trends', 'compare', 'dmm', 'servers', 'advanced'])
 // Advanced (demo-derived duel metrics): /api/players/{id}/advanced — see docs/advanced_metrics.md
 const adv = ref(null)
 const advPending = ref(false)
@@ -241,7 +241,7 @@ const TABS = computed(() => {
   const b = `/p/${enc(id.value)}`
   const defs = [
     { key: 'overview', label: 'Overview', to: b },
-    { key: 'coach', label: '🎯 Coach', to: { path: b, query: { view: 'coach' } } },
+    { key: 'coach', label: '🎯 Coach', to: `${b}/coach` },
     { key: 'advanced', label: 'Advanced' },
     { key: 'trends', label: 'Trends' }, { key: 'compare', label: 'Compare' },
     { key: '1on1', label: '1on1' }, { key: '4on4', label: '4on4' }, { key: '2on2', label: '2on2' },
@@ -297,13 +297,18 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
           <a v-else :href="t.legacy" class="ptab">{{ t.label }}</a>
         </template>
       </div>
-      <select v-model="windowKey" class="window-select">
+      <select v-if="tab !== 'coach'" v-model="windowKey" class="window-select">
         <option value="7">Last 7d</option><option value="30">Last 30d</option>
         <option value="90">Last 90d</option><option value="365">Last year</option><option value="all">All time</option>
       </select>
     </div>
 
-    <div v-if="pending" class="placeholder">Loading…</div>
+    <!-- COACH: its own loader; does not wait for the profile fetch -->
+    <template v-if="tab === 'coach'">
+      <CoachTab :cid="id" />
+    </template>
+
+    <div v-else-if="pending" class="placeholder">Loading…</div>
 
     <!-- ADVANCED (demo-derived duel metrics) -->
     <template v-else-if="tab === 'advanced'">
@@ -563,4 +568,10 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .rtab .pos { color: var(--win, #34d67a); } .rtab .neg { color: var(--loss, #ff5d6c); }
 .lvl-badge { display: inline-flex; align-items: center; margin-left: 10px; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
 .lvl-badge.lvl-1 { color: #ff5d6c; } .lvl-badge.lvl-2 { color: #e0a33c; } .lvl-badge.lvl-3 { color: #c9a66b; } .lvl-badge.lvl-4 { color: #38bdf8; } .lvl-badge.lvl-5 { color: #34d67a; }
+
+@media (max-width: 640px) {
+  .profile-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; max-width: 100%; }
+  .profile-tabs::-webkit-scrollbar { display: none; }
+  .ptab { flex: 0 0 auto; white-space: nowrap; }
+}
 </style>

@@ -6,7 +6,8 @@ const profile = ref(null)
 const pending = ref(true)
 const view = ref('nav')   // 'nav' (launchpad) | 'metrics' (grid) | 'coach' (AI Coach)
 // Honor ?view=coach so the Coach tab works when linked from deep-dive pages.
-watch(() => route.query.view, v => { if (v === 'coach') view.value = 'coach' }, { immediate: true })
+// (2026-09-21) the coach is its own tab now: old ?view=coach links move there.
+watch(() => route.query.view, v => { if (v === 'coach') navigateTo(`/p/${encodeURIComponent(String(route.params.id))}/coach`, { replace: true }) }, { immediate: true })
 const windowKey = ref('90')
 const df = useDeepFrag()
 
@@ -86,10 +87,7 @@ watch(ratingHistoryMode, loadRatingHistory)
 // The CoachTab component owns its own data loading (report + history + per-match
 // deep-analyze); this page just hosts it and the tab scroll-to behaviour.
 function goCoach() {
-  view.value = 'coach'
-  nextTick(() => {
-    document.getElementById('ai-coach')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  })
+  navigateTo(`/p/${encodeURIComponent(String(route.params.id))}/coach`)
 }
 
 // ── Config Profile (hardware/settings) ──────────────────────────────────────
@@ -337,7 +335,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         <div class="avatar">{{ (profile.player || '?')[0].toUpperCase() }}</div>
         <div class="id">
           <h1>{{ profile.player }}</h1>
-          <NuxtLink v-if="profile.level?.placed" :to="{ path: `/p/${enc(id)}`, query: { view: 'coach' } }" class="lvl-badge" :class="'lvl-' + profile.level.level"
+          <NuxtLink v-if="profile.level?.placed" :to="`/p/${enc(id)}/coach`" class="lvl-badge" :class="'lvl-' + profile.level.level"
                     :title="`4on4 level · ${profile.level.above_avg_pg > 0 ? '+' : ''}${profile.level.above_avg_pg} above average per game over the last ${profile.level.games} fours · ${profile.level.gates_passed}/${profile.level.gates} gates to the next level`">
             L{{ profile.level.level }} · {{ profile.level.name }}
           </NuxtLink>
@@ -465,8 +463,8 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
            SPA at the matching #tab. Window dropdown sits inline on the right. -->
       <div class="profile-tabbar">
         <div class="profile-tabs">
-          <a class="ptab" :class="{ active: view !== 'coach' }" style="cursor:pointer" @click="view = 'nav'">Overview</a>
-          <a class="ptab ptab-coach" :class="{ active: view === 'coach' }" style="cursor:pointer" @click="goCoach">🎯 Coach</a>
+          <a class="ptab active" style="cursor:pointer" @click="view = 'nav'">Overview</a>
+          <NuxtLink class="ptab ptab-coach" :to="`/p/${encodeURIComponent(id)}/coach`">🎯 Coach</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/trends`">Trends</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/compare`">Compare</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/1on1`">1on1</NuxtLink>
@@ -485,16 +483,6 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
           <option value="365">Last year</option>
           <option value="all">All time</option>
         </select>
-      </div>
-
-      <!-- ── COACH view (combined AI Coach: read + focus + journal + Deep Analyze) ──
-           CoachTab owns its own gate: shows "Analyze my game" until the report is
-           run, then renders the full combined layout. ── -->
-      <div v-if="view === 'coach'" id="ai-coach" class="coach-section">
-        <div class="coach-head">
-          <h3>🎯 AI Coach <span class="coach-sub">· 1on1 · last 15 rated demos</span></h3>
-        </div>
-        <CoachTab :cid="id" />
       </div>
 
       <!-- ── NAV view (default, Mock 5 — large launchpad cards) ── -->
@@ -1088,4 +1076,10 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
 }
 .lvl-badge { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; vertical-align: middle; font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; border: 1px solid currentColor; text-decoration: none; }
 .lvl-badge.lvl-1 { color: #ff5d6c; } .lvl-badge.lvl-2 { color: #e0a33c; } .lvl-badge.lvl-3 { color: #c9a66b; } .lvl-badge.lvl-4 { color: #38bdf8; } .lvl-badge.lvl-5 { color: #34d67a; }
+
+@media (max-width: 640px) {
+  .profile-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; max-width: 100%; }
+  .profile-tabs::-webkit-scrollbar { display: none; }
+  .ptab { flex: 0 0 auto; white-space: nowrap; }
+}
 </style>

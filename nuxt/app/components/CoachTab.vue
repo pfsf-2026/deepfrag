@@ -1,12 +1,20 @@
 <script setup>
-// Combined AI Coach tab: coach read (with Read-more), simplified "what to work
-// on" focus cards, training journal (weekly snapshots + since-first trends), and
-// per-match Deep Analyze. Self-loads on demand (the report parses ~15 demos, so
-// it's gated behind a button). Data: coaching/report + coaching/history +
-// per-match deep-analyze endpoints.
+// The Coach page body (/p/{id}/coach). 2026-09-21 layout (Peter): a tab strip —
+// Overview plus one tab per map — with the mode (4on4 / 1on1) in the URL. Overview
+// 4on4 = CoachFours (level, one focus, map boxes); a map tab = CoachFoursMap with a
+// 4on4/1on1 dropdown. The 1on1 overview keeps the demo-parsing flow below: coach
+// read, focus cards, training journal, per-match Deep Analyze (coaching/report +
+// coaching/history + deep-analyze endpoints), gated behind "Analyze my game".
 const props = defineProps({ cid: { type: String, required: true } })
-// 4on4 is the default coach (2026-09-18); 1on1 keeps the demo-parsing flow.
-const coachMode = ref('4on4')
+const route = useRoute()
+const router = useRouter()
+// Tabs live in the URL so a map's coach is linkable: ?map=dm2 opens it, ?mode=1on1 flips the mode.
+const mapTab = computed(() => { const m = String(route.query.map || ''); return COACH_MAPS.includes(m) ? m : '' })
+const mode = computed(() => route.query.mode === '1on1' ? '1on1' : '4on4')
+function stripQuery(map) { const q = { ...route.query }; delete q.map; if (map) q.map = map; return q }
+function setMode(m) { const q = { ...route.query }; if (m === '1on1') q.mode = '1on1'; else delete q.mode; router.replace({ query: q }) }
+const { maps: coachMaps } = useFoursCoach(toRef(props, 'cid'))
+function isThin(m) { const c = coachMaps.value.find(x => x.map === m); return !!c?.thin }
 const df = useDeepFrag()
 
 const report = ref(null)
@@ -150,11 +158,21 @@ function runManual() {
 
 <template>
   <div class="coach">
+    <nav class="strip" role="tablist" aria-label="Coach sections">
+      <NuxtLink :to="{ query: stripQuery('') }" class="stab" :class="{ on: !mapTab }" role="tab" :aria-selected="!mapTab">Overview</NuxtLink>
+      <NuxtLink v-for="m in COACH_MAPS" :key="m" :to="{ query: stripQuery(m) }" class="stab" :class="{ on: mapTab === m, thin: isThin(m) }" role="tab" :aria-selected="mapTab === m">{{ m }}</NuxtLink>
+    </nav>
+
+    <!-- a map's own coach -->
+    <CoachFoursMap v-if="mapTab" :cid="props.cid" :map="mapTab" :mode="mode" @mode="setMode" />
+
+    <!-- overview -->
+    <template v-else>
     <div class="modebar" role="tablist" aria-label="Coach mode">
-      <button class="mbtn" :class="{ on: coachMode === '4on4' }" role="tab" :aria-selected="coachMode === '4on4'" @click="coachMode = '4on4'">4on4</button>
-      <button class="mbtn" :class="{ on: coachMode === '1on1' }" role="tab" :aria-selected="coachMode === '1on1'" @click="coachMode = '1on1'">1on1</button>
+      <button class="mbtn" :class="{ on: mode === '4on4' }" role="tab" :aria-selected="mode === '4on4'" @click="setMode('4on4')">4on4</button>
+      <button class="mbtn" :class="{ on: mode === '1on1' }" role="tab" :aria-selected="mode === '1on1'" @click="setMode('1on1')">1on1</button>
     </div>
-    <CoachFours v-if="coachMode === '4on4'" :cid="props.cid" />
+    <CoachFours v-if="mode === '4on4'" :cid="props.cid" />
     <template v-else>
     <!-- gate -->
     <div v-if="!requested" class="intro">
@@ -270,6 +288,7 @@ function runManual() {
       </section>
     </template>
     </template>
+    </template>
   </div>
 </template>
 
@@ -340,6 +359,12 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--b); } td.num { text-align:
 .mrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .minfo { font-size: 13px; }
 .deepout { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--b); }
+.strip { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.strip::-webkit-scrollbar { display: none; }
+.stab { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px; color: var(--fg-2); text-decoration: none; font-weight: 700; font-size: 14px; border-bottom: 2px solid transparent; white-space: nowrap; margin-bottom: -1px; }
+.stab:hover { color: var(--fg); }
+.stab.on { color: var(--accent); border-bottom-color: var(--accent); }
+.stab.thin { color: var(--fg-3); }
 .modebar { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; }
 .mbtn { background: none; border: 0; color: var(--fg-2); font-family: inherit; font-weight: 800; font-size: 13px; padding: 6px 14px; border-radius: 999px; cursor: pointer; min-height: 32px; }
 .mbtn.on { background: var(--accent); color: #140a03; }

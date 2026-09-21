@@ -500,33 +500,40 @@ def game_cards(rows: list[dict], n: int = 8) -> list[dict]:
 
 # ── the report ───────────────────────────────────────────────────────────────
 def map_cards(rows: list[dict], level: int, base: dict, n_cards: int = 4) -> list[dict]:
-    """One card per map the player has MAP_MIN_GAMES+ games on (last LEVEL_WINDOW on that
-    map): his numbers there, the map's level baseline, and the single "work on this" lever
-    ranked against that map's promotion line. The overall focus stays one thing; these say
-    what that level's syllabus looks like on each map."""
+    """One card per standard map (last LEVEL_WINDOW games there). A map with MAP_MIN_GAMES+
+    games carries the player's numbers there, the map's level baseline, every lever active at
+    his level ranked against that map's promotion line (each with the map's note when one
+    exists), the single "work on this" lever, and his last games on it — enough for the map's
+    own coach tab. A map with fewer games is a `thin` card (games count only) so the UI can
+    still list it. The overall focus stays one thing; these say what that level's syllabus
+    looks like on each map. (2026-09-21: per-map tabs, Peter.)"""
     if not level:
         return []
     out = []
     for mp in MAP_ITEMS:
         mr = [r for r in rows if r.get("map") == mp][-LEVEL_WINDOW:]
         if len(mr) < MAP_MIN_GAMES:
+            out.append({"map": mp, "games": len(mr), "min_games": MAP_MIN_GAMES, "thin": True, "items": MAP_ITEMS[mp],
+                        "wins": sum(1 for r in mr if r.get("win")), "losses": sum(1 for r in mr if not r.get("win")),
+                        "levers": [], "games_cards": [], "work_on": None})
             continue
         rk = rank_levers(mr, level, base, map_=mp)
         m = rk["all"]
-        top = rk["levers"][0] if rk["levers"] else None
+        notes = MAP_NOTES.get(mp, {})
+        levers = [{**l, "map_note": notes.get(l["key"])} for l in rk["levers"][:8]]
+        top = levers[0] if levers else None
         lv_eq = level_for(m.get("above_avg"), m.get("games", 0))
-        card = {"map": mp, "games": m.get("games"), "wins": m.get("wins"), "losses": m.get("losses"),
+        card = {"map": mp, "games": m.get("games"), "min_games": MAP_MIN_GAMES, "thin": False,
+                "wins": m.get("wins"), "losses": m.get("losses"),
                 "above_avg_pg": round(m["above_avg"], 1), "plays_like": lv_eq["level"] if lv_eq["placed"] else None,
                 "items": MAP_ITEMS[mp], "per_map_baseline": rk["per_map"],
-                "levers": rk["levers"][:4],
+                "levers": levers, "games_cards": game_cards(mr, n=6),
                 "work_on": None}
         if top:
-            note = MAP_NOTES.get(mp, {}).get(top["key"])
-            card["work_on"] = {**{k: top[k] for k in ("key", "label", "you", "win", "loss", "level_median", "target", "next_median", "is_gate", "why", "drill")},
-                               "map_note": note}
+            card["work_on"] = {k: top[k] for k in ("key", "label", "you", "win", "loss", "level_median", "target", "next_median", "is_gate", "why", "drill", "map_note")}
         out.append(card)
-    out.sort(key=lambda c: -c["games"])
-    return out[:n_cards]
+    out.sort(key=lambda c: (c["thin"], -c["games"]))
+    return out[:max(n_cards, len(MAP_ITEMS))]
 
 
 def build_report(rows: list[dict], base: dict, prev: dict | None, display: str) -> dict:

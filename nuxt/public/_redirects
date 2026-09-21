@@ -24,3 +24,4 @@
 # instead — which silently hid all profile content (incl. the AI Coach card)
 # for days. Nitro auto-appends its own catch-all SPA fallback to this file at
 # build time, so unmatched/new profiles already hydrate client-side without it.
+/p/*/coach        /p/:splat/       200
