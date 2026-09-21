@@ -37,7 +37,7 @@ useSeoMeta({ title: 'What the numbers mean · DeepFrag', description: 'Every Dee
 
 <template>
   <div class="page">
-    <NuxtLink to="/coach" class="back">← coach</NuxtLink>
+    <NuxtLink to="/coach" class="back">← AI Coach</NuxtLink>
     <h1>What the numbers mean</h1>
     <p class="intro">Every stat on DeepFrag, in plain words. No formulas unless you want them. If a word on your coach page confused you, it is on this page.</p>
 

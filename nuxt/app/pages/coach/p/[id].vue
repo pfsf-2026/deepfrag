@@ -8,13 +8,13 @@ const id = computed(() => String(route.params.id || ''))
 const { report, level } = useFoursCoach(id)
 const display = computed(() => report.value?.display || id.value)
 const LEVEL_COLORS_ = LEVEL_COLORS
-useHead({ title: () => `${display.value} · coach · DeepFrag` })
+useHead({ title: () => `${display.value} · AI Coach · DeepFrag` })
 </script>
 
 <template>
   <div class="page">
     <div class="head">
-      <div class="crumbs"><NuxtLink to="/coach" class="back">← coach</NuxtLink><span class="sep">·</span><NuxtLink :to="`/p/${encodeURIComponent(id)}`" class="back">{{ display }}'s profile</NuxtLink></div>
+      <div class="crumbs"><NuxtLink to="/coach" class="back">← AI Coach</NuxtLink><span class="sep">·</span><NuxtLink :to="`/p/${encodeURIComponent(id)}`" class="back">{{ display }}'s profile</NuxtLink></div>
       <div class="who">
         <h1>{{ display }}</h1>
         <span v-if="level?.placed" class="lvl" :style="{ '--lc': LEVEL_COLORS_[level.level] }" :title="`4on4 level · ${level.above_avg_pg > 0 ? '+' : ''}${level.above_avg_pg} above average per game over the last ${level.games} fours`">L{{ level.level }} · {{ level.name }}</span>

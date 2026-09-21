@@ -889,7 +889,6 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
 }
 .ptab:hover { color: var(--fg); }
 .ptab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-.ptab-coach { color: var(--accent); font-weight: 600; }
 .window-select {
   background: rgba(255, 122, 26, 0.08);
   border: 1px solid var(--accent);

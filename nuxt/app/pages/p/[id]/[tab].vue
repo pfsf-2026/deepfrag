@@ -492,7 +492,6 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .ptab { padding: 8px 14px; color: var(--fg-2); text-decoration: none; font-size: 13px; font-weight: 600; border-bottom: 2px solid transparent; cursor: pointer; }
 .ptab:hover { color: var(--fg); }
 .ptab.active { color: var(--accent); border-bottom-color: var(--accent); }
-.ptab-coach { color: var(--accent); }
 .window-select { background: var(--panel); border: 1px solid var(--border); color: var(--fg); padding: 6px 10px; border-radius: 7px; font-size: 12px; }
 .section-h { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
 .section-h h2 { font-size: 16px; font-weight: 800; }

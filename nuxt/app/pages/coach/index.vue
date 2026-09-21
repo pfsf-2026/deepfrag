@@ -33,13 +33,13 @@ const STEPS = [
   ['One thing to work on', 'The coach picks the single lever that separates you from the promotion line and holds it for ten games before grading it. Not a list. One thing.'],
   ['A coach for every map', 'dm3, dm2, e1m2 and schloss each get their own tab: your record there, what to work on there, and your last games on it.'],
 ]
-useSeoMeta({ title: 'Coach · DeepFrag', description: 'Your 4on4 coach: a level from your last 40 fours, one thing to work on, and a coach for every map.' })
+useSeoMeta({ title: 'AI Coach · DeepFrag', description: 'Your 4on4 coach: a level from your last 40 fours, one thing to work on, and a coach for every map.' })
 </script>
 
 <template>
   <div class="page">
     <section class="hero">
-      <div class="eyebrow">DeepFrag coach</div>
+      <div class="eyebrow">DeepFrag AI Coach</div>
       <h1>Your 4on4 coach.</h1>
       <p class="lede">A level from your last 40 fours, one thing to work on at a time, and a coach for every map. Read from the demos, not the scoreboard.</p>
       <div class="cta">
