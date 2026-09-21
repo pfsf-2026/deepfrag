@@ -1,0 +1,1688 @@
+{
+ "dm3": {
+  "players": [
+   {
+    "player": "milton",
+    "region": "EU",
+    "games": 140,
+    "spawns": 2665,
+    "contest_pct": 83,
+    "conv_pct": 29,
+    "take_pct_all": 24,
+    "takes_per_game": 4.5,
+    "died_pre_pct": 10,
+    "stack_m10": 222,
+    "stack_m5": 226,
+    "rl_m5": 76,
+    "inside_m10": 35,
+    "enter_median_s": 8.1,
+    "early10_pct": 35,
+    "conv_150": 49.8,
+    "conv_naked": 12.8,
+    "stacked_share": 44,
+    "conv_rl": 44.4,
+    "conv_norl": 13.5,
+    "conv_early": 28.3,
+    "conv_late": 31.2,
+    "entries": [
+     {
+      "spot": "window",
+      "n": 422,
+      "conv": 30.3
+     },
+     {
+      "spot": "Quad",
+      "n": 417,
+      "conv": 49.4
+     },
+     {
+      "spot": "Ring",
+      "n": 285,
+      "conv": 33.3
+     },
+     {
+      "spot": "hill",
+      "n": 213,
+      "conv": 13.1
+     },
+     {
+      "spot": "lifts.below",
+      "n": 158,
+      "conv": 30.4
+     }
+    ],
+    "paths": [
+     "RA.low > RA > RA.low > Ring > Quad",
+     "YA > YA.box > window > window.Quad > Quad",
+     "RA > RA.rox > SNG.tele > Ring > Quad"
+    ]
+   },
+   {
+    "player": "zero",
+    "region": "EU",
+    "games": 102,
+    "spawns": 1938,
+    "contest_pct": 83,
+    "conv_pct": 27,
+    "take_pct_all": 22,
+    "takes_per_game": 4.3,
+    "died_pre_pct": 11,
+    "stack_m10": 236,
+    "stack_m5": 243,
+    "rl_m5": 69,
+    "inside_m10": 34,
+    "enter_median_s": 8.0,
+    "early10_pct": 35,
+    "conv_150": 49.6,
+    "conv_naked": 10.4,
+    "stacked_share": 43,
+    "conv_rl": 44.4,
+    "conv_norl": 14.0,
+    "conv_early": 25.9,
+    "conv_late": 32.8,
+    "entries": [
+     {
+      "spot": "window",
+      "n": 322,
+      "conv": 24.8
+     },
+     {
+      "spot": "Quad",
+      "n": 265,
+      "conv": 41.9
+     },
+     {
+      "spot": "Ring",
+      "n": 229,
+      "conv": 39.3
+     },
+     {
+      "spot": "lifts.below",
+      "n": 176,
+      "conv": 33.0
+     },
+     {
+      "spot": "hill",
+      "n": 122,
+      "conv": 7.4
+     }
+    ],
+    "paths": [
+     "SNG > SNG.MH > SNG.tele > Ring > Quad",
+     "YA > YA.box > window > window.Quad > Quad",
+     "Pent > lifts > lifts.below > Ring > Quad"
+    ]
+   },
+   {
+    "player": "Blood Dog",
+    "region": "NA",
+    "games": 653,
+    "spawns": 12391,
+    "contest_pct": 85,
+    "conv_pct": 25,
+    "take_pct_all": 22,
+    "takes_per_game": 4.1,
+    "died_pre_pct": 17,
+    "stack_m10": 204,
+    "stack_m5": 210,
+    "rl_m5": 62,
+    "inside_m10": 21,
+    "enter_median_s": 6.5,
+    "early10_pct": 21,
+    "conv_150": 47.0,
+    "conv_naked": 13.7,
+    "stacked_share": 35,
+    "conv_rl": 42.2,
+    "conv_norl": 15.1,
+    "conv_early": 21.4,
+    "conv_late": 29.7,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 2168,
+      "conv": 37.7
+     },
+     {
+      "spot": "window",
+      "n": 1940,
+      "conv": 24.4
+     },
+     {
+      "spot": "Ring",
+      "n": 1366,
+      "conv": 35.4
+     },
+     {
+      "spot": "hill",
+      "n": 971,
+      "conv": 11.6
+     },
+     {
+      "spot": "lifts.below",
+      "n": 916,
+      "conv": 30.3
+     }
+    ],
+    "paths": [
+     "YA > YA.box > window > window.Quad > Quad",
+     "SNG > SNG.MH > SNG.tele > Ring > Quad",
+     "RA > RA.rox > SNG.tele > Ring > Quad"
+    ]
+   },
+   {
+    "player": "carapace",
+    "region": "EU",
+    "games": 79,
+    "spawns": 1501,
+    "contest_pct": 84,
+    "conv_pct": 25,
+    "take_pct_all": 21,
+    "takes_per_game": 4.0,
+    "died_pre_pct": 14,
+    "stack_m10": 220,
+    "stack_m5": 218,
+    "rl_m5": 73,
+    "inside_m10": 41,
+    "enter_median_s": 9.2,
+    "early10_pct": 41,
+    "conv_150": 45.0,
+    "conv_naked": 10.3,
+    "stacked_share": 42,
+    "conv_rl": 40.6,
+    "conv_norl": 12.0,
+    "conv_early": 28.9,
+    "conv_late": 22.9,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 305,
+      "conv": 41.0
+     },
+     {
+      "spot": "window",
+      "n": 217,
+      "conv": 22.1
+     },
+     {
+      "spot": "Ring",
+      "n": 156,
+      "conv": 28.2
+     },
+     {
+      "spot": "hill",
+      "n": 108,
+      "conv": 5.6
+     },
+     {
+      "spot": "lifts.below",
+      "n": 86,
+      "conv": 30.2
+     }
+    ],
+    "paths": [
+     "Quad > window.Quad > Quad > window.Quad > Quad",
+     "Quad > YA.Quad > YA.up > YA.Quad > Quad",
+     "SNG.tele > Ring > Quad > window.Quad > Quad"
+    ]
+   },
+   {
+    "player": "javve",
+    "region": "EU",
+    "games": 123,
+    "spawns": 2342,
+    "contest_pct": 80,
+    "conv_pct": 25,
+    "take_pct_all": 20,
+    "takes_per_game": 3.8,
+    "died_pre_pct": 14,
+    "stack_m10": 243,
+    "stack_m5": 245,
+    "rl_m5": 73,
+    "inside_m10": 33,
+    "enter_median_s": 7.7,
+    "early10_pct": 33,
+    "conv_150": 49.2,
+    "conv_naked": 9.0,
+    "stacked_share": 41,
+    "conv_rl": 49.2,
+    "conv_norl": 11.0,
+    "conv_early": 24.8,
+    "conv_late": 27.7,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 477,
+      "conv": 38.8
+     },
+     {
+      "spot": "window",
+      "n": 261,
+      "conv": 22.6
+     },
+     {
+      "spot": "Ring",
+      "n": 239,
+      "conv": 39.3
+     },
+     {
+      "spot": "hill",
+      "n": 153,
+      "conv": 11.1
+     },
+     {
+      "spot": "RL",
+      "n": 149,
+      "conv": 3.4
+     }
+    ],
+    "paths": [
+     "RA > RA.low > RA.entry > Ring > Quad",
+     "SNG > SNG.lifts > lifts.below > Ring > Quad",
+     "RA > RA.rox > SNG.tele > Ring > Quad"
+    ]
+   },
+   {
+    "player": "yeti",
+    "region": "NA",
+    "games": 351,
+    "spawns": 6670,
+    "contest_pct": 85,
+    "conv_pct": 23,
+    "take_pct_all": 20,
+    "takes_per_game": 3.7,
+    "died_pre_pct": 15,
+    "stack_m10": 202,
+    "stack_m5": 201,
+    "rl_m5": 74,
+    "inside_m10": 30,
+    "enter_median_s": 7.8,
+    "early10_pct": 31,
+    "conv_150": 45.1,
+    "conv_naked": 11.8,
+    "stacked_share": 34,
+    "conv_rl": 40.8,
+    "conv_norl": 10.4,
+    "conv_early": 22.2,
+    "conv_late": 26.1,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 1286,
+      "conv": 37.2
+     },
+     {
+      "spot": "window",
+      "n": 1182,
+      "conv": 22.6
+     },
+     {
+      "spot": "Ring",
+      "n": 576,
+      "conv": 31.6
+     },
+     {
+      "spot": "hill",
+      "n": 520,
+      "conv": 13.8
+     },
+     {
+      "spot": "lifts",
+      "n": 414,
+      "conv": 11.8
+     }
+    ],
+    "paths": [
+     "window > Pent > lifts > window > Quad",
+     "YA > YA.box > window > window.Quad > Quad",
+     "YA.box > YA > YA.up > YA.Quad > Quad"
+    ]
+   },
+   {
+    "player": "ekz",
+    "region": "EU",
+    "games": 149,
+    "spawns": 2832,
+    "contest_pct": 83,
+    "conv_pct": 23,
+    "take_pct_all": 19,
+    "takes_per_game": 3.6,
+    "died_pre_pct": 16,
+    "stack_m10": 241,
+    "stack_m5": 250,
+    "rl_m5": 69,
+    "inside_m10": 26,
+    "enter_median_s": 7.3,
+    "early10_pct": 26,
+    "conv_150": 48.7,
+    "conv_naked": 8.4,
+    "stacked_share": 37,
+    "conv_rl": 45.3,
+    "conv_norl": 10.8,
+    "conv_early": 19.0,
+    "conv_late": 25.6,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 501,
+      "conv": 39.3
+     },
+     {
+      "spot": "window",
+      "n": 460,
+      "conv": 26.7
+     },
+     {
+      "spot": "Ring",
+      "n": 256,
+      "conv": 35.5
+     },
+     {
+      "spot": "hill",
+      "n": 215,
+      "conv": 5.6
+     },
+     {
+      "spot": "lifts.below",
+      "n": 169,
+      "conv": 26.6
+     }
+    ],
+    "paths": [
+     "SNG > SNG.MH > SNG.tele > Ring > Quad",
+     "YA > YA.box > window > window.Quad > Quad",
+     "RA > RA.low > Ring > Quad"
+    ]
+   },
+   {
+    "player": "ok98",
+    "region": "EU",
+    "games": 130,
+    "spawns": 2470,
+    "contest_pct": 80,
+    "conv_pct": 23,
+    "take_pct_all": 18,
+    "takes_per_game": 3.4,
+    "died_pre_pct": 17,
+    "stack_m10": 198,
+    "stack_m5": 205,
+    "rl_m5": 65,
+    "inside_m10": 31,
+    "enter_median_s": 7.4,
+    "early10_pct": 31,
+    "conv_150": 46.8,
+    "conv_naked": 11.5,
+    "stacked_share": 31,
+    "conv_rl": 42.2,
+    "conv_norl": 12.3,
+    "conv_early": 23.3,
+    "conv_late": 26.6,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 418,
+      "conv": 35.6
+     },
+     {
+      "spot": "window",
+      "n": 397,
+      "conv": 23.9
+     },
+     {
+      "spot": "Ring",
+      "n": 208,
+      "conv": 35.6
+     },
+     {
+      "spot": "hill",
+      "n": 150,
+      "conv": 10.0
+     },
+     {
+      "spot": "lifts",
+      "n": 144,
+      "conv": 12.5
+     }
+    ],
+    "paths": [
+     "YA > YA.box > window > window.Quad > Quad",
+     "RA.low > RA > RA.low > Ring > Quad",
+     "window > Pent > lifts > window > Quad"
+    ]
+   },
+   {
+    "player": "chris",
+    "region": "NA",
+    "games": 134,
+    "spawns": 2542,
+    "contest_pct": 81,
+    "conv_pct": 21,
+    "take_pct_all": 17,
+    "takes_per_game": 3.2,
+    "died_pre_pct": 10,
+    "stack_m10": 222,
+    "stack_m5": 226,
+    "rl_m5": 80,
+    "inside_m10": 46,
+    "enter_median_s": 9.6,
+    "early10_pct": 46,
+    "conv_150": 45.7,
+    "conv_naked": 7.5,
+    "stacked_share": 37,
+    "conv_rl": 43.5,
+    "conv_norl": 6.8,
+    "conv_early": 27.9,
+    "conv_late": 17.2,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 469,
+      "conv": 39.0
+     },
+     {
+      "spot": "window",
+      "n": 377,
+      "conv": 20.4
+     },
+     {
+      "spot": "hill",
+      "n": 213,
+      "conv": 8.0
+     },
+     {
+      "spot": "Ring",
+      "n": 171,
+      "conv": 31.0
+     },
+     {
+      "spot": "bridge.low",
+      "n": 144,
+      "conv": 5.6
+     }
+    ],
+    "paths": [
+     "RA.low > RA > RA.low > Ring > Quad",
+     "YA > YA.box > window > window.Quad > Quad",
+     "Quad > YA.Quad > YA.up > YA.Quad > Quad"
+    ]
+   },
+   {
+    "player": "xantom",
+    "region": "EU",
+    "games": 85,
+    "spawns": 1615,
+    "contest_pct": 82,
+    "conv_pct": 21,
+    "take_pct_all": 17,
+    "takes_per_game": 3.3,
+    "died_pre_pct": 12,
+    "stack_m10": 238,
+    "stack_m5": 242,
+    "rl_m5": 76,
+    "inside_m10": 32,
+    "enter_median_s": 7.4,
+    "early10_pct": 32,
+    "conv_150": 41.9,
+    "conv_naked": 7.8,
+    "stacked_share": 40,
+    "conv_rl": 35.7,
+    "conv_norl": 9.5,
+    "conv_early": 20.8,
+    "conv_late": 28.2,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 274,
+      "conv": 36.9
+     },
+     {
+      "spot": "window",
+      "n": 221,
+      "conv": 19.9
+     },
+     {
+      "spot": "Ring",
+      "n": 161,
+      "conv": 29.2
+     },
+     {
+      "spot": "hill",
+      "n": 134,
+      "conv": 9.7
+     },
+     {
+      "spot": "lifts",
+      "n": 81,
+      "conv": 12.3
+     }
+    ],
+    "paths": [
+     "Quad > YA.Quad > YA.up > YA.Quad > Quad",
+     "RA.low > RA > RA.entry > Ring > Quad",
+     "RA > RA.rox > SNG.tele > Ring > Quad"
+    ]
+   },
+   {
+    "player": "lac",
+    "region": "EU",
+    "games": 84,
+    "spawns": 1596,
+    "contest_pct": 81,
+    "conv_pct": 21,
+    "take_pct_all": 17,
+    "takes_per_game": 3.2,
+    "died_pre_pct": 16,
+    "stack_m10": 222,
+    "stack_m5": 214,
+    "rl_m5": 72,
+    "inside_m10": 32,
+    "enter_median_s": 8.0,
+    "early10_pct": 33,
+    "conv_150": 45.6,
+    "conv_naked": 8.3,
+    "stacked_share": 34,
+    "conv_rl": 39.3,
+    "conv_norl": 9.0,
+    "conv_early": 20.3,
+    "conv_late": 21.9,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 293,
+      "conv": 34.1
+     },
+     {
+      "spot": "window",
+      "n": 179,
+      "conv": 22.3
+     },
+     {
+      "spot": "Ring",
+      "n": 166,
+      "conv": 31.3
+     },
+     {
+      "spot": "hill",
+      "n": 124,
+      "conv": 7.3
+     },
+     {
+      "spot": "lifts.below",
+      "n": 107,
+      "conv": 19.6
+     }
+    ],
+    "paths": [
+     "YA.box > YA > YA.up > YA.Quad > Quad",
+     "RA > RA.rox > SNG.tele > Ring > Quad",
+     "Quad > window.Quad > Quad > window.Quad > Quad"
+    ]
+   },
+   {
+    "player": "sae",
+    "region": "EU",
+    "games": 87,
+    "spawns": 1653,
+    "contest_pct": 83,
+    "conv_pct": 20,
+    "take_pct_all": 16,
+    "takes_per_game": 3.1,
+    "died_pre_pct": 15,
+    "stack_m10": 213,
+    "stack_m5": 204,
+    "rl_m5": 72,
+    "inside_m10": 27,
+    "enter_median_s": 7.0,
+    "early10_pct": 27,
+    "conv_150": 39.5,
+    "conv_naked": 9.8,
+    "stacked_share": 33,
+    "conv_rl": 38.3,
+    "conv_norl": 8.9,
+    "conv_early": 18.7,
+    "conv_late": 23.1,
+    "entries": [
+     {
+      "spot": "window",
+      "n": 360,
+      "conv": 17.8
+     },
+     {
+      "spot": "Quad",
+      "n": 260,
+      "conv": 32.3
+     },
+     {
+      "spot": "hill",
+      "n": 148,
+      "conv": 12.8
+     },
+     {
+      "spot": "Ring",
+      "n": 138,
+      "conv": 23.2
+     },
+     {
+      "spot": "lifts",
+      "n": 133,
+      "conv": 9.0
+     }
+    ],
+    "paths": [
+     "YA > YA.box > window > window.Quad > Quad",
+     "YA.box > YA > YA.box > window > Quad",
+     "RA.low > RA > RA.low > Ring > Quad"
+    ]
+   },
+   {
+    "player": "sane",
+    "region": "NA",
+    "games": 68,
+    "spawns": 1288,
+    "contest_pct": 81,
+    "conv_pct": 19,
+    "take_pct_all": 15,
+    "takes_per_game": 2.9,
+    "died_pre_pct": 13,
+    "stack_m10": 236,
+    "stack_m5": 229,
+    "rl_m5": 73,
+    "inside_m10": 30,
+    "enter_median_s": 8.4,
+    "early10_pct": 31,
+    "conv_150": 38.6,
+    "conv_naked": 9.0,
+    "stacked_share": 34,
+    "conv_rl": 34.7,
+    "conv_norl": 8.0,
+    "conv_early": 17.0,
+    "conv_late": 20.6,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 210,
+      "conv": 33.3
+     },
+     {
+      "spot": "window",
+      "n": 186,
+      "conv": 19.4
+     },
+     {
+      "spot": "Ring",
+      "n": 117,
+      "conv": 34.2
+     },
+     {
+      "spot": "hill",
+      "n": 92,
+      "conv": 4.3
+     },
+     {
+      "spot": "RL",
+      "n": 83,
+      "conv": 4.8
+     }
+    ],
+    "paths": [
+     "Pent > lifts > window > window.Quad > Quad",
+     "RA.low > RA > RA.entry > Ring > Quad",
+     "RA.low > RA > RA.low > Ring > Quad"
+    ]
+   },
+   {
+    "player": "splif",
+    "region": "EU",
+    "games": 205,
+    "spawns": 3896,
+    "contest_pct": 80,
+    "conv_pct": 19,
+    "take_pct_all": 16,
+    "takes_per_game": 3.0,
+    "died_pre_pct": 15,
+    "stack_m10": 207,
+    "stack_m5": 213,
+    "rl_m5": 73,
+    "inside_m10": 34,
+    "enter_median_s": 8.1,
+    "early10_pct": 35,
+    "conv_150": 38.6,
+    "conv_naked": 9.4,
+    "stacked_share": 35,
+    "conv_rl": 35.6,
+    "conv_norl": 8.7,
+    "conv_early": 21.2,
+    "conv_late": 20.2,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 710,
+      "conv": 33.7
+     },
+     {
+      "spot": "window",
+      "n": 525,
+      "conv": 20.8
+     },
+     {
+      "spot": "Ring",
+      "n": 326,
+      "conv": 24.5
+     },
+     {
+      "spot": "RL",
+      "n": 297,
+      "conv": 4.4
+     },
+     {
+      "spot": "bridge.high",
+      "n": 237,
+      "conv": 14.3
+     }
+    ],
+    "paths": [
+     "Quad > YA.Quad > YA.up > YA.Quad > Quad",
+     "YA > YA.box > window > window.Quad > Quad",
+     "window > Pent > lifts > window > Quad"
+    ]
+   },
+   {
+    "player": "bps",
+    "region": "EU",
+    "games": 60,
+    "spawns": 1140,
+    "contest_pct": 85,
+    "conv_pct": 18,
+    "take_pct_all": 15,
+    "takes_per_game": 2.8,
+    "died_pre_pct": 16,
+    "stack_m10": 202,
+    "stack_m5": 203,
+    "rl_m5": 65,
+    "inside_m10": 28,
+    "enter_median_s": 7.3,
+    "early10_pct": 28,
+    "conv_150": 36.8,
+    "conv_naked": 9.2,
+    "stacked_share": 31,
+    "conv_rl": 33.8,
+    "conv_norl": 9.4,
+    "conv_early": 15.3,
+    "conv_late": 23.1,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 201,
+      "conv": 37.3
+     },
+     {
+      "spot": "Ring",
+      "n": 135,
+      "conv": 23.7
+     },
+     {
+      "spot": "window",
+      "n": 131,
+      "conv": 16.0
+     },
+     {
+      "spot": "hill",
+      "n": 118,
+      "conv": 7.6
+     },
+     {
+      "spot": "RL",
+      "n": 76,
+      "conv": 3.9
+     }
+    ],
+    "paths": [
+     "RA.low > RA > RA.low > Ring > Quad",
+     "RA.low > RA > RA.entry > Ring > Quad",
+     "RA > RA.rox > SNG.tele > Ring > Quad"
+    ]
+   },
+   {
+    "player": "reppie",
+    "region": "EU",
+    "games": 53,
+    "spawns": 1007,
+    "contest_pct": 83,
+    "conv_pct": 16,
+    "take_pct_all": 13,
+    "takes_per_game": 2.5,
+    "died_pre_pct": 14,
+    "stack_m10": 210,
+    "stack_m5": 210,
+    "rl_m5": 82,
+    "inside_m10": 41,
+    "enter_median_s": 8.7,
+    "early10_pct": 43,
+    "conv_150": 32.0,
+    "conv_naked": 6.0,
+    "stacked_share": 37,
+    "conv_rl": 28.3,
+    "conv_norl": 4.9,
+    "conv_early": 16.3,
+    "conv_late": 20.9,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 169,
+      "conv": 23.7
+     },
+     {
+      "spot": "window",
+      "n": 148,
+      "conv": 13.5
+     },
+     {
+      "spot": "Ring",
+      "n": 121,
+      "conv": 26.4
+     },
+     {
+      "spot": "hill",
+      "n": 73,
+      "conv": 5.5
+     },
+     {
+      "spot": "lifts.below",
+      "n": 61,
+      "conv": 13.1
+     }
+    ],
+    "paths": [
+     "RA.low > RA > RA.low > Ring > Quad",
+     "RA > RA.low > RA.entry > Ring > Quad",
+     "YA > YA.box > window > window.Quad > Quad"
+    ]
+   },
+   {
+    "player": "grisling",
+    "region": "EU",
+    "games": 95,
+    "spawns": 1805,
+    "contest_pct": 80,
+    "conv_pct": 16,
+    "take_pct_all": 12,
+    "takes_per_game": 2.4,
+    "died_pre_pct": 16,
+    "stack_m10": 206,
+    "stack_m5": 205,
+    "rl_m5": 64,
+    "inside_m10": 31,
+    "enter_median_s": 7.7,
+    "early10_pct": 31,
+    "conv_150": 32.8,
+    "conv_naked": 7.2,
+    "stacked_share": 33,
+    "conv_rl": 30.5,
+    "conv_norl": 8.0,
+    "conv_early": 15.6,
+    "conv_late": 15.1,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 295,
+      "conv": 28.1
+     },
+     {
+      "spot": "window",
+      "n": 234,
+      "conv": 15.8
+     },
+     {
+      "spot": "Ring",
+      "n": 162,
+      "conv": 18.5
+     },
+     {
+      "spot": "hill",
+      "n": 145,
+      "conv": 6.9
+     },
+     {
+      "spot": "RL",
+      "n": 142,
+      "conv": 2.8
+     }
+    ],
+    "paths": [
+     "Quad > YA.Quad > YA.up > YA.Quad > Quad",
+     "RA > RA.low > RA.entry > Ring > Quad",
+     "YA > YA.box > window > window.Quad > Quad"
+    ]
+   },
+   {
+    "player": "rusti",
+    "region": "EU",
+    "games": 160,
+    "spawns": 3045,
+    "contest_pct": 78,
+    "conv_pct": 16,
+    "take_pct_all": 12,
+    "takes_per_game": 2.3,
+    "died_pre_pct": 15,
+    "stack_m10": 211,
+    "stack_m5": 211,
+    "rl_m5": 58,
+    "inside_m10": 30,
+    "enter_median_s": 7.9,
+    "early10_pct": 30,
+    "conv_150": 33.2,
+    "conv_naked": 8.4,
+    "stacked_share": 31,
+    "conv_rl": 28.6,
+    "conv_norl": 9.6,
+    "conv_early": 14.7,
+    "conv_late": 16.3,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 549,
+      "conv": 30.1
+     },
+     {
+      "spot": "window",
+      "n": 294,
+      "conv": 13.9
+     },
+     {
+      "spot": "Ring",
+      "n": 268,
+      "conv": 19.8
+     },
+     {
+      "spot": "hill",
+      "n": 232,
+      "conv": 7.8
+     },
+     {
+      "spot": "RL",
+      "n": 165,
+      "conv": 5.5
+     }
+    ],
+    "paths": [
+     "RA > RA.low > RA.entry > Ring > Quad",
+     "RA > RA.rox > SNG.tele > Ring > Quad",
+     "RA.low > RA > RA.low > Ring > Quad"
+    ]
+   },
+   {
+    "player": "jon",
+    "region": "EU",
+    "games": 106,
+    "spawns": 2001,
+    "contest_pct": 77,
+    "conv_pct": 16,
+    "take_pct_all": 12,
+    "takes_per_game": 2.3,
+    "died_pre_pct": 11,
+    "stack_m10": 236,
+    "stack_m5": 239,
+    "rl_m5": 71,
+    "inside_m10": 32,
+    "enter_median_s": 8.0,
+    "early10_pct": 32,
+    "conv_150": 29.5,
+    "conv_naked": 5.8,
+    "stacked_share": 42,
+    "conv_rl": 25.7,
+    "conv_norl": 7.9,
+    "conv_early": 16.0,
+    "conv_late": 17.0,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 338,
+      "conv": 32.5
+     },
+     {
+      "spot": "window",
+      "n": 268,
+      "conv": 14.2
+     },
+     {
+      "spot": "Ring",
+      "n": 173,
+      "conv": 21.4
+     },
+     {
+      "spot": "hill",
+      "n": 151,
+      "conv": 5.3
+     },
+     {
+      "spot": "RL",
+      "n": 125,
+      "conv": 3.2
+     }
+    ],
+    "paths": [
+     "Quad > YA.Quad > YA.up > YA.Quad > Quad",
+     "YA > YA.box > window > window.Quad > Quad",
+     "RA > RA.low > RA.entry > Ring > Quad"
+    ]
+   },
+   {
+    "player": "edvin",
+    "region": "EU",
+    "games": 134,
+    "spawns": 2545,
+    "contest_pct": 79,
+    "conv_pct": 16,
+    "take_pct_all": 13,
+    "takes_per_game": 2.4,
+    "died_pre_pct": 15,
+    "stack_m10": 230,
+    "stack_m5": 238,
+    "rl_m5": 80,
+    "inside_m10": 45,
+    "enter_median_s": 9.5,
+    "early10_pct": 45,
+    "conv_150": 37.9,
+    "conv_naked": 6.1,
+    "stacked_share": 32,
+    "conv_rl": 34.6,
+    "conv_norl": 5.0,
+    "conv_early": 18.2,
+    "conv_late": 15.1,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 480,
+      "conv": 29.4
+     },
+     {
+      "spot": "window",
+      "n": 353,
+      "conv": 13.6
+     },
+     {
+      "spot": "hill",
+      "n": 200,
+      "conv": 7.0
+     },
+     {
+      "spot": "Ring",
+      "n": 196,
+      "conv": 27.0
+     },
+     {
+      "spot": "lifts",
+      "n": 165,
+      "conv": 4.8
+     }
+    ],
+    "paths": [
+     "RA.low > RA > RA.entry > Ring > Quad",
+     "Quad > window.Quad > Quad > window.Quad > Quad",
+     "RA.low > RA > RA.low > Ring > Quad"
+    ]
+   },
+   {
+    "player": "andeh",
+    "region": "EU",
+    "games": 51,
+    "spawns": 969,
+    "contest_pct": 82,
+    "conv_pct": 15,
+    "take_pct_all": 12,
+    "takes_per_game": 2.3,
+    "died_pre_pct": 16,
+    "stack_m10": 188,
+    "stack_m5": 206,
+    "rl_m5": 69,
+    "inside_m10": 41,
+    "enter_median_s": 9.1,
+    "early10_pct": 41,
+    "conv_150": 36.5,
+    "conv_naked": 6.9,
+    "stacked_share": 28,
+    "conv_rl": 33.9,
+    "conv_norl": 6.2,
+    "conv_early": 18.8,
+    "conv_late": 12.1,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 190,
+      "conv": 25.3
+     },
+     {
+      "spot": "hill",
+      "n": 103,
+      "conv": 7.8
+     },
+     {
+      "spot": "Ring",
+      "n": 103,
+      "conv": 14.6
+     },
+     {
+      "spot": "window",
+      "n": 93,
+      "conv": 15.1
+     },
+     {
+      "spot": "bridge.low",
+      "n": 52,
+      "conv": 1.9
+     }
+    ],
+    "paths": [
+     "YA.box > YA > YA.up > YA.Quad > Quad",
+     "Quad > window.Quad > Quad > window.Quad > Quad",
+     "lifts > Pent > lifts > window > Quad"
+    ]
+   },
+   {
+    "player": "stepcop",
+    "region": "EU",
+    "games": 87,
+    "spawns": 1653,
+    "contest_pct": 83,
+    "conv_pct": 15,
+    "take_pct_all": 12,
+    "takes_per_game": 2.3,
+    "died_pre_pct": 17,
+    "stack_m10": 160,
+    "stack_m5": 182,
+    "rl_m5": 59,
+    "inside_m10": 25,
+    "enter_median_s": 6.9,
+    "early10_pct": 25,
+    "conv_150": 32.4,
+    "conv_naked": 8.2,
+    "stacked_share": 27,
+    "conv_rl": 30.9,
+    "conv_norl": 8.2,
+    "conv_early": 11.2,
+    "conv_late": 21.4,
+    "entries": [
+     {
+      "spot": "window",
+      "n": 224,
+      "conv": 13.8
+     },
+     {
+      "spot": "Quad",
+      "n": 216,
+      "conv": 24.5
+     },
+     {
+      "spot": "hill",
+      "n": 175,
+      "conv": 7.4
+     },
+     {
+      "spot": "Ring",
+      "n": 162,
+      "conv": 21.6
+     },
+     {
+      "spot": "lifts",
+      "n": 125,
+      "conv": 9.6
+     }
+    ],
+    "paths": [
+     "RA.low > RA > RA.low > Ring > Quad",
+     "RA.low > RA > RA.entry > Ring > Quad",
+     "RA.low > RA.rox > SNG.tele > Ring > Quad"
+    ]
+   },
+   {
+    "player": "paradoks",
+    "region": "EU",
+    "games": 115,
+    "spawns": 2185,
+    "contest_pct": 84,
+    "conv_pct": 15,
+    "take_pct_all": 13,
+    "takes_per_game": 2.4,
+    "died_pre_pct": 16,
+    "stack_m10": 192,
+    "stack_m5": 203,
+    "rl_m5": 70,
+    "inside_m10": 29,
+    "enter_median_s": 7.4,
+    "early10_pct": 29,
+    "conv_150": 36.4,
+    "conv_naked": 6.7,
+    "stacked_share": 29,
+    "conv_rl": 32.0,
+    "conv_norl": 6.7,
+    "conv_early": 14.2,
+    "conv_late": 15.4,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 471,
+      "conv": 22.1
+     },
+     {
+      "spot": "window",
+      "n": 263,
+      "conv": 19.0
+     },
+     {
+      "spot": "Ring",
+      "n": 216,
+      "conv": 19.9
+     },
+     {
+      "spot": "hill",
+      "n": 196,
+      "conv": 6.6
+     },
+     {
+      "spot": "lifts",
+      "n": 137,
+      "conv": 7.3
+     }
+    ],
+    "paths": [
+     "YA > YA.box > window > window.Quad > Quad",
+     "RA.low > RA > RA.low > Ring > Quad",
+     "YA.box > YA > YA.up > YA.Quad > Quad"
+    ]
+   },
+   {
+    "player": "bas",
+    "region": "EU",
+    "games": 111,
+    "spawns": 2096,
+    "contest_pct": 79,
+    "conv_pct": 10,
+    "take_pct_all": 8,
+    "takes_per_game": 1.4,
+    "died_pre_pct": 14,
+    "stack_m10": 210,
+    "stack_m5": 190,
+    "rl_m5": 62,
+    "inside_m10": 37,
+    "enter_median_s": 8.6,
+    "early10_pct": 37,
+    "conv_150": 20.2,
+    "conv_naked": 5.6,
+    "stacked_share": 26,
+    "conv_rl": 19.5,
+    "conv_norl": 5.0,
+    "conv_early": 9.3,
+    "conv_late": 9.2,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 335,
+      "conv": 16.1
+     },
+     {
+      "spot": "window",
+      "n": 271,
+      "conv": 9.2
+     },
+     {
+      "spot": "Ring",
+      "n": 197,
+      "conv": 16.2
+     },
+     {
+      "spot": "hill",
+      "n": 196,
+      "conv": 0.5
+     },
+     {
+      "spot": "bridge.high",
+      "n": 129,
+      "conv": 10.1
+     }
+    ],
+    "paths": [
+     "YA > YA.box > window > window.Quad > Quad",
+     "RA.low > RA > RA.low > RA.entry > Quad",
+     "RA.low > RA.entry > Quad > window.Quad > Quad"
+    ]
+   },
+   {
+    "player": "cronus",
+    "region": "NA",
+    "games": 344,
+    "spawns": 6522,
+    "contest_pct": 80,
+    "conv_pct": 9,
+    "take_pct_all": 8,
+    "takes_per_game": 1.4,
+    "died_pre_pct": 13,
+    "stack_m10": 204,
+    "stack_m5": 205,
+    "rl_m5": 71,
+    "inside_m10": 35,
+    "enter_median_s": 8.4,
+    "early10_pct": 36,
+    "conv_150": 24.7,
+    "conv_naked": 4.1,
+    "stacked_share": 25,
+    "conv_rl": 23.1,
+    "conv_norl": 3.7,
+    "conv_early": 9.7,
+    "conv_late": 10.0,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 1134,
+      "conv": 18.9
+     },
+     {
+      "spot": "window",
+      "n": 996,
+      "conv": 9.5
+     },
+     {
+      "spot": "hill",
+      "n": 653,
+      "conv": 4.0
+     },
+     {
+      "spot": "RL",
+      "n": 527,
+      "conv": 2.8
+     },
+     {
+      "spot": "lifts",
+      "n": 383,
+      "conv": 3.9
+     }
+    ],
+    "paths": [
+     "YA > YA.box > window > window.Quad > Quad",
+     "RA.low > RA > RA.low > Ring > Quad",
+     "YA.entry > YA > YA.up > YA.Quad > Quad"
+    ]
+   },
+   {
+    "player": "goblin",
+    "region": "EU",
+    "games": 23,
+    "spawns": 437,
+    "contest_pct": 80,
+    "conv_pct": 9,
+    "take_pct_all": 7,
+    "takes_per_game": 1.3,
+    "died_pre_pct": 12,
+    "stack_m10": 200,
+    "stack_m5": 234,
+    "rl_m5": 63,
+    "inside_m10": 33,
+    "enter_median_s": 9.0,
+    "early10_pct": 36,
+    "conv_150": 24.4,
+    "conv_naked": 3.2,
+    "stacked_share": 25,
+    "conv_rl": 20.7,
+    "conv_norl": 3.8,
+    "conv_early": 8.2,
+    "conv_late": 10.0,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 67,
+      "conv": 22.4
+     },
+     {
+      "spot": "window",
+      "n": 53,
+      "conv": 5.7
+     },
+     {
+      "spot": "hill",
+      "n": 41,
+      "conv": 4.9
+     },
+     {
+      "spot": "Ring",
+      "n": 39,
+      "conv": 15.4
+     },
+     {
+      "spot": "lifts",
+      "n": 29,
+      "conv": 0.0
+     }
+    ],
+    "paths": [
+     "SNG.tele > Ring > RA.entry > Ring > Quad",
+     "Quad > YA.Quad > YA.up > YA.Quad > Quad",
+     "Pent > lifts > lifts.below > Ring > Quad"
+    ]
+   },
+   {
+    "player": "hto",
+    "region": "EU",
+    "games": 168,
+    "spawns": 3197,
+    "contest_pct": 80,
+    "conv_pct": 6,
+    "take_pct_all": 5,
+    "takes_per_game": 1.0,
+    "died_pre_pct": 11,
+    "stack_m10": 224,
+    "stack_m5": 236,
+    "rl_m5": 82,
+    "inside_m10": 34,
+    "enter_median_s": 8.3,
+    "early10_pct": 35,
+    "conv_150": 17.4,
+    "conv_naked": 2.0,
+    "stacked_share": 27,
+    "conv_rl": 17.4,
+    "conv_norl": 1.6,
+    "conv_early": 6.2,
+    "conv_late": 7.4,
+    "entries": [
+     {
+      "spot": "window",
+      "n": 397,
+      "conv": 8.1
+     },
+     {
+      "spot": "hill",
+      "n": 352,
+      "conv": 2.0
+     },
+     {
+      "spot": "Quad",
+      "n": 310,
+      "conv": 21.0
+     },
+     {
+      "spot": "RL",
+      "n": 252,
+      "conv": 1.2
+     },
+     {
+      "spot": "water",
+      "n": 226,
+      "conv": 1.3
+     }
+    ],
+    "paths": [
+     "RA > RA.rox > SNG.tele > Ring > Quad",
+     "Quad > window.Quad > Quad > window.Quad > Quad",
+     "RA.low > RA > RA.low > Ring > Quad"
+    ]
+   },
+   {
+    "player": "anza",
+    "region": "EU",
+    "games": 364,
+    "spawns": 6926,
+    "contest_pct": 80,
+    "conv_pct": 6,
+    "take_pct_all": 5,
+    "takes_per_game": 1.0,
+    "died_pre_pct": 14,
+    "stack_m10": 180,
+    "stack_m5": 200,
+    "rl_m5": 45,
+    "inside_m10": 39,
+    "enter_median_s": 8.9,
+    "early10_pct": 41,
+    "conv_150": 19.3,
+    "conv_naked": 2.7,
+    "stacked_share": 21,
+    "conv_rl": 17.8,
+    "conv_norl": 4.0,
+    "conv_early": 6.9,
+    "conv_late": 6.2,
+    "entries": [
+     {
+      "spot": "hill",
+      "n": 790,
+      "conv": 1.3
+     },
+     {
+      "spot": "window",
+      "n": 722,
+      "conv": 7.5
+     },
+     {
+      "spot": "Quad",
+      "n": 705,
+      "conv": 16.2
+     },
+     {
+      "spot": "lifts",
+      "n": 483,
+      "conv": 4.3
+     },
+     {
+      "spot": "RL",
+      "n": 463,
+      "conv": 1.5
+     }
+    ],
+    "paths": [
+     "YA > YA.box > window > window.Quad > Quad",
+     "RA.low > RA > RA.low > Ring > Quad",
+     "Pent > lifts > lifts.below > Ring > Quad"
+    ]
+   }
+  ],
+  "pools": {
+   "NA": {
+    "player": "pool",
+    "region": "NA",
+    "games": 774,
+    "spawns": 88382,
+    "contest_pct": 80,
+    "conv_pct": 14,
+    "take_pct_all": 11,
+    "takes_per_game": 12.4,
+    "died_pre_pct": 15,
+    "stack_m10": 200,
+    "stack_m5": 208,
+    "rl_m5": 64,
+    "inside_m10": 33,
+    "enter_median_s": 8.0,
+    "early10_pct": 33,
+    "conv_150": 32.5,
+    "conv_naked": 6.5,
+    "stacked_share": 28,
+    "conv_rl": 31.1,
+    "conv_norl": 6.8,
+    "conv_early": 13.3,
+    "conv_late": 15.3,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 13164,
+      "conv": 25.6
+     },
+     {
+      "spot": "window",
+      "n": 12028,
+      "conv": 14.8
+     },
+     {
+      "spot": "hill",
+      "n": 7822,
+      "conv": 5.1
+     },
+     {
+      "spot": "Ring",
+      "n": 7250,
+      "conv": 19.2
+     },
+     {
+      "spot": "RL",
+      "n": 6141,
+      "conv": 4.1
+     }
+    ],
+    "paths": [
+     "YA > YA.box > window > window.Quad > Quad",
+     "RA.low > RA > RA.low > Ring > Quad",
+     "RA > RA.rox > SNG.tele > Ring > Quad"
+    ]
+   },
+   "EU": {
+    "player": "pool",
+    "region": "EU",
+    "games": 1306,
+    "spawns": 147970,
+    "contest_pct": 81,
+    "conv_pct": 15,
+    "take_pct_all": 12,
+    "takes_per_game": 13.7,
+    "died_pre_pct": 16,
+    "stack_m10": 196,
+    "stack_m5": 205,
+    "rl_m5": 63,
+    "inside_m10": 33,
+    "enter_median_s": 8.0,
+    "early10_pct": 33,
+    "conv_150": 33.6,
+    "conv_naked": 7.5,
+    "stacked_share": 29,
+    "conv_rl": 30.8,
+    "conv_norl": 7.9,
+    "conv_early": 14.8,
+    "conv_late": 16.5,
+    "entries": [
+     {
+      "spot": "Quad",
+      "n": 23731,
+      "conv": 26.8
+     },
+     {
+      "spot": "window",
+      "n": 19499,
+      "conv": 16.5
+     },
+     {
+      "spot": "Ring",
+      "n": 13057,
+      "conv": 21.4
+     },
+     {
+      "spot": "hill",
+      "n": 11986,
+      "conv": 6.3
+     },
+     {
+      "spot": "RL",
+      "n": 10017,
+      "conv": 4.4
+     }
+    ],
+    "paths": [
+     "YA > YA.box > window > window.Quad > Quad",
+     "RA.low > RA > RA.low > Ring > Quad",
+     "RA > RA.rox > SNG.tele > Ring > Quad"
+    ]
+   }
+  }
+ }
+}

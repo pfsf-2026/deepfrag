@@ -6,6 +6,14 @@ const route = useRoute()
 const map = computed(() => String(route.params.map || ''))
 const pb = computed(() => quadPlaybook(map.value))
 const others = computed(() => COACH_MAPS.filter(m => m !== map.value))
+const top = computed(() => QUAD_TOP[map.value] || null)
+const topNotes = computed(() => QUAD_TOP_NOTES[map.value] || [])
+const topRows = computed(() => {
+  if (!top.value) return []
+  const pools = Object.entries(top.value.pools).map(([reg, r]) => ({ ...r, player: `everyone else (${reg})`, pool: true }))
+  return [...top.value.players, ...pools]
+})
+function bestEntry(r) { const e = (r.entries || []).filter(x => x.n >= 100).sort((a, b) => b.conv - a.conv)[0]; return e ? `${e.spot} ${Math.round(e.conv)}%` : '—' }
 const best = computed(() => (pb.value?.ways || []).filter(w => w.n >= 100).sort((a, b) => (b.conv ?? 0) - (a.conv ?? 0))[0] || null)
 function pct(v) { return v == null ? '—' : `${Math.round(v)}%` }
 useSeoMeta({ title: () => pb.value ? `${pb.value.title} · AI Coach · DeepFrag` : 'Quad · DeepFrag', description: () => pb.value ? `${pb.value.title}: the ways in, which one converts, and what decides it. From every fours demo on the NA servers.` : '' })
@@ -54,6 +62,32 @@ useSeoMeta({ title: () => pb.value ? `${pb.value.title} · AI Coach · DeepFrag`
 
       <p v-if="pb.late && pb.late.n" class="late muted small">Too far to count: players {{ pb.late.note }} were {{ pb.late.share }}% of the contesters and took it <b>{{ pb.late.conv }}%</b> of the time. That is not a way in, that is being late.</p>
 
+      <section v-if="top" class="sec">
+        <div class="stitle">What the best players do here <span class="muted small">· the 20 seconds before every quad spawn, from their demos</span></div>
+        <ul v-if="topNotes.length" class="notes"><li v-for="(n, i) in topNotes" :key="i" v-html="linkTerms(n)" /></ul>
+        <div class="tbl">
+          <table>
+            <thead><tr><th>player</th><th class="num">games</th><th class="num">takes / game</th><th class="num">convert</th><th class="num">stacked convert</th><th class="num">naked convert</th><th class="num">with RL</th><th class="num">stack 5 s out</th><th class="num">RL in hand</th><th class="num">there 10 s early</th><th>best way in</th></tr></thead>
+            <tbody>
+              <tr v-for="r in topRows" :key="r.player + r.region" :class="{ pool: r.pool }">
+                <td><b>{{ r.player }}</b><span v-if="!r.pool" class="muted small"> · {{ r.region }}</span></td>
+                <td class="num">{{ r.games }}</td>
+                <td class="num">{{ r.takes_per_game }}</td>
+                <td class="num"><b>{{ pct(r.conv_pct) }}</b></td>
+                <td class="num">{{ pct(r.conv_150) }}</td>
+                <td class="num">{{ pct(r.conv_naked) }}</td>
+                <td class="num">{{ pct(r.conv_rl) }}</td>
+                <td class="num">{{ r.stack_m5 ?? '—' }}</td>
+                <td class="num">{{ pct(r.rl_m5) }}</td>
+                <td class="num">{{ pct(r.early10_pct) }}</td>
+                <td>{{ bestEntry(r) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="dnote">"Convert" is takes divided by the spawns the player was near. "Stacked" is 150+ <NuxtLink to="/glossary#stack" class="term">stack</NuxtLink> five seconds before the spawn, "naked" under 150. "Best way in" is the spot they entered the 650-unit zone from that converts most for them (100+ times). Stack, RL and arrival are measured on the quads they took.</p>
+      </section>
+
       <section class="sec">
         <div class="stitle">How to play it</div>
         <ol class="play"><li v-for="(p, i) in pb.play" :key="i">{{ p }}</li></ol>
@@ -99,6 +133,14 @@ h3 { margin: 0; font-size: 17px; font-weight: 800; }
 .wn b { font-size: 18px; color: var(--fg); font-variant-numeric: tabular-nums; }
 .way.best .wn:first-child b { color: var(--accent); }
 .whow { margin: 0; font-size: 14px; line-height: 1.5; color: var(--fg-2); }
+.notes { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.5; color: var(--fg); }
+.notes li::marker { color: var(--accent); }
+.tbl { overflow-x: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 4px 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+th { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); font-weight: 600; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.pool td { color: var(--fg-3); } tr.pool td b { color: var(--fg-2); font-weight: 600; }
 .play { margin: 0; padding-left: 22px; list-style: decimal; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 1.5; }
 .play li { display: list-item; }
 .play li::marker { color: var(--accent); font-weight: 800; }

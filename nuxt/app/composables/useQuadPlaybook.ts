@@ -5,6 +5,7 @@
 // conversion, taker stack and arrival time per named spot, plus what decides the quad
 // regardless of the way in). Regenerate the JSON after a corpus refresh; the text stays.
 import data from './quadPlaybookData.json'
+import top from './quadTopData.json'
 
 export interface QuadWay { name: string; locs: string[]; how: string }
 export interface QuadPlaybookText { map: string; title: string; geography: string; ways: QuadWay[]; play: string[]; late?: { locs: string[]; note: string } }
@@ -24,10 +25,10 @@ export const QUAD_TEXT: Record<string, QuadPlaybookText> = {
     ],
     late: { locs: ['RL', 'bridge.low', 'water', 'RA.tunnel', 'RA', 'GL', 'RA.low'], note: 'still at the RL, low bridge, water or the red 5 seconds before' },
     play: [
-      'Be on the platform before it spawns, not jumping onto it as it spawns. The jump is where you die.',
-      'Come through the window or down from YA with the yellow on. The takers on dm3 arrive with a stack of about 200; the players who miss arrive with 100.',
-      'If a teammate is already on the platform, do not jump the gap too. Hold the window instead so nobody surprises him.',
-      'Do not leave the RL for a quad that is 10 seconds out. Take the red, and be early for the next one.',
+      'Be at the red twenty seconds before it is due. Restack there, then go red > SNG tele > Ring > jump, or YA > YA box > window. That is the route of every top taker in Europe and America.',
+      'Come in through Ring or the window with 150+ stack and the RL loaded. Not hill, not the RL side: those convert one time in ten for everybody.',
+      'Pick your style. If nobody is fighting you for it, camp the platform ten seconds early (chris, carapace). If there is a fight, time the last five seconds off it with your stack still on (Blood Dog, milton, zero). Both convert; being naked does not.',
+      'One taker per team. If you are the second player, hold the window or the red so nobody surprises him; do not jump the gap behind him.',
     ],
   },
   dm2: {
@@ -80,6 +81,22 @@ export const QUAD_TEXT: Record<string, QuadPlaybookText> = {
 }
 
 export const QUAD_DATA = data as Record<string, QuadMapData>
+
+// The top-player study (tools/mvd_features/quad_track_pass.py + quad_track_report.py +
+// quad_top_extract.py): per player, the 20 s before every quad spawn on this map.
+export interface TopRow { player: string; region: string; games: number; spawns: number; contest_pct: number; conv_pct: number; take_pct_all: number; takes_per_game: number; died_pre_pct: number; stack_m10: number | null; stack_m5: number | null; rl_m5: number | null; inside_m10: number | null; enter_median_s: number | null; early10_pct: number | null; conv_150: number | null; conv_naked: number | null; conv_rl: number | null; conv_norl: number | null; conv_early: number | null; conv_late: number | null; entries: { spot: string; n: number; conv: number }[]; paths: string[] }
+export const QUAD_TOP = top as Record<string, { players: TopRow[]; pools: Record<string, TopRow> }>
+// what the study says, in words, per map (written from the numbers; regenerate the JSON, then re-read these)
+export const QUAD_TOP_NOTES: Record<string, string[]> = {
+  dm3: [
+    'The best quad takers on dm3 (milton 29%, zero 27%, Blood Dog 25%, carapace 25%, javve 25% of the spawns they are near) are near the quad exactly as often as everyone else: 80 to 85% of spawns. They win it because they arrive with 150+ stack far more often (40 to 44% of the time, against 28% for everyone else) and convert those stacked arrivals about half the time (45 to 50%, against 32%).',
+    'Twenty seconds before the spawn the takers are at the red. RA or RA.low is the most common spot for milton, javve, zero, Blood Dog and chris alike, and one take in three includes a restack at the red on the way. The routes are red > SNG tele or RA rox > Ring > the jump onto the platform, or YA > YA box > window.',
+    'They come in through Ring or the window, never hill or the RL side. Entering from Ring converts 33 to 39% for the elite and 19 to 21% for everyone else; hill is 5 to 14% and the RL spot 3 to 10% for anybody.',
+    'Two styles both work. Camp it: chris and carapace are inside 650 units ten seconds early on 41 to 46% of their takes and convert best when early. Time it: Blood Dog, milton and zero arrive 6 to 8 seconds early on the median and convert best in the last five seconds, coming off a fight with the stack still on.',
+    'The RL is in hand on 73 to 80% of the elite\'s takes (Blood Dog 62%, he takes with the LG too). With the RL the elite convert 42 to 49%; without it, 15%.',
+    'Top teams have a designated taker. milton takes 4.5 a game while stepcop takes 2.3 on the same team; carapace takes 4.0 and bps 2.8 on Sudden Death; on the -fu- team Hto takes 1.0 a game and is a top player anyway. Decide who the quad player is before the game.',
+  ],
+}
 export function quadPlaybook(map: string) {
   const text = QUAD_TEXT[map]; const d = QUAD_DATA[map]
   if (!text) return null

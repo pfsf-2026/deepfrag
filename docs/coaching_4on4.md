@@ -225,3 +225,21 @@ the pad/platform with stack converts 30-60%. dm3: the RL side almost never takes
 side and high YA do (14-19%). dm2: the quad path from high RL converts 20-35%, the rocket jump from big 5-6%,
 the water side 10-18%. e1m2: both doors convert ~20%, and naked players 14%. schloss: inside the room early
 (Quad.high 28%, eff ~190) beats every way in.
+
+## Top-player quad study, dm3 (2026-09-21)
+
+Peter: "focus hard on the top players and what they are doing to get quad on dm3; pull in Euro games."
+Data: `quad_track_pass.py` over 777 NA dm3 fours (corpus) and 1,312 EU dm3 fours from the hub (last 12
+months, EU hosts; `hub_fetch.py`, AU/SA hosts stripped) -> `quad_tracks` (per spawn, per player, every
+second from -20 s to the spawn: named spot, distance, stack, RL/LG). `quad_track_report.py` per player vs
+everyone else in the same games; `quad_top_extract.py` -> `quadTopData.json` for the /coach/quad/dm3 page.
+
+Findings: contest rate is the same for everyone (80-85%). The elite (milton 29%, zero 27%, Blood Dog 25%,
+carapace 25%, javve 25%, yeti 23%, ekz 23%, ok98 23%) are stacked at -5 s on 40-44% of contested spawns
+(pool 28%) and convert stacked arrivals 45-50% (pool 32%), naked 10-14% (pool 6-8%). RL in hand on 73-80%
+of takes; with RL 42-49%, without 15%. Entry: Ring 33-39% / Quad 38-49% / window 24-30% for the elite;
+hill <=14% and the RL spot <=10% for anybody. At -20 s the takers are at RA/RA.low (16-22%), routes
+RA > SNG.tele|RA.rox > Ring > Quad or YA > YA.box > window; 1 in 3 takes includes a restack at RA en route.
+Two styles: campers (chris 46% >=10 s early, carapace 41%) and timers (Blood Dog median 6.5 s, converts
+30% when <5 s). Teams designate a taker (milton 4.5/g vs stepcop 2.3; carapace 4.0 vs bps 2.8; Hto 1.0).
+cronus: 9% conversion, stacked on 25% of contests, 25% when stacked, 4% naked, 23% with RL.

@@ -99,8 +99,49 @@ def block(label, sel):
         print(f"  missed: entered from " + ", ".join(f"{l} {c}" for l, c in pm['entry']) + f" · median {pm['enter_median_s']} s early · stack at -10 s {pm['eff10_median']} / at spawn {pm['eff0_median']}")
     return rep
 
+# ── what explains conversion: stack, arrival time, entry route, company ──────────────────────
+spawn_index = defaultdict(list)          # (source, game, spawn_t) -> all rows, for company / closest
+for r in rows: spawn_index[(r[0], r[1], r[2])].append(r)
+def conv(sel): return round(100 * sum(1 for r, _ in sel if r[6]) / len(sel), 1) if sel else None
+def splits(label, sel):
+    contested = [(r, t) for r, t in sel if r[7]]
+    if not contested: return None
+    out = {}
+    def st5(t):
+        p = at(t, -5); return p['eff'] if p and p['eff'] is not None else None
+    e150 = [(r, t) for r, t in contested if (st5(t) or 0) >= 150]; e100 = [(r, t) for r, t in contested if st5(t) is not None and st5(t) < 150]
+    out['stack'] = {'150+': (len(e150), conv(e150)), '<150': (len(e100), conv(e100))}
+    def entry_s(r): return r[9] / 1000 if r[9] is not None else None
+    early = [(r, t) for r, t in contested if entry_s(r) is not None and entry_s(r) >= 10]
+    mid = [(r, t) for r, t in contested if entry_s(r) is not None and 5 <= entry_s(r) < 10]
+    late = [(r, t) for r, t in contested if entry_s(r) is not None and entry_s(r) < 5]
+    out['arrival'] = {'>=10s': (len(early), conv(early)), '5-10s': (len(mid), conv(mid)), '<5s': (len(late), conv(late))}
+    # entry route = first spot inside 650 u
+    by_entry = defaultdict(list)
+    for r, t in contested:
+        fi = next((p for p in t if p and p['d'] is not None and p['d'] <= 650), None)
+        by_entry[(fi['loc'] if fi else None) or '?'].append((r, t))
+    out['entry'] = {k: (len(v), conv(v)) for k, v in sorted(by_entry.items(), key=lambda kv: -len(kv[1]))[:7]}
+    # company: teammates also contesting that spawn; and enemies contesting
+    by_mates = defaultdict(list); by_enemies = defaultdict(list); rl = defaultdict(list)
+    for r, t in contested:
+        others = spawn_index[(r[0], r[1], r[2])]
+        mates = sum(1 for o in others if o[4] != r[4] and o[5] == r[5] and o[7]); foes = sum(1 for o in others if o[5] != r[5] and o[7])
+        by_mates[min(mates, 2)].append((r, t)); by_enemies[min(foes, 3)].append((r, t))
+        p5 = at(t, -5); rl['RL' if (p5 and p5['rl']) else 'no RL'].append((r, t))
+    out['mates'] = {f'{k} mate(s)': (len(v), conv(v)) for k, v in sorted(by_mates.items())}
+    out['enemies'] = {f'{k} enem.': (len(v), conv(v)) for k, v in sorted(by_enemies.items())}
+    out['rl_at_-5'] = {k: (len(v), conv(v)) for k, v in rl.items()}
+    print(f"  {label} · conversion by stack@-5s: " + ", ".join(f"{k} {c}% (n={n})" for k, (n, c) in out['stack'].items())
+          + " · by arrival: " + ", ".join(f"{k} {c}% (n={n})" for k, (n, c) in out['arrival'].items()))
+    print(f"    by entry spot: " + ", ".join(f"{k} {c}% (n={n})" for k, (n, c) in out['entry'].items()))
+    print(f"    by teammates also there: " + ", ".join(f"{k} {c}% (n={n})" for k, (n, c) in out['mates'].items())
+          + " · by enemies there: " + ", ".join(f"{k} {c}% (n={n})" for k, (n, c) in out['enemies'].items())
+          + " · RL at -5s: " + ", ".join(f"{k} {c}% (n={n})" for k, (n, c) in out['rl_at_-5'].items()))
+    return out
+
 for lab in PLAYERS:
-    if groups.get(lab): report[lab] = block(lab, groups[lab])
+    if groups.get(lab): report[lab] = block(lab, groups[lab]); report[lab]['splits'] = splits(lab, groups[lab])
     else: print(f"\n=== {lab}: no rows")
-report["pool"] = block("POOL (everyone else in these games)", pool)
+report["pool"] = block("POOL (everyone else in these games)", pool); report["pool"]['splits'] = splits('pool', pool)
 if OUT: json.dump(report, open(OUT, 'w'), indent=1); print("wrote", OUT)
