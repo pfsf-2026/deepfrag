@@ -16,7 +16,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import canon  # noqa: E402
 
-DB = next((a for a in sys.argv[1:] if not a.startswith('--')), str(HERE.parents[1] / 'data' / 'mvd_features.sqlite'))
+_OPTVALS = {sys.argv[i + 1] for i, a in enumerate(sys.argv) if a in ('--api', '--since') and i + 1 < len(sys.argv)}
+DB = next((a for a in sys.argv[1:] if not a.startswith('--') and a not in _OPTVALS), str(HERE.parents[1] / 'data' / 'mvd_features.sqlite'))
 API = next((sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == '--api'), 'https://app.deepfrag.gg')
 SINCE = next((sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == '--since'), None)
 DRY = '--dry' in sys.argv
