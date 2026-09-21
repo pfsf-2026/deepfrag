@@ -1,0 +1,1658 @@
+{
+ "dm3": {
+  "contests": 94719,
+  "spawns_contested_by_2plus": 14328,
+  "closest_at_minus2_takes_pct": 61.3,
+  "most_stacked_takes_pct": 47.0,
+  "by_eff": [
+   {
+    "bucket": "<100 (naked)",
+    "n": 29076,
+    "conv": 6.4
+   },
+   {
+    "bucket": "100-149",
+    "n": 37126,
+    "conv": 9.0
+   },
+   {
+    "bucket": "150-249",
+    "n": 14149,
+    "conv": 31.3
+   },
+   {
+    "bucket": "250+",
+    "n": 10236,
+    "conv": 45.0
+   }
+  ],
+  "by_d2": [
+   {
+    "bucket": "<150 u",
+    "n": 7569,
+    "conv": 69.0
+   },
+   {
+    "bucket": "150-300",
+    "n": 9046,
+    "conv": 39.5
+   },
+   {
+    "bucket": "300-450",
+    "n": 9336,
+    "conv": 20.1
+   },
+   {
+    "bucket": "450-650",
+    "n": 19557,
+    "conv": 9.2
+   }
+  ],
+  "approaches": [
+   {
+    "idx": 1,
+    "name": null,
+    "n": 28582,
+    "share": 30.2,
+    "conv": 25.4,
+    "taker_eff": 188,
+    "other_eff": 100,
+    "died_pre_pct": 24.5,
+    "taker_enter_s": 9.6,
+    "centroid": [
+     748,
+     398,
+     15
+    ],
+    "dist_to_quad": 231,
+    "near": "nails@151, quad@231, nails@438"
+   },
+   {
+    "idx": 0,
+    "name": null,
+    "n": 23245,
+    "share": 24.5,
+    "conv": 3.0,
+    "taker_eff": 137,
+    "other_eff": 100,
+    "died_pre_pct": 13.2,
+    "taker_enter_s": 6.9,
+    "centroid": [
+     1566,
+     365,
+     -130
+    ],
+    "dist_to_quad": 645,
+    "near": "rl@140, nails@159, nails@295"
+   },
+   {
+    "idx": 2,
+    "name": null,
+    "n": 22214,
+    "share": 23.5,
+    "conv": 19.1,
+    "taker_eff": 226,
+    "other_eff": 100,
+    "died_pre_pct": 19.5,
+    "taker_enter_s": 4.8,
+    "centroid": [
+     446,
+     -294,
+     31
+    ],
+    "dist_to_quad": 777,
+    "near": "rockets@257, rockets@320, ring@334"
+   },
+   {
+    "idx": 4,
+    "name": null,
+    "n": 14176,
+    "share": 15.0,
+    "conv": 8.6,
+    "taker_eff": 173,
+    "other_eff": 100,
+    "died_pre_pct": 12.5,
+    "taker_enter_s": 4.1,
+    "centroid": [
+     1445,
+     -555,
+     -91
+    ],
+    "dist_to_quad": 995,
+    "near": "h15@188, shells@214, ssg@348"
+   },
+   {
+    "idx": 3,
+    "name": null,
+    "n": 6502,
+    "share": 6.9,
+    "conv": 14.0,
+    "taker_eff": 190,
+    "other_eff": 100,
+    "died_pre_pct": 21.6,
+    "taker_enter_s": 2.8,
+    "centroid": [
+     -560,
+     -154,
+     15
+    ],
+    "dist_to_quad": 1578,
+    "near": "h25@120, mh@318, rockets@407"
+   }
+  ],
+  "spots": [
+   {
+    "loc": "Quad",
+    "n": 13845,
+    "share": 15.4,
+    "conv": 43.0,
+    "taker_eff": 206,
+    "died_pre_pct": 21.1,
+    "taker_enter_s": 9.5
+   },
+   {
+    "loc": "RL",
+    "n": 10173,
+    "share": 11.3,
+    "conv": 1.0,
+    "taker_eff": 100,
+    "died_pre_pct": 13.4,
+    "taker_enter_s": 8.3
+   },
+   {
+    "loc": "Ring",
+    "n": 7089,
+    "share": 7.9,
+    "conv": 17.4,
+    "taker_eff": 203,
+    "died_pre_pct": 21.9,
+    "taker_enter_s": 5.8
+   },
+   {
+    "loc": "window",
+    "n": 5878,
+    "share": 6.5,
+    "conv": 19.4,
+    "taker_eff": 150,
+    "died_pre_pct": 28.2,
+    "taker_enter_s": 9.3
+   },
+   {
+    "loc": "hill",
+    "n": 4723,
+    "share": 5.3,
+    "conv": 4.0,
+    "taker_eff": 194,
+    "died_pre_pct": 17.0,
+    "taker_enter_s": 9.3
+   },
+   {
+    "loc": "bridge.low",
+    "n": 4495,
+    "share": 5.0,
+    "conv": 2.1,
+    "taker_eff": 100,
+    "died_pre_pct": 9.8,
+    "taker_enter_s": 7.2
+   },
+   {
+    "loc": "Pent",
+    "n": 3985,
+    "share": 4.4,
+    "conv": 6.0,
+    "taker_eff": 100,
+    "died_pre_pct": 10.6,
+    "taker_enter_s": 8.5
+   },
+   {
+    "loc": "YA.box",
+    "n": 3664,
+    "share": 4.1,
+    "conv": 13.8,
+    "taker_eff": 177,
+    "died_pre_pct": 22.3,
+    "taker_enter_s": 5.2
+   },
+   {
+    "loc": "lifts",
+    "n": 3458,
+    "share": 3.8,
+    "conv": 9.5,
+    "taker_eff": 100,
+    "died_pre_pct": 22.7,
+    "taker_enter_s": 9.9
+   },
+   {
+    "loc": "water",
+    "n": 3323,
+    "share": 3.7,
+    "conv": 1.0,
+    "taker_eff": 100,
+    "died_pre_pct": 9.0,
+    "taker_enter_s": 7.6
+   },
+   {
+    "loc": "SNG.tele",
+    "n": 3093,
+    "share": 3.4,
+    "conv": 15.4,
+    "taker_eff": 165,
+    "died_pre_pct": 32.1,
+    "taker_enter_s": 3.9
+   },
+   {
+    "loc": "RA.low",
+    "n": 2591,
+    "share": 2.9,
+    "conv": 18.1,
+    "taker_eff": 224,
+    "died_pre_pct": 12.5,
+    "taker_enter_s": 3.6
+   },
+   {
+    "loc": "bridge.high",
+    "n": 2551,
+    "share": 2.8,
+    "conv": 8.4,
+    "taker_eff": 172,
+    "died_pre_pct": 15.8,
+    "taker_enter_s": 7.1
+   },
+   {
+    "loc": "YA",
+    "n": 2318,
+    "share": 2.6,
+    "conv": 11.7,
+    "taker_eff": 175,
+    "died_pre_pct": 14.6,
+    "taker_enter_s": 4.4
+   },
+   {
+    "loc": "RA",
+    "n": 2252,
+    "share": 2.5,
+    "conv": 29.9,
+    "taker_eff": 276,
+    "died_pre_pct": 6.3,
+    "taker_enter_s": 2.7
+   },
+   {
+    "loc": "lifts.below",
+    "n": 2148,
+    "share": 2.4,
+    "conv": 13.5,
+    "taker_eff": 154,
+    "died_pre_pct": 24.8,
+    "taker_enter_s": 8.3
+   },
+   {
+    "loc": "RA.tunnel",
+    "n": 1980,
+    "share": 2.2,
+    "conv": 3.4,
+    "taker_eff": 138,
+    "died_pre_pct": 20.4,
+    "taker_enter_s": 4.4
+   },
+   {
+    "loc": "window.Quad",
+    "n": 1687,
+    "share": 1.9,
+    "conv": 30.2,
+    "taker_eff": 202,
+    "died_pre_pct": 21.8,
+    "taker_enter_s": 9.6
+   },
+   {
+    "loc": "water.LG",
+    "n": 1527,
+    "share": 1.7,
+    "conv": 0.8,
+    "taker_eff": 100,
+    "died_pre_pct": 6.8,
+    "taker_enter_s": 6.0
+   },
+   {
+    "loc": "YA.Quad",
+    "n": 1207,
+    "share": 1.3,
+    "conv": 19.9,
+    "taker_eff": 216,
+    "died_pre_pct": 11.4,
+    "taker_enter_s": 6.6
+   },
+   {
+    "loc": "water.tunnel",
+    "n": 1040,
+    "share": 1.2,
+    "conv": 1.4,
+    "taker_eff": 100,
+    "died_pre_pct": 14.4,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "RA.entry",
+    "n": 951,
+    "share": 1.1,
+    "conv": 24.1,
+    "taker_eff": 250,
+    "died_pre_pct": 12.1,
+    "taker_enter_s": 4.1
+   },
+   {
+    "loc": "YA.up",
+    "n": 826,
+    "share": 0.9,
+    "conv": 21.2,
+    "taker_eff": 231,
+    "died_pre_pct": 10.0,
+    "taker_enter_s": 4.6
+   },
+   {
+    "loc": "bridge.stairs",
+    "n": 821,
+    "share": 0.9,
+    "conv": 5.0,
+    "taker_eff": 132,
+    "died_pre_pct": 11.8,
+    "taker_enter_s": 6.5
+   },
+   {
+    "loc": "SNG.lifts",
+    "n": 797,
+    "share": 0.9,
+    "conv": 13.8,
+    "taker_eff": 192,
+    "died_pre_pct": 8.7,
+    "taker_enter_s": 6.3
+   },
+   {
+    "loc": "SNG.ledge",
+    "n": 686,
+    "share": 0.8,
+    "conv": 10.2,
+    "taker_eff": 224,
+    "died_pre_pct": 11.4,
+    "taker_enter_s": 3.1
+   },
+   {
+    "loc": "YA.entry",
+    "n": 672,
+    "share": 0.7,
+    "conv": 10.6,
+    "taker_eff": 202,
+    "died_pre_pct": 13.4,
+    "taker_enter_s": 5.4
+   },
+   {
+    "loc": "SNG",
+    "n": 569,
+    "share": 0.6,
+    "conv": 12.1,
+    "taker_eff": 233,
+    "died_pre_pct": 11.2,
+    "taker_enter_s": 3.4
+   },
+   {
+    "loc": "water.GL",
+    "n": 380,
+    "share": 0.4,
+    "conv": 0.5,
+    "taker_eff": 78,
+    "died_pre_pct": 9.5,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "SNG.MH",
+    "n": 354,
+    "share": 0.4,
+    "conv": 24.6,
+    "taker_eff": 227,
+    "died_pre_pct": 7.9,
+    "taker_enter_s": 2.4
+   },
+   {
+    "loc": "RA.rox",
+    "n": 337,
+    "share": 0.4,
+    "conv": 20.2,
+    "taker_eff": 235,
+    "died_pre_pct": 12.8,
+    "taker_enter_s": 3.1
+   },
+   {
+    "loc": "SNG.low",
+    "n": 214,
+    "share": 0.2,
+    "conv": 15.0,
+    "taker_eff": 243,
+    "died_pre_pct": 6.5,
+    "taker_enter_s": 2.5
+   },
+   {
+    "loc": "water.rox",
+    "n": 213,
+    "share": 0.2,
+    "conv": 0.0,
+    "taker_eff": null,
+    "died_pre_pct": 5.2,
+    "taker_enter_s": null
+   },
+   {
+    "loc": "Pent.hide",
+    "n": 41,
+    "share": 0.0,
+    "conv": 14.6,
+    "taker_eff": 100,
+    "died_pre_pct": 9.8,
+    "taker_enter_s": 4.5
+   }
+  ]
+ },
+ "dm2": {
+  "contests": 88843,
+  "spawns_contested_by_2plus": 13658,
+  "closest_at_minus2_takes_pct": 62.9,
+  "most_stacked_takes_pct": 37.6,
+  "by_eff": [
+   {
+    "bucket": "<100 (naked)",
+    "n": 22234,
+    "conv": 7.0
+   },
+   {
+    "bucket": "100-149",
+    "n": 32846,
+    "conv": 7.7
+   },
+   {
+    "bucket": "150-249",
+    "n": 15912,
+    "conv": 33.8
+   },
+   {
+    "bucket": "250+",
+    "n": 13818,
+    "conv": 30.0
+   }
+  ],
+  "by_d2": [
+   {
+    "bucket": "<150 u",
+    "n": 8452,
+    "conv": 76.7
+   },
+   {
+    "bucket": "150-300",
+    "n": 8758,
+    "conv": 22.7
+   },
+   {
+    "bucket": "300-450",
+    "n": 11184,
+    "conv": 17.1
+   },
+   {
+    "bucket": "450-650",
+    "n": 20904,
+    "conv": 10.4
+   }
+  ],
+  "approaches": [
+   {
+    "idx": 3,
+    "name": null,
+    "n": 21330,
+    "share": 24.0,
+    "conv": 33.1,
+    "taker_eff": 202,
+    "other_eff": 100,
+    "died_pre_pct": 28.6,
+    "taker_enter_s": 10.0,
+    "centroid": [
+     1876,
+     -518,
+     138
+    ],
+    "dist_to_quad": 197,
+    "near": "h25@142, h25@144, h25@145"
+   },
+   {
+    "idx": 2,
+    "name": null,
+    "n": 19782,
+    "share": 22.3,
+    "conv": 8.2,
+    "taker_eff": 188,
+    "other_eff": 100,
+    "died_pre_pct": 20.9,
+    "taker_enter_s": 8.4,
+    "centroid": [
+     2390,
+     -40,
+     -10
+    ],
+    "dist_to_quad": 836,
+    "near": "ng@177, h15@226, rockets@229"
+   },
+   {
+    "idx": 0,
+    "name": null,
+    "n": 14275,
+    "share": 16.1,
+    "conv": 21.7,
+    "taker_eff": 191,
+    "other_eff": 100,
+    "died_pre_pct": 21.9,
+    "taker_enter_s": 9.9,
+    "centroid": [
+     1391,
+     -656,
+     232
+    ],
+    "dist_to_quad": 533,
+    "near": "rl@117, rockets@160, ya@374"
+   },
+   {
+    "idx": 4,
+    "name": null,
+    "n": 12229,
+    "share": 13.8,
+    "conv": 2.6,
+    "taker_eff": 266,
+    "other_eff": 100,
+    "died_pre_pct": 23.7,
+    "taker_enter_s": 2.9,
+    "centroid": [
+     2452,
+     -1779,
+     64
+    ],
+    "dist_to_quad": 1206,
+    "near": "rl@97, ra@216, mh@225"
+   },
+   {
+    "idx": 5,
+    "name": null,
+    "n": 11486,
+    "share": 12.9,
+    "conv": 7.9,
+    "taker_eff": 230,
+    "other_eff": 100,
+    "died_pre_pct": 22.7,
+    "taker_enter_s": 8.1,
+    "centroid": [
+     1728,
+     -1194,
+     121
+    ],
+    "dist_to_quad": 530,
+    "near": "rockets@404, mh@421, ya@430"
+   },
+   {
+    "idx": 1,
+    "name": null,
+    "n": 9741,
+    "share": 11.0,
+    "conv": 6.6,
+    "taker_eff": 255,
+    "other_eff": 100,
+    "died_pre_pct": 15.7,
+    "taker_enter_s": 9.7,
+    "centroid": [
+     2467,
+     -733,
+     76
+    ],
+    "dist_to_quad": 558,
+    "near": "ra@121, nails@406, ya@462"
+   }
+  ],
+  "spots": [
+   {
+    "loc": "NG",
+    "n": 7146,
+    "share": 8.5,
+    "conv": 8.3,
+    "taker_eff": 205,
+    "died_pre_pct": 20.7,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "tele",
+    "n": 6855,
+    "share": 8.2,
+    "conv": 8.5,
+    "taker_eff": 182,
+    "died_pre_pct": 24.8,
+    "taker_enter_s": 5.8
+   },
+   {
+    "loc": "Quad.low",
+    "n": 6801,
+    "share": 8.1,
+    "conv": 11.0,
+    "taker_eff": 187,
+    "died_pre_pct": 34.5,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "Quad",
+    "n": 6547,
+    "share": 7.8,
+    "conv": 65.6,
+    "taker_eff": 206,
+    "died_pre_pct": 14.7,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "high.RL",
+    "n": 6179,
+    "share": 7.4,
+    "conv": 20.4,
+    "taker_eff": 190,
+    "died_pre_pct": 20.1,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "low.RL",
+    "n": 6178,
+    "share": 7.4,
+    "conv": 2.5,
+    "taker_eff": 245,
+    "died_pre_pct": 20.2,
+    "taker_enter_s": 4.2
+   },
+   {
+    "loc": "Quad.way",
+    "n": 5653,
+    "share": 6.7,
+    "conv": 36.1,
+    "taker_eff": 195,
+    "died_pre_pct": 18.8,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "big",
+    "n": 4924,
+    "share": 5.9,
+    "conv": 6.6,
+    "taker_eff": 204,
+    "died_pre_pct": 25.0,
+    "taker_enter_s": 9.0
+   },
+   {
+    "loc": "tele.high",
+    "n": 4532,
+    "share": 5.4,
+    "conv": 16.9,
+    "taker_eff": 199,
+    "died_pre_pct": 22.0,
+    "taker_enter_s": 8.9
+   },
+   {
+    "loc": "secret",
+    "n": 3809,
+    "share": 4.5,
+    "conv": 10.7,
+    "taker_eff": 248,
+    "died_pre_pct": 11.4,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "big.stairs",
+    "n": 3538,
+    "share": 4.2,
+    "conv": 5.3,
+    "taker_eff": 220,
+    "died_pre_pct": 24.6,
+    "taker_enter_s": 7.8
+   },
+   {
+    "loc": "RA.MH",
+    "n": 2679,
+    "share": 3.2,
+    "conv": 7.4,
+    "taker_eff": 263,
+    "died_pre_pct": 30.5,
+    "taker_enter_s": 4.1
+   },
+   {
+    "loc": "path",
+    "n": 2361,
+    "share": 2.8,
+    "conv": 5.2,
+    "taker_eff": 215,
+    "died_pre_pct": 10.7,
+    "taker_enter_s": 7.9
+   },
+   {
+    "loc": "path.lift",
+    "n": 2052,
+    "share": 2.4,
+    "conv": 6.0,
+    "taker_eff": 236,
+    "died_pre_pct": 13.8,
+    "taker_enter_s": 8.6
+   },
+   {
+    "loc": "Quad.button",
+    "n": 1908,
+    "share": 2.3,
+    "conv": 11.2,
+    "taker_eff": 198,
+    "died_pre_pct": 33.5,
+    "taker_enter_s": 9.6
+   },
+   {
+    "loc": "water",
+    "n": 1792,
+    "share": 2.1,
+    "conv": 5.4,
+    "taker_eff": 194,
+    "died_pre_pct": 32.8,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "tele.YA",
+    "n": 1746,
+    "share": 2.1,
+    "conv": 15.0,
+    "taker_eff": 178,
+    "died_pre_pct": 19.5,
+    "taker_enter_s": 5.1
+   },
+   {
+    "loc": "tele.entry",
+    "n": 1671,
+    "share": 2.0,
+    "conv": 8.4,
+    "taker_eff": 186,
+    "died_pre_pct": 9.9,
+    "taker_enter_s": 7.0
+   },
+   {
+    "loc": "platforms",
+    "n": 1263,
+    "share": 1.5,
+    "conv": 3.7,
+    "taker_eff": 223,
+    "died_pre_pct": 14.6,
+    "taker_enter_s": 5.3
+   },
+   {
+    "loc": "floating",
+    "n": 1042,
+    "share": 1.2,
+    "conv": 17.6,
+    "taker_eff": 252,
+    "died_pre_pct": 12.9,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "big.button",
+    "n": 885,
+    "share": 1.1,
+    "conv": 1.9,
+    "taker_eff": 186,
+    "died_pre_pct": 16.3,
+    "taker_enter_s": 6.8
+   },
+   {
+    "loc": "low.lift",
+    "n": 839,
+    "share": 1.0,
+    "conv": 3.3,
+    "taker_eff": 242,
+    "died_pre_pct": 16.8,
+    "taker_enter_s": 7.8
+   },
+   {
+    "loc": "low.button",
+    "n": 831,
+    "share": 1.0,
+    "conv": 1.4,
+    "taker_eff": 280,
+    "died_pre_pct": 38.7,
+    "taker_enter_s": 4.0
+   },
+   {
+    "loc": "low.stairs",
+    "n": 828,
+    "share": 1.0,
+    "conv": 2.3,
+    "taker_eff": 247,
+    "died_pre_pct": 19.8,
+    "taker_enter_s": 3.4
+   },
+   {
+    "loc": "Quad.high",
+    "n": 795,
+    "share": 0.9,
+    "conv": 61.6,
+    "taker_eff": 207,
+    "died_pre_pct": 15.2,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "GL",
+    "n": 741,
+    "share": 0.9,
+    "conv": 16.7,
+    "taker_eff": 250,
+    "died_pre_pct": 9.9,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "RA.MH/rox",
+    "n": 155,
+    "share": 0.2,
+    "conv": 12.9,
+    "taker_eff": 300,
+    "died_pre_pct": 10.3,
+    "taker_enter_s": 4.7
+   },
+   {
+    "loc": "big.wall",
+    "n": 45,
+    "share": 0.1,
+    "conv": 11.1,
+    "taker_eff": 236,
+    "died_pre_pct": 17.8,
+    "taker_enter_s": 10.0
+   },
+   {
+    "loc": "GL.roof",
+    "n": 14,
+    "share": 0.0,
+    "conv": 14.3,
+    "taker_eff": 59,
+    "died_pre_pct": 42.9,
+    "taker_enter_s": 9.7
+   }
+  ]
+ },
+ "e1m2": {
+  "contests": 42780,
+  "spawns_contested_by_2plus": 8990,
+  "closest_at_minus2_takes_pct": 61.6,
+  "most_stacked_takes_pct": 54.3,
+  "by_eff": [
+   {
+    "bucket": "<100 (naked)",
+    "n": 13699,
+    "conv": 13.7
+   },
+   {
+    "bucket": "100-149",
+    "n": 20196,
+    "conv": 17.5
+   },
+   {
+    "bucket": "150-249",
+    "n": 4544,
+    "conv": 60.3
+   },
+   {
+    "bucket": "250+",
+    "n": 1353,
+    "conv": 61.6
+   }
+  ],
+  "by_d2": [
+   {
+    "bucket": "<150 u",
+    "n": 4727,
+    "conv": 61.8
+   },
+   {
+    "bucket": "150-300",
+    "n": 5170,
+    "conv": 43.1
+   },
+   {
+    "bucket": "300-450",
+    "n": 4690,
+    "conv": 26.8
+   },
+   {
+    "bucket": "450-650",
+    "n": 7097,
+    "conv": 18.3
+   }
+  ],
+  "approaches": [
+   {
+    "idx": 2,
+    "name": null,
+    "n": 19986,
+    "share": 46.7,
+    "conv": 27.2,
+    "taker_eff": 129,
+    "other_eff": 100,
+    "died_pre_pct": 39.8,
+    "taker_enter_s": 8.1,
+    "centroid": [
+     562,
+     -1044,
+     437
+    ],
+    "dist_to_quad": 355,
+    "near": "shells@241, shells@282, h15@299"
+   },
+   {
+    "idx": 1,
+    "name": null,
+    "n": 9673,
+    "share": 22.6,
+    "conv": 18.9,
+    "taker_eff": 112,
+    "other_eff": 100,
+    "died_pre_pct": 34.2,
+    "taker_enter_s": 3.2,
+    "centroid": [
+     380,
+     -218,
+     339
+    ],
+    "dist_to_quad": 1146,
+    "near": "h25@145, h25@172, shells@206"
+   },
+   {
+    "idx": 0,
+    "name": null,
+    "n": 8959,
+    "share": 20.9,
+    "conv": 16.3,
+    "taker_eff": 160,
+    "other_eff": 100,
+    "died_pre_pct": 20.8,
+    "taker_enter_s": 3.3,
+    "centroid": [
+     1364,
+     -749,
+     396
+    ],
+    "dist_to_quad": 1142,
+    "near": "ya@206, h25@210, h15@276"
+   },
+   {
+    "idx": 3,
+    "name": null,
+    "n": 4162,
+    "share": 9.7,
+    "conv": 9.0,
+    "taker_eff": 100,
+    "other_eff": 100,
+    "died_pre_pct": 33.4,
+    "taker_enter_s": 1.4,
+    "centroid": [
+     969,
+     561,
+     246
+    ],
+    "dist_to_quad": 2012,
+    "near": "shells@66, h25@133, h25@149"
+   }
+  ],
+  "spots": [
+   {
+    "loc": "Quad",
+    "n": 10579,
+    "share": 26.5,
+    "conv": 29.1,
+    "taker_eff": 143,
+    "died_pre_pct": 34.8,
+    "taker_enter_s": 8.6
+   },
+   {
+    "loc": "GL",
+    "n": 4356,
+    "share": 10.9,
+    "conv": 20.7,
+    "taker_eff": 148,
+    "died_pre_pct": 20.8,
+    "taker_enter_s": 5.7
+   },
+   {
+    "loc": "GL.Quad",
+    "n": 3478,
+    "share": 8.7,
+    "conv": 18.1,
+    "taker_eff": 128,
+    "died_pre_pct": 35.3,
+    "taker_enter_s": 7.8
+   },
+   {
+    "loc": "cross",
+    "n": 2947,
+    "share": 7.4,
+    "conv": 18.7,
+    "taker_eff": 107,
+    "died_pre_pct": 36.6,
+    "taker_enter_s": 4.4
+   },
+   {
+    "loc": "Quad.stairs",
+    "n": 2765,
+    "share": 6.9,
+    "conv": 19.6,
+    "taker_eff": 120,
+    "died_pre_pct": 35.5,
+    "taker_enter_s": 6.1
+   },
+   {
+    "loc": "YA",
+    "n": 2428,
+    "share": 6.1,
+    "conv": 18.3,
+    "taker_eff": 170,
+    "died_pre_pct": 23.5,
+    "taker_enter_s": 2.8
+   },
+   {
+    "loc": "RL",
+    "n": 2007,
+    "share": 5.0,
+    "conv": 13.2,
+    "taker_eff": 100,
+    "died_pre_pct": 32.8,
+    "taker_enter_s": 2.5
+   },
+   {
+    "loc": "Quad.box",
+    "n": 1788,
+    "share": 4.5,
+    "conv": 55.6,
+    "taker_eff": 100,
+    "died_pre_pct": 34.5,
+    "taker_enter_s": 8.9
+   },
+   {
+    "loc": "MH.low",
+    "n": 1379,
+    "share": 3.5,
+    "conv": 13.1,
+    "taker_eff": 100,
+    "died_pre_pct": 40.3,
+    "taker_enter_s": 3.5
+   },
+   {
+    "loc": "GL.stairs",
+    "n": 1278,
+    "share": 3.2,
+    "conv": 18.4,
+    "taker_eff": 166,
+    "died_pre_pct": 22.2,
+    "taker_enter_s": 4.1
+   },
+   {
+    "loc": "door",
+    "n": 1047,
+    "share": 2.6,
+    "conv": 15.3,
+    "taker_eff": 100,
+    "died_pre_pct": 42.1,
+    "taker_enter_s": 3.6
+   },
+   {
+    "loc": "cross.water",
+    "n": 641,
+    "share": 1.6,
+    "conv": 16.4,
+    "taker_eff": 100,
+    "died_pre_pct": 37.6,
+    "taker_enter_s": 3.5
+   },
+   {
+    "loc": "MH",
+    "n": 487,
+    "share": 1.2,
+    "conv": 35.5,
+    "taker_eff": 165,
+    "died_pre_pct": 14.2,
+    "taker_enter_s": 2.8
+   },
+   {
+    "loc": "bridge",
+    "n": 451,
+    "share": 1.1,
+    "conv": 13.5,
+    "taker_eff": 100,
+    "died_pre_pct": 37.7,
+    "taker_enter_s": 2.9
+   },
+   {
+    "loc": "MH.entry",
+    "n": 406,
+    "share": 1.0,
+    "conv": 22.7,
+    "taker_eff": 122,
+    "died_pre_pct": 29.6,
+    "taker_enter_s": 3.9
+   },
+   {
+    "loc": "GA",
+    "n": 401,
+    "share": 1.0,
+    "conv": 17.2,
+    "taker_eff": 116,
+    "died_pre_pct": 22.7,
+    "taker_enter_s": 2.5
+   },
+   {
+    "loc": "spikes",
+    "n": 380,
+    "share": 1.0,
+    "conv": 5.0,
+    "taker_eff": 100,
+    "died_pre_pct": 56.6,
+    "taker_enter_s": 3.8
+   },
+   {
+    "loc": "water.RL",
+    "n": 330,
+    "share": 0.8,
+    "conv": 11.5,
+    "taker_eff": 100,
+    "died_pre_pct": 18.5,
+    "taker_enter_s": 2.7
+   },
+   {
+    "loc": "SSG",
+    "n": 314,
+    "share": 0.8,
+    "conv": 14.3,
+    "taker_eff": 100,
+    "died_pre_pct": 33.1,
+    "taker_enter_s": 2.8
+   },
+   {
+    "loc": "start",
+    "n": 314,
+    "share": 0.8,
+    "conv": 2.5,
+    "taker_eff": 100,
+    "died_pre_pct": 61.8,
+    "taker_enter_s": 2.3
+   },
+   {
+    "loc": "YA.water",
+    "n": 267,
+    "share": 0.7,
+    "conv": 10.5,
+    "taker_eff": 100,
+    "died_pre_pct": 12.7,
+    "taker_enter_s": 2.2
+   },
+   {
+    "loc": "MH.SNG",
+    "n": 261,
+    "share": 0.7,
+    "conv": 11.5,
+    "taker_eff": 100,
+    "died_pre_pct": 33.3,
+    "taker_enter_s": 2.4
+   },
+   {
+    "loc": "GL.rox",
+    "n": 233,
+    "share": 0.6,
+    "conv": 30.9,
+    "taker_eff": 189,
+    "died_pre_pct": 10.3,
+    "taker_enter_s": 6.3
+   },
+   {
+    "loc": "water.GA",
+    "n": 183,
+    "share": 0.5,
+    "conv": 12.6,
+    "taker_eff": 100,
+    "died_pre_pct": 24.6,
+    "taker_enter_s": 2.1
+   },
+   {
+    "loc": "MH.rox",
+    "n": 180,
+    "share": 0.5,
+    "conv": 26.1,
+    "taker_eff": 165,
+    "died_pre_pct": 20.6,
+    "taker_enter_s": 2.9
+   },
+   {
+    "loc": "YA.spikes",
+    "n": 175,
+    "share": 0.4,
+    "conv": 8.0,
+    "taker_eff": 100,
+    "died_pre_pct": 45.1,
+    "taker_enter_s": 3.5
+   },
+   {
+    "loc": "YA.tele",
+    "n": 161,
+    "share": 0.4,
+    "conv": 19.3,
+    "taker_eff": 124,
+    "died_pre_pct": 10.6,
+    "taker_enter_s": 3.0
+   },
+   {
+    "loc": "SSG.spikes",
+    "n": 134,
+    "share": 0.3,
+    "conv": 8.2,
+    "taker_eff": 100,
+    "died_pre_pct": 47.0,
+    "taker_enter_s": 2.7
+   },
+   {
+    "loc": "start.stairs",
+    "n": 130,
+    "share": 0.3,
+    "conv": 4.6,
+    "taker_eff": 100,
+    "died_pre_pct": 63.1,
+    "taker_enter_s": 2.5
+   },
+   {
+    "loc": "start.RL",
+    "n": 126,
+    "share": 0.3,
+    "conv": 5.6,
+    "taker_eff": 100,
+    "died_pre_pct": 41.3,
+    "taker_enter_s": 3.6
+   },
+   {
+    "loc": "bridge.room",
+    "n": 104,
+    "share": 0.3,
+    "conv": 8.7,
+    "taker_eff": 100,
+    "died_pre_pct": 39.4,
+    "taker_enter_s": 3.3
+   },
+   {
+    "loc": "start.water",
+    "n": 76,
+    "share": 0.2,
+    "conv": 2.6,
+    "taker_eff": 100,
+    "died_pre_pct": 46.1,
+    "taker_enter_s": 1.5
+   },
+   {
+    "loc": "GL.SNG",
+    "n": 53,
+    "share": 0.1,
+    "conv": 5.7,
+    "taker_eff": 100,
+    "died_pre_pct": 7.5,
+    "taker_enter_s": 3.8
+   },
+   {
+    "loc": "water.lift",
+    "n": 31,
+    "share": 0.1,
+    "conv": 12.9,
+    "taker_eff": 132,
+    "died_pre_pct": 25.8,
+    "taker_enter_s": 3.3
+   },
+   {
+    "loc": "water.spikes",
+    "n": 12,
+    "share": 0.0,
+    "conv": 16.7,
+    "taker_eff": 86,
+    "died_pre_pct": 16.7,
+    "taker_enter_s": 2.0
+   },
+   {
+    "loc": "MH.above",
+    "n": 8,
+    "share": 0.0,
+    "conv": 25.0,
+    "taker_eff": 197,
+    "died_pre_pct": 25.0,
+    "taker_enter_s": 3.4
+   },
+   {
+    "loc": "MH.exit",
+    "n": 5,
+    "share": 0.0,
+    "conv": 20.0,
+    "taker_eff": 100,
+    "died_pre_pct": 0.0,
+    "taker_enter_s": 1.0
+   },
+   {
+    "loc": "start.hide",
+    "n": 1,
+    "share": 0.0,
+    "conv": 0.0,
+    "taker_eff": null,
+    "died_pre_pct": 0.0,
+    "taker_enter_s": null
+   }
+  ]
+ },
+ "schloss": {
+  "contests": 49789,
+  "spawns_contested_by_2plus": 8739,
+  "closest_at_minus2_takes_pct": 51.1,
+  "most_stacked_takes_pct": 40.4,
+  "by_eff": [
+   {
+    "bucket": "<100 (naked)",
+    "n": 13698,
+    "conv": 10.1
+   },
+   {
+    "bucket": "100-149",
+    "n": 20233,
+    "conv": 12.5
+   },
+   {
+    "bucket": "150-249",
+    "n": 8267,
+    "conv": 34.6
+   },
+   {
+    "bucket": "250+",
+    "n": 4942,
+    "conv": 37.8
+   }
+  ],
+  "by_d2": [
+   {
+    "bucket": "<150 u",
+    "n": 5334,
+    "conv": 52.7
+   },
+   {
+    "bucket": "150-300",
+    "n": 5976,
+    "conv": 33.3
+   },
+   {
+    "bucket": "300-450",
+    "n": 5292,
+    "conv": 21.2
+   },
+   {
+    "bucket": "450-650",
+    "n": 8338,
+    "conv": 14.8
+   }
+  ],
+  "approaches": [
+   {
+    "idx": 3,
+    "name": null,
+    "n": 16903,
+    "share": 33.9,
+    "conv": 24.5,
+    "taker_eff": 174,
+    "other_eff": 100,
+    "died_pre_pct": 31.0,
+    "taker_enter_s": 8.9,
+    "centroid": [
+     -87,
+     -3098,
+     490
+    ],
+    "dist_to_quad": 279,
+    "near": "rockets@205, h15@223, h25@235"
+   },
+   {
+    "idx": 0,
+    "name": null,
+    "n": 14024,
+    "share": 28.2,
+    "conv": 12.9,
+    "taker_eff": 182,
+    "other_eff": 100,
+    "died_pre_pct": 19.2,
+    "taker_enter_s": 8.0,
+    "centroid": [
+     421,
+     -3616,
+     493
+    ],
+    "dist_to_quad": 693,
+    "near": "rl@155, ya@332, h25@418"
+   },
+   {
+    "idx": 1,
+    "name": null,
+    "n": 13351,
+    "share": 26.8,
+    "conv": 16.6,
+    "taker_eff": 128,
+    "other_eff": 100,
+    "died_pre_pct": 19.5,
+    "taker_enter_s": 3.5,
+    "centroid": [
+     -4,
+     -2281,
+     448
+    ],
+    "dist_to_quad": 1084,
+    "near": "ya@174, ssg@264, h15@268"
+   },
+   {
+    "idx": 2,
+    "name": null,
+    "n": 5511,
+    "share": 11.1,
+    "conv": 10.4,
+    "taker_eff": 185,
+    "other_eff": 100,
+    "died_pre_pct": 15.7,
+    "taker_enter_s": 2.2,
+    "centroid": [
+     796,
+     -2763,
+     266
+    ],
+    "dist_to_quad": 1182,
+    "near": "ra@158, rockets@223, nails@271"
+   }
+  ],
+  "spots": [
+   {
+    "loc": "Quad",
+    "n": 7637,
+    "share": 16.3,
+    "conv": 32.6,
+    "taker_eff": 165,
+    "died_pre_pct": 29.2,
+    "taker_enter_s": 8.1
+   },
+   {
+    "loc": "cathedral",
+    "n": 5626,
+    "share": 12.0,
+    "conv": 11.4,
+    "taker_eff": 170,
+    "died_pre_pct": 20.7,
+    "taker_enter_s": 8.4
+   },
+   {
+    "loc": "Quad.high",
+    "n": 5605,
+    "share": 12.0,
+    "conv": 26.8,
+    "taker_eff": 187,
+    "died_pre_pct": 20.0,
+    "taker_enter_s": 9.9
+   },
+   {
+    "loc": "cathedral.YA",
+    "n": 4846,
+    "share": 10.4,
+    "conv": 12.4,
+    "taker_eff": 205,
+    "died_pre_pct": 10.6,
+    "taker_enter_s": 9.3
+   },
+   {
+    "loc": "tower.RL",
+    "n": 3926,
+    "share": 8.4,
+    "conv": 12.9,
+    "taker_eff": 170,
+    "died_pre_pct": 25.4,
+    "taker_enter_s": 3.0
+   },
+   {
+    "loc": "Quad.ledge",
+    "n": 3400,
+    "share": 7.3,
+    "conv": 22.0,
+    "taker_eff": 157,
+    "died_pre_pct": 26.0,
+    "taker_enter_s": 7.0
+   },
+   {
+    "loc": "Quad.low",
+    "n": 2900,
+    "share": 6.2,
+    "conv": 9.9,
+    "taker_eff": 100,
+    "died_pre_pct": 23.8,
+    "taker_enter_s": 8.0
+   },
+   {
+    "loc": "tower.entry",
+    "n": 1952,
+    "share": 4.2,
+    "conv": 10.0,
+    "taker_eff": 114,
+    "died_pre_pct": 24.0,
+    "taker_enter_s": 5.8
+   },
+   {
+    "loc": "yard",
+    "n": 1891,
+    "share": 4.0,
+    "conv": 11.3,
+    "taker_eff": 125,
+    "died_pre_pct": 8.0,
+    "taker_enter_s": 4.2
+   },
+   {
+    "loc": "tower",
+    "n": 1890,
+    "share": 4.0,
+    "conv": 21.7,
+    "taker_eff": 176,
+    "died_pre_pct": 20.1,
+    "taker_enter_s": 3.7
+   },
+   {
+    "loc": "cathedral.SSG",
+    "n": 1519,
+    "share": 3.3,
+    "conv": 10.5,
+    "taker_eff": 165,
+    "died_pre_pct": 24.4,
+    "taker_enter_s": 5.0
+   },
+   {
+    "loc": "RA.low",
+    "n": 1268,
+    "share": 2.7,
+    "conv": 8.2,
+    "taker_eff": 171,
+    "died_pre_pct": 19.3,
+    "taker_enter_s": 2.6
+   },
+   {
+    "loc": "cemetary",
+    "n": 1034,
+    "share": 2.2,
+    "conv": 7.5,
+    "taker_eff": 129,
+    "died_pre_pct": 25.1,
+    "taker_enter_s": 3.2
+   },
+   {
+    "loc": "yard.tunnel",
+    "n": 737,
+    "share": 1.6,
+    "conv": 12.1,
+    "taker_eff": 139,
+    "died_pre_pct": 13.3,
+    "taker_enter_s": 5.1
+   },
+   {
+    "loc": "cemetary.tele",
+    "n": 608,
+    "share": 1.3,
+    "conv": 11.7,
+    "taker_eff": 220,
+    "died_pre_pct": 33.7,
+    "taker_enter_s": 3.0
+   },
+   {
+    "loc": "RA.cellar",
+    "n": 556,
+    "share": 1.2,
+    "conv": 10.3,
+    "taker_eff": 100,
+    "died_pre_pct": 6.3,
+    "taker_enter_s": 3.2
+   },
+   {
+    "loc": "yard.Pent",
+    "n": 509,
+    "share": 1.1,
+    "conv": 32.0,
+    "taker_eff": 100,
+    "died_pre_pct": 5.3,
+    "taker_enter_s": 2.2
+   },
+   {
+    "loc": "RA",
+    "n": 342,
+    "share": 0.7,
+    "conv": 24.6,
+    "taker_eff": 274,
+    "died_pre_pct": 7.0,
+    "taker_enter_s": 2.0
+   },
+   {
+    "loc": "cemetary.Ring",
+    "n": 210,
+    "share": 0.4,
+    "conv": 18.1,
+    "taker_eff": 252,
+    "died_pre_pct": 14.8,
+    "taker_enter_s": 2.2
+   },
+   {
+    "loc": "RA.window",
+    "n": 210,
+    "share": 0.4,
+    "conv": 19.5,
+    "taker_eff": 238,
+    "died_pre_pct": 20.0,
+    "taker_enter_s": 2.2
+   },
+   {
+    "loc": "yard.roof",
+    "n": 62,
+    "share": 0.1,
+    "conv": 25.8,
+    "taker_eff": 100,
+    "died_pre_pct": 8.1,
+    "taker_enter_s": 1.6
+   }
+  ]
+ }
+}

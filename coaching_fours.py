@@ -58,8 +58,8 @@ MAP_ITEMS = {
 # Map-specific drill notes, shown on the per-map "work on this" card when the lever matches.
 MAP_NOTES = {
     "dm3":     {"ra_share": "One red, 20-second cycle, in the LG room: the RA and the LG are the same territory. Hold the room, not the item.",
-                "quad_pg": "Quad sits above mound and there is no door. The ways in are the jump across the gap from either side, down from high YA, and through the pent window; a rocket jump up from mound is rare. Meet the enemy on the gap jump they use, not on the pad.",
-                "quad_contests_pg": "Three ways in on dm3: the gap jump from either side, high YA, the pent window. Come from high YA with a yellow on and a rocket loaded, and let a teammate hold the window.",
+                "quad_pg": "Quad sits above mound and there is no door. The ways in are the jump across the gap from either side, down from high YA, and through the pent window off high bridge; a rocket jump up from mound is rare. The RL room is too far to be a way in. Meet the enemy on the gap jump they use, not on the pad.",
+                "quad_contests_pg": "Three ways in on dm3: the gap jump from either side, high YA, the pent window off high bridge. Come from high YA with a yellow on and a rocket loaded, and let a teammate hold the window. If you are still at the RL when it is due, you are not getting it.",
                 "quad_conversion": "On dm3 the quad is won on the gap jump: whoever is stacked and already on the platform when the other side jumps across gets a free rocket on a player in the air. Be there first, not fastest.",
                 "even_win_pct": "The LG decides dm3's even fights; take the shaft when it is up and do not duel an LG with a rocket launcher in the open."},
     "dm2":     {"ra_share": "Two reds: low RL and the tele red. You should never be under 12 percent here; the team that holds both locks the map.",
@@ -73,9 +73,9 @@ MAP_NOTES = {
                 "quad_contests_pg": "Two ways into e1m2 quad: the GL side and the stairs from mid. Two players cover it: one on each way in. If you are the second player, take the stairs so the GL side is not the only thing the enemy sees.",
                 "quad_conversion": "e1m2 quad is a two-door room: one player on the GL door and one on the stairs takes it nearly every time. Solo, hold the way the enemy came from last cycle and rocket the stairs."},
     "schloss": {"ra_share": "One red in the cellar under RA window. Six or more reds a game is the line between your good games and your bad ones here.",
-                "quad_pg": "Quad is two to three seconds from the red area at speed and it has one door. Leave red or tower 8 seconds before it is due with a yellow on and own the door.",
-                "quad_contests_pg": "schloss is the one map with a real quad door. Be on it three seconds early with a rocket loaded, from the red side, and let the enemy walk into you.",
-                "quad_conversion": "One door means one fight: the stacked player on the door with the first rocket takes schloss quad. Do not stand on the pad, stand where the door opens into you.",
+                "quad_pg": "Quad is two to three seconds from the red area at speed. Three ways to it: the door at floor level, the drop-down from above, and the path from cathedral rocket. The drop-down is where the takers come from; leave red or tower 8 seconds before it is due with a yellow on and get above it.",
+                "quad_contests_pg": "schloss quad: a door at floor level, a drop-down from above, the path from cathedral rocket. Be above it three seconds early with a yellow on; the door is for the second player.",
+                "quad_conversion": "schloss quad is taken from above: the player on the drop-down with a yellow on converts about twice as often as the player at the door. Do not stand on the pad; be above it, and let the door fight happen under you.",
                 "ra_on_timer_pct": "The cellar red is contested from the window and the low door; arrive three seconds early with a rocket ready."},
 }
 

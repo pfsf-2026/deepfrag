@@ -202,3 +202,26 @@ is auto-linked to its definition by `linkTerms()` in `useGlossary.ts` (coach car
 within 1 s of spawning (median 0.3 s dm3/e1m2, 0.4 s schloss, 0.6 s dm2; 95-99% within 5 s; never more than 20 s),
 18.8 takes per game. So the quad time drifts about a second later per cycle (dm2 closer to two). Every drill now says
 "last take + 60, be at the door 5 s early" instead of a fixed clock second.
+
+## Quad playbooks per map (2026-09-21)
+
+Peter: "hold the door" is wrong on three of the four maps. schloss has one door; e1m2 has two (GL side,
+stairs from mid); dm2 has none (quad path from high RL, rocket jump up from big, the whole water side out
+of secret / stairs / tele); dm3's quad is above mound (gap jumps from either side, high YA, the pent window,
+rarely a rocket jump from mound). So each map has its own page, **/coach/quad/{map}**, linked from the map
+tab: the ways in with numbers, what decides the quad, and how to play it.
+
+Data: `tools/mvd_features/quad_approach_pass.py` records, for every quad spawn in every fours demo, each
+player's position 10 / 5 / 2 / 0 s before the spawn, stack at -2 s, whether he contested (650 u rule), took
+it, or died before it spawned, and when he first got within 650 u. `quad_approach_report.py --json` rolls
+that up per map: conversion by **named spot 5 s before the spawn** (the server's KTX location names, the
+players' own vocabulary), conversion by stack and by distance at -2 s, and how often the closest / most
+stacked contester takes it. The page's words live in `nuxt/app/composables/useQuadPlaybook.ts` (Peter's
+geography; spots rolled up into his "ways in"), the numbers in `quadPlaybookData.json` next to it.
+
+Findings (full corpus, 2,516 fours): stack decides the quad on every map (naked contesters convert
+6-14%, 150+ stack 30-60%); the closest player 2 s before takes it 50-65% of the time; the player already on
+the pad/platform with stack converts 30-60%. dm3: the RL side almost never takes it (1%); the window, ring
+side and high YA do (14-19%). dm2: the quad path from high RL converts 20-35%, the rocket jump from big 5-6%,
+the water side 10-18%. e1m2: both doors convert ~20%, and naked players 14%. schloss: inside the room early
+(Quad.high 28%, eff ~190) beats every way in.

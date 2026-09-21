@@ -123,7 +123,7 @@ export const GLOSSARY: GlossEntry[] = [
     plain: 'Of the quad spawns you showed up to, the share where YOU walked away with the quad. Show up to 14 and take 2 and your conversion is 14%.',
     count: 'Your quad pickups at contested spawns divided by the spawns you contested.',
     good: 'L1 players convert about 4%, L3 about 14%, L5 about 27%. The best player on the NA servers is over 30%. This is the stat that actually separates the levels at quad.',
-    move: 'Arrive with stack and a rocket loaded, not naked, and stand where the enemy comes IN, not on the pad. That place is different on every map: schloss has one door, e1m2 two (GL side and the stairs from mid), dm3 has the gap jumps, high YA and the pent window, dm2 has the quad path from high RL, the rocket jump from big and the whole water side. Each map tab tells you which way to hold.' },
+    move: 'Arrive with stack and a rocket loaded, not naked, and stand where the enemy comes IN, not on the pad. That place is different on every map: schloss has a door, a drop-down from above and the path from cathedral rocket; e1m2 has two doors (GL side and the stairs from mid); dm3 has the gap jumps, high YA and the pent window; dm2 has the quad path from high RL, the rocket jump from big and the whole water side. Each map has a quad playbook that says which way converts.' },
   { key: 'quad_contest_died_pg', group: 'quad', name: 'Died at quad before it spawned',
     plain: 'Times per game you died within 650 units of the quad in the 10 seconds before it came back. That is you fighting for it and losing. It still counts as showing up.' },
   { key: 'quad_died_pct', group: 'quad', name: 'Died holding quad', headline: 'Do not die with quad',

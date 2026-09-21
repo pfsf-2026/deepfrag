@@ -39,7 +39,7 @@ const MAP_BLURB = {
         </label>
       </div>
       <div class="chips"><span v-for="c in chips" :key="c" class="chip">{{ c }}</span></div>
-      <p class="blurb">{{ MAP_BLURB[map] }}</p>
+      <p class="blurb">{{ MAP_BLURB[map] }} <NuxtLink :to="`/coach/quad/${map}`" class="qpb">Quad playbook for {{ map }} →</NuxtLink></p>
     </div>
 
     <!-- 1on1 per-map coaching: not built yet -->
@@ -129,6 +129,7 @@ const MAP_BLURB = {
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--fg-2); background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; }
 .blurb { margin: 0; font-size: 14px; color: var(--fg-2); line-height: 1.5; max-width: 70ch; }
+.qpb { color: var(--accent); font-weight: 700; text-decoration: none; white-space: nowrap; }
 .loadbox, .empty { padding: 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; color: var(--fg-2); font-size: 14px; line-height: 1.5; }
 .empty.err { color: #fca5a5; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
