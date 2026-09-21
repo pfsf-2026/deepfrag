@@ -22,11 +22,11 @@
 # `_redirects` rules take PRECEDENCE over static files, so a `/p/*` wildcard
 # shadows every prerendered /p/{id}/index.html and serves the bare 2KB shell
 # instead — which silently hid all profile content (incl. the AI Coach card)
-# for days. Nitro auto-appends its own catch-all SPA fallback to this file at
-# build time, so unmatched/new profiles already hydrate client-side without it.
+# for days. (2026-09-21 check: Nitro does NOT append a catch-all here; an unmatched path gets
+# Cloudflare's 404.html, which is also a Nuxt SPA shell and boots the app client-side.)
 /p/*/coach        /p/:splat/       200
-# A player's coach lives at /coach/p/{id} (SPA only). Serve the bare SPA shell (200.html), NOT the
-# prerendered /coach page: Nuxt routes a served page to ITS OWN prerendered path when the URL differs,
-# so the landing shell would swallow the player URL. (Under /coach/p/ so nothing shadows
-# /coach/_payload.json.)
-/coach/p/*        /200.html        200
+# A player's coach lives at /coach/p/{id} (SPA only). Serve the prerendered SPA shell at
+# /coach/p/_fallback/ (ssr:false, so its payload has no path and the router takes the URL).
+# NOT the /coach landing (Nuxt routes a served SSR page to its own prerendered path) and NOT
+# /200.html (Cloudflare Pages turns a .html rewrite target into a 308 to /200).
+/coach/p/*        /coach/p/_fallback/   200
