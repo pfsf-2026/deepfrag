@@ -30,3 +30,4 @@
 # NOT the /coach landing (Nuxt routes a served SSR page to its own prerendered path) and NOT
 # /200.html (Cloudflare Pages turns a .html rewrite target into a 308 to /200).
 /coach/p/*        /coach/p/_fallback/   200
+/coach/player/*   /coach/player/_fallback/   200

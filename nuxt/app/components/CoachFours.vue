@@ -25,7 +25,7 @@ function verdict(s) { return VERDICT[s] || ['', s] }
 
 <template>
   <div class="cf">
-    <div v-if="loading && !report" class="loadbox">Reading your last 40 fours…</div>
+    <div v-if="loading && !report" class="loadbox">Reading your last 40 fours… The first look each day also writes your coach's read, which takes about 15 seconds.</div>
     <div v-else-if="err" class="empty err">{{ err }}</div>
     <div v-else-if="report && !lvl?.placed" class="empty">
       <strong>{{ report.display }}</strong> has {{ report.games_total || 0 }} scored fours on Den or LA. A level needs 15. Play a few more pickup nights and the coach will place you.

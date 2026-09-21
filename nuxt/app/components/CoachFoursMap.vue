@@ -50,7 +50,7 @@ const MAP_BLURB = {
     </div>
 
     <template v-else>
-      <div v-if="loading && !report" class="loadbox">Reading your last 40 fours…</div>
+      <div v-if="loading && !report" class="loadbox">Reading your last 40 fours… The first look each day also writes your coach's read, which takes about 15 seconds.</div>
       <div v-else-if="err" class="empty err">{{ err }}</div>
       <div v-else-if="report && !lvl?.placed" class="empty">A level needs 15 scored fours. Play a few more pickup nights and the map coach opens up.</div>
       <div v-else-if="card && card.thin" class="empty">

@@ -4859,6 +4859,12 @@ def coaching_fours_report(canonical_id: str, response: Response, narrate: bool =
     with pg() as conn:
         cur = conn.cursor()
         _fours_adv_ensure(cur); _ensure_coaching_tables(cur)
+        # /coach/p/Schotty (display-cased or an alias id) must find the same rows as /coach/p/schotty
+        cur.execute("""SELECT canonical_id FROM players_canonical WHERE canonical_id=%s OR LOWER(canonical_id)=LOWER(%s)
+                       ORDER BY (canonical_id=%s) DESC LIMIT 1""", (canonical_id, canonical_id, canonical_id))
+        hit = cur.fetchone()
+        if hit: canonical_id = hit["canonical_id"]
+        canonical_id = _resolve_merged_canonical(cur, canonical_id)
         cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id=%s", (canonical_id,))
         pr = cur.fetchone(); display = (pr and pr["display_name"]) or canonical_id
         rows = _fours_rows(cur, canonical_id)

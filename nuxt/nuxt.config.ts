@@ -76,6 +76,8 @@ export default defineNuxtConfig({
     // NOT 200.html: Cloudflare Pages turns a .html rewrite target into a redirect to /200.
     '/coach/p/**': { prerender: false, ssr: false },
     '/coach/p/_fallback': { prerender: true, ssr: false },
+    '/coach/player/**': { prerender: false, ssr: false },
+    '/coach/player/_fallback': { prerender: true, ssr: false },
     '/glossary': { prerender: true },
     // per-map quad playbooks (static content + corpus numbers baked into useQuadPlaybook.ts)
     '/coach/quad/**': { prerender: true },
@@ -92,7 +94,7 @@ export default defineNuxtConfig({
       '/api': { target: 'https://deepfrag-api-751658372467.us-central1.run.app/api', changeOrigin: true }
     },
     prerender: {
-      routes: [...loadPrerenderRoutes(), '/coach/p/_fallback', '/coach/quad/dm3', '/coach/quad/dm2', '/coach/quad/e1m2', '/coach/quad/schloss'],
+      routes: [...loadPrerenderRoutes(), '/coach/p/_fallback', '/coach/player/_fallback', '/coach/quad/dm3', '/coach/quad/dm2', '/coach/quad/e1m2', '/coach/quad/schloss'],
       // crawlLinks would otherwise follow NuxtLinks to /p/[id]/maps and
       // re-prerender them, defeating the point of dropping them above.
       crawlLinks: false

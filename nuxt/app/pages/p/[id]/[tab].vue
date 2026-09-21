@@ -28,7 +28,7 @@ const pending = ref(true)
 
 async function load() {
   // The coach is its own page now (2026-09-21): old /p/{id}/coach links move there.
-  if (tab.value === 'coach') return navigateTo(`/coach/p/${encodeURIComponent(id.value)}`, { replace: true })
+  if (tab.value === 'coach') return navigateTo(`/coach/player/${encodeURIComponent(id.value)}`, { replace: true })
   // Unported tab → fall back to the legacy SPA (preserves the deep link).
   if (!PORTED.has(tab.value)) {
     if (import.meta.client) window.location.replace(`/profile.html?id=${encodeURIComponent(id.value)}#${tab.value}`)
