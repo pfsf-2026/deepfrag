@@ -17,6 +17,8 @@ export interface GlossEntry {
   good?: string
   /** how to move it */
   move?: string
+  /** pages that go deeper, [label, href] */
+  links?: [string, string][]
 }
 
 export const GLOSS_GROUPS: { key: GlossGroup; title: string; blurb: string }[] = [
@@ -113,17 +115,20 @@ export const GLOSSARY: GlossEntry[] = [
     plain: 'How many quads you picked up in a game. There are 20 in a game, spread across eight players. Two a game is Level 3 play; three or more is Level 4.',
     count: 'Quad pickups per game, averaged over your last 40 fours.',
     good: 'Players who take three or more a game sit a full level above players who take two.',
-    move: 'Own the quad clock: when anyone takes it, say the time out loud and add 60. Be at the way in five seconds before that with armor on, and have a teammate cover the other way in (the map tab says which).' },
+    move: 'Own the quad clock: when anyone takes it, say the time out loud and add 60. Be at the way in five seconds before that with armor on, and have a teammate cover the other way in. Which way in, and which one converts, is on each map\'s quad page.',
+    links: [['Quad on dm3', '/coach/quad/dm3'], ['Quad on dm2', '/coach/quad/dm2'], ['Quad on e1m2', '/coach/quad/e1m2'], ['Quad on schloss', '/coach/quad/schloss']] },
   { key: 'quad_contests_pg', group: 'quad', name: 'Quad spawns contested per game', headline: 'Show up to quad',
     plain: 'Of the 20 quad spawns in a game, how many you were near when it came back. It is attendance. Dying there while trying counts too.',
     count: '"Near" means within 650 units of the quad at any point in the last 10 seconds before it spawned, up to the spawn. Nothing after the spawn counts. Measured from every player position in the demo.',
     good: 'Almost everyone shows up to about 14 of 20, at every level. The levels split on what happens next: quad conversion.',
-    move: 'Know when it is due (last take plus 60). Leave what you are doing 10 seconds before that with a yellow on, and be at the way in five seconds early, not on the pad. Which way in depends on the map: see the map tab.' },
+    move: 'Know when it is due (last take plus 60). Leave what you are doing 10 seconds before that with a yellow on, and be at the way in five seconds early, not on the pad. Which way in depends on the map: each map has its own quad page.',
+    links: [['Quad on dm3', '/coach/quad/dm3'], ['Quad on dm2', '/coach/quad/dm2'], ['Quad on e1m2', '/coach/quad/e1m2'], ['Quad on schloss', '/coach/quad/schloss']] },
   { key: 'quad_conversion', group: 'quad', name: 'Quad conversion', headline: 'Win the quad when you are there',
     plain: 'Of the quad spawns you showed up to, the share where YOU walked away with the quad. Show up to 14 and take 2 and your conversion is 14%.',
     count: 'Your quad pickups at contested spawns divided by the spawns you contested.',
     good: 'L1 players convert about 4%, L3 about 14%, L5 about 27%. The best player on the NA servers is over 30%. This is the stat that actually separates the levels at quad.',
-    move: 'Arrive with stack and a rocket loaded, not naked, and stand where the enemy comes IN, not on the pad. That place is different on every map: schloss has a door, a drop-down from above and the path from cathedral rocket; e1m2 has two doors (GL side and the stairs from mid); dm3 has the gap jumps, high YA and the pent window; dm2 has the quad path from high RL, the rocket jump from big and the whole water side. Each map has a quad playbook that says which way converts.' },
+    move: 'Arrive with stack and a rocket loaded, not naked, and stand where the enemy comes IN, not on the pad. That place is different on every map: schloss has a door, a drop-down from above and the path from cathedral rocket; e1m2 has two doors (GL side and the stairs from mid); dm3 has the gap jumps, high YA and the pent window; dm2 has the quad path from high RL, the rocket jump from big and the whole water side. Each map has a quad page that says which way converts, with what stack, and how early.',
+    links: [['Quad on dm3', '/coach/quad/dm3'], ['Quad on dm2', '/coach/quad/dm2'], ['Quad on e1m2', '/coach/quad/e1m2'], ['Quad on schloss', '/coach/quad/schloss']] },
   { key: 'quad_contest_died_pg', group: 'quad', name: 'Died at quad before it spawned',
     plain: 'Times per game you died within 650 units of the quad in the 10 seconds before it came back. That is you fighting for it and losing. It still counts as showing up.' },
   { key: 'quad_died_pct', group: 'quad', name: 'Died holding quad', headline: 'Do not die with quad',

@@ -60,6 +60,12 @@ useSeoMeta({ title: 'AI Coach · DeepFrag', description: 'Your 4on4 coach: a lev
       </ul>
     </section>
 
+    <section class="quads">
+      <h2>Taking quad, map by map</h2>
+      <p class="note">The ways into the quad, which one converts, with what stack and how early, from every fours demo on the servers.</p>
+      <div class="qgrid"><NuxtLink v-for="m in COACH_MAPS" :key="m" :to="`/coach/quad/${m}`" class="qcard"><b>Quad on {{ m }}</b><span>the ways in · what decides it · how to play it →</span></NuxtLink></div>
+    </section>
+
     <section class="how">
       <h2>How it works</h2>
       <ol class="steps">
@@ -103,6 +109,10 @@ h2 { font-size: 16px; font-weight: 800; margin: 0 0 10px; }
 .steps li { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.5; color: var(--fg-2); counter-increment: s; }
 .steps li b { color: var(--fg); font-size: 15px; }
 .steps li b::before { content: counter(s) '  '; color: var(--accent); font-variant-numeric: tabular-nums; }
+.qgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.qcard { display: flex; flex-direction: column; gap: 3px; background: var(--panel); border: 1px solid var(--border-2); border-radius: 10px; padding: 12px 14px; text-decoration: none; color: inherit; min-height: 44px; }
+.qcard b { font-size: 15px; } .qcard span { font-size: 12px; color: var(--fg-3); line-height: 1.4; }
+.qcard:hover { border-color: var(--accent); }
 .lgrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .lcard { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--lc); border-radius: 10px; padding: 10px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; align-items: baseline; }
 .ln { font-size: 22px; font-weight: 900; color: var(--lc); font-variant-numeric: tabular-nums; }
@@ -111,5 +121,6 @@ h2 { font-size: 16px; font-weight: 800; margin: 0 0 10px; }
 @media (min-width: 720px) {
   .page { padding: 40px 32px 100px; }
   .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .qgrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 </style>

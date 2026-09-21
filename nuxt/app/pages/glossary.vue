@@ -71,6 +71,7 @@ useSeoMeta({ title: 'What the numbers mean · DeepFrag', description: 'Every Dee
           <template v-if="e.good"><dt>What good looks like</dt><dd v-html="linkTerms(e.good, e.key)" /></template>
           <template v-if="medians(e.key).length"><dt>By level right now</dt><dd class="meds"><span v-for="m in medians(e.key)" :key="m.n" class="med"><i>L{{ m.n }}</i>{{ m.s }}</span></dd></template>
           <template v-if="e.move"><dt>How to move it</dt><dd v-html="linkTerms(e.move, e.key)" /></template>
+          <template v-if="e.links?.length"><dt>Go deeper</dt><dd class="elinks"><NuxtLink v-for="[l, h] in e.links" :key="h" :to="h" class="elink">{{ l }} →</NuxtLink></dd></template>
         </dl>
       </article>
     </section>
@@ -111,6 +112,9 @@ h3 { font-size: 16px; font-weight: 800; margin: 0; }
 .rows dt { color: var(--fg-3); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; padding-top: 6px; }
 .rows dd { margin: 0; color: var(--fg-2); max-width: 70ch; }
 .meds { display: flex; flex-wrap: wrap; gap: 6px; }
+.elinks { display: flex; flex-wrap: wrap; gap: 6px; }
+.elink { font-size: 12px; font-weight: 700; color: var(--accent); background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 6px 11px; text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
+.elink:hover { border-color: var(--accent); }
 .med { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; color: var(--fg); font-variant-numeric: tabular-nums; }
 .med i { font-style: normal; color: var(--fg-3); margin-right: 6px; }
 .none { color: var(--fg-2); }

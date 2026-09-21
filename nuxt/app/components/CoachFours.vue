@@ -18,6 +18,7 @@ const nextLevel = computed(() => Math.min((lvl.value?.level || 1) + 1, 5))
 const fg = computed(() => gloss(focus.value?.lever))
 const focusLever = computed(() => levers.value.find(l => l.key === focus.value?.lever) || null)
 const focusPct = computed(() => progressPct(focus.value?.status === 'in_progress' ? (focus.value?.now ?? focus.value?.you) : focus.value?.you, focus.value?.target, focusLever.value?.higher_better !== false))
+const QUAD_KEYS = new Set(['quad_pg', 'quad_contests_pg', 'quad_conversion', 'quad_died_pct', 'quad_frags_per_full', 'quad_contest_died_pg'])
 const VERDICT = { hit: ['✅', 'Hit'], improved: ['▲', 'Improving'], flat: ['▬', 'No change'], worse: ['▼', 'Went the wrong way'], pending: ['◍', 'In progress'] }
 function verdict(s) { return VERDICT[s] || ['', s] }
 </script>
@@ -68,6 +69,7 @@ function verdict(s) { return VERDICT[s] || ['', s] }
           <div v-if="focusPct != null" class="bar" :title="`${focusPct}% of the way to the target`"><i :style="{ width: focusPct + '%' }" /></div>
           <p class="why"><b>Why it matters:</b> <span v-html="linkTerms(focus.why)" /></p>
           <p class="drill"><b>Do this:</b> <span v-html="linkTerms(focus.drill)" /></p>
+          <div v-if="QUAD_KEYS.has(focus.lever)" class="qlinks"><span class="muted small">Quad pages, one per map:</span><NuxtLink v-for="m in COACH_MAPS" :key="m" :to="`/coach/quad/${m}`" class="qlink">{{ m }} →</NuxtLink></div>
         </div>
         <div v-if="then.length" class="then">
           <div class="thenlabel">After that</div>
@@ -197,6 +199,9 @@ function verdict(s) { return VERDICT[s] || ['', s] }
 .item .n { font-size: 26px; font-weight: 900; color: var(--fg); font-variant-numeric: tabular-nums; line-height: 1.1; }
 .item.tgt .n { color: var(--accent); }
 .why, .drill { margin: 6px 0 0; font-size: 14px; line-height: 1.5; }
+.qlinks { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; }
+.qlink { font-size: 13px; font-weight: 800; color: #140a03; background: var(--accent); border-radius: 8px; padding: 7px 12px; text-decoration: none; min-height: 36px; display: inline-flex; align-items: center; }
+.qlink:hover { filter: brightness(1.08); }
 .then { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .thenlabel { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-3); padding: 2px 0; }
 .thenitem { display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; min-width: 0; }

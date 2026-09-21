@@ -17,6 +17,7 @@ const rest = computed(() => (card.value?.levers || []).slice(1))
 const chips = computed(() => invChips(card.value?.items))
 const g = computed(() => gloss(card.value?.work_on?.key))
 const pct = computed(() => progressPct(top.value?.you_raw, top.value?.target_raw, top.value?.higher_better !== false))
+const QUAD_KEYS = new Set(['quad_pg', 'quad_contests_pg', 'quad_conversion', 'quad_died_pct', 'quad_frags_per_full', 'quad_contest_died_pg'])
 const MAP_BLURB = {
   dm3: 'One red on a 20-second cycle in the LG room. Whoever owns that room owns dm3.',
   dm2: 'Two reds, three yellows, quad in the water room. The stack map: nobody should fight naked here.',
@@ -82,6 +83,7 @@ const MAP_BLURB = {
             <div class="more muted small">Players at your level do <b>{{ card.work_on.level_median }}</b> here<template v-if="card.work_on.win && card.work_on.loss"> · you do <b>{{ card.work_on.win }}</b> in your wins and <b>{{ card.work_on.loss }}</b> in your losses</template>.</div>
             <p class="why"><b>Why on {{ map }}:</b> <span v-html="linkTerms(card.work_on.map_note || card.work_on.why)" /></p>
             <p class="drill"><b>Do this:</b> <span v-html="linkTerms(card.work_on.drill)" /></p>
+            <NuxtLink v-if="QUAD_KEYS.has(card.work_on.key)" :to="`/coach/quad/${map}`" class="qbtn">Open the {{ map }} quad page: the ways in, which converts, how early →</NuxtLink>
           </div>
         </section>
 
@@ -166,6 +168,8 @@ const MAP_BLURB = {
 .barlbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .more { line-height: 1.5; }
 .why, .drill { margin: 8px 0 0; font-size: 14px; line-height: 1.5; }
+.qbtn { display: inline-flex; align-items: center; margin-top: 12px; min-height: 40px; padding: 8px 14px; border-radius: 9px; background: var(--accent); color: #140a03; font-weight: 800; font-size: 13px; text-decoration: none; }
+.qbtn:hover { filter: brightness(1.08); }
 .drill { color: var(--fg); }
 .rows { display: flex; flex-direction: column; gap: 8px; }
 .row { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px 12px; }
