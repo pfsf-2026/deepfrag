@@ -58,16 +58,24 @@ MAP_ITEMS = {
 # Map-specific drill notes, shown on the per-map "work on this" card when the lever matches.
 MAP_NOTES = {
     "dm3":     {"ra_share": "One red, 20-second cycle, in the LG room: the RA and the LG are the same territory. Hold the room, not the item.",
-                "quad_pg": "Quad sits below the RA/LG platform: a stacked LG carrier can cover the door from above.",
+                "quad_pg": "Quad sits above mound and there is no door. The ways in are the jump across the gap from either side, down from high YA, and through the pent window; a rocket jump up from mound is rare. Meet the enemy on the gap jump they use, not on the pad.",
+                "quad_contests_pg": "Three ways in on dm3: the gap jump from either side, high YA, the pent window. Come from high YA with a yellow on and a rocket loaded, and let a teammate hold the window.",
+                "quad_conversion": "On dm3 the quad is won on the gap jump: whoever is stacked and already on the platform when the other side jumps across gets a free rocket on a player in the air. Be there first, not fastest.",
                 "even_win_pct": "The LG decides dm3's even fights; take the shaft when it is up and do not duel an LG with a rocket launcher in the open."},
     "dm2":     {"ra_share": "Two reds: low RL and the tele red. You should never be under 12 percent here; the team that holds both locks the map.",
                 "ya_share": "Three yellows on dm2, so stack is cheap: route every respawn through one before you rejoin.",
-                "quad_pg": "Quad is in the water room next to big. On dm2 it sits a second or two longer before someone takes it than on the other maps, so the quad time drifts later a little faster here. Leave low RL 10 seconds before it is due and come through the tunnel."},
+                "quad_pg": "Quad is in the water room next to big, and there is no door: players come down the quad path from high RL, rocket-jump up from big (all the time), and in from the water side out of secret, the stairs or the tele. On dm2 it also sits a second or two longer before someone takes it, so the quad time drifts later a little faster here. Come down the quad path from high RL 10 seconds before it is due.",
+                "quad_contests_pg": "Four ways in on dm2: the quad path from high RL, the rocket jump up from big, and the water side from secret, stairs or tele. The high RL path arrives stacked; the water side arrives naked. Pick the path, not the water.",
+                "quad_conversion": "dm2 quad is won by whoever holds the top of the quad path with stack while a teammate watches the big rocket-jump. Fire down at the players coming up from big and water; they are the ones without armor."},
     "e1m2":    {"ya_share": "No red on e1m2. The single yellow on a 20-second cycle is the armor game; the team that owns it owns the map.",
                 "deaths_pm": "Naked deaths are the e1m2 disease: armor or mega before the RL, every spawn.",
-                "quad_pg": "Quad is next to the GL room and is the strongest item on the map; be there stacked at spawn or do not be there."},
+                "quad_pg": "Quad is next to the GL room and is the strongest item on the map. Two ways in: from the GL side and from the stairs into mid room. Be there stacked at spawn or do not be there.",
+                "quad_contests_pg": "Two ways into e1m2 quad: the GL side and the stairs from mid. Two players cover it: one on each way in. If you are the second player, take the stairs so the GL side is not the only thing the enemy sees.",
+                "quad_conversion": "e1m2 quad is a two-door room: one player on the GL door and one on the stairs takes it nearly every time. Solo, hold the way the enemy came from last cycle and rocket the stairs."},
     "schloss": {"ra_share": "One red in the cellar under RA window. Six or more reds a game is the line between your good games and your bad ones here.",
-                "quad_pg": "Quad is two to three seconds from the red area at speed; leave red or tower 8 seconds before it is due with a yellow on.",
+                "quad_pg": "Quad is two to three seconds from the red area at speed and it has one door. Leave red or tower 8 seconds before it is due with a yellow on and own the door.",
+                "quad_contests_pg": "schloss is the one map with a real quad door. Be on it three seconds early with a rocket loaded, from the red side, and let the enemy walk into you.",
+                "quad_conversion": "One door means one fight: the stacked player on the door with the first rocket takes schloss quad. Do not stand on the pad, stand where the door opens into you.",
                 "ra_on_timer_pct": "The cellar red is contested from the window and the low door; arrive three seconds early with a rocket ready."},
 }
 
