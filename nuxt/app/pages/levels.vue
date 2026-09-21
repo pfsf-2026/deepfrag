@@ -69,6 +69,7 @@ function inv(items) { return Object.entries(items || {}).filter(([k, v]) => v &&
     coach which things are worth your time right now. Different levels work on different things, because the corpus says the
     skill that separates each level from the next is a different one at every step.
   </p>
+    <p class="intro">Every stat named on this page is explained in plain English on <NuxtLink to="/glossary">What the numbers mean</NuxtLink>.</p>
 
   <div v-if="err" class="note err">{{ err }}</div>
   <div v-else-if="!data" class="note">Loading the level definitions…</div>

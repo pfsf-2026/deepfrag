@@ -4866,13 +4866,25 @@ def coaching_fours_report(canonical_id: str, response: Response, narrate: bool =
             return {"canonical_id": canonical_id, "display": display, "mode": "4on4", "games": 0,
                     "level": {"level": 0, "name": "Unplaced", "placed": False}, "narration": None}
         base = _fours_pool(cur)
-        cur.execute("""SELECT levers FROM coaching_runs WHERE canonical_id=%s AND mode='4on4'
-                       ORDER BY run_date DESC, id DESC LIMIT 1""", (canonical_id,))
+        cur.execute("""SELECT levers, narration, narration_source, matches_analyzed, run_date FROM coaching_runs
+                       WHERE canonical_id=%s AND mode='4on4' ORDER BY run_date DESC, id DESC LIMIT 1""", (canonical_id,))
         prev_run = cur.fetchone()
         prev_focus = ((prev_run or {}).get("levers") or {}).get("focus") if prev_run else None
         report = CF.build_report(rows, base, prev_focus, display)
         report["canonical_id"] = canonical_id; report["games_total"] = len(rows)
-        report["narration"] = coaching_narrate.narrate_fours(report) if narrate else None
+        # Narration is a model call (seconds, and it costs): reuse today's text when nothing it
+        # was written about has changed (same day, same game count, same focus lever). A new
+        # night of games or a new focus gets a fresh read.
+        same_day = prev_run and str(prev_run.get("run_date")) == str(datetime.now(timezone.utc).date())
+        same_focus = prev_run and (((prev_run.get("levers") or {}).get("focus") or {}).get("lever") == ((report.get("focus") or {}).get("lever")))
+        reusable = (same_day and same_focus and prev_run.get("narration") and prev_run.get("narration_source") == "llm"
+                    and prev_run.get("matches_analyzed") == report["level"]["games"])
+        if not narrate:
+            report["narration"] = None
+        elif reusable:
+            report["narration"] = {"text": prev_run["narration"], "source": "llm", "reason": None, "cached": True}
+        else:
+            report["narration"] = coaching_narrate.narrate_fours(report)
         try:
             cur.execute("""INSERT INTO coaching_runs (canonical_id, mode, run_date, matches_analyzed, wins, losses, metrics, levers, narration, narration_source)
                            VALUES (%s,'4on4',CURRENT_DATE,%s,%s,%s,%s,%s,%s,%s)

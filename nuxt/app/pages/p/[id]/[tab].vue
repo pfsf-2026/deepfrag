@@ -11,7 +11,7 @@ const id = computed(() => String(route.params.id))
 const tab = computed(() => String(route.params.tab || ''))
 const windowKey = ref('90')
 
-const PORTED = new Set(['coach', 'recent', 'opponents', '1on1', '4on4', '2on2', 'trends', 'compare', 'dmm', 'servers', 'advanced'])
+const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2', 'trends', 'compare', 'dmm', 'servers', 'advanced'])
 // Advanced (demo-derived duel metrics): /api/players/{id}/advanced — see docs/advanced_metrics.md
 const adv = ref(null)
 const advPending = ref(false)
@@ -27,6 +27,8 @@ const profile = ref(null)
 const pending = ref(true)
 
 async function load() {
+  // The coach is its own page now (2026-09-21): old /p/{id}/coach links move there.
+  if (tab.value === 'coach') return navigateTo(`/coach/p/${encodeURIComponent(id.value)}`, { replace: true })
   // Unported tab → fall back to the legacy SPA (preserves the deep link).
   if (!PORTED.has(tab.value)) {
     if (import.meta.client) window.location.replace(`/profile.html?id=${encodeURIComponent(id.value)}#${tab.value}`)
@@ -236,12 +238,11 @@ const serverCols = [
 function enc(s) { return encodeURIComponent(s) }
 // Tabs already in Nuxt link internally; not-yet-ported tabs link straight to the
 // legacy SPA (avoids a broken hop / direct-load 404). PORTED grows per migration.
-const INTERNAL = new Set(['overview', 'coach', 'maps', ...PORTED])
+const INTERNAL = new Set(['overview', 'maps', ...PORTED])
 const TABS = computed(() => {
   const b = `/p/${enc(id.value)}`
   const defs = [
     { key: 'overview', label: 'Overview', to: b },
-    { key: 'coach', label: '🎯 Coach', to: `${b}/coach` },
     { key: 'advanced', label: 'Advanced' },
     { key: 'trends', label: 'Trends' }, { key: 'compare', label: 'Compare' },
     { key: '1on1', label: '1on1' }, { key: '4on4', label: '4on4' }, { key: '2on2', label: '2on2' },
@@ -293,26 +294,21 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
     <div class="profile-tabbar">
       <div class="profile-tabs">
         <template v-for="t in TABS" :key="t.key">
-          <NuxtLink v-if="t.internal" :to="t.to" class="ptab" :class="{ active: t.key === tab, 'ptab-coach': t.key === 'coach' }">{{ t.label }}</NuxtLink>
+          <NuxtLink v-if="t.internal" :to="t.to" class="ptab" :class="{ active: t.key === tab }">{{ t.label }}</NuxtLink>
           <a v-else :href="t.legacy" class="ptab">{{ t.label }}</a>
         </template>
       </div>
-      <select v-if="tab !== 'coach'" v-model="windowKey" class="window-select">
+      <select v-model="windowKey" class="window-select">
         <option value="7">Last 7d</option><option value="30">Last 30d</option>
         <option value="90">Last 90d</option><option value="365">Last year</option><option value="all">All time</option>
       </select>
     </div>
 
-    <!-- COACH: its own loader; does not wait for the profile fetch -->
-    <template v-if="tab === 'coach'">
-      <CoachTab :cid="id" />
-    </template>
-
-    <div v-else-if="pending" class="placeholder">Loading…</div>
+    <div v-if="pending" class="placeholder">Loading…</div>
 
     <!-- ADVANCED (demo-derived duel metrics) -->
     <template v-else-if="tab === 'advanced'">
-      <div class="section-h"><h2>Advanced duel metrics</h2><span class="muted small">from the demo · window {{ windowKey === 'all' ? 'all time' : 'last ' + windowKey + 'd' }}</span></div>
+      <div class="section-h"><h2>Advanced duel metrics</h2><span class="muted small">from the demo · window {{ windowKey === 'all' ? 'all time' : 'last ' + windowKey + 'd' }} · <NuxtLink to="/glossary#scores">what these mean →</NuxtLink></span></div>
       <div v-if="advPending" class="placeholder">Loading…</div>
       <div v-else-if="!adv || !adv.games" class="panel muted" style="padding:20px">No scored duels in this window yet. Duels are scored from the demo nightly; Den, LA, Mom's Basement and NY servers are covered.</div>
       <template v-else>

@@ -71,6 +71,9 @@ export default defineNuxtConfig({
     // Level explainer: static shell, definitions + live medians hydrate from /api/coaching/fours/levels.
     '/levels': { prerender: true },
     '/coach': { prerender: true },
+    // a player's coach page is SPA-only; _redirects serves the /coach shell for /coach/p/*
+    '/coach/p/**': { prerender: false, ssr: false },
+    '/glossary': { prerender: true },
     '/servers': { prerender: true },
     '/stats': { prerender: true },
     '/h2h': { prerender: true },

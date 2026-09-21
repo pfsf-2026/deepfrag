@@ -79,7 +79,7 @@ useSeoMeta({
             <span class="caret">▾</span>
             <div v-if="menuOpen" class="menu" @click.stop>
               <NuxtLink v-if="user?.canonical_id" :to="`/p/${user.canonical_id}`" class="mi" @click="closeMenu">My profile</NuxtLink>
-              <NuxtLink v-if="user?.canonical_id" :to="`/p/${user.canonical_id}/coach`" class="mi" @click="closeMenu">My coach</NuxtLink>
+              <NuxtLink v-if="user?.canonical_id" :to="`/coach/p/${user.canonical_id}`" class="mi" @click="closeMenu">My coach</NuxtLink>
               <button v-if="user?.team" class="mi" @click="teamSettings">Team settings</button>
               <NuxtLink v-else to="/ladder" class="mi" @click="closeMenu">Join the ladder</NuxtLink>
               <button v-if="user?.canonical_id" class="mi" @click="openAvail">My availability</button>

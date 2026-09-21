@@ -7,7 +7,7 @@ const pending = ref(true)
 const view = ref('nav')   // 'nav' (launchpad) | 'metrics' (grid) | 'coach' (AI Coach)
 // Honor ?view=coach so the Coach tab works when linked from deep-dive pages.
 // (2026-09-21) the coach is its own tab now: old ?view=coach links move there.
-watch(() => route.query.view, v => { if (v === 'coach') navigateTo(`/p/${encodeURIComponent(String(route.params.id))}/coach`, { replace: true }) }, { immediate: true })
+watch(() => route.query.view, v => { if (v === 'coach') navigateTo(`/coach/p/${encodeURIComponent(String(route.params.id))}`, { replace: true }) }, { immediate: true })
 const windowKey = ref('90')
 const df = useDeepFrag()
 
@@ -87,7 +87,7 @@ watch(ratingHistoryMode, loadRatingHistory)
 // The CoachTab component owns its own data loading (report + history + per-match
 // deep-analyze); this page just hosts it and the tab scroll-to behaviour.
 function goCoach() {
-  navigateTo(`/p/${encodeURIComponent(String(route.params.id))}/coach`)
+  navigateTo(`/coach/p/${encodeURIComponent(String(route.params.id))}`)
 }
 
 // ── Config Profile (hardware/settings) ──────────────────────────────────────
@@ -335,7 +335,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
         <div class="avatar">{{ (profile.player || '?')[0].toUpperCase() }}</div>
         <div class="id">
           <h1>{{ profile.player }}</h1>
-          <NuxtLink v-if="profile.level?.placed" :to="`/p/${enc(id)}/coach`" class="lvl-badge" :class="'lvl-' + profile.level.level"
+          <NuxtLink v-if="profile.level?.placed" :to="`/coach/p/${enc(id)}`" class="lvl-badge" :class="'lvl-' + profile.level.level"
                     :title="`4on4 level · ${profile.level.above_avg_pg > 0 ? '+' : ''}${profile.level.above_avg_pg} above average per game over the last ${profile.level.games} fours · ${profile.level.gates_passed}/${profile.level.gates} gates to the next level`">
             L{{ profile.level.level }} · {{ profile.level.name }}
           </NuxtLink>
@@ -464,7 +464,6 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
       <div class="profile-tabbar">
         <div class="profile-tabs">
           <a class="ptab active" style="cursor:pointer" @click="view = 'nav'">Overview</a>
-          <NuxtLink class="ptab ptab-coach" :to="`/p/${encodeURIComponent(id)}/coach`">🎯 Coach</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/trends`">Trends</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/compare`">Compare</NuxtLink>
           <NuxtLink class="ptab" :to="`/p/${encodeURIComponent(id)}/1on1`">1on1</NuxtLink>

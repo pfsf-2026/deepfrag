@@ -5,7 +5,7 @@
 // player search that opens any player's coach. Prerendered shell; hydrates client-side.
 const { user, ready, loggedIn, login } = useAuth()
 watch([ready, () => user.value?.canonical_id], ([r, cid]) => {
-  if (r && cid) navigateTo(`/p/${encodeURIComponent(cid)}/coach`, { replace: true })
+  if (r && cid) navigateTo(`/coach/p/${encodeURIComponent(cid)}`, { replace: true })
 }, { immediate: true })
 
 const levels = ref([])
@@ -55,7 +55,7 @@ useSeoMeta({ title: 'Coach · DeepFrag', description: 'Your 4on4 coach: a level 
       <input id="coach-q" v-model="q" class="q" type="search" placeholder="Search a player…" autocomplete="off" spellcheck="false">
       <ul v-if="hits.length" class="hits">
         <li v-for="h in hits" :key="h.canonical_id">
-          <NuxtLink :to="`/p/${enc(h.canonical_id)}/coach`" class="hit"><span class="hn">{{ h.display }}</span><span class="hm">{{ h.matches }} games</span></NuxtLink>
+          <NuxtLink :to="`/coach/p/${enc(h.canonical_id)}`" class="hit"><span class="hn">{{ h.display }}</span><span class="hm">{{ h.matches }} games</span></NuxtLink>
         </li>
       </ul>
     </section>

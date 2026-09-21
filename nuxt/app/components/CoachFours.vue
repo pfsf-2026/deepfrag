@@ -15,6 +15,9 @@ const games = computed(() => report.value?.games || [])
 const then = computed(() => levers.value.filter(l => l.key !== focus.value?.lever).slice(0, 2))
 const levelColor = computed(() => LEVEL_COLORS[lvl.value?.level] || 'var(--fg-3)')
 const nextLevel = computed(() => Math.min((lvl.value?.level || 1) + 1, 5))
+const fg = computed(() => gloss(focus.value?.lever))
+const focusLever = computed(() => levers.value.find(l => l.key === focus.value?.lever) || null)
+const focusPct = computed(() => progressPct(focus.value?.status === 'in_progress' ? (focus.value?.now ?? focus.value?.you) : focus.value?.you, focus.value?.target, focusLever.value?.higher_better !== false))
 const VERDICT = { hit: ['✅', 'Hit'], improved: ['▲', 'Improving'], flat: ['▬', 'No change'], worse: ['▼', 'Went the wrong way'], pending: ['◍', 'In progress'] }
 function verdict(s) { return VERDICT[s] || ['', s] }
 </script>
@@ -40,10 +43,11 @@ function verdict(s) { return VERDICT[s] || ['', s] }
             <div class="gtitle">Gates to L{{ nextLevel }}<span v-if="lvl.ready" class="ready">ready to move up</span><NuxtLink to="/levels" class="howlink">how levels work →</NuxtLink></div>
             <div v-for="g in lvl.gates" :key="g.key" class="gate" :class="{ ok: g.passed }">
               <span class="gk">{{ g.passed ? '✓' : '○' }}</span>
-              <span class="gl">{{ g.label }}</span>
-              <span class="gv"><b>{{ g.you }}</b> <span class="muted">vs {{ g.target }}</span></span>
+              <span class="gl">{{ g.label }} <NuxtLink :to="glossHref(g.key)" class="q">?</NuxtLink></span>
+              <span class="gv">you <b>{{ g.you }}</b> <span class="muted">· need {{ g.target }}</span></span>
             </div>
             <div v-if="!lvl.gates?.length" class="muted small">Top of the ladder. Hold it.</div>
+            <div v-else class="muted small">"need" is the promotion line: what a player just moving up to L{{ nextLevel }} does. <NuxtLink to="/glossary#target" class="glink">what's that? →</NuxtLink></div>
           </div>
         </div>
       </section>
@@ -52,19 +56,24 @@ function verdict(s) { return VERDICT[s] || ['', s] }
       <section v-if="focus" class="sec">
         <div class="sectitle">🎯 Your one focus</div>
         <div class="card focus">
-          <div class="ftitle">{{ focus.label }}<span v-if="focus.status === 'in_progress'" class="pill">{{ focus.games_since }}/{{ focus.window_games }} games</span><span v-else class="pill new">new · next {{ focus.window_games }} games</span></div>
-          <div class="cmp">
-            <div class="item you"><span class="n">{{ focus.status === 'in_progress' ? focus.now_fmt : focus.you_fmt }}</span>you now</div>
-            <div class="item tgt"><span class="n">{{ focus.target_fmt }}</span>promotion line</div>
+          <div class="fhead">
+            <h3 class="fheadline">{{ fg?.headline || focus.label }}</h3>
+            <div class="fstat"><span class="statname">{{ focus.label }}</span><NuxtLink :to="glossHref(focus.lever)" class="what">what is this? →</NuxtLink><span v-if="focus.status === 'in_progress'" class="pill">{{ focus.games_since }} of {{ focus.window_games }} games in</span><span v-else class="pill new">new · your focus for the next {{ focus.window_games }} games</span></div>
           </div>
-          <p class="why">{{ focus.why }}</p>
-          <p class="drill"><b>Drill:</b> {{ focus.drill }}</p>
+          <p v-if="fg?.plain" class="plain">{{ fg.plain }}</p>
+          <div class="cmp">
+            <div class="item you"><span class="n">{{ focus.status === 'in_progress' ? focus.now_fmt : focus.you_fmt }}</span>{{ focus.status === 'in_progress' ? 'you, since the focus started' : 'you now' }}</div>
+            <div class="item tgt"><span class="n">{{ focus.target_fmt }}</span>target to play like L{{ nextLevel }}</div>
+          </div>
+          <div v-if="focusPct != null" class="bar" :title="`${focusPct}% of the way to the target`"><i :style="{ width: focusPct + '%' }" /></div>
+          <p class="why"><b>Why it matters:</b> {{ focus.why }}</p>
+          <p class="drill"><b>Do this:</b> {{ focus.drill }}</p>
         </div>
         <div v-if="then.length" class="then">
-          <div class="thenlabel">Then</div>
+          <div class="thenlabel">After that</div>
           <div v-for="l in then" :key="l.key" class="thenitem">
-            <span class="tl">{{ l.label }}<span v-if="l.is_gate" class="gtag">gate</span></span>
-            <span class="tn mono"><b>{{ l.you }}</b> <span class="arrow">→</span> {{ l.target }}</span>
+            <span class="tl"><span class="th">{{ gloss(l.key)?.headline || l.label }}</span><span class="muted small">{{ l.label }}<span v-if="l.is_gate" class="gtag">gate</span> <NuxtLink :to="glossHref(l.key)" class="q">?</NuxtLink></span></span>
+            <span class="tn">you <b>{{ l.you }}</b> · target <b class="acc">{{ l.target }}</b></span>
           </div>
         </div>
       </section>
@@ -79,8 +88,8 @@ function verdict(s) { return VERDICT[s] || ['', s] }
               <span class="mrec muted small">{{ c.wins }}–{{ c.losses }}<template v-if="!c.thin"> · {{ signed(c.above_avg_pg) }}</template></span>
             </div>
             <template v-if="!c.thin && c.work_on">
-              <div class="mlabel">{{ c.work_on.label }}</div>
-              <div class="mnums mono"><b>{{ c.work_on.you }}</b> <span class="arrow">→</span> {{ c.work_on.target }}</div>
+              <div class="mlabel">{{ gloss(c.work_on.key)?.headline || c.work_on.label }}</div>
+              <div class="mnums"><span class="muted">{{ c.work_on.label }}:</span> you <b>{{ c.work_on.you }}</b> · target <b class="acc">{{ c.work_on.target }}</b></div>
             </template>
             <div v-else class="mlabel muted">{{ c.games }}/{{ c.min_games }} games · not enough yet</div>
             <span class="mgo">open {{ c.map }} →</span>
@@ -108,20 +117,20 @@ function verdict(s) { return VERDICT[s] || ['', s] }
       <!-- all levers, collapsed -->
       <section v-if="levers.length" class="sec">
         <details class="card details">
-          <summary>📐 All your levers at L{{ lvl.level }} <span class="muted small">· {{ levers.length }} ranked</span></summary>
+          <summary>📐 All your numbers at L{{ lvl.level }} <span class="muted small">· {{ levers.length }} stats, most important first</span></summary>
           <div class="tbl">
             <table>
-              <thead><tr><th>lever</th><th class="num">you</th><th class="num">wins</th><th class="num">losses</th><th class="num">L{{ lvl.level }} median</th><th class="num">line to L{{ nextLevel }}</th><th class="num">L{{ nextLevel }} median</th></tr></thead>
+              <thead><tr><th>stat</th><th class="num">you</th><th class="num">in your wins</th><th class="num">in your losses</th><th class="num">L{{ lvl.level }} does</th><th class="num">target (L{{ nextLevel }} line)</th><th class="num">L{{ nextLevel }} does</th></tr></thead>
               <tbody>
                 <tr v-for="l in levers" :key="l.key" :class="{ gate: l.is_gate }">
-                  <td>{{ l.label }}<span v-if="l.is_gate" class="gtag">gate</span></td>
+                  <td><NuxtLink :to="glossHref(l.key)" class="glink">{{ l.label }}</NuxtLink><span v-if="l.is_gate" class="gtag">gate</span></td>
                   <td class="num"><b>{{ l.you }}</b></td><td class="num">{{ l.win ?? '—' }}</td><td class="num">{{ l.loss ?? '—' }}</td>
                   <td class="num">{{ l.level_median }}</td><td class="num"><b>{{ l.target }}</b></td><td class="num muted">{{ l.next_median }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <div class="muted small pad">The line is what this lever looks like for a player right at the promotion threshold; targets and gates use it. Ranked by how far you sit from the line, plus how much the lever separates your own wins from your losses.</div>
+          <div class="muted small pad">The target is what this stat looks like for a player right at the edge of moving up; gates use it. Ranked by how far you sit from the target, plus how much the stat separates your own wins from your losses. <NuxtLink to="/glossary" class="glink">every stat explained →</NuxtLink></div>
         </details>
       </section>
 
@@ -131,8 +140,8 @@ function verdict(s) { return VERDICT[s] || ['', s] }
         <div class="gcards">
           <div v-for="g in games" :key="g.hub_game_id" class="gcard" :class="{ w: g.win, l: !g.win }">
             <div class="ghead"><NuxtLink :to="{ query: { map: g.map } }" class="gmap">{{ g.map }}</NuxtLink><span class="gres">{{ g.win ? 'W' : 'L' }}</span><span class="muted small">{{ fmtCoachDate(g.played_at) }}</span></div>
-            <div class="gscore"><b>{{ g.agi }}</b> impact <span class="muted">· {{ signed(g.above_avg) }} above avg · {{ g.frags }}/{{ g.deaths }}</span></div>
-            <div class="gex"><span v-for="e in g.explain" :key="e.key" class="ex" :class="{ good: e.good, bad: !e.good }">{{ e.label }} {{ e.value }}</span></div>
+            <div class="gscore"><b>{{ signed(g.above_avg) }}</b> above average <span class="muted">· {{ g.frags }} frags / {{ g.deaths }} deaths</span></div>
+            <div class="gex"><span v-for="e in g.explain" :key="e.key" class="ex" :class="{ good: e.good, bad: !e.good }">{{ e.good ? '▲' : '▼' }} {{ e.label }} {{ e.value }}</span></div>
           </div>
         </div>
       </section>
@@ -165,19 +174,32 @@ function verdict(s) { return VERDICT[s] || ['', s] }
 .gate .gv { font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* focus */
 .focus { border-color: var(--accent); }
-.ftitle { font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fhead { display: flex; flex-direction: column; gap: 4px; }
+.fheadline { margin: 0; font-size: 24px; font-weight: 900; line-height: 1.1; letter-spacing: -0.01em; text-wrap: balance; }
+.fstat { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; font-size: 13px; color: var(--fg-2); }
+.statname { font-weight: 700; color: var(--fg); }
+.what { color: var(--accent); font-weight: 700; text-decoration: none; }
+.plain { margin: 8px 0 0; font-size: 14px; line-height: 1.55; color: var(--fg-2); max-width: 70ch; }
+.bar { height: 10px; background: var(--panel-3); border-radius: 999px; overflow: hidden; margin: 0 0 6px; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.q { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border-2); color: var(--fg-3); font-size: 11px; font-weight: 700; text-decoration: none; vertical-align: middle; margin-left: 2px; }
+.q:hover { color: var(--accent); border-color: var(--accent); }
+.glink { color: inherit; text-decoration: underline dotted var(--fg-3); text-underline-offset: 3px; }
+.glink:hover { color: var(--accent); }
+.acc { color: var(--accent); }
+.th { display: block; font-size: 14px; }
 .pill { font-size: 11px; font-weight: 600; background: var(--panel-3); color: var(--fg-2); border-radius: 999px; padding: 2px 9px; }
 .pill.new { background: rgba(255,122,26,0.15); color: var(--accent); }
 .cmp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
 .item { background: var(--panel-2); border-radius: 10px; padding: 10px 12px; font-size: 12px; color: var(--fg-2); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.item .n { font-size: 22px; font-weight: 800; color: var(--fg); font-variant-numeric: tabular-nums; }
+.item .n { font-size: 26px; font-weight: 900; color: var(--fg); font-variant-numeric: tabular-nums; line-height: 1.1; }
 .item.tgt .n { color: var(--accent); }
 .why, .drill { margin: 6px 0 0; font-size: 14px; line-height: 1.5; }
 .then { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .thenlabel { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--fg-3); padding: 2px 0; }
-.thenitem { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; min-width: 0; }
-.tl { font-weight: 700; font-size: 13px; min-width: 0; }
-.tn { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--fg-2); }
+.thenitem { display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; min-width: 0; }
+.tl { font-weight: 700; font-size: 13px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tn { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--fg-2); }
 .gtag { margin-left: 6px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 /* map boxes */
 .mboxes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 10px; }
@@ -187,7 +209,7 @@ function verdict(s) { return VERDICT[s] || ['', s] }
 .mtop { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .mmap { font-size: 18px; font-weight: 900; }
 .mrec { white-space: nowrap; }
-.mlabel { font-weight: 700; color: var(--accent); font-size: 13px; }
+.mlabel { font-weight: 800; color: var(--accent); font-size: 15px; }
 .mbox.thin .mlabel { color: var(--fg-3); font-weight: 600; }
 .mnums { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--fg-2); }
 .mgo { margin-top: 4px; font-size: 12px; color: var(--fg-3); }
@@ -226,7 +248,7 @@ tr.gate td:first-child { color: var(--fg); }
   .lvlcard { grid-template-columns: auto minmax(0, 1fr) minmax(220px, 0.9fr); }
   .gates { grid-column: auto; }
   .cmp { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
-  .then { grid-template-columns: auto repeat(2, minmax(0, 1fr)); align-items: center; }
+  .then { grid-template-columns: auto repeat(2, minmax(0, 1fr)); align-items: stretch; }
   .thenlabel { padding: 0 6px 0 2px; }
 }
 </style>

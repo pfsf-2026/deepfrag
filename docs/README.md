@@ -34,3 +34,5 @@ Living design documents for the rating and stats systems. Each "bible" captures 
 
 - Code documentation — these aren't API docs. Reading the bible should give you the WHY; reading the code gives you the HOW.
 - Marketing/community-facing copy — these are internal/dev-facing. The public-facing methodology explanation on deepfrag.pages.dev should be a separate, much shorter document.
+
+- **Glossary (plain-English stat definitions)** — app page `/glossary`; source `nuxt/app/composables/useGlossary.ts`. Every coach stat links to its entry.

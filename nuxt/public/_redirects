@@ -25,3 +25,8 @@
 # for days. Nitro auto-appends its own catch-all SPA fallback to this file at
 # build time, so unmatched/new profiles already hydrate client-side without it.
 /p/*/coach        /p/:splat/       200
+# A player's coach lives at /coach/p/{id} (SPA only). Serve the bare SPA shell (200.html), NOT the
+# prerendered /coach page: Nuxt routes a served page to ITS OWN prerendered path when the URL differs,
+# so the landing shell would swallow the player URL. (Under /coach/p/ so nothing shadows
+# /coach/_payload.json.)
+/coach/p/*        /200.html        200

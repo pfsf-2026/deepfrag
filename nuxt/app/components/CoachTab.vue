@@ -163,6 +163,16 @@ function runManual() {
       <NuxtLink v-for="m in COACH_MAPS" :key="m" :to="{ query: stripQuery(m) }" class="stab" :class="{ on: mapTab === m, thin: isThin(m) }" role="tab" :aria-selected="mapTab === m">{{ m }}</NuxtLink>
     </nav>
 
+    <details class="legend">
+      <summary>How to read these numbers</summary>
+      <ul>
+        <li><b>you</b> — your number from your last 40 fours.</li>
+        <li><b>target</b> — the promotion line: what a player who is just moving up to the next level does. Reach it and you are doing that one thing like the level above you.</li>
+        <li><b>your level does</b> — the middle player at your level. Under it means you are behind even your own level on that stat.</li>
+      </ul>
+      <NuxtLink to="/glossary" class="glossl">Every stat explained in plain English →</NuxtLink>
+    </details>
+
     <!-- a map's own coach -->
     <CoachFoursMap v-if="mapTab" :cid="props.cid" :map="mapTab" :mode="mode" @mode="setMode" />
 
@@ -365,6 +375,13 @@ td { padding: 6px 8px; border-bottom: 1px solid var(--b); } td.num { text-align:
 .stab:hover { color: var(--fg); }
 .stab.on { color: var(--accent); border-bottom-color: var(--accent); }
 .stab.thin { color: var(--fg-3); }
+.legend { margin: -6px 0 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 13px; color: var(--fg-2); }
+.legend summary { cursor: pointer; font-weight: 700; color: var(--fg); list-style: none; min-height: 28px; display: flex; align-items: center; gap: 8px; }
+.legend summary::-webkit-details-marker { display: none; }
+.legend summary::before { content: '?'; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #140a03; font-size: 12px; font-weight: 800; }
+.legend ul { margin: 8px 0 6px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; line-height: 1.5; }
+.legend b { color: var(--accent); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.glossl { color: var(--accent); font-weight: 700; text-decoration: none; }
 .modebar { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; }
 .mbtn { background: none; border: 0; color: var(--fg-2); font-family: inherit; font-weight: 800; font-size: 13px; padding: 6px 14px; border-radius: 999px; cursor: pointer; min-height: 32px; }
 .mbtn.on { background: var(--accent); color: #140a03; }

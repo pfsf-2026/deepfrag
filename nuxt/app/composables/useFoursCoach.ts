@@ -17,6 +17,13 @@ export function coachMd(t: string | null | undefined): string {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   return esc(t).split(/\n{2,}/).map(p => '<p>' + p.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/_(.+?)_/g, '<em>$1</em>').replace(/\n/g, '<br>') + '</p>').join('')
 }
+// how far "you" is toward "target", 0..100 (lower-is-better levers invert the ratio)
+export function progressPct(you: number | null | undefined, target: number | null | undefined, higher = true): number | null {
+  if (you == null || target == null || !isFinite(Number(you)) || !isFinite(Number(target))) return null
+  const y = Number(you), t = Number(target)
+  if (higher) return t <= 0 ? null : Math.max(0, Math.min(100, Math.round(y / t * 100)))
+  return y <= 0 ? 100 : Math.max(0, Math.min(100, Math.round(t / y * 100)))
+}
 export function signed(v: number | null | undefined, digits = 1): string {
   if (v == null) return '—'
   return (v > 0 ? '+' : '') + Number(v).toFixed(digits)

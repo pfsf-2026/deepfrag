@@ -170,9 +170,11 @@ screen, and give each map its own tab with a 4on4 / 1on1 dropdown (4on4 only for
 - **Top nav "Coach"** (`/coach`, `nuxt/app/pages/coach/index.vue`): a signed-in player with a linked
   profile is sent straight to `/p/{id}/coach`; anyone else gets the pitch, the five levels, a Discord
   sign-in and a player search that opens any player's coach. "My coach" is also in the user menu.
-- **`/p/{id}/coach`** is a real profile tab now (`[tab].vue`; old `?view=coach` links redirect). The
-  page body is `CoachTab.vue`: a tab strip **Overview · dm3 · dm2 · e1m2 · schloss**. The map and mode
-  live in the URL (`?map=dm2`, `?mode=1on1`) so a map's coach is linkable.
+- **`/coach/p/{id}`** is a player's coach as its own full page (`pages/coach/p/[id].vue`), NOT a
+  profile tab (Peter: "you can't have it in both spots"). Old `/p/{id}/coach` and `?view=coach` links
+  redirect there; the level badge on a profile links there. The page body is `CoachTab.vue`: a tab
+  strip **Overview · dm3 · dm2 · e1m2 · schloss**. The map and mode live in the URL (`?map=dm2`,
+  `?mode=1on1`) so a map's coach is linkable.
 - **Overview** (`CoachFours.vue`): level + gates, the ONE focus with the next two levers under it,
   one clickable box per map (record, above average, the map's "work on this" with you → line; a
   dashed box when the map has fewer than `MAP_MIN_GAMES`), the graded last focus, the narration, the
@@ -185,3 +187,9 @@ screen, and give each map its own tab with a 4on4 / 1on1 dropdown (4on4 only for
 - **Data**: one call, `GET /api/players/{id}/coaching/fours`, shared by the tabs through
   `composables/useFoursCoach.ts`. `map_cards()` now returns every standard map (thin ones flagged
   with `thin: true` and a games count), all ranked levers with `map_note`, and `games_cards` per map.
+
+**Plain-English layer (2026-09-21, Peter: "players have no idea what the metrics mean").** Every stat has a glossary
+entry in `nuxt/app/composables/useGlossary.ts` (name, the coach's imperative headline, what it is, how we count it,
+what good looks like, how to move it), rendered at **/glossary** with live per-level medians. The coach cards lead
+with the headline ("Fight from stack"), say what the stat is, show only *you* vs *target* with a progress bar, and
+link every stat to its entry. A "How to read these numbers" legend sits under the tab strip.
