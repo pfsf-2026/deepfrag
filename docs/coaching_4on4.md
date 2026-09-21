@@ -193,3 +193,12 @@ entry in `nuxt/app/composables/useGlossary.ts` (name, the coach's imperative hea
 what good looks like, how to move it), rendered at **/glossary** with live per-level medians. The coach cards lead
 with the headline ("Fight from stack"), say what the stat is, show only *you* vs *target* with a progress bar, and
 link every stat to its entry. A "How to read these numbers" legend sits under the tab strip.
+
+**Units (2026-09-21, Peter):** "units" has its own glossary entry (Quake's ruler: player 56 tall, 320 units/s run,
+rocket 1,000 units/s, LG reach 600) and every mention of units, "effective HP" and "promotion line" inside stat text
+is auto-linked to its definition by `linkTerms()` in `useGlossary.ts` (coach cards, map tabs, levels page, glossary).
+
+**Quad timing (2026-09-21, Peter: "it's never 24 or 27").** Corpus, all fours on the four maps: the quad is taken
+within 1 s of spawning (median 0.3 s dm3/e1m2, 0.4 s schloss, 0.6 s dm2; 95-99% within 5 s; never more than 20 s),
+18.8 takes per game. So the quad time drifts about a second later per cycle (dm2 closer to two). Every drill now says
+"last take + 60, be at the door 5 s early" instead of a fixed clock second.

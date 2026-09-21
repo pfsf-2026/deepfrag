@@ -80,15 +80,19 @@ export const GLOSSARY: GlossEntry[] = [
     plain: 'Ring of shadows: 30 seconds of being nearly invisible. Only dm3 and schloss have it. Good for stealing a red or sneaking up on the quad room.' },
   { key: 'rl_lg', group: 'basics', name: 'RL and LG',
     plain: 'Rocket launcher and lightning gun, the two weapons that decide fights. A direct rocket does 100 to 120 damage and its splash hurts everyone near it. The LG does 30 per cell, 10 cells a second, with no splash. "Armed" on this site means carrying one of them.' },
+  { key: 'units', group: 'basics', name: 'Units',
+    plain: 'Quake\'s ruler. Every distance in the game is measured in units. A player is 56 units tall and 32 wide. You run at 320 units a second, so 650 units is about two seconds of running. A rocket flies 1,000 units a second and the lightning gun reaches 600 units.',
+    count: 'We read positions straight from the demo, ten times a second, and measure straight-line distance in units. When the coach says "within 650 units of the quad", picture the quad room and the hallway leading into it: close enough to be in the fight for it, not just on the same side of the map.' },
   { key: 'timer', group: 'basics', name: 'The timer',
-    plain: 'Big items come back on a schedule: armors and megas 20 seconds after they are taken, quad every 60 seconds, pent every 5 minutes. Good teams count the seconds out loud on comms. Being "on the timer" means you were standing there when it came back, not walking past it later.' },
+    plain: 'Big items come back on a schedule: armors and megas 20 seconds after they are taken, quad 60 seconds after it was taken, pent 5 minutes. Good teams say the take time out loud on comms and add the respawn. Being "on the timer" means you were standing there when it came back, not walking past it later.',
+    count: 'There is no fixed quad second. Across all our fours the quad is taken within one second of spawning nine times in ten (dm2 is the slow one, at about two), so the quad time drifts roughly a second later every minute. Take the last quad time, add 60, add a second, and be at the door five seconds before that.' },
 
   // ── armor and items ────────────────────────────────────────────────────────
   { key: 'ra_share', group: 'items', name: 'Share of the reds', headline: 'Take more reds',
     plain: 'Out of all the red armors anyone took in the game, the share you took. If the game had 60 red pickups and you took 9, your share is 15%. Eight players share the reds, so an equal cut is 12.5%.',
     count: 'Your red pickups divided by every red pickup in the game, both teams. We use the share, not the count, so a one-red map (dm3, schloss) and a two-red map (dm2) count the same. e1m2 has no red, so it is left out.',
     good: 'L1 players sit around 5%. L3 is about 13%. The top players take 17% or more, which means they are taking more than their fair cut off the other team.',
-    move: 'Know the time. Leave the fight at 24 on the timer and be standing on the red at 27 with a rocket loaded. Do not spend a red on a 50-50 fight.' },
+    move: 'Know the red time: last take plus 20. Leave the fight five seconds before that and be standing on the red with a rocket loaded when it comes back. Do not spend a red on a 50-50 fight.' },
   { key: 'ya_share', group: 'items', name: 'Share of the yellows', headline: 'Restack with yellows',
     plain: 'Same idea as share of the reds, but for yellow armor. Yellows are cheaper and there are more of them, so this is about restacking after every death instead of running back in naked.',
     count: 'Your yellow pickups divided by every yellow pickup in the game, both teams.',
@@ -109,12 +113,12 @@ export const GLOSSARY: GlossEntry[] = [
     plain: 'How many quads you picked up in a game. There are 20 in a game, spread across eight players. Two a game is Level 3 play; three or more is Level 4.',
     count: 'Quad pickups per game, averaged over your last 40 fours.',
     good: 'Players who take three or more a game sit a full level above players who take two.',
-    move: 'Own the timer: say the spawn time on comms, be there five seconds early with armor on, and have a teammate cover the door.' },
+    move: 'Own the quad clock: when anyone takes it, say the time out loud and add 60. Be at the door five seconds before that with armor on, and have a teammate cover the other way in.' },
   { key: 'quad_contests_pg', group: 'quad', name: 'Quad spawns contested per game', headline: 'Show up to quad',
     plain: 'Of the 20 quad spawns in a game, how many you were near when it came back. It is attendance. Dying there while trying counts too.',
     count: '"Near" means within 650 units of the quad at any point in the last 10 seconds before it spawned, up to the spawn. Nothing after the spawn counts. Measured from every player position in the demo.',
     good: 'Almost everyone shows up to about 14 of 20, at every level. The levels split on what happens next: quad conversion.',
-    move: 'Leave the armor room at 24 on the timer with a yellow on. Be at the door at 27, not on the pad.' },
+    move: 'Know when it is due (last take plus 60). Leave what you are doing 10 seconds before that with a yellow on, and be at the door five seconds early, not on the pad.' },
   { key: 'quad_conversion', group: 'quad', name: 'Quad conversion', headline: 'Win the quad when you are there',
     plain: 'Of the quad spawns you showed up to, the share where YOU walked away with the quad. Show up to 14 and take 2 and your conversion is 14%.',
     count: 'Your quad pickups at contested spawns divided by the spawns you contested.',
@@ -219,5 +223,22 @@ export const GLOSSARY: GlossEntry[] = [
 ]
 
 export const GLOSS: Record<string, GlossEntry> = Object.fromEntries(GLOSSARY.map(e => [e.key, e]))
+
+// Terms inside stat text that deserve their own definition (Peter: "define units, and
+// hotlink every reference back to it"). Text is escaped first, then the terms become links.
+const TERM_LINKS: [RegExp, string][] = [
+  [/\b(units?)\b/gi, 'units'],
+  [/\b(effective HP)\b/g, 'stack'],
+  [/\b(promotion line)\b/gi, 'target'],
+]
+export function linkTerms(text: string | null | undefined, skip?: string): string {
+  if (!text) return ''
+  let out = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  for (const [re, key] of TERM_LINKS) {
+    if (key === skip) continue
+    out = out.replace(re, (m) => `<a class="term" href="/glossary#${key}">${m}</a>`)
+  }
+  return out
+}
 export function gloss(key: string | null | undefined): GlossEntry | undefined { return key ? GLOSS[key] : undefined }
 export function glossHref(key: string | null | undefined): string { return key && GLOSS[key] ? `/glossary#${key}` : '/glossary' }

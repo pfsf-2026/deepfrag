@@ -60,14 +60,14 @@ function verdict(s) { return VERDICT[s] || ['', s] }
             <h3 class="fheadline">{{ fg?.headline || focus.label }}</h3>
             <div class="fstat"><span class="statname">{{ focus.label }}</span><NuxtLink :to="glossHref(focus.lever)" class="what">what is this? →</NuxtLink><span v-if="focus.status === 'in_progress'" class="pill">{{ focus.games_since }} of {{ focus.window_games }} games in</span><span v-else class="pill new">new · your focus for the next {{ focus.window_games }} games</span></div>
           </div>
-          <p v-if="fg?.plain" class="plain">{{ fg.plain }}</p>
+          <p v-if="fg?.plain" class="plain" v-html="linkTerms(fg.plain)" />
           <div class="cmp">
             <div class="item you"><span class="n">{{ focus.status === 'in_progress' ? focus.now_fmt : focus.you_fmt }}</span>{{ focus.status === 'in_progress' ? 'you, since the focus started' : 'you now' }}</div>
             <div class="item tgt"><span class="n">{{ focus.target_fmt }}</span>target to play like L{{ nextLevel }}</div>
           </div>
           <div v-if="focusPct != null" class="bar" :title="`${focusPct}% of the way to the target`"><i :style="{ width: focusPct + '%' }" /></div>
-          <p class="why"><b>Why it matters:</b> {{ focus.why }}</p>
-          <p class="drill"><b>Do this:</b> {{ focus.drill }}</p>
+          <p class="why"><b>Why it matters:</b> <span v-html="linkTerms(focus.why)" /></p>
+          <p class="drill"><b>Do this:</b> <span v-html="linkTerms(focus.drill)" /></p>
         </div>
         <div v-if="then.length" class="then">
           <div class="thenlabel">After that</div>
@@ -185,6 +185,8 @@ function verdict(s) { return VERDICT[s] || ['', s] }
 .q { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border-2); color: var(--fg-3); font-size: 11px; font-weight: 700; text-decoration: none; vertical-align: middle; margin-left: 2px; }
 .q:hover { color: var(--accent); border-color: var(--accent); }
 .glink { color: inherit; text-decoration: underline dotted var(--fg-3); text-underline-offset: 3px; }
+:deep(a.term) { color: inherit; text-decoration: underline dotted var(--accent); text-underline-offset: 3px; }
+:deep(a.term:hover) { color: var(--accent); }
 .glink:hover { color: var(--accent); }
 .acc { color: var(--accent); }
 .th { display: block; font-size: 14px; }

@@ -65,12 +65,12 @@ useSeoMeta({ title: 'What the numbers mean · DeepFrag', description: 'Every Dee
           <span v-if="e.headline" class="says">coach says: {{ e.headline }}</span>
           <a :href="'#' + e.key" class="anchor" title="link to this entry">#</a>
         </div>
-        <p class="plain">{{ e.plain }}</p>
+        <p class="plain" v-html="linkTerms(e.plain, e.key)" />
         <dl v-if="e.count || e.good || e.move || medians(e.key).length" class="rows">
-          <template v-if="e.count"><dt>How we count it</dt><dd>{{ e.count }}</dd></template>
-          <template v-if="e.good"><dt>What good looks like</dt><dd>{{ e.good }}</dd></template>
+          <template v-if="e.count"><dt>How we count it</dt><dd v-html="linkTerms(e.count, e.key)" /></template>
+          <template v-if="e.good"><dt>What good looks like</dt><dd v-html="linkTerms(e.good, e.key)" /></template>
           <template v-if="medians(e.key).length"><dt>By level right now</dt><dd class="meds"><span v-for="m in medians(e.key)" :key="m.n" class="med"><i>L{{ m.n }}</i>{{ m.s }}</span></dd></template>
-          <template v-if="e.move"><dt>How to move it</dt><dd>{{ e.move }}</dd></template>
+          <template v-if="e.move"><dt>How to move it</dt><dd v-html="linkTerms(e.move, e.key)" /></template>
         </dl>
       </article>
     </section>
@@ -114,6 +114,8 @@ h3 { font-size: 16px; font-weight: 800; margin: 0; }
 .med { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; color: var(--fg); font-variant-numeric: tabular-nums; }
 .med i { font-style: normal; color: var(--fg-3); margin-right: 6px; }
 .none { color: var(--fg-2); }
+:deep(a.term) { color: inherit; text-decoration: underline dotted var(--accent); text-underline-offset: 3px; }
+:deep(a.term:hover) { color: var(--accent); }
 .foot { margin-top: 24px; color: var(--fg-3); font-size: 13px; line-height: 1.5; }
 .foot a { color: var(--accent); }
 @media (min-width: 720px) {

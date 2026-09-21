@@ -143,8 +143,8 @@ function inv(items) { return Object.entries(items || {}).filter(([k, v]) => v &&
             <span v-if="L.gates.includes(lv.key)" class="gtag">gate</span>
             <span class="lmed mono" :title="`median at L${L.level} → promotion line to L${Math.min(L.level + 1, 5)}`">{{ med(L.level, lv.key) }} → <b>{{ L.level < 5 ? line(L.level, lv.key) : med(5, lv.key) }}</b></span>
           </div>
-          <p class="lwhy">{{ lv.why }}</p>
-          <p class="ldrill"><b>Drill:</b> {{ lv.drill }}</p>
+          <p class="lwhy" v-html="linkTerms(lv.why)" />
+          <p class="ldrill"><b>Drill:</b> <span v-html="linkTerms(lv.drill)" /></p>
         </div>
       </div>
     </section>
@@ -156,7 +156,7 @@ function inv(items) { return Object.entries(items || {}).filter(([k, v]) => v &&
         move winning once the real levers are held constant.
       </p>
       <ul>
-        <li v-for="lv in displayOnly" :key="lv.key"><strong>{{ lv.label }}.</strong> {{ lv.why }}</li>
+        <li v-for="lv in displayOnly" :key="lv.key"><strong>{{ lv.label }}.</strong> <span v-html="linkTerms(lv.why)" /></li>
         <li><strong>Spawn deaths.</strong> Dying within 3 seconds of spawning is the map, not you: every regular from Pred to bogojoker does it on 12 to 15 percent of deaths.</li>
       </ul>
       <p class="muted small">
@@ -263,4 +263,6 @@ ul { padding-left: 20px; margin: 0 0 10px; } li { margin: 4px 0; line-height: 1.
 .mappick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .mbtn { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg-2); font-family: inherit; font-weight: 700; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer; min-height: 32px; }
 .mbtn.on { background: var(--accent); color: #140a03; }
+:deep(a.term) { color: inherit; text-decoration: underline dotted var(--accent); text-underline-offset: 3px; }
+:deep(a.term:hover) { color: var(--accent); }
 </style>

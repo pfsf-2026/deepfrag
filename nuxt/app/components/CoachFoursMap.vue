@@ -73,15 +73,15 @@ const MAP_BLURB = {
               <h3 class="fheadline">{{ g?.headline || card.work_on.label }}</h3>
               <div class="fstat"><span class="statname">{{ card.work_on.label }}</span><span v-if="card.work_on.is_gate" class="gtag">gate to L{{ nextLevel }}</span><NuxtLink :to="glossHref(card.work_on.key)" class="what">what is this? →</NuxtLink></div>
             </div>
-            <p v-if="g?.plain" class="plain">{{ g.plain }}</p>
+            <p v-if="g?.plain" class="plain" v-html="linkTerms(g.plain)" />
             <div class="cmp">
               <div class="item you"><span class="n">{{ card.work_on.you }}</span>you, on {{ map }}</div>
               <div class="item tgt"><span class="n">{{ card.work_on.target }}</span>target to play like L{{ nextLevel }}</div>
             </div>
             <div v-if="pct != null" class="bar" :title="`${pct}% of the way to the target`"><i :style="{ width: pct + '%' }" /><span class="barlbl">{{ pct >= 100 ? 'at the target' : pct + '% of the way there' }}</span></div>
             <div class="more muted small">Players at your level do <b>{{ card.work_on.level_median }}</b> here<template v-if="card.work_on.win && card.work_on.loss"> · you do <b>{{ card.work_on.win }}</b> in your wins and <b>{{ card.work_on.loss }}</b> in your losses</template>.</div>
-            <p class="why"><b>Why on {{ map }}:</b> {{ card.work_on.map_note || card.work_on.why }}</p>
-            <p class="drill"><b>Do this:</b> {{ card.work_on.drill }}</p>
+            <p class="why"><b>Why on {{ map }}:</b> <span v-html="linkTerms(card.work_on.map_note || card.work_on.why)" /></p>
+            <p class="drill"><b>Do this:</b> <span v-html="linkTerms(card.work_on.drill)" /></p>
           </div>
         </section>
 
@@ -95,7 +95,7 @@ const MAP_BLURB = {
                 <span class="rlabel muted small">{{ l.label }}<span v-if="l.is_gate" class="gtag">gate</span></span>
               </div>
               <div class="rn">you <b>{{ l.you }}</b> · target <b class="acc">{{ l.target }}</b> <span class="muted">· your level does {{ l.level_median }}</span> <NuxtLink :to="glossHref(l.key)" class="q">?</NuxtLink></div>
-              <p v-if="l.map_note || gloss(l.key)?.plain" class="rnote">{{ l.map_note || gloss(l.key)?.plain }}</p>
+              <p v-if="l.map_note || gloss(l.key)?.plain" class="rnote" v-html="linkTerms(l.map_note || gloss(l.key)?.plain)" />
             </div>
           </div>
         </section>
@@ -137,6 +137,8 @@ const MAP_BLURB = {
 .stitle { font-weight: 800; font-size: 15px; }
 .q { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border-2); color: var(--fg-3); font-size: 11px; font-weight: 700; text-decoration: none; vertical-align: middle; margin-left: 2px; }
 .q:hover { color: var(--accent); border-color: var(--accent); }
+:deep(a.term) { color: inherit; text-decoration: underline dotted var(--accent); text-underline-offset: 3px; }
+:deep(a.term:hover) { color: var(--accent); }
 .rec { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--lc); border-radius: 12px; padding: 12px 14px; }
 .ri { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ri .n { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
