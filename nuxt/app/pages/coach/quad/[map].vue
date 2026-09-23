@@ -93,7 +93,7 @@ useSeoMeta({ title: () => pb.value ? `${pb.value.title} · AI Coach · DeepFrag`
         <ol class="play"><li v-for="(p, i) in pb.play" :key="i">{{ p }}</li></ol>
       </section>
 
-      <p class="foot muted small">From {{ pb.data?.contests?.toLocaleString() || '—' }} contested quad spawns on {{ map }} in the demo corpus (a player counts as contesting when within 650 units in the last 10 seconds before the spawn). Spots are the server's own location names for where a player stood 5 seconds before the spawn. <NuxtLink to="/glossary#quad_conversion">Quad conversion, explained →</NuxtLink></p>
+      <p class="foot muted small">From {{ pb.data?.contests?.toLocaleString() || '—' }} contested quad spawns on {{ map }} in the demos (a player counts as contesting when within 650 units in the last 10 seconds before the spawn). Spots are the server's own location names for where a player stood 5 seconds before the spawn. <NuxtLink to="/glossary#quad_conversion">Quad conversion, explained →</NuxtLink></p>
       <div class="more"><span class="muted small">Other maps:</span> <NuxtLink v-for="m in others" :key="m" :to="`/coach/quad/${m}`" class="mlink">{{ m }}</NuxtLink></div>
     </template>
   </div>

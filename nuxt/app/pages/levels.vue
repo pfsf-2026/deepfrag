@@ -66,7 +66,7 @@ function inv(items) { return Object.entries(items || {}).filter(([k, v]) => v &&
   <p class="intro">
     Every player with {{ rules.min_games }} or more scored fours on the Den or LA servers gets a <strong>level</strong>, shown on
     their profile. It is a belt, not a rating: it says how much you have been helping your team win lately, and it tells the
-    coach which things are worth your time right now. Different levels work on different things, because the corpus says the
+    coach which things are worth your time right now. Different levels work on different things, because the replays say the
     skill that separates each level from the next is a different one at every step.
   </p>
     <p class="intro">Every stat named on this page is explained in plain English on <NuxtLink to="/glossary">What the numbers mean</NuxtLink>.</p>
@@ -101,7 +101,7 @@ function inv(items) { return Object.entries(items || {}).filter(([k, v]) => v &&
         what that stat typically looks like for a player right at the edge of the next level, read off a fit of the stat against
         above-average across the whole pool. It is never easier than your own level's median and never harder than the next level's.
         Pass both over your last {{ rules.level_window_games }} games and the coach marks you <em>ready to move up</em>. The level itself
-        still comes from results, so the gates are the syllabus, not the promotion. They are the two things the corpus says most
+        still comes from results, so the gates are the syllabus, not the promotion. They are the two things the games say most
         separate your level from the next one.
       </p>
       <div class="tbl">
@@ -150,7 +150,7 @@ function inv(items) { return Object.entries(items || {}).filter(([k, v]) => v &&
     </section>
 
     <section class="card">
-      <h2>What the corpus says is not a lever</h2>
+      <h2>What the replays say is not a lever</h2>
       <p>
         These are on your Advanced tab as habits, but the coach will never prescribe them in fours, because the data says they do not
         move winning once the real levers are held constant.
@@ -212,7 +212,7 @@ function inv(items) { return Object.entries(items || {}).filter(([k, v]) => v &&
 
     <p class="muted small foot">
       Full definitions of every metric: <NuxtLink to="/ladder/enhanced-guide">enhanced stats</NuxtLink> for the ladder parser and the
-      advanced-metrics methodology in the DeepFrag docs. The level bands and gates are reviewed against the corpus; if a gate stops
+      advanced-metrics methodology in the DeepFrag docs. The level bands and gates are reviewed against the games; if a gate stops
       predicting who moves up, it gets replaced, the way chained deaths already was.
     </p>
   </template>

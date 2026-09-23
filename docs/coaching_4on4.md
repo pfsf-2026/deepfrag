@@ -243,3 +243,6 @@ RA > SNG.tele|RA.rox > Ring > Quad or YA > YA.box > window; 1 in 3 takes include
 Two styles: campers (chris 46% >=10 s early, carapace 41%) and timers (Blood Dog median 6.5 s, converts
 30% when <5 s). Teams designate a taker (milton 4.5/g vs stepcop 2.3; carapace 4.0 vs bps 2.8; Hto 1.0).
 cronus: 9% conversion, stacked on 25% of contests, 25% when stacked, 4% naked, 23% with RL.
+
+**Vocabulary (2026-09-23, Peter via Blood Dog):** never "corpus" in player-facing text. Use *games*, *demos*,
+*replays*, *receipts*. "Corpus" stays in code comments and these docs only.

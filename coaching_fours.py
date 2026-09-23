@@ -116,7 +116,7 @@ LEVERS = {
                  "why": "Your cut of the yellows taken in the game. Yellows are the cheap stack, 0.6 of a red in the win model, and on e1m2 the only armor there is.",
                  "drill": "Route every respawn through a yellow before you rejoin. Say 'yellow' when you take it so the next man goes elsewhere."},
     "ra_pg": {"label": "Red armors per game", "higher_better": True, "fmt": "num1", "levels": set(), "map_excl": RA_EXCLUDED_MAPS,   # display; the share is the lever
-              "why": "The corpus says timing does not separate players, count does. The top group takes nine or ten reds a game, the bottom four to six.",
+              "why": "The replays say timing does not separate players, count does. The top group takes nine or ten reds a game, the bottom four to six.",
               "drill": "Learn the red cycle on dm3 and schloss: be moving toward it at 20 s, on it at 25. If a teammate has it, take YA instead and call it."},
     "ra_on_timer_pct": {"label": "Reds taken on the timer", "higher_better": True, "fmt": "pct", "levels": {3, 4, 5}, "map_excl": RA_EXCLUDED_MAPS,
                         "why": "Late reds are contested reds. Everyone is near 60 percent; above it means you are running the cycle rather than reacting to it.",
@@ -146,7 +146,7 @@ LEVERS = {
                 "why": "Quad decides fours. Players who take three or more a game sit a full level above those who take two.",
                 "drill": "Own the quad clock: when anyone takes it, say the time out loud and add 60. It is taken within a second of spawning nearly every time, so the next one is about a second later than the last. Be at the way in 5 seconds before it with stack, and have a teammate cover the other way in; the map's quad page says which ways in there are and which one converts."},
     "quad_died_pct": {"label": "Died holding quad", "higher_better": False, "fmt": "pct", "levels": {4, 5},
-                      "why": "The corpus norm is dying on 45 percent of quad runs. The frags follow from staying alive; a player who dies on half his runs cannot post a good average.",
+                      "why": "Across the games the norm is dying on 45 percent of quad runs. The frags follow from staying alive; a player who dies on half his runs cannot post a good average.",
                       "drill": "Take quad WITH armor, never naked. Run it toward their spawns with a teammate ahead of you, and leave a fight the moment you drop under 100."},
     "quad_frags_per_full": {"label": "Frags per full quad run", "higher_better": True, "fmt": "num1", "levels": {4, 5},
                             "why": "A full 30-second run averages 3.9 holder frags and nearly as many for the teammates around it.",

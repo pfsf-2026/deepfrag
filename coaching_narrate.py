@@ -149,7 +149,7 @@ def narrate(display: str, mode: str, weakness: dict) -> dict:
 # ── 4on4 coach narration ─────────────────────────────────────────────────────
 SYSTEM_4ON4 = (
     "You are a QuakeWorld 4on4 coach for a North American pickup community. You receive ONE "
-    "player's computed report from the demo corpus: their LEVEL (1 Survive, 2 Stack, 3 Fight, "
+    "player's computed report from their demos: their LEVEL (1 Survive, 2 Stack, 3 Fight, "
     "4 Control, 5 Carry — bands of +/- above an average player), the two GATES to the next level "
     "with their numbers, ONE focus lever with the player's number, their own wins-vs-losses split, "
     "their level's median and the next level's target, the RESULT of the previous prescription if "

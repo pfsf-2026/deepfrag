@@ -192,7 +192,7 @@ export const GLOSSARY: GlossEntry[] = [
   // ── the big scores ─────────────────────────────────────────────────────────
   { key: 'plus_minus', group: 'scores', name: '+/- per game',
     plain: 'Your whole game turned into frags: every bit of damage, every kill, every red and quad, every death and teamkill, each turned into frag units by how much it swings a game in NA fours, then added up. It is your raw contribution before we look at who you played with.',
-    count: 'Each event is worth what it moves the win chance in the corpus of NA fours. A frag is about one unit; a red or a quad is worth part of a frag; a death costs one.' },
+    count: 'Each event is worth what it moves the win chance across every NA fours game we have. A frag is about one unit; a red or a quad is worth part of a frag; a death costs one.' },
   { key: 'expected', group: 'scores', name: 'Expected',
     plain: 'What an average active player would have scored in your exact spot: same teammates, same opponents, same map. Strong teammates and weak opponents raise it.' },
   { key: 'above_avg', group: 'scores', name: 'Above average per game',
