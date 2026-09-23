@@ -22,7 +22,25 @@ import sys
 import time
 from pathlib import Path
 
-import requests
+try:
+    import requests
+except ImportError:  # venvs without requests: a tiny stand-in over urllib
+    import urllib.request, urllib.parse, json as _json
+    class _Resp:
+        def __init__(self, r): self.status_code = r.status; self._b = r.read(); self.headers = r.headers
+        def json(self): return _json.loads(self._b)
+        def raise_for_status(self):
+            if self.status_code >= 400: raise RuntimeError(f"HTTP {self.status_code}")
+    class requests:  # noqa: N801
+        @staticmethod
+        def get(url, params=None, headers=None, timeout=60):
+            if params: url += ('&' if '?' in url else '?') + urllib.parse.urlencode(params)
+            req = urllib.request.Request(url, headers=headers or {})
+            return _Resp(urllib.request.urlopen(req, timeout=timeout))
+        class Session:
+            def __init__(self): self.headers = {}
+            def get(self, url, params=None, headers=None, timeout=60):
+                return requests.get(url, params=params, headers={**self.headers, **(headers or {})}, timeout=timeout)
 
 HUB_URL = "https://ncsphkjfominimxztjip.supabase.co/rest/v1/v1_games"
 HUB_HEADERS = {
