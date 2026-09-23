@@ -59,7 +59,7 @@ import db as dbmod
 
 DEFAULT_DB = Path(__file__).parent / "data" / "qw-stats.db"
 
-ENGINE_VERSION = "v3-margin-2026-08-17"
+ENGINE_VERSION = "v4-plusminus-2026-09-23"
 
 # OpenSkill model — same display scale as always (μ=1500, σ=500) so downstream
 # consumers (tiers, conservative-rating, predict_win) need no re-scaling.
@@ -206,6 +206,20 @@ TEAM_SIGMA_FLOOR = 80.0
 TEAM_MAP_K = 60.0
 TEAM_MAP_G = 1900.0
 TEAM_CONTRIB_W = 1.1
+# +/- contribution (2026-09-23, tools/mvd_features/rating_backtest_4on4.py, walk-forward on
+# the 2,296 NA fours with demos, 930 scored @ 8 players >=10 priors): damage share alone
+# logloss 0.5785 / acc 70.9% -> damage share + this term 0.5612 / 71.9%; paired gain +0.017
+# per game, 95% CI [+0.007, +0.027], holds at every prior threshold (5/10/20/30); calibration
+# 60-70% bucket wins 68%, 90%+ wins 93%. The demo +/- (fours_advanced_stats.plus_minus,
+# leverage-weighted frag-equivalents) is compared with what a player of his mu should post
+# on that team: his mu-share of the expected team margin PLUS TEAM_PM_K frags per mu point
+# above the team mean (derived: the engine's margin slope AMP/SCALE split four ways; the sweep
+# optimum was 0.04-0.05). Residuals are centred within the team so the team's margin surprise
+# stays in the team score. Games without demo +/- for all four players (every EU game today)
+# fall back to damage share alone.
+TEAM_PM_W = 0.3
+TEAM_PM_NORM = 40.0
+TEAM_PM_K = TEAM_EXP_AMP / TEAM_EXP_SCALE / 4.0
 
 
 def team_map_delta(resid_sum: float, n: int) -> float:
@@ -727,7 +741,7 @@ def rate_all(db, mode, now, full_rebuild=True, per_map_min=5, player_regions=Non
 
 def fetch_team_matches(conn, mode, since_date=None):
     """Yield (match_id, match_date, match_map, teamA, teamB) where each team is a list of
-    (cid, frags, deaths, dmg_given, dmg_taken), STRICTLY chronological. Only
+    (cid, frags, deaths, dmg_given, dmg_taken, plus_minus-or-None), STRICTLY chronological. Only
     matches with exactly two teams of TEAM_SIZE[mode] players survive — mixed
     joins/leavers and odd formats are skipped (same rule as the backtest)."""
     size = TEAM_SIZE[mode]
@@ -737,12 +751,19 @@ def fetch_team_matches(conn, mode, since_date=None):
         where = " AND m.match_date > %(since)s"
         params["since"] = since_date
     cur = conn.cursor()
+    # demo +/- (fours_advanced_stats) rides along when the table exists; NULL otherwise
+    cur.execute("SELECT to_regclass('fours_advanced_stats') IS NOT NULL AS ok")
+    has_adv = bool(cur.fetchone()["ok"])
+    pm_sel = "MAX(f.plus_minus) AS pm" if has_adv else "NULL AS pm"
+    pm_join = "LEFT JOIN fours_advanced_stats f ON f.hub_game_id = m.match_id AND f.canonical_id = p.canonical_id" if has_adv else ""
     cur.execute(f"""
         SELECT m.match_id, m.match_date, m.match_map,
                p.canonical_id AS cid, MIN(p.player_team) AS team,
                SUM(p.player_frags) AS frags, SUM(p.player_deaths) AS deaths,
-               SUM(p.player_damage_given) AS dg, SUM(p.player_damage_taken) AS dt
+               SUM(p.player_damage_given) AS dg, SUM(p.player_damage_taken) AS dt,
+               {pm_sel}
         FROM matches m JOIN players p ON p.match_id = m.match_id
+        {pm_join}
         WHERE m.match_mode = %(mode)s AND p.canonical_id IS NOT NULL
           AND COALESCE(m.has_bots, 0) = 0
           {where}
@@ -754,8 +775,8 @@ def fetch_team_matches(conn, mode, since_date=None):
         if cur_mid is None:
             return None
         teams = {}
-        for cid, (team, fr, de, dg, dt) in bucket.items():
-            teams.setdefault((team or "").lower(), []).append((cid, fr, de, dg, dt))
+        for cid, (team, fr, de, dg, dt, pm) in bucket.items():
+            teams.setdefault((team or "").lower(), []).append((cid, fr, de, dg, dt, pm))
         if len(teams) != 2:
             return None
         (ta, pa), (tb, pb) = sorted(teams.items())
@@ -770,7 +791,7 @@ def fetch_team_matches(conn, mode, since_date=None):
             if m:
                 yield m
             cur_mid, cur_date, cur_map, bucket = r["match_id"], r["match_date"], (r["match_map"] or "").lower(), {}
-        bucket[r["cid"]] = (r["team"], r["frags"], r["deaths"], r["dg"], r["dt"])
+        bucket[r["cid"]] = (r["team"], r["frags"], r["deaths"], r["dg"], r["dt"], r["pm"])
     m = emit()
     if m:
         yield m
@@ -781,7 +802,9 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
     """Single chronological pass for a team mode (4on4). Per player:
     - global mu/sigma from the continuous team-margin outcome, with each
       player's personal score shifted by their DAMAGE SHARE within the team
-      (TEAM_CONTRIB_W; expected share = own μ / team μ sum) — individual improvement moves
+      (TEAM_CONTRIB_W; expected share = own μ / team μ sum) AND, when the game has
+      demo +/- for all four (TEAM_PM_W, v4), by their +/- against what a player of
+      their μ should post on that team — individual improvement moves
       individual ratings;
     - per-(player,map) shrunk deviations learned from residuals vs the
       MAP-ADJUSTED prediction (state persisted in map_residuals).
@@ -857,13 +880,31 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
 
         mu_sum_a = sum(m for m, _ in ra)
         mu_sum_b = sum(m for m, _ in rb)
+        exp_margin = TEAM_EXP_AMP * math.tanh(
+            (mu_sum_a / len(ra) - mu_sum_b / len(rb)) / TEAM_EXP_SCALE)
 
-        def _si(row, tdg, s, own_mu, mu_team):
-            if TEAM_CONTRIB_W <= 0 or not tdg or row[3] is None:
-                return s
-            share = (row[3] or 0) / tdg
-            expected = own_mu / mu_team if mu_team > 0 else 0.25
-            return min(1.0, max(0.0, s + TEAM_CONTRIB_W * (share - expected)))
+        def _pm_terms(T, rr, sign):
+            """Per-player +/- contribution for one team (list aligned with T), or None
+            when any player lacks a demo +/- (then damage share alone applies)."""
+            if TEAM_PM_W <= 0 or any(row[5] is None for row in T):
+                return None
+            mu_sum = sum(m for m, _ in rr); mean_mu = mu_sum / len(rr)
+            expected = [sign * exp_margin * (m / mu_sum) + TEAM_PM_K * (m - mean_mu) for m, _ in rr]
+            resid = [float(row[5]) - e for row, e in zip(T, expected)]
+            mres = sum(resid) / len(resid)
+            return [TEAM_PM_W * math.tanh((r - mres) / TEAM_PM_NORM) for r in resid]
+        pm_a = _pm_terms(TA, ra, +1.0)
+        pm_b = _pm_terms(TB, rb, -1.0)
+
+        def _si(row, tdg, s, own_mu, mu_team, pm_term=None):
+            si = s
+            if TEAM_CONTRIB_W > 0 and tdg and row[3] is not None:
+                share = (row[3] or 0) / tdg
+                expected = own_mu / mu_team if mu_team > 0 else 0.25
+                si += TEAM_CONTRIB_W * (share - expected)
+            if pm_term is not None:
+                si += pm_term
+            return min(1.0, max(0.0, si))
 
         RA = [TEAM_MODEL.rating(mu=m, sigma=g) for m, g in ra]
         RB = [TEAM_MODEL.rating(mu=m, sigma=g) for m, g in rb]
@@ -881,9 +922,9 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
         opp_a = ",".join(sorted(B))
         opp_b = ",".join(sorted(A))
 
-        for row, (om, og), w, l in zip(TA, ra, wa, la):
+        for i, (row, (om, og), w, l) in enumerate(zip(TA, ra, wa, la)):
             cid = row[0]
-            si = _si(row, tdg_a, s_team, om, mu_sum_a)
+            si = _si(row, tdg_a, s_team, om, mu_sum_a, pm_a[i] if pm_a else None)
             nm = si * w.mu + (1 - si) * l.mu
             ns = max(TEAM_SIGMA_FLOOR, si * w.sigma + (1 - si) * l.sigma)
             history_rows.append((cid, mode, "", mid, mdate, opp_a, out_a,
@@ -892,9 +933,9 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
             st = stats[cid]
             st["matches"] += 1
             st["wins" if out_a == "win" else "losses" if out_a == "loss" else "draws"] += 1
-        for row, (om, og), w, l in zip(TB, rb, wb, lb):
+        for i, (row, (om, og), w, l) in enumerate(zip(TB, rb, wb, lb)):
             cid = row[0]
-            si = _si(row, tdg_b, 1.0 - s_team, om, mu_sum_b)
+            si = _si(row, tdg_b, 1.0 - s_team, om, mu_sum_b, pm_b[i] if pm_b else None)
             nm = si * l.mu + (1 - si) * w.mu
             ns = max(TEAM_SIGMA_FLOOR, si * l.sigma + (1 - si) * w.sigma)
             history_rows.append((cid, mode, "", mid, mdate, opp_b, out_b,
@@ -904,7 +945,7 @@ def rate_team_mode(db, mode, now, full_rebuild=True, per_map_min=5):
             st["matches"] += 1
             st["wins" if out_b == "win" else "losses" if out_b == "loss" else "draws"] += 1
 
-        for (cid, fr, de, dg, dt) in TA + TB:
+        for (cid, fr, de, dg, dt, _pm) in TA + TB:
             if dg is not None and dt is not None:
                 pf = perf.setdefault(cid, {"dg": 0, "dt": 0, "fd": 0.0, "n": 0})
                 pf["dg"] += dg

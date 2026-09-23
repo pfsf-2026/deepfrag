@@ -78,6 +78,39 @@ treated as additive — practiced fixed rosters outperform their rating sum
 
 ---
 
+## 0b. Engine v4 — +/- contribution (shipped 2026-09-23)
+
+The demo +/- (`fours_advanced_stats.plus_minus`, leverage-weighted kills and deaths, see
+`advanced_metrics.md`) joins damage share as a second per-player contribution term. Per team,
+each player's expected +/- is his μ-share of the μ-predicted team margin plus
+`TEAM_PM_K = TEAM_EXP_AMP / TEAM_EXP_SCALE / 4` (0.039) frags per μ point above the team mean, so a
+strong player is expected to out-produce weak teammates and the residual self-corrects as his μ
+rises (without that term the ratings run away: log-loss doubles while accuracy holds). Residuals
+are centred within the team so the team's margin surprise stays in the team score; contribution
+= `TEAM_PM_W (0.3) × tanh(residual / TEAM_PM_NORM (40))`, added to the personal score alongside the
+damage-share term. Games where any of the four lacks a demo +/- (every EU game today) use damage
+share alone.
+
+Validation: `tools/mvd_features/rating_backtest_4on4.py` (walk-forward, 2,296 NA fours with demos,
+scored where all 8 players have ≥10 priors), results in `docs/backtest_4on4_plusminus_2026-09-23.json`.
+
+| engine | log-loss | acc | Brier |
+|---|---|---|---|
+| no contribution | 0.6178 | 66.7% | 0.2143 |
+| v3 shipped: damage share 1.1 | 0.5785 | 70.9% | 0.1977 |
+| damage share 3.0 (local optimum) | 0.5733 | 70.8% | 0.1953 |
+| +/- alone (0.3, k 0.05) | 0.5647 | 71.6% | 0.1912 |
+| **v4: damage 1.1 + +/- 0.3, k 0.039** | **0.5612** | **71.9%** | **0.1899** |
+| v4 + Game Impact Score term (best of 24 configs) | 0.5624 | 71.8% | 0.1907 |
+
+Paired vs v3 on the same games: +0.017 log-loss per game, 95% CI [+0.007, +0.027], better in 63% of
+games, P(worse) 0.001; holds at prior thresholds 5/10/20/30 (+0.014 / +0.017 / +0.020 / +0.019).
+Calibration: 60-70% favourites win 68%, 70-80% win 77%, 90%+ win 93%. The Game Impact Score
+(adjusted kills, damage, stacked DDR, deaths, items, multi) was tested as a further term and as a
+replacement for damage share; it adds nothing beyond +/- (Peter, 2026-09-23: "incorporate all the
+advanced metrics" — the +/- already carries the predictive content; the rest is coaching, not rating).
+μ spread widens (SD 325 → 512 among 40-game players); tiers are percentile-based and re-cut themselves.
+
 ## 1. Why 4on4 is the hardest
 
 If 1on1 is "the player IS the team" and 2on2 has "one teammate to confound things," 4on4 is **three teammates of variable skill plus role differentiation plus item-control dynamics that don't exist anywhere else**. The naive failure modes from 2on2 ([§1](./2on2_methodology.md#1-why-2on2-isnt-just-1on1-with-two-players)) all amplify:

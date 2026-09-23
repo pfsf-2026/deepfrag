@@ -191,8 +191,8 @@ export const GLOSSARY: GlossEntry[] = [
 
   // ── the big scores ─────────────────────────────────────────────────────────
   { key: 'plus_minus', group: 'scores', name: '+/- per game',
-    plain: 'Your whole game turned into frags: every bit of damage, every kill, every red and quad, every death and teamkill, each turned into frag units by how much it swings a game in NA fours, then added up. It is your raw contribution before we look at who you played with.',
-    count: 'Each event is worth what it moves the win chance across every NA fours game we have. A frag is about one unit; a red or a quad is worth part of a frag; a death costs one.' },
+    plain: 'Your kills and deaths, each weighted by how much it mattered at that moment. A kill at 10-10 with eight minutes left counts full; a kill at 200-80 in a decided game counts for little. Credit for a kill is shared: 85% to whoever did the damage, 15% to whoever finished. It is your raw contribution before we look at who you played with.',
+    count: 'Each kill and death is worth how much it moved the win chance, from a model fitted on every NA fours game we have that knows the score, the time left, both teams\' stack, launchers and powerups. Items, quads and teamkills are not scored here on their own; they show up through the kills they lead to, and on their own lines in the Impact score and the coach.' },
   { key: 'expected', group: 'scores', name: 'Expected',
     plain: 'What an average active player would have scored in your exact spot: same teammates, same opponents, same map. Strong teammates and weak opponents raise it.' },
   { key: 'above_avg', group: 'scores', name: 'Above average per game',

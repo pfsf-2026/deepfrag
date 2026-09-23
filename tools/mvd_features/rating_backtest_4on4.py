@@ -26,12 +26,12 @@ con = sqlite3.connect(DB, timeout=300)
 games = {}
 for gid, ts, mp in con.execute("select id, ts, map from games where mode='4on4' order by ts, id"):
     games[gid] = {'ts': ts, 'map': mp, 'teams': collections.defaultdict(dict)}
-for gid, name, cid, team, fr, dmg, pm, mins in con.execute("select game_id, name, cid, team, frags, dmg, plus_minus, minutes from player_agi where cid is not null"):
+for gid, name, cid, team, fr, dmg, pm, mins, agi in con.execute("select game_id, name, cid, team, frags, dmg, plus_minus, minutes, agi from player_agi where cid is not null"):
     g = games.get(gid)
     if not g: continue
     cur = g['teams'][team].get(cid)
     if cur is None or (mins or 0) > cur['min']:
-        g['teams'][team][cid] = {'fr': fr or 0, 'dmg': dmg or 0, 'pm': float(pm or 0), 'min': mins or 0}
+        g['teams'][team][cid] = {'fr': fr or 0, 'dmg': dmg or 0, 'pm': float(pm or 0), 'min': mins or 0, 'agi': float(agi) if agi is not None else None}
 matches = []
 for gid, g in games.items():
     teams = [t for t in g['teams'].values() if len(t) == 4]
@@ -42,9 +42,9 @@ for gid, g in games.items():
 matches.sort(key=lambda m: (m[1], m[0]))
 print(f"{len(games)} fours, {len(matches)} with two full teams of 4 resolved players")
 
-def run(cw_dmg=0.0, cw_pm=0.0, norm_pm=40.0, map_layer=True, label='', k_ind=0.0, min_prior=None, detail=False, quiet=False):
+def run(cw_dmg=0.0, cw_pm=0.0, norm_pm=40.0, map_layer=True, label='', k_ind=0.0, min_prior=None, detail=False, quiet=False, trace=None, cw_agi=0.0, norm_agi=0.25):
     MP = min_prior or MIN_PRIOR
-    keys = []; py = []
+    keys = []; py = []; tr = []
     cache = {}; cells = {}; nprior = collections.Counter()
     ll = []; hits = []; brier = []
     for gid, ts, mp, A, B, fa, fb in matches:
@@ -75,9 +75,15 @@ def run(cw_dmg=0.0, cw_pm=0.0, norm_pm=40.0, map_layer=True, label='', k_ind=0.0
         mean_a = sum(m for m, _ in ra) / 4; mean_b = sum(m for m, _ in rb) / 4
         s_team = R.team_outcome_score(mean_a, mean_b, fa, fb)
         exp_margin = R.TEAM_EXP_AMP * math.tanh((mean_a - mean_b) / R.TEAM_EXP_SCALE)
+        mu_all = (sum(m for m, _ in ra) + sum(m for m, _ in rb)) / 8
         def contribs(T, ids, rr, s, sign):
             mu_sum = sum(m for m, _ in rr); tdg = sum(T[c]['dmg'] for c in ids)
             out = []
+            # Game Impact Score term: agi is normalised to the 8-player game mean (1.00), so a player's
+            # expected agi is his mu over the game's mean mu; residuals centred within the team
+            agi_ok = cw_agi and all(T[c]['agi'] is not None for c in ids)
+            if agi_ok:
+                ares = {c: T[c]['agi'] - (cache[c][0] / mu_all) for c in ids}; mares = sum(ares.values()) / 4
             # +/- residuals, centred within the team
             # expected +/- for each player: his share of the expected team margin PLUS a skill split
             # within the team (k_ind frags per mu point above the team mean), so a strong player is
@@ -92,6 +98,8 @@ def run(cw_dmg=0.0, cw_pm=0.0, norm_pm=40.0, map_layer=True, label='', k_ind=0.0
                     si += cw_dmg * (T[c]['dmg'] / tdg - om / mu_sum)
                 if cw_pm:
                     si += cw_pm * math.tanh((res[c] - mres) / norm_pm)
+                if agi_ok:
+                    si += cw_agi * math.tanh((ares[c] - mares) / norm_agi)
                 out.append(min(1.0, max(0.0, si)))
             return out
         si_a = contribs(A, ids_a, ra, s_team, +1.0); si_b = contribs(B, ids_b, rb, 1.0 - s_team, -1.0)
@@ -99,15 +107,19 @@ def run(cw_dmg=0.0, cw_pm=0.0, norm_pm=40.0, map_layer=True, label='', k_ind=0.0
         [wa, wb] = R.TEAM_MODEL.rate([RA, RB], ranks=[0, 1])
         RA2 = [R.TEAM_MODEL.rating(mu=m, sigma=g) for m, g in ra]; RB2 = [R.TEAM_MODEL.rating(mu=m, sigma=g) for m, g in rb]
         [la, lb] = R.TEAM_MODEL.rate([RA2, RB2], ranks=[1, 0])
+        before = {c: cache[c][0] for c in ids_a + ids_b}
         for c, si, w, l in zip(ids_a, si_a, wa, la):
             cache[c] = (si * w.mu + (1 - si) * l.mu, max(R.TEAM_SIGMA_FLOOR, si * w.sigma + (1 - si) * l.sigma))
         for c, si, w, l in zip(ids_b, si_b, wb, lb):
             cache[c] = (si * l.mu + (1 - si) * w.mu, max(R.TEAM_SIGMA_FLOOR, si * l.sigma + (1 - si) * w.sigma))
+        if trace and trace in before:
+            side = 'A' if trace in ids_a else 'B'; s_me = s_team if side == 'A' else 1 - s_team; si_me = (si_a if side == 'A' else si_b)[(ids_a if side == 'A' else ids_b).index(trace)]
+            tr.append({'gid': gid, 'map': mp, 'side': side, 'fa': fa, 'fb': fb, 'mean_a': mean_a, 'mean_b': mean_b, 'exp_margin': exp_margin, 's_team': s_me, 'si': si_me, 'before': before[trace], 'after': cache[trace][0], 'pm': (A if side == 'A' else B)[trace]['pm']})
         for c in ids_a + ids_b: nprior[c] += 1
-    res = {'label': label, 'cw_dmg': cw_dmg, 'cw_pm': cw_pm, 'norm_pm': norm_pm, 'k_ind': k_ind, 'min_prior': MP, 'map': map_layer, 'n': len(ll),
+    res = {'label': label, 'cw_dmg': cw_dmg, 'cw_pm': cw_pm, 'norm_pm': norm_pm, 'k_ind': k_ind, 'cw_agi': cw_agi, 'norm_agi': norm_agi, 'min_prior': MP, 'map': map_layer, 'n': len(ll),
            'logloss': round(st.mean(ll), 4), 'acc': round(100 * st.mean(hits), 1), 'brier': round(st.mean(brier), 4)}
     if not quiet: print(f"  {label:44s} n={res['n']:5d}  logloss {res['logloss']:.4f}  acc {res['acc']:.1f}%  brier {res['brier']:.4f}", flush=True)
-    if detail: res['per_game'] = dict(zip(keys, ll)); res['ratings'] = dict(cache); res['nprior'] = dict(nprior); res['py'] = py
+    if detail: res['per_game'] = dict(zip(keys, ll)); res['ratings'] = dict(cache); res['nprior'] = dict(nprior); res['py'] = py; res['cells'] = dict(cells); res['trace'] = tr
     return res
 
 if __name__ == '__main__':
