@@ -216,8 +216,10 @@ TEAM_CONTRIB_W = 1.1
 # above the team mean (derived: the engine's margin slope AMP/SCALE split four ways; the sweep
 # optimum was 0.04-0.05). Residuals are centred within the team so the team's margin surprise
 # stays in the team score. Games without demo +/- for all four players (every EU game today)
-# fall back to damage share alone.
-TEAM_PM_W = 0.3
+# fall back to damage share alone. Weight 0.5 (2026-09-23, Peter): the sweep is flat between 0.3
+# (0.5611) and 0.5 (0.5613, acc 72.3%), so the individual term gets the most say the backtest
+# supports for free; 0.8 costs 0.004 and 1.2 costs 0.011 log-loss.
+TEAM_PM_W = 0.5
 TEAM_PM_NORM = 40.0
 TEAM_PM_K = TEAM_EXP_AMP / TEAM_EXP_SCALE / 4.0
 

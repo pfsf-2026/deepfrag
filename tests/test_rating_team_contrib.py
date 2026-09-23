@@ -30,7 +30,7 @@ def team(pms, mus=(1500, 1500, 1500, 1500)):
 @check("constants: k derived from the margin slope, weight and norm as backtested")
 def _():
     assert abs(R.TEAM_PM_K - R.TEAM_EXP_AMP / R.TEAM_EXP_SCALE / 4) < 1e-9
-    assert R.TEAM_PM_W == 0.3 and R.TEAM_PM_NORM == 40.0
+    assert R.TEAM_PM_W == 0.5 and R.TEAM_PM_NORM == 40.0
     assert R.ENGINE_VERSION.startswith("v4")
 
 @check("equal players, equal +/-: no contribution for anyone")
@@ -67,7 +67,7 @@ def _():
 def _():
     T, rr = team([400, -100, -100, -100])
     out = pm_terms(T, rr, +1.0, 0.0)
-    assert max(out) <= R.TEAM_PM_W + 1e-9 and max(out) > 0.29
+    assert max(out) <= R.TEAM_PM_W + 1e-9 and max(out) > 0.49
 
 @check("fallback: any player without demo +/- disables the term for that team")
 def _():

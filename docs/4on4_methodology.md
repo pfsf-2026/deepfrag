@@ -87,7 +87,7 @@ each player's expected +/- is his μ-share of the μ-predicted team margin plus
 strong player is expected to out-produce weak teammates and the residual self-corrects as his μ
 rises (without that term the ratings run away: log-loss doubles while accuracy holds). Residuals
 are centred within the team so the team's margin surprise stays in the team score; contribution
-= `TEAM_PM_W (0.3) × tanh(residual / TEAM_PM_NORM (40))`, added to the personal score alongside the
+= `TEAM_PM_W (0.5) × tanh(residual / TEAM_PM_NORM (40))`, added to the personal score alongside the
 damage-share term. Games where any of the four lacks a demo +/- (every EU game today) use damage
 share alone.
 
@@ -100,7 +100,9 @@ scored where all 8 players have ≥10 priors), results in `docs/backtest_4on4_pl
 | v3 shipped: damage share 1.1 | 0.5785 | 70.9% | 0.1977 |
 | damage share 3.0 (local optimum) | 0.5733 | 70.8% | 0.1953 |
 | +/- alone (0.3, k 0.05) | 0.5647 | 71.6% | 0.1912 |
-| **v4: damage 1.1 + +/- 0.3, k 0.039** | **0.5612** | **71.9%** | **0.1899** |
+| v4 as first shipped: damage 1.1 + +/- 0.3, k 0.039 | 0.5612 | 71.9% | 0.1899 |
+| **v4 shipped: damage 1.1 + +/- 0.5, k 0.039** | **0.5613** | **72.3%** | **0.1899** |
+| +/- weight 0.8 / 1.2 | 0.5652 / 0.5724 | 72.5% / 71.0% | |
 | v4 + Game Impact Score term (best of 24 configs) | 0.5624 | 71.8% | 0.1907 |
 
 Paired vs v3 on the same games: +0.017 log-loss per game, 95% CI [+0.007, +0.027], better in 63% of
