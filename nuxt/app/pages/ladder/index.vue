@@ -212,6 +212,9 @@ async function pickLadder(l) {
 const mapPool = computed(() => (ladder.value?.map_pool || []).length
   ? ladder.value.map_pool
   : ['Aerowalk', 'ztndm3', 'DM2', 'DM4', 'Bravado', 'Nova', 'Shifter'])
+// Bo3 decider: after two picks, sides alternate tossing maps (B first) until one is left,
+// so the toss sequence is pool size − 3 long (7 maps → B, A, B, A; 8 maps → B, A, B, A, B).
+const tossSeq = computed(() => Array.from({ length: Math.max(0, mapPool.value.length - 3) }, (_, i) => (i % 2 ? 'A' : 'B')).join(', '))
 
 let pollTimer = null
 function refreshIfVisible() { if (typeof document !== 'undefined' && document.visibilityState === 'visible') load({ silent: true, bust: false }) }
@@ -538,7 +541,7 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
               <ul><li>Pool: {{ mapPool.join(' · ') }}.</li>
               <li><code>rnd</code> (coin toss) decides the first-pick side (<strong>{{ words.Team }} A</strong>; the other is {{ words.Team }} B).</li>
               <li><strong>Game 1:</strong> {{ words.Team }} A picks. <strong>Game 2:</strong> {{ words.Team }} B picks.</li>
-              <li><strong>Decider (Game 3, only if 1–1):</strong> from the remaining maps, <strong>{{ words.Team }} B tosses first</strong>, then sides <strong>alternate tossing</strong> (B, A, B, A) until <strong>one map remains</strong> — that's the decider.</li>
+              <li><strong>Decider (Game 3, only if 1–1):</strong> from the remaining maps, <strong>{{ words.Team }} B tosses first</strong>, then sides <strong>alternate tossing</strong> ({{ tossSeq }}) until <strong>one map remains</strong> — that's the decider.</li>
               <li>No map is played twice.</li></ul>
               <h4>Servers &amp; ping</h4>
               <ul><li><strong>NA servers only</strong> (a Brazil-vs-Brazil match may use a BR server).</li>

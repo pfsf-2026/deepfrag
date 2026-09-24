@@ -4260,6 +4260,34 @@ def admin_ladder_rules(ladder_id: int, authorization: str | None = Header(defaul
     return {"ladder_id": ladder_id, "rules": row["rules"]}
 
 
+@app.post("/api/admin/ladder/{ladder_id}/maps")
+def admin_ladder_maps(ladder_id: int, authorization: str | None = Header(default=None),
+                      map_pool: list = Body(..., embed=True)):
+    """Replace the ladder's map pool (ladder-admin). Added 2026-09-24 so the pool can
+    change without a deploy (1v1 went from 7 to 8 maps). Lowercase map names, order kept."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    pool = []
+    for m in map_pool or []:
+        m = str(m or "").strip().lower()
+        if not m or not all(c.isalnum() or c in "_-" for c in m):
+            raise HTTPException(400, f"bad map name: {m!r}")
+        if m not in pool:
+            pool.append(m)
+    if len(pool) < 3:
+        raise HTTPException(400, "a pool needs at least 3 maps for a Bo3")
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("UPDATE ladders SET map_pool=%s::jsonb WHERE id=%s RETURNING map_pool",
+                    (json.dumps(pool), ladder_id))
+        row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(404, "ladder not found")
+    return {"ladder_id": ladder_id, "map_pool": row["map_pool"]}
+
+
 @app.post("/api/admin/ladder/{ladder_id}/teams")
 def admin_ladder_add_team(ladder_id: int, authorization: str | None = Header(default=None),
                          name: str = Body(..., embed=True),
