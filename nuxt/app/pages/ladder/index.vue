@@ -3,7 +3,7 @@
 // Reads /api/ladder (every active ladder: 2v2 teams, 1v1 duels) then
 // /api/ladder/{id} for the one picked by ?l=2v2|1v1 (useLadders). Captain
 // self-serve is Discord-gated. `words` swaps team/player vocabulary per ladder.
-const { user, loggedIn, login } = useAuth()
+const { user, loggedIn, login, authHeader } = useAuth()
 const { ladders, loadList, switchTo, isDuel, words, ladderSlug } = useLadders()
 const showSettings = useState('show-settings', () => false)
 const openTeamSettings = useState('open-team-settings', () => false)
