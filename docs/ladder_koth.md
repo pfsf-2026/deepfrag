@@ -25,16 +25,16 @@ Creating the duel ladder (ladder-admin, `SYNC_SECRET` or an `is_admin` Discord u
 curl -s -X POST https://app.deepfrag.gg/api/admin/ladder/create \
   -H "Authorization: Bearer $SYNC_SECRET" -H "Content-Type: application/json" \
   -d '{"name":"King of the Hill 1v1","season":"Fall 2026","team_size":1,
-       "map_pool":["aerowalk","bravado","dm2","dm6","metron","skull","ztndm3"],
+       "map_pool":["aerowalk","bravado","dm2","dm4","dm6","metron","pocket","skull","ztndm3"],
        "rules":{"best_of":3,"timelimit":10,"forfeit_days":7,"short_window_days":3,
                 "loss_cooldown_days":3,"min_offer_hours":48,"auto_resolve":true,"auto_forfeit":false}}'
 ```
 
 Then `POST /api/admin/ladder/{id}/open {"open": true}` once seeded. The pool above is the
-Fall 2026 1v1 pool (7 maps, alphabetical, set 2026-09-24: metron in, dm4 out "for now").
-Change a live ladder's pool without a deploy: `POST /api/admin/ladder/{id}/maps
+Fall 2026 1v1 pool (9 maps, alphabetical, settled 2026-09-24: the poll's top 7 plus metron
+and pocket). Change a live ladder's pool without a deploy: `POST /api/admin/ladder/{id}/maps
 {"map_pool": [...]}` (lowercase names, order kept, min 3). The rules tab derives the Bo3
-toss sequence from the pool size (7 maps → B, A, B, A; 8 → B, A, B, A, B).
+toss sequence from the pool size (9 maps → B, A, B, A, B, A).
 
 ## Rules JSON (allowlist in `api.py` `admin_ladder_rules`)
 
