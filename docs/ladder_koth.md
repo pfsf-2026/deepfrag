@@ -91,7 +91,7 @@ lives in `rules.signup_until` (ISO UTC; set via `POST /api/admin/ladder/{id}/rul
 {"patch": {"signup_until": "..."}}`, null clears it). While the ladder is closed the board
 banner reads "Sign-ups are open — join by <day>" during the window and "Seeding the ladder"
 after it; without `signup_until` it falls back to the "opens at 10 seeded" banner. Fall 2026
-1v1: window through Fri Sep 26 (23:59 ET), seed Sat Sep 27, then `/open`.
+1v1: window through Sat Sep 26 (23:59 ET, `2026-09-27T03:59:59Z`), seed Sun Sep 27, then `/open`.
 
 ## Not yet done (2026-09-17)
 

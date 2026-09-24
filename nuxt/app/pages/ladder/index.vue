@@ -46,7 +46,8 @@ const TEAMS_TO_OPEN = 10
 // the board and open challenges. Late entrants start at the bottom rung.
 const signupUntil = computed(() => ladder.value?.rules?.signup_until || null)
 const signupWindowOpen = computed(() => !!signupUntil.value && new Date(signupUntil.value).getTime() > now.value)
-function fmtDay(iso) { return iso ? new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '' }
+// pinned to US Eastern like every other ladder time (NA ladder), so a viewer in Europe sees the same cutoff day
+function fmtDay(iso) { return iso ? new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' }) : '' }
 // Live "now" for the loss-cooldown countdown (tick every minute).
 const now = ref(isBrowser ? Date.now() : 0)
 let nowTimer = null
