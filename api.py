@@ -7121,12 +7121,18 @@ def admin_ladder_team_rename(team_id: int, authorization: str | None = Header(de
 
 @app.post("/api/admin/notify")
 def admin_notify(authorization: str | None = Header(default=None),
-                 content: str = Body(..., embed=True)):
-    """Admin: post a plain message to the ladder Discord channel (notify.send →
-    DISCORD_WEBHOOK_URL). For corrections / announcements that aren't tied to an
-    auto-fired event."""
+                 content: str = Body(..., embed=True),
+                 ladder_id: int | None = Body(default=None, embed=True)):
+    """Admin: post a plain message to a ladder's Discord channel. `ladder_id` picks the
+    channel (1v1 → DISCORD_WEBHOOK_URL_1V1); omitted = the default channel. For
+    corrections / announcements that aren't tied to an auto-fired event."""
     _check_ladder_admin(authorization)
     import notify
+    if ladder_id is not None:
+        with pg() as conn:
+            _notify_route(conn.cursor(), ladder_id=ladder_id)
+    else:
+        notify.set_route(None)
     return {"sent": notify.send(content=content)}
 
 
