@@ -536,7 +536,7 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
               <h4>Format</h4>
               <ul><li>{{ words.mode }}{{ isDuel ? '' : ' TDM' }}, ruleset <strong>smackdown</strong>, <strong>best of {{ ladder?.rules?.best_of || 3 }}</strong>, {{ ladder?.rules?.timelimit || 10 }}-minute maps.</li>
               <li>Recent <strong>ezQuake</strong> / <strong>unEzQuake</strong>. In-game: <code>{{ words.mode }}</code>, <code>ruleset smackdown</code>.</li>
-              <li><strong>SmackDrive is not permitted.</strong></li></ul>
+              <li><strong>SmackDrive, iDrive and any other SOCD-style input tool are not allowed</strong> unless <strong>both {{ words.teams }} agree</strong> before the match.</li></ul>
               <h4>Maps &amp; picks (Bo{{ ladder?.rules?.best_of || 3 }})</h4>
               <ul><li>Pool: {{ mapPool.join(' · ') }}.</li>
               <li><code>rnd</code> (coin toss) decides the first-pick side (<strong>{{ words.Team }} A</strong>; the other is {{ words.Team }} B).</li>
