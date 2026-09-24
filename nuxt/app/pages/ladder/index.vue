@@ -20,6 +20,8 @@ const needsClaim = computed(() => loggedIn.value && user.value && !user.value.ca
 const showAddTeam = ref(false)
 const editingTeam = ref(null)
 const teamSubmitted = ref('')
+const joined = ref(null)        // duel ladder: {name, rung} right after the one-click join
+const joining = ref(false)
 const onTeam = computed(() => {
   const cid = user.value?.canonical_id
   return !!cid && teams.value.some(t => (t.members || []).some(m => m.id === cid))
@@ -125,7 +127,19 @@ async function doReschedule(c) {
   finally { reschedulingId.value = null }
 }
 async function onScheduled() { schedulerChallenge.value = null; await load() }
-function editTeam(t) { editingTeam.value = t }
+function editTeam(t) { if (!isDuel.value) editingTeam.value = t }
+// Duel ladder: the entry is your linked profile, so joining is one click — no
+// name/tag/logo to fill in, no approval step. The API registers you at the bottom rung.
+async function joinDuel() {
+  if (joining.value || !ladder.value) return
+  joining.value = true; challengeErr.value = ''
+  try {
+    const r = await $fetch(`${base}/api/ladder/${ladder.value.id}/team/signup`, { method: 'POST', headers: authHeader(), body: {} })
+    joined.value = { name: r.name, rung: r.rung }
+    await load()
+  } catch (e) { challengeErr.value = e?.data?.detail || e?.message || 'Could not join the ladder' }
+  finally { joining.value = false }
+}
 async function onTeamAdded(name) { showAddTeam.value = false; editingTeam.value = null; teamSubmitted.value = name; await load() }
 function logoUrl(id) { return `${base}/api/ladder/team/${id}/logo` }
 
@@ -207,7 +221,7 @@ onBeforeUnmount(() => {
 async function openMyTeamSettings() {
   // the entry on THIS ladder (a player can hold a 2v2 team and a 1v1 entry)
   const mine = (user.value?.teams || []).find(t => t.ladder_id === ladder.value?.id) || user.value?.team
-  if (!mine) { openTeamSettings.value = false; return }
+  if (!mine || isDuel.value) { openTeamSettings.value = false; return }   // a duel entry has nothing to edit
   try { editingTeam.value = await $fetch(`${base}/api/ladder/team/${mine.id}`) }
   catch { /* ignore */ } finally { openTeamSettings.value = false }
 }
@@ -266,7 +280,8 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
         <button v-if="!loggedIn" class="cta" @click="login">Sign in with Discord to play</button>
         <ClientOnly>
           <button v-if="loggedIn && user?.canonical_id" class="cta ghost" @click="showAvail = true">📅 My availability</button>
-          <button v-if="canAddTeam" class="cta" @click="showAddTeam = true">{{ words.join }}</button>
+          <button v-if="canAddTeam && isDuel" class="cta" :disabled="joining" @click="joinDuel">{{ joining ? 'Joining…' : words.join }}</button>
+          <button v-else-if="canAddTeam" class="cta" @click="showAddTeam = true">{{ words.join }}</button>
         </ClientOnly>
       </div>
     </header>
@@ -292,7 +307,8 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
       <ClientOnly>
         <ClaimProfile v-if="needsClaim" />
         <div v-else-if="user?.pending_claim" class="note">⏳ Profile claim for <strong>{{ user.pending_claim.display }}</strong> is awaiting admin approval.</div>
-        <div v-if="teamSubmitted" class="note">✅ {{ isDuel ? 'Entry' : 'Team' }} <strong>{{ teamSubmitted }}</strong> submitted — an admin will approve it and you'll appear on the board.</div>
+        <div v-if="joined" class="note">✅ You're on the board as <strong>{{ joined.name }}</strong><template v-if="joined.rung"> at rung {{ joined.rung }}</template>. Challenges open once {{ TEAMS_TO_OPEN }} players are seeded.</div>
+        <div v-else-if="teamSubmitted" class="note">✅ Team <strong>{{ teamSubmitted }}</strong> submitted — an admin will approve it and you'll appear on the board.</div>
         <div v-if="needsLocation" class="note tip" @click="showSettings = true">📍 Add your location (Personal settings) to sharpen server suggestions.</div>
         <div v-if="myCooldown" class="note cooldown-note">⏳ {{ isDuel ? 'You' : 'Your team' }} lost recently — you can't issue challenges for <strong>{{ myCooldown }}</strong>. You can still be challenged.</div>
         <div v-if="challengeErr" class="note err">{{ challengeErr }}</div>
@@ -316,9 +332,9 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
               <span class="c-team">
                 <img v-if="t.has_logo" :src="logoUrl(t.id)" class="tlogo" alt="">
                 <span v-else class="tlogo tlogo-ph">{{ (t.tag || t.name || '?')[0].toUpperCase() }}</span>
-                <span class="ttag">{{ t.tag || '—' }}</span>
+                <span v-if="!isDuel" class="ttag">{{ t.tag || '—' }}</span>
                 <NuxtLink class="tname tlink" :to="`/ladder/team/${t.id}`" title="View team page">{{ t.name }}</NuxtLink>
-                <button v-if="isMyTeam(t)" class="edit" :title="words.settings" @click="editTeam(t)">✎</button>
+                <button v-if="isMyTeam(t) && !isDuel" class="edit" :title="words.settings" @click="editTeam(t)">✎</button>
               </span>
               <span class="c-members">
                 <template v-for="(m, i) in (t.members || [])" :key="m.id">

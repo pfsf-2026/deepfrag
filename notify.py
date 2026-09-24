@@ -98,14 +98,16 @@ def ladder_signup(player: str):
 
 
 def team_signup(name: str, tag: str | None, players: list, pending: bool = True,
-                ladder: str | None = None, solo: bool = False):
+                ladder: str | None = None, solo: bool = False, rung: int | None = None):
     """A captain registered a team (players, name, tag). On a 1v1 ladder (solo=True)
-    the entry is one player: no roster line, and the title says ladder signup."""
+    the entry is one player, registered straight onto the board at `rung`."""
     title = f"[{tag}] {name}" if tag else name
     roster = ", ".join(players) if players else "—"
-    desc = f"**{title}**" + (f"\nPlayer: {roster}" if solo else f"\nRoster: {roster}")
+    desc = f"**{title}**" + ("" if solo else f"\nRoster: {roster}")
     if ladder:
         desc += f"\nLadder: {ladder}"
+    if rung:
+        desc += f"\nOn the board at rung {rung}."
     if pending:
         desc += "\n_Awaiting admin approval._"
     return send(embed=_embed("🆕 New ladder signup" if solo else "🆕 New team signup", desc, COLOR))

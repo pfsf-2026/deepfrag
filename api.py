@@ -276,10 +276,13 @@ def auth_me(authorization: str | None = Header(default=None), response: Response
             if u.get("canonical_id"):
                 where.append("members @> %s::jsonb"); params.append(json.dumps([u["canonical_id"]]))
             where.append("created_by=%s"); params.append(u["discord_id"])
-            cur.execute(f"""SELECT id, ladder_id, name, tag, status, rung
-                            FROM ladder_teams
-                            WHERE status IN ('pending','active') AND ({' OR '.join(where)})
-                            ORDER BY (status='active') DESC, id LIMIT 1""", params)
+            # `team` = a real team (2v2+): the topbar's "Team settings" edits name/tag/
+            # roster/logo, and a 1v1 entry has none of those (it IS the linked profile).
+            cur.execute(f"""SELECT t.id, t.ladder_id, t.name, t.tag, t.status, t.rung
+                            FROM ladder_teams t JOIN ladders l ON l.id = t.ladder_id
+                            WHERE COALESCE(l.team_size, 2) > 1
+                              AND t.status IN ('pending','active') AND ({' OR '.join(where)})
+                            ORDER BY (t.status='active') DESC, t.id LIMIT 1""", params)
             tm = cur.fetchone()
             if tm:
                 u["team"] = dict(tm)
@@ -4294,10 +4297,12 @@ def ladder_team_signup(ladder_id: int, authorization: str | None = Header(defaul
                        logo: str | None = Body(default=None, embed=True)):
     """A captain registers a team: themselves + (team_size - 1) teammates (by
     canonical_id; `teammate_canonical_id` is the 2v2 form, `members` the generic
-    list), a team name, and an optional logo (data URI). On a 1v1 ladder the
-    "team" is just the player — no teammate, and the name defaults to their
-    display name. Lands as PENDING for admin approval — never auto-placed.
-    Requires a linked player profile."""
+    list), a team name, and an optional logo (data URI). Lands as PENDING for
+    admin approval — never auto-placed.
+    On a 1v1 ladder there is nothing to review: the entry IS the linked profile
+    (name = the profile's display name, no tag/logo/teammate — whatever the client
+    sent is ignored), so it's registered ACTIVE at the bottom rung right away.
+    Admins reseed by drag-reorder before opening. Requires a linked player profile."""
     import ladder as _ladder
     user = _current_user(authorization, required=True)
     cid = user.get("canonical_id")
@@ -4327,23 +4332,27 @@ def ladder_team_signup(ladder_id: int, authorization: str | None = Header(defaul
             if not cur.fetchone():
                 raise HTTPException(404, f"teammate player not found: {m}")
             roster.append(m)
+        solo = size <= 1
         name = (name or "").strip()
-        if not name:
-            if size > 1:
-                raise HTTPException(400, "give your team a name")
+        if solo:
+            # the entry is the linked profile: validated nick, nothing else to fill in
             cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id=%s", (cid,))
             r = cur.fetchone()
             name = (r and r["display_name"]) or cid
+            tag, logo_bytes, logo_type = None, None, None
+        elif not name:
+            raise HTTPException(400, "give your team a name")
         try:
             cur.execute("""INSERT INTO ladder_teams
                              (ladder_id, name, tag, members, rung, active, status, created_by, logo, logo_type)
-                           VALUES (%s,%s,%s,%s,NULL,FALSE,'pending',%s,%s,%s) RETURNING id""",
-                        (ladder_id, name, tag, json.dumps(roster), user["discord_id"],
-                         psycopg2.Binary(logo_bytes) if logo_bytes else None, logo_type))
+                           VALUES (%s,%s,%s,%s,NULL,%s,%s,%s,%s,%s) RETURNING id""",
+                        (ladder_id, name, tag, json.dumps(roster), solo, 'active' if solo else 'pending',
+                         user["discord_id"], psycopg2.Binary(logo_bytes) if logo_bytes else None, logo_type))
         except psycopg2.errors.UniqueViolation:
             conn.rollback()
-            raise HTTPException(409, "that team name is already taken" if size > 1 else "you're already signed up on this ladder")
+            raise HTTPException(409, "you're already signed up on this ladder" if solo else "that team name is already taken")
         tid = cur.fetchone()["id"]
+        rung = _ladder.place_new_team(cur, ladder_id, tid) if solo else None
         # resolve member display names for the notification
         cur.execute("SELECT canonical_id, display_name FROM players_canonical WHERE canonical_id = ANY(%s)", (roster,))
         dn = {r["canonical_id"]: r["display_name"] for r in cur.fetchall()}
@@ -4351,10 +4360,10 @@ def ladder_team_signup(ladder_id: int, authorization: str | None = Header(defaul
         conn.commit()
     try:
         import notify
-        notify.team_signup(name, tag, names, pending=True, ladder=ladder_name, solo=size <= 1)
+        notify.team_signup(name, tag, names, pending=not solo, ladder=ladder_name, solo=solo, rung=rung)
     except Exception:
         pass
-    return {"team_id": tid, "name": name, "status": "pending"}
+    return {"team_id": tid, "name": name, "status": "active" if solo else "pending", "rung": rung}
 
 
 @app.post("/api/ladder/team/{team_id}/edit")

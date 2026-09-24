@@ -75,10 +75,15 @@ profile ids.
 
 ## Seeding the 1v1 ladder
 
-Players sign up from the ladder page (`?l=1v1`): the entry is the player's own profile, the
-name defaults to their display name, no teammate field. Admins approve pending entries and
-can reorder the initial rungs from `/ladder/admin`. Suggested initial order: the 1on1 rating
-list for active NA players, top rung to bottom.
+Players join from the ladder page (`?l=1v1`) with one click (2026-09-23, Peter: "if I'm
+logged in, register me immediately"). The entry IS the linked profile: name = the profile's
+display name (already validated by the profile claim), no tag, logo, or teammate, and no
+approval step. The API registers the player ACTIVE at the bottom rung right away, so the
+board fills in sign-up order; admins drag-reorder the rungs from `/ladder/admin` before
+opening. Suggested initial order: the 1on1 rating list for active NA players, top rung to
+bottom. The 2v2 flow is unchanged (form + pending approval). Because a duel entry has
+nothing to edit, the ✎ button and the topbar "Team settings" item are hidden for it
+(`/api/auth/me` `team` = a 2v2+ team only; `teams` still lists every entry).
 
 ## Not yet done (2026-09-17)
 
