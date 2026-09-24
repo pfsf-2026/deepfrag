@@ -384,7 +384,7 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
 
         <!-- right column cards -->
         <div class="rail">
-          <section v-if="koth" class="card koth">
+          <section v-if="koth && !preSeed" class="card koth">
             <div class="crown">👑</div>
             <div><div class="koth-label">King of the Hill</div><div class="koth-team">{{ koth.name }}</div></div>
             <div v-if="koth.weeks != null" class="koth-weeks"><strong>{{ koth.weeks }}</strong> {{ koth.weeks === 1 ? 'wk' : 'wks' }}</div>
