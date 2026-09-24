@@ -42,6 +42,11 @@ const myOpenChallenge = computed(() => {
 })
 const ladderOpen = computed(() => !!ladder.value?.rules?.open)
 const TEAMS_TO_OPEN = 10
+// Launch flow (Peter, 2026-09-23): a sign-up window (rules.signup_until), then admins seed
+// the board and open challenges. Late entrants start at the bottom rung.
+const signupUntil = computed(() => ladder.value?.rules?.signup_until || null)
+const signupWindowOpen = computed(() => !!signupUntil.value && new Date(signupUntil.value).getTime() > now.value)
+function fmtDay(iso) { return iso ? new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : '' }
 // Live "now" for the loss-cooldown countdown (tick every minute).
 const now = ref(isBrowser ? Date.now() : 0)
 let nowTimer = null
@@ -307,7 +312,10 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
       <ClientOnly>
         <ClaimProfile v-if="needsClaim" />
         <div v-else-if="user?.pending_claim" class="note">⏳ Profile claim for <strong>{{ user.pending_claim.display }}</strong> is awaiting admin approval.</div>
-        <div v-if="joined" class="note">✅ You're on the board as <strong>{{ joined.name }}</strong><template v-if="joined.rung"> at rung {{ joined.rung }}</template>. Challenges open once {{ TEAMS_TO_OPEN }} players are seeded.</div>
+        <div v-if="joined" class="note">✅ You're on the board as <strong>{{ joined.name }}</strong><template v-if="joined.rung"> at rung {{ joined.rung }}</template>.
+          <template v-if="ladderOpen">Challenge someone 1–2 rungs above you.</template>
+          <template v-else-if="signupWindowOpen">Sign-ups close {{ fmtDay(signupUntil) }}; then we seed the board and open challenges.</template>
+          <template v-else>Challenges open once the board is seeded.</template></div>
         <div v-else-if="teamSubmitted" class="note">✅ Team <strong>{{ teamSubmitted }}</strong> submitted — an admin will approve it and you'll appear on the board.</div>
         <div v-if="needsLocation" class="note tip" @click="showSettings = true">📍 Add your location (Personal settings) to sharpen server suggestions.</div>
         <div v-if="myCooldown" class="note cooldown-note">⏳ {{ isDuel ? 'You' : 'Your team' }} lost recently — you can't issue challenges for <strong>{{ myCooldown }}</strong>. You can still be challenged.</div>
@@ -318,7 +326,14 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
       <div v-show="tab === 'standings'" class="bento">
         <section v-if="!ladderOpen" class="card notopen span2">
           <div class="lock">🔒</div>
-          <div><div class="notopen-title">The ladder isn't open yet</div>
+          <div v-if="signupUntil">
+            <div class="notopen-title">{{ signupWindowOpen ? 'Sign-ups are open' : 'Seeding the ladder' }}</div>
+            <div class="notopen-sub">
+              <template v-if="signupWindowOpen">Join by <strong>{{ fmtDay(signupUntil) }}</strong> — <strong>{{ teams.length }}</strong> signed up so far. Then we seed the board and open challenges. Board order is sign-up order until seeding; anyone who joins later starts at the bottom rung.</template>
+              <template v-else>Sign-ups closed {{ fmtDay(signupUntil) }}. Admins are seeding the board; challenges open right after. You can still join — you'll start at the bottom rung.</template>
+            </div>
+          </div>
+          <div v-else><div class="notopen-title">The ladder isn't open yet</div>
             <div class="notopen-sub">Opens at {{ TEAMS_TO_OPEN }} seeded {{ words.teams }} — <strong>{{ teams.length }}/{{ TEAMS_TO_OPEN }}</strong> so far. Challenging is disabled until then.</div></div>
         </section>
 

@@ -4228,10 +4228,16 @@ def admin_ladder_rules(ladder_id: int, authorization: str | None = Header(defaul
     movement; otherwise the challenged team forfeits per the ladder rules."""
     import ladder as _ladder
     _check_ladder_admin(authorization)
+    def _iso_or_null(v):
+        # signup_until (2026-09-23): end of the sign-up window shown on the board
+        # ("join by Fri Sep 26, then we seed"). ISO-8601 UTC; null clears it.
+        if v in (None, "", False):
+            return None
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).astimezone(timezone.utc).isoformat()
     ALLOWED = {"auto_forfeit": bool, "auto_resolve": bool, "min_offer_hours": int,
                "forfeit_days": int, "short_window_days": int,
                "loss_cooldown_days": int, "best_of": int, "rung_jump": int,
-               "timelimit": int}
+               "timelimit": int, "signup_until": _iso_or_null}
     clean = {}
     for k, v in (patch or {}).items():
         if k not in ALLOWED:

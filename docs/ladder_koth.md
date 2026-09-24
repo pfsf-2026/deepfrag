@@ -85,6 +85,14 @@ bottom. The 2v2 flow is unchanged (form + pending approval). Because a duel entr
 nothing to edit, the ✎ button and the topbar "Team settings" item are hidden for it
 (`/api/auth/me` `team` = a 2v2+ team only; `teams` still lists every entry).
 
+Launch flow (Peter, 2026-09-23): a **3-day sign-up window**, then admins seed, then
+challenges open; anyone who joins after seeding starts at the bottom rung. The window end
+lives in `rules.signup_until` (ISO UTC; set via `POST /api/admin/ladder/{id}/rules
+{"patch": {"signup_until": "..."}}`, null clears it). While the ladder is closed the board
+banner reads "Sign-ups are open — join by <day>" during the window and "Seeding the ladder"
+after it; without `signup_until` it falls back to the "opens at 10 seeded" banner. Fall 2026
+1v1: window through Fri Sep 26 (23:59 ET), seed Sat Sep 27, then `/open`.
+
 ## Not yet done (2026-09-17)
 
 - Discord templates still say "team" in a few places (`notify.py`) and link to `/ladder`
