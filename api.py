@@ -858,7 +858,45 @@ def admin_support_status(ticket_id: int, authorization: str | None = Header(defa
 
 
 # ── Ladder cron tick: reminders + forfeit clock ──────────────────────────────
+_LADDER_MODE_CACHE: dict = {}
+
+
+def _notify_route(cur, ladder_id=None, challenge_id=None, team_id=None):
+    """Point this request's Discord posts at the right channel: the 1v1 ladder has its
+    own (notify.ROUTES). Resolve the ladder from a challenge or team id when that's all
+    the handler has. Never raises — a routing miss just means the default channel."""
+    import notify
+    try:
+        if ladder_id is None and challenge_id is not None:
+            cur.execute("SELECT ladder_id FROM ladder_challenges WHERE id=%s", (challenge_id,))
+            r = cur.fetchone(); ladder_id = r and r["ladder_id"]
+        if ladder_id is None and team_id is not None:
+            cur.execute("SELECT ladder_id FROM ladder_teams WHERE id=%s", (team_id,))
+            r = cur.fetchone(); ladder_id = r and r["ladder_id"]
+        if ladder_id is None:
+            notify.set_route(None); return
+        mode = _LADDER_MODE_CACHE.get(ladder_id)
+        if mode is None:
+            cur.execute("SELECT mode, team_size FROM ladders WHERE id=%s", (ladder_id,))
+            r = cur.fetchone()
+            mode = (r and (r["mode"] or ("1on1" if int(r["team_size"] or 2) == 1 else "2on2"))) or "2on2"
+            _LADDER_MODE_CACHE[ladder_id] = mode
+        notify.set_route(mode)
+    except Exception:
+        pass
+
+
 def _ladder_tick(cur):
+    """Runs the tick with per-row channel routing, and clears the route afterwards so a
+    scheduler thread never carries a ladder's channel into unrelated posts."""
+    import notify
+    try:
+        return _ladder_tick_inner(cur)
+    finally:
+        notify.set_route(None)
+
+
+def _ladder_tick_inner(cur):
     """Fire upcoming-match reminders (24h out, starting soon) and flag overdue
     challenges. Idempotent via per-challenge fired-once flags. Returns counts."""
     import ladder as _ladder
@@ -931,6 +969,7 @@ def _ladder_tick(cur):
                    JOIN ladders l ON l.id=c.ladder_id
                    WHERE c.status IN ('scheduled','open')""")
     for ch in cur.fetchall():
+        _notify_route(cur, ladder_id=ch.get("ladder_id"))
         if not (ch["rules"] or {}).get("auto_resolve", True):
             continue
         det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"),
@@ -994,13 +1033,14 @@ def _ladder_tick(cur):
     # ── AUTO-SCHEDULE: finalize OPEN challenges where a challenged player opted into
     # auto_schedule and is free at a mutually-common proposed slot (no manual pick) ──
     counts.setdefault("auto_scheduled_avail", 0)
-    cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.proposed, c.picks,
+    cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.proposed, c.picks,
                           cd.members AS members
                    FROM ladder_challenges c
                    JOIN ladder_teams cd ON cd.id=c.challenged_id
                    WHERE c.status='open'
                      AND jsonb_array_length(COALESCE(c.proposed,'[]'::jsonb)) > 0""")
     for r in cur.fetchall():
+        _notify_route(cur, ladder_id=r.get("ladder_id"))
         try:
             agreed = _auto_schedule_challenge(cur, r)
         except Exception:
@@ -1016,7 +1056,7 @@ def _ladder_tick(cur):
     # Scheduled matches → reminders. Two tiers: ~1 hour out and ~10 minutes out.
     # Windows are sized so the */5 cron always lands at least one tick inside them
     # before kickoff; per-challenge fired-once flags prevent repeats.
-    cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.agreed_at, c.server,
+    cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.agreed_at, c.server,
                           c.reminded_soon, c.reminded_10m, ca.name AS a, cd.name AS b
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -1024,6 +1064,7 @@ def _ladder_tick(cur):
                    WHERE c.status='scheduled' AND c.agreed_at IS NOT NULL
                      AND c.agreed_at > now() - interval '1 hour'""")
     for r in cur.fetchall():
+        _notify_route(cur, ladder_id=r.get("ladder_id"))
         d = r["agreed_at"] - now
         cn, cp = _team_np(cur, r["challenger_id"]); dn, dp = _team_np(cur, r["challenged_id"])
         if not r["reminded_soon"] and timedelta(minutes=12) < d <= timedelta(minutes=70):
@@ -1040,7 +1081,7 @@ def _ladder_tick(cur):
     # slots posted → the CHALLENGED players owe picks. Blaming the challenged
     # team unconditionally was wrong (2026-07-15 cucked/SD confusion). Forfeit
     # is admin-decided since 2026-06-24, so say "risk", not "auto-forfeit".
-    cur.execute("""SELECT c.id, c.challenger_id, c.challenged_id, c.deadline, c.proposed,
+    cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.deadline, c.proposed,
                           ca.name AS a, cd.name AS b
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -1048,6 +1089,7 @@ def _ladder_tick(cur):
                    WHERE c.status='open' AND NOT c.reminded_unsched_3d
                      AND c.created_at < now() - interval '3 days' AND c.deadline > now()""")
     for r in cur.fetchall():
+        _notify_route(cur, ladder_id=r.get("ladder_id"))
         try:
             dl = r["deadline"].astimezone(timezone.utc) if r["deadline"] else None
             left = f"<t:{int(dl.timestamp())}:R>" if dl else "soon"
@@ -1084,6 +1126,7 @@ def _ladder_tick(cur):
                    JOIN ladders l ON l.id=c.ladder_id
                    WHERE c.status='open' AND c.deadline < now()""")
     for r in cur.fetchall():
+        _notify_route(cur, ladder_id=r.get("ladder_id"))
         # Race guard (2026-08-02): if a complete bo3 between the exact rosters
         # already exists in the window, the match WAS played — let the resolver
         # record it (this tick or the next, once settled) instead of
@@ -1196,6 +1239,7 @@ def _ladder_tick(cur):
                    JOIN ladder_teams cd ON cd.id=c.challenged_id
                    WHERE r.status='pending'""")
     for rp in cur.fetchall():
+        _notify_route(cur, ladder_id=rp.get("ladder_id"))
         if rp["status"] not in ("open", "scheduled"):
             cur.execute("UPDATE ladder_match_reports SET status='cancelled', resolved_at=now() WHERE id=%s",
                         (rp["report_id"],))
@@ -1248,14 +1292,15 @@ def _team_np(cur, team_id):
     return ((r and r["name"]) or f"#{team_id}", _team_mentions(cur, team_id))
 
 
-def _digest_content(cur):
+def _digest_content(cur, ladder_id=None):
     """Daily digest as an aligned monospace table (clean to scan; no @pings — code
     blocks don't notify, which is fine for an overview; the day-of reminders ping)."""
     from zoneinfo import ZoneInfo
     cur.execute("""SELECT challenger_id, challenged_id, agreed_at, server
                    FROM ladder_challenges
                    WHERE status='scheduled' AND agreed_at IS NOT NULL AND agreed_at > now()
-                   ORDER BY agreed_at""")
+                     AND (%s::bigint IS NULL OR ladder_id = %s)
+                   ORDER BY agreed_at""", (ladder_id, ladder_id))
     rows = cur.fetchall()
     if not rows:
         return "📅 No matches currently scheduled."
@@ -1287,11 +1332,18 @@ def cron_ladder_digest(authorization: str | None = Header(default=None)):
     if not expected or (authorization or "").removeprefix("Bearer ") not in expected:
         raise HTTPException(401, "bad cron token")
     import notify
+    posted = 0
     with pg() as conn:
         cur = conn.cursor()
-        content = _digest_content(cur)
-    notify.send(content=content)
-    return {"posted": 1 if "```" in content else 0}
+        # one digest per active ladder, each routed to that ladder's channel
+        cur.execute("SELECT id FROM ladders WHERE status='active' ORDER BY id")
+        for lid in [r["id"] for r in cur.fetchall()]:
+            content = _digest_content(cur, lid)
+            _notify_route(cur, ladder_id=lid)
+            notify.send(content=content)
+            posted += 1 if "```" in content else 0
+    notify.set_route(None)
+    return {"posted": posted}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/notify-scheduled")
@@ -1304,6 +1356,7 @@ def admin_ladder_notify_scheduled(challenge_id: int, authorization: str | None =
         cur.execute("SELECT challenger_id, challenged_id, agreed_at, server FROM ladder_challenges WHERE id=%s",
                     (challenge_id,))
         ch = cur.fetchone()
+        _notify_route(cur, challenge_id=challenge_id)
         if not ch:
             raise HTTPException(404, "challenge not found")
         cn, cp = _team_np(cur, ch["challenger_id"]); dn, dp = _team_np(cur, ch["challenged_id"])
@@ -4349,6 +4402,7 @@ def ladder_team_signup(ladder_id: int, authorization: str | None = Header(defaul
         _ladder.ensure_schema(cur)
         cur.execute("SELECT id, name, team_size, rules FROM ladders WHERE id=%s AND status='active'", (ladder_id,))
         lad = cur.fetchone()
+        _notify_route(cur, ladder_id=ladder_id)
         if not lad:
             raise HTTPException(404, "ladder not found")
         size = int(lad["team_size"] or 2)
@@ -4538,6 +4592,7 @@ def admin_ladder_team_approve(team_id: int, authorization: str | None = Header(d
         _ladder.ensure_schema(cur)
         cur.execute("SELECT id, ladder_id, name, status FROM ladder_teams WHERE id=%s", (team_id,))
         t = cur.fetchone()
+        _notify_route(cur, team_id=team_id)
         if not t:
             raise HTTPException(404, "team not found")
         if t["status"] != "pending":
@@ -4585,6 +4640,7 @@ def admin_ladder_team_remove(team_id: int, authorization: str | None = Header(de
         _ladder.ensure_schema(cur)
         cur.execute("SELECT ladder_id, name, rung FROM ladder_teams WHERE id=%s AND active", (team_id,))
         t = cur.fetchone()
+        _notify_route(cur, team_id=team_id)
         if not t:
             raise HTTPException(404, "no active team with that id")
         ladder_id, name, rung = t["ladder_id"], t["name"], t["rung"]
@@ -5914,6 +5970,7 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
+        _notify_route(cur, ladder_id=ladder_id)
         cur.execute("SELECT rules FROM ladders WHERE id=%s AND status='active'", (ladder_id,))
         lad = cur.fetchone()
         if not lad:
@@ -6069,6 +6126,7 @@ def ladder_challenge_availability(challenge_id: int, response: Response):
                        JOIN ladder_teams cd ON cd.id=c.challenged_id
                        WHERE c.id=%s""", (challenge_id,))
         ch = cur.fetchone()
+        _notify_route(cur, challenge_id=challenge_id)
         if not ch:
             raise HTTPException(404, "challenge not found")
         team_a, team_b = list(ch["a"] or []), list(ch["b"] or [])
@@ -6332,6 +6390,7 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
                        JOIN ladder_teams cd ON cd.id=c.challenged_id
                        WHERE c.id=%s""", (challenge_id,))
         ch = cur.fetchone()
+        _notify_route(cur, challenge_id=challenge_id)
         if not ch:
             raise HTTPException(404, "challenge not found")
         if ch["status"] not in ("open",):
@@ -6382,6 +6441,7 @@ def ladder_challenge_my_picks(challenge_id: int, authorization: str | None = Hea
                        JOIN ladder_teams ca ON ca.id=c.challenger_id
                        JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
         ch = cur.fetchone()
+        _notify_route(cur, challenge_id=challenge_id)
         if not ch:
             raise HTTPException(404, "challenge not found")
         if ch["status"] != "open":
@@ -6449,6 +6509,7 @@ def ladder_challenge_withdraw(challenge_id: int, authorization: str | None = Hea
                        JOIN ladder_teams cd ON cd.id=c.challenged_id
                        WHERE c.id=%s""", (challenge_id,))
         ch = cur.fetchone()
+        _notify_route(cur, challenge_id=challenge_id)
         if not ch:
             raise HTTPException(404, "challenge not found")
         if ch["status"] != "open":
@@ -6493,6 +6554,7 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
                        JOIN ladder_teams ca ON ca.id=c.challenger_id
                        JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
         ch = cur.fetchone()
+        _notify_route(cur, challenge_id=challenge_id)
         if not ch:
             raise HTTPException(404, "challenge not found")
         if ch["status"] != "scheduled":
@@ -6654,6 +6716,7 @@ def _try_report_games(cur, ch, game_ids, reporter):
     Raises HTTPException for reporter-fixable input problems."""
     import ladder as _ladder
     shp = _ladder.shape(cur, ch.get("ladder_id"))
+    _notify_route(cur, ladder_id=ch.get("ladder_id"))
     mode, size, wins = shp["mode"], shp["team_size"], shp["wins_needed"]
     a_roster = list(ch["a_members"] or [])
     b_roster = list(ch["b_members"] or [])
@@ -6894,6 +6957,7 @@ def admin_ladder_reresolve(challenge_id: int, authorization: str | None = Header
                        JOIN ladder_teams ca ON ca.id=c.challenger_id
                        JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
         ch = cur.fetchone()
+        _notify_route(cur, challenge_id=challenge_id)
         if not ch:
             raise HTTPException(404, "challenge not found")
         det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"),
@@ -7158,6 +7222,7 @@ def admin_ladder_reschedule(challenge_id: int, authorization: str | None = Heade
                        JOIN ladder_teams ca ON ca.id=c.challenger_id
                        JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
         ch = cur.fetchone()
+        _notify_route(cur, challenge_id=challenge_id)
         if not ch:
             raise HTTPException(404, "challenge not found")
         if ch["status"] != "scheduled":
@@ -7190,6 +7255,7 @@ def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(d
         _ladder.ensure_schema(cur)
         cur.execute("SELECT * FROM ladder_challenges WHERE id=%s", (challenge_id,))
         ch = cur.fetchone()
+        _notify_route(cur, challenge_id=challenge_id)
         if not ch:
             raise HTTPException(404, "challenge not found")
         if ch["status"] in ("played", "forfeited"):
@@ -7256,6 +7322,7 @@ def admin_ladder_unforfeit(challenge_id: int, authorization: str | None = Header
         _ladder.ensure_schema(cur)
         cur.execute("SELECT * FROM ladder_challenges WHERE id=%s", (challenge_id,))
         ch = cur.fetchone()
+        _notify_route(cur, challenge_id=challenge_id)
         if not ch:
             raise HTTPException(404, "challenge not found")
         if ch["status"] != "forfeited":
@@ -7307,6 +7374,7 @@ def admin_ladder_team_archive(team_id: int, authorization: str | None = Header(d
         _ladder.ensure_schema(cur)
         cur.execute("SELECT name FROM ladder_teams WHERE id=%s", (team_id,))
         t = cur.fetchone()
+        _notify_route(cur, team_id=team_id)
         if not t:
             raise HTTPException(404, "team not found")
         res = _ladder.archive_team(cur, team_id)

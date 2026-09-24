@@ -9,6 +9,7 @@ Events: challenge issued, result reported (with movement), forfeit, KotH change.
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import urllib.request
@@ -43,8 +44,33 @@ COLOR_CHALLENGE = 0xEF4444
 LADDER_URL = "https://deepfrag.pages.dev/ladder"
 
 
+# Channel routing (2026-09-24): the 1v1 ladder has its own Discord channel. Handlers
+# call set_route(mode) once they know which ladder they're acting on (api._notify_route);
+# every send() in that request/tick row then goes to that ladder's webhook. Modes without
+# a dedicated webhook, or an unset env var, fall back to DISCORD_WEBHOOK_URL. FastAPI runs
+# each sync handler in a copied context, so a route set in one request never leaks.
+_ROUTE: contextvars.ContextVar = contextvars.ContextVar("deepfrag_notify_route", default=None)
+ROUTES = {"1on1": "DISCORD_WEBHOOK_URL_1V1"}
+LADDER_QUERY = {"1on1": "?l=1v1"}
+
+
+def set_route(mode: str | None) -> None:
+    _ROUTE.set(mode)
+
+
+def current_route() -> str | None:
+    return _ROUTE.get()
+
+
 def _url() -> str | None:
+    env = ROUTES.get(_ROUTE.get() or "")
+    if env and os.environ.get(env):
+        return os.environ.get(env)
     return os.environ.get("DISCORD_WEBHOOK_URL")
+
+
+def ladder_url() -> str:
+    return LADDER_URL + LADDER_QUERY.get(_ROUTE.get() or "", "")
 
 
 def send(content: str | None = None, embed: dict | None = None) -> bool:
@@ -77,7 +103,7 @@ def send(content: str | None = None, embed: dict | None = None) -> bool:
 
 def _embed(title: str, description: str, color: int) -> dict:
     return {"title": title, "description": description, "color": color,
-            "url": LADDER_URL}
+            "url": ladder_url()}
 
 
 # ── event builders ───────────────────────────────────────────────────────────

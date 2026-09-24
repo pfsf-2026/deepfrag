@@ -36,6 +36,17 @@ and pocket). Change a live ladder's pool without a deploy: `POST /api/admin/ladd
 {"map_pool": [...]}` (lowercase names, order kept, min 3). The rules tab derives the Bo3
 toss sequence from the pool size (9 maps → B, A, B, A, B, A).
 
+## Discord channels per ladder (2026-09-24)
+
+Every ladder post goes through `notify.send()`, which picks the webhook from a per-request
+route: handlers call `api._notify_route(cur, ladder_id=… | challenge_id=… | team_id=…)` once
+they know the ladder, and the tick sets it per row. `notify.ROUTES` maps a ladder mode to an
+env var: `1on1` → `DISCORD_WEBHOOK_URL_1V1` (the KOTH 1v1 channel); anything else, or an
+unset var, falls back to `DISCORD_WEBHOOK_URL` (the 2v2 channel). Set the 1v1 webhook on
+Cloud Run (env vars survive Cloud Build deploys):
+`gcloud run services update deepfrag-api --region us-central1 --project deepfrag-prod --update-env-vars DISCORD_WEBHOOK_URL_1V1='<webhook url>'`.
+The daily digest posts one block per active ladder to that ladder's channel.
+
 ## Rules JSON (allowlist in `api.py` `admin_ladder_rules`)
 
 | key | default | effect |
