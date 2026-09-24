@@ -46,9 +46,11 @@ LADDER_URL = "https://deepfrag.pages.dev/ladder"
 
 # Channel routing (2026-09-24): the 1v1 ladder has its own Discord channel. Handlers
 # call set_route(mode) once they know which ladder they're acting on (api._notify_route);
-# every send() in that request/tick row then goes to that ladder's webhook. Modes without
-# a dedicated webhook, or an unset env var, fall back to DISCORD_WEBHOOK_URL. FastAPI runs
-# each sync handler in a copied context, so a route set in one request never leaks.
+# every send() in that request/tick row then goes to that ladder's webhook. A mode with a
+# dedicated webhook NEVER falls back to the 2v2 channel (Peter, 2026-09-24): if its env var
+# is unset the post is simply dropped. Modes without a dedicated webhook use
+# DISCORD_WEBHOOK_URL. FastAPI runs each sync handler in a copied context, so a route set
+# in one request never leaks.
 _ROUTE: contextvars.ContextVar = contextvars.ContextVar("deepfrag_notify_route", default=None)
 ROUTES = {"1on1": "DISCORD_WEBHOOK_URL_1V1"}
 LADDER_QUERY = {"1on1": "?l=1v1"}
@@ -64,8 +66,8 @@ def current_route() -> str | None:
 
 def _url() -> str | None:
     env = ROUTES.get(_ROUTE.get() or "")
-    if env and os.environ.get(env):
-        return os.environ.get(env)
+    if env:
+        return os.environ.get(env) or None      # dedicated channel only; unset = no post
     return os.environ.get("DISCORD_WEBHOOK_URL")
 
 
