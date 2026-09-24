@@ -19,6 +19,9 @@ King of the Hill = current rung-1 team; weeks-held derived from ladder_movements
 DB-backed (psycopg2 cursor passed in), mirrors the rest of the codebase.
 """
 from __future__ import annotations
+import random
+import threading
+import time
 
 MODE_BY_SIZE = {1: "1on1", 2: "2on2", 4: "4on4"}
 
@@ -138,7 +141,41 @@ CREATE INDEX IF NOT EXISTS ladder_movements_koth ON ladder_movements (ladder_id,
 """
 
 
+_SCHEMA_READY = False
+_SCHEMA_LOCK = threading.Lock()
+
+
 def ensure_schema(cur):
+    """Apply the idempotent DDL below ONCE per process. Every ladder handler calls
+    this first, and the board fires ~8 requests at once; running the same
+    CREATE/ALTER ... IF NOT EXISTS in concurrent transactions deadlocked in
+    Postgres (~15 x 500s a day by 2026-09-24). After the first success this is a
+    no-op. A deadlock on that first run is rolled back and retried once."""
+    global _SCHEMA_READY
+    if _SCHEMA_READY:
+        return
+    with _SCHEMA_LOCK:
+        if _SCHEMA_READY:
+            return
+        try:
+            _apply_schema(cur)
+        except Exception as e:                      # psycopg2.errors.DeadlockDetected / LockNotAvailable
+            if type(e).__name__ not in ("DeadlockDetected", "LockNotAvailable"):
+                raise
+            conn = getattr(cur, "connection", None)
+            if conn is not None:
+                conn.rollback()
+            time.sleep(0.2 + random.random() * 0.5)
+            _apply_schema(cur)
+        # commit here: api.pg() rolls back on exit and read-only handlers never commit,
+        # so a fresh migration applied on a GET would otherwise vanish while the flag says ready
+        conn = getattr(cur, "connection", None)
+        if conn is not None and hasattr(conn, "commit"):
+            conn.commit()
+        _SCHEMA_READY = True
+
+
+def _apply_schema(cur):
     cur.execute(DDL)
     # Self-serve team signup additions (idempotent). Teams created by captains
     # start status='pending' + active=false (hidden from the board) until an
