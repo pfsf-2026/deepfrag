@@ -46,6 +46,11 @@ const TEAMS_TO_OPEN = 10
 // the board and open challenges. Late entrants start at the bottom rung.
 const signupUntil = computed(() => ladder.value?.rules?.signup_until || null)
 const signupWindowOpen = computed(() => !!signupUntil.value && new Date(signupUntil.value).getTime() > now.value)
+// Before seeding there is no order: the board is a plain alphabetical sign-up list, no rungs, no crown.
+const preSeed = computed(() => !ladderOpen.value && !!signupUntil.value)
+const boardTeams = computed(() => preSeed.value
+  ? [...teams.value].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }))
+  : teams.value)
 // pinned to US Eastern like every other ladder time (NA ladder), so a viewer in Europe sees the same cutoff day
 function fmtDay(iso) { return iso ? new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' }) : '' }
 // Live "now" for the loss-cooldown countdown (tick every minute).
@@ -313,8 +318,8 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
       <ClientOnly>
         <ClaimProfile v-if="needsClaim" />
         <div v-else-if="user?.pending_claim" class="note">⏳ Profile claim for <strong>{{ user.pending_claim.display }}</strong> is awaiting admin approval.</div>
-        <div v-if="joined" class="note">✅ You're on the board as <strong>{{ joined.name }}</strong><template v-if="joined.rung"> at rung {{ joined.rung }}</template>.
-          <template v-if="ladderOpen">Challenge someone 1–2 rungs above you.</template>
+        <div v-if="joined" class="note">✅ You're signed up as <strong>{{ joined.name }}</strong>.
+          <template v-if="ladderOpen">You start at the bottom — challenge someone 1–2 rungs above you.</template>
           <template v-else-if="signupWindowOpen">Sign-ups close {{ fmtDay(signupUntil) }}; then we seed the board and open challenges.</template>
           <template v-else>Challenges open once the board is seeded.</template></div>
         <div v-else-if="teamSubmitted" class="note">✅ Team <strong>{{ teamSubmitted }}</strong> submitted — an admin will approve it and you'll appear on the board.</div>
@@ -330,8 +335,8 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
           <div v-if="signupUntil">
             <div class="notopen-title">{{ signupWindowOpen ? 'Sign-ups are open' : 'Seeding the ladder' }}</div>
             <div class="notopen-sub">
-              <template v-if="signupWindowOpen">Join by <strong>{{ fmtDay(signupUntil) }}</strong> — <strong>{{ teams.length }}</strong> signed up so far. Then we seed the board and open challenges. Board order is sign-up order until seeding; anyone who joins later starts at the bottom rung.</template>
-              <template v-else>Sign-ups closed {{ fmtDay(signupUntil) }}. Admins are seeding the board; challenges open right after. You can still join — you'll start at the bottom rung.</template>
+              <template v-if="signupWindowOpen">Join by <strong>{{ fmtDay(signupUntil) }}</strong> — <strong>{{ teams.length }}</strong> signed up so far. Then we seed the board and open challenges.</template>
+              <template v-else>Sign-ups closed {{ fmtDay(signupUntil) }}. Admins are seeding the board; challenges open right after. You can still join — late entrants start at the bottom.</template>
             </div>
           </div>
           <div v-else><div class="notopen-title">The ladder isn't open yet</div>
@@ -340,11 +345,11 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
 
         <!-- Standings board (big) -->
         <section class="card board-card">
-          <h3>🏆 Standings <button class="exp" @click="setTab('rules')">how it works ⓘ</button></h3>
+          <h3>{{ preSeed ? `📝 Signed up · ${teams.length}` : '🏆 Standings' }} <button class="exp" @click="setTab('rules')">how it works ⓘ</button></h3>
           <div class="board">
-            <div class="board-head"><span class="c-rung">#</span><span class="c-team">{{ words.Team }}</span><span class="c-members">{{ isDuel ? 'Profile' : 'Players' }}</span><span class="c-rec" title="Match record (won–lost)">Match</span><span class="c-rec" title="Game/map record (won–lost)">Games</span><span class="c-status">Status</span></div>
-            <div v-for="t in teams" :key="t.id" class="row" :class="{ top: t.rung === 1 }">
-              <span class="c-rung">{{ t.rung }}<span v-if="t.rung === 1" class="koth-crown" title="King of the Hill — holds rung 1">👑</span></span>
+            <div class="board-head"><span class="c-rung">{{ preSeed ? '' : '#' }}</span><span class="c-team">{{ words.Team }}</span><span class="c-members">{{ isDuel ? 'Profile' : 'Players' }}</span><span class="c-rec" title="Match record (won–lost)">Match</span><span class="c-rec" title="Game/map record (won–lost)">Games</span><span class="c-status">Status</span></div>
+            <div v-for="t in boardTeams" :key="t.id" class="row" :class="{ top: t.rung === 1 && !preSeed }">
+              <span class="c-rung"><template v-if="!preSeed">{{ t.rung }}<span v-if="t.rung === 1" class="koth-crown" title="King of the Hill — holds rung 1">👑</span></template></span>
               <span class="c-team">
                 <img v-if="t.has_logo" :src="logoUrl(t.id)" class="tlogo" alt="">
                 <span v-else class="tlogo tlogo-ph">{{ (t.tag || t.name || '?')[0].toUpperCase() }}</span>
@@ -361,14 +366,15 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
               <span class="c-rec c-match"><span class="rec-lbl">M </span><b>{{ t.match_w ?? 0 }}</b><span class="dash">–</span>{{ t.match_l ?? 0 }}</span>
               <span class="c-rec c-games"><span class="rec-lbl">G </span><b>{{ t.game_w ?? 0 }}</b><span class="dash">–</span>{{ t.game_l ?? 0 }}</span>
               <span class="c-status">
-                <span v-if="teamStatus(t)" class="badge challenged">{{ teamStatus(t) }}</span>
+                <span v-if="preSeed" class="badge open">Signed up</span>
+                <span v-else-if="teamStatus(t)" class="badge challenged">{{ teamStatus(t) }}</span>
                 <button v-else-if="canChallenge(t)" class="chal-btn" @click="doChallenge(t)">⚔ Challenge</button>
                 <span v-else-if="teamCooldown(t)" class="badge cooldown" title="Lost recently — can't issue challenges (can still be challenged)">⏳ Cooldown · {{ teamCooldown(t) }}</span>
                 <span v-else class="badge open">Open</span>
               </span>
             </div>
           </div>
-          <div class="legend">
+          <div v-if="!preSeed" class="legend">
             <span class="lg-item"><span class="badge open">Open</span> free to challenge / be challenged</span>
             <span class="lg-item"><span class="badge challenged">📅 vs</span> match scheduled</span>
             <span class="lg-item"><span class="badge challenged">⚔</span> in an active challenge</span>
