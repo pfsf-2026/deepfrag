@@ -97,14 +97,18 @@ def ladder_signup(player: str):
                              f"**{player}** signed up for the KOTH ladder.", COLOR))
 
 
-def team_signup(name: str, tag: str | None, players: list, pending: bool = True):
-    """A captain registered a team (players, name, tag)."""
+def team_signup(name: str, tag: str | None, players: list, pending: bool = True,
+                ladder: str | None = None, solo: bool = False):
+    """A captain registered a team (players, name, tag). On a 1v1 ladder (solo=True)
+    the entry is one player: no roster line, and the title says ladder signup."""
     title = f"[{tag}] {name}" if tag else name
     roster = ", ".join(players) if players else "—"
-    desc = f"**{title}**\nRoster: {roster}"
+    desc = f"**{title}**" + (f"\nPlayer: {roster}" if solo else f"\nRoster: {roster}")
+    if ladder:
+        desc += f"\nLadder: {ladder}"
     if pending:
         desc += "\n_Awaiting admin approval._"
-    return send(embed=_embed("🆕 New team signup", desc, COLOR))
+    return send(embed=_embed("🆕 New ladder signup" if solo else "🆕 New team signup", desc, COLOR))
 
 
 def match_proposal(proposer: str, other: str, slots_iso: list, *, initial: bool,

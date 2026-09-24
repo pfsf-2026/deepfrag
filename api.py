@@ -4308,11 +4308,12 @@ def ladder_team_signup(ladder_id: int, authorization: str | None = Header(defaul
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("SELECT id, team_size FROM ladders WHERE id=%s AND status='active'", (ladder_id,))
+        cur.execute("SELECT id, name, team_size FROM ladders WHERE id=%s AND status='active'", (ladder_id,))
         lad = cur.fetchone()
         if not lad:
             raise HTTPException(404, "ladder not found")
         size = int(lad["team_size"] or 2)
+        ladder_name = lad["name"]
         roster = [cid]
         extra = [(m or "").strip() for m in (members or []) if (m or "").strip() and m != cid]
         if teammate_canonical_id and teammate_canonical_id != cid and teammate_canonical_id not in extra:
@@ -4350,7 +4351,7 @@ def ladder_team_signup(ladder_id: int, authorization: str | None = Header(defaul
         conn.commit()
     try:
         import notify
-        notify.team_signup(name, tag, names, pending=True)
+        notify.team_signup(name, tag, names, pending=True, ladder=ladder_name, solo=size <= 1)
     except Exception:
         pass
     return {"team_id": tid, "name": name, "status": "pending"}
