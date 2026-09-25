@@ -30,11 +30,16 @@ import sys
 def _post(body: dict) -> str | None:
     """One Messages API call. Returns the text, or None after logging WHY it failed —
     the coach was falling back to the template with no trace of the cause (2026-09-20)."""
-    body = {**body, "fallbacks": "default"}
+    headers = {"content-type": "application/json", "x-api-key": ANTHROPIC_KEY,
+               "anthropic-version": "2023-06-01"}
+    # the server-side fallback is an Opus 5 / Fable feature; cheaper models (Haiku 4.5, Sonnet)
+    # reject the parameter, so only send it where it's supported (COACHING_MODEL is set to
+    # claude-haiku-4-5 in production since 2026-09-25 — Peter: cheapest model for prose)
+    if body.get("model", MODEL).startswith(("claude-opus-5", "claude-fable")):
+        body = {**body, "fallbacks": "default"}
+        headers["anthropic-beta"] = FALLBACK_BETA
     req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(),
-        headers={"content-type": "application/json", "x-api-key": ANTHROPIC_KEY,
-                 "anthropic-version": "2023-06-01", "anthropic-beta": FALLBACK_BETA})
+        "https://api.anthropic.com/v1/messages", data=json.dumps(body).encode(), headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=90) as r:
             data = json.loads(r.read())
