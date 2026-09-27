@@ -298,6 +298,133 @@ def auth_me(authorization: str | None = Header(default=None), response: Response
     return u
 
 
+# ── Sign-in links (2026-09-27): log in without Discord ──────────────────────
+# An admin issues a private link for a player (from /ladder/admin); opening it signs the
+# player in as their linked profile with the SAME session the Discord flow mints, so
+# challenges, availability, picks and reports all work. The link is long-lived (default
+# 180 days), reusable across devices, revocable per player. Only the SHA-256 of the token
+# is stored. The session user row is synthetic: users.discord_id = "link:<canonical_id>".
+LOGIN_LINK_DAYS = 180
+
+
+def _ensure_login_links(cur):
+    cur.execute("""CREATE TABLE IF NOT EXISTS login_links (
+                     token_hash   TEXT PRIMARY KEY,
+                     canonical_id TEXT NOT NULL,
+                     created_by   TEXT,
+                     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+                     expires_at   TIMESTAMPTZ NOT NULL,
+                     revoked_at   TIMESTAMPTZ,
+                     last_used_at TIMESTAMPTZ,
+                     uses         INT NOT NULL DEFAULT 0)""")
+    cur.execute("CREATE INDEX IF NOT EXISTS login_links_cid ON login_links (canonical_id)")
+
+
+def _app_url() -> str:
+    return (os.environ.get("FRONTEND_URL") or "https://app.deepfrag.gg").rstrip("/")
+
+
+@app.post("/api/admin/players/{canonical_id}/login-link")
+def admin_login_link_create(canonical_id: str, authorization: str | None = Header(default=None),
+                            days: int = Body(default=LOGIN_LINK_DAYS, embed=True)):
+    """Issue a sign-in link for a player (ladder-admin). Returns the URL once; DM it to
+    the player. Previous links for the player stay valid until revoked."""
+    import hashlib, secrets
+    admin = _check_ladder_admin(authorization)
+    days = max(1, min(int(days or LOGIN_LINK_DAYS), 365))
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""SELECT canonical_id, display_name FROM players_canonical
+                       WHERE canonical_id=%s OR LOWER(canonical_id)=LOWER(%s) LIMIT 1""", (canonical_id, canonical_id))
+        pl = cur.fetchone()
+        if not pl:
+            raise HTTPException(404, "player not found")
+        _ensure_login_links(cur)
+        token = secrets.token_urlsafe(32)
+        cur.execute("""INSERT INTO login_links (token_hash, canonical_id, created_by, expires_at)
+                       VALUES (%s, %s, %s, now() + make_interval(days => %s))""",
+                    (hashlib.sha256(token.encode()).hexdigest(), pl["canonical_id"],
+                     str(admin.get("discord_id") or "sync_secret"), days))
+        conn.commit()
+    # token rides in the URL FRAGMENT: it never reaches the server or the CF path normaliser
+    return {"canonical_id": pl["canonical_id"], "display": pl["display_name"],
+            "url": f"{_app_url()}/login/link#t={token}", "expires_in_days": days}
+
+
+@app.post("/api/admin/players/{canonical_id}/login-link/revoke")
+def admin_login_link_revoke(canonical_id: str, authorization: str | None = Header(default=None)):
+    """Revoke every sign-in link issued for a player (ladder-admin). Existing sessions
+    minted from them expire on their own (30 days)."""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_login_links(cur)
+        cur.execute("""UPDATE login_links SET revoked_at=now()
+                       WHERE LOWER(canonical_id)=LOWER(%s) AND revoked_at IS NULL""", (canonical_id,))
+        n = cur.rowcount
+        conn.commit()
+    return {"canonical_id": canonical_id, "revoked": n}
+
+
+@app.get("/api/admin/login-links")
+def admin_login_links_list(authorization: str | None = Header(default=None)):
+    """Issued sign-in links (no tokens), newest first (ladder-admin)."""
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_login_links(cur)
+        cur.execute("""SELECT l.canonical_id, p.display_name AS display, l.created_at, l.expires_at,
+                              l.revoked_at, l.last_used_at, l.uses,
+                              (l.revoked_at IS NULL AND l.expires_at > now()) AS active
+                       FROM login_links l LEFT JOIN players_canonical p ON p.canonical_id = l.canonical_id
+                       ORDER BY l.created_at DESC LIMIT 200""")
+        rows = [dict(r) for r in cur.fetchall()]
+    return {"links": rows}
+
+
+@app.post("/api/auth/link")
+def auth_link(token: str = Body(..., embed=True), response: Response = None):
+    """Exchange a sign-in link token for a session JWT. Same session shape as the
+    Discord callback; the user row is the synthetic link:<canonical_id> account,
+    already linked and verified (an admin issued the link)."""
+    import hashlib
+    import auth as A
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store"
+    tok = (token or "").strip()
+    if not tok or len(tok) > 200:
+        raise HTTPException(400, "bad link")
+    h = hashlib.sha256(tok.encode()).hexdigest()
+    with pg() as conn:
+        cur = conn.cursor()
+        _ensure_login_links(cur)
+        cur.execute("""SELECT canonical_id, revoked_at, expires_at < now() AS expired
+                       FROM login_links WHERE token_hash=%s""", (h,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(401, "this sign-in link isn't valid")
+        if row["revoked_at"]:
+            raise HTTPException(401, "this sign-in link was revoked — ask an admin for a new one")
+        if row["expired"]:
+            raise HTTPException(401, "this sign-in link has expired — ask an admin for a new one")
+        cid = row["canonical_id"]
+        cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id=%s", (cid,))
+        pr = cur.fetchone()
+        display = (pr and pr["display_name"]) or cid
+        A.ensure_users(cur)
+        uid = f"link:{cid}"
+        cur.execute("""INSERT INTO users (discord_id, username, global_name, avatar, canonical_id, verified, last_login)
+                       VALUES (%s, %s, %s, NULL, %s, TRUE, now())
+                       ON CONFLICT (discord_id) DO UPDATE SET
+                           username=EXCLUDED.username, global_name=EXCLUDED.global_name,
+                           canonical_id=EXCLUDED.canonical_id, last_login=now()""",
+                    (uid, display, display, cid))
+        cur.execute("UPDATE login_links SET last_used_at=now(), uses=uses+1 WHERE token_hash=%s", (h,))
+        conn.commit()
+    jwt = A.jwt_encode({"sub": uid, "name": display})
+    return {"token": jwt, "canonical_id": cid, "display": display}
+
+
 @app.post("/api/auth/location")
 def auth_set_location(authorization: str | None = Header(default=None),
                       state: str | None = Body(default=None, embed=True),

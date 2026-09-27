@@ -28,6 +28,45 @@ function startEditTeam(t) {
   editTeam.value = { id: t.id, name: t.name, tag: t.tag || '', members: t.members || [], has_logo: t.has_logo }
 }
 function onTeamEdited() { editTeam.value = null; note('team updated'); load() }
+
+// Sign-in links (2026-09-27): log a player in without Discord. Pick a player, create a
+// link, DM it. The API returns the URL once; only active links are listed (no tokens).
+const linkQuery = ref(''); const linkResults = ref([]); const linkPlayer = ref(null)
+const linkUrl = ref(''); const linkBusy = ref(false); const issuedLinks = ref([])
+let linkTimer = null
+watch(linkQuery, (v) => {
+  linkPlayer.value = null; linkUrl.value = ''; clearTimeout(linkTimer)
+  if (!v || v.length < 2) { linkResults.value = []; return }
+  linkTimer = setTimeout(searchLinkPlayer, 220)
+})
+async function searchLinkPlayer() {
+  try { const r = await $fetch(`${base}/api/search?q=${encodeURIComponent(linkQuery.value)}&limit=8`); linkResults.value = r.results || [] }
+  catch { linkResults.value = [] }
+}
+function pickLinkPlayer(p) { linkPlayer.value = p; linkResults.value = []; linkQuery.value = p.display }
+async function createLink() {
+  if (!linkPlayer.value || linkBusy.value) return
+  linkBusy.value = true
+  try {
+    const r = await $fetch(`${base}/api/admin/players/${encodeURIComponent(linkPlayer.value.canonical_id)}/login-link`, { method: 'POST', headers: authHeader(), body: {} })
+    linkUrl.value = r.url; note(`sign-in link ready for ${r.display} — copy it and DM it`); await loadLinks()
+  } catch (e) { err.value = e?.data?.detail || 'could not create the link' } finally { linkBusy.value = false }
+}
+async function copyLink() {
+  try { await navigator.clipboard.writeText(linkUrl.value); note('link copied') }
+  catch { err.value = 'copy failed — select the link text and copy it' }
+}
+async function revokeLinks(cid) {
+  try {
+    const r = await $fetch(`${base}/api/admin/players/${encodeURIComponent(cid)}/login-link/revoke`, { method: 'POST', headers: authHeader() })
+    note(`revoked ${r.revoked} link${r.revoked === 1 ? '' : 's'}`); if (linkPlayer.value?.canonical_id === cid) linkUrl.value = ''; await loadLinks()
+  } catch (e) { err.value = e?.data?.detail || 'revoke failed' }
+}
+async function loadLinks() {
+  try { const r = await $fetch(`${base}/api/admin/login-links`, { headers: authHeader() }); issuedLinks.value = (r.links || []).filter(l => l.active) }
+  catch { /* not fatal */ }
+}
+watch(isAdmin, (v) => { if (v) loadLinks() }, { immediate: true })
 const supportTickets = ref([])  // ladder-area tickets (read-only monitoring)
 const ticketOpen = ref(null)
 function fmtTicketDate(s) { return s ? new Date(s).toLocaleString() : '—' }
@@ -411,6 +450,30 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               <button class="btn" @click="addTeam">Add</button>
             </div>
           </section>
+
+          <!-- Sign-in links: log a player in without Discord -->
+          <section class="card">
+            <h2>Sign-in link <span class="muted small">— for players who won't use Discord</span></h2>
+            <p class="muted small" style="margin:0 0 10px;">Pick a player, create a link, DM it to them. Opening it signs them in as that profile, so challenges, times, picks and reports all work. Links last 180 days; revoke here if one leaks.</p>
+            <div class="form">
+              <input v-model="linkQuery" placeholder="player nick">
+              <button class="btn" :disabled="!linkPlayer || linkBusy" @click="createLink">{{ linkBusy ? 'Creating…' : 'Create sign-in link' }}</button>
+            </div>
+            <div v-if="linkResults.length" class="res">
+              <button v-for="p in linkResults" :key="p.canonical_id" class="res-row" @click="pickLinkPlayer(p)"><span>{{ p.display }}</span><span class="muted small">{{ p.matches }} games</span></button>
+            </div>
+            <div v-if="linkUrl" class="linkbox">
+              <code>{{ linkUrl }}</code>
+              <button class="btn sm" @click="copyLink">Copy</button>
+            </div>
+            <div v-if="issuedLinks.length" style="margin-top:10px;">
+              <div v-for="l in issuedLinks" :key="l.canonical_id + l.created_at" class="srow">
+                <span>{{ l.display || l.canonical_id }}</span>
+                <span class="muted small">issued {{ new Date(l.created_at).toLocaleDateString() }} · used {{ l.uses }}×<template v-if="l.last_used_at">, last {{ new Date(l.last_used_at).toLocaleDateString() }}</template></span>
+                <button class="btn sm" style="margin-left:auto;" @click="revokeLinks(l.canonical_id)">Revoke</button>
+              </div>
+            </div>
+          </section>
         </template>
       </template>
     </ClientOnly>
@@ -475,6 +538,11 @@ h1 { font-size: 24px; font-weight: 900; margin: 0 0 20px; }
 .ok-note { background: rgba(34,197,94,0.12); color: #86efac; padding: 8px 14px; border-radius: 8px; font-size: 13px; }
 .err-note { background: rgba(239,68,68,0.12); color: #fca5a5; padding: 8px 14px; border-radius: 8px; font-size: 13px; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; margin-bottom: 16px; }
+.res { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; max-height: 200px; overflow-y: auto; }
+.res-row { display: flex; justify-content: space-between; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 13px; color: var(--fg); font-family: inherit; }
+.res-row:hover { border-color: var(--accent); }
+.linkbox { display: flex; align-items: center; gap: 10px; margin-top: 10px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 0; }
+.linkbox code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; color: var(--fg); }
 .card h2 { font-size: 15px; font-weight: 800; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
 .card h2 .count { background: var(--panel-2); color: var(--fg-2); border-radius: 999px; padding: 1px 8px; font-size: 12px; }
 .prow, .srow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 14px; }

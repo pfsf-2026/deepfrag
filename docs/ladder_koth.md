@@ -48,6 +48,18 @@ Cloud Run (env vars survive Cloud Build deploys):
 `gcloud run services update deepfrag-api --region us-central1 --project deepfrag-prod --update-env-vars DISCORD_WEBHOOK_URL_1V1='<webhook url>'`.
 The daily digest posts one block per active ladder to that ladder's channel.
 
+## Sign-in links (log in without Discord, 2026-09-27)
+
+For players who won't use Discord (Awup was the first). An admin picks the player on
+`/ladder/admin` → "Sign-in link" → the API issues `https://app.deepfrag.gg/login/link#t=<token>`
+(shown once; the token rides in the URL fragment so it never hits the server or Cloudflare's
+path normaliser). Opening it POSTs `/api/auth/link` → same session JWT as the Discord flow,
+bound to the synthetic user `link:<canonical_id>` (already linked + verified) → bounce to
+`/ladder?l=1v1`. Links last 180 days, are reusable across devices, and are revoked per player
+(`POST /api/admin/players/{id}/login-link/revoke`; list at `GET /api/admin/login-links`). Only
+the SHA-256 of a token is stored (`login_links`). Sessions minted from a revoked link expire
+on their own (30 days). Endpoints take ladder-admin auth (SYNC_SECRET or an is_admin Discord user).
+
 ## Rules JSON (allowlist in `api.py` `admin_ladder_rules`)
 
 | key | default | effect |
