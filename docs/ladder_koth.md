@@ -60,6 +60,18 @@ bound to the synthetic user `link:<canonical_id>` (already linked + verified) â†
 the SHA-256 of a token is stored (`login_links`). Sessions minted from a revoked link expire
 on their own (30 days). Endpoints take ladder-admin auth (SYNC_SECRET or an is_admin Discord user).
 
+## 1v1 rule set (2026-09-28)
+
+`rung_jump` 3 (challenge 1-3 rungs up; the 2v2 ladder stays at 2) and `forfeit_days` 5: a
+challenge must be scheduled AND played within 5 days of issuance without an admin. The API
+drops offered times past the deadline (opening offer and re-posts) and the scheduler calendar
+stops at the window. Longer needs an admin: `POST /api/admin/ladder/challenge/{id}/extend
+{"days": N}` (1-14, adds to the deadline, posts "Extension approved" to the channel) â€” the
+Extend button on `/ladder/admin`. The rules tab derives its numbers from `ladder.rules`.
+Discord posts: `notify.send()` uses `wait=true` and keeps the message id
+(`notify.last_message_id()`, returned by `/api/admin/notify`); `POST /api/admin/notify/edit`
+edits an earlier post.
+
 ## Rules JSON (allowlist in `api.py` `admin_ladder_rules`)
 
 | key | default | effect |
