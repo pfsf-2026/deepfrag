@@ -4729,7 +4729,7 @@ def admin_ladder_team_approve(team_id: int, authorization: str | None = Header(d
         conn.commit()
     try:
         import notify
-        notify.send(embed={"title": "✅ Team approved",
+        notify.send(embed={"title": f"✅ {notify.unit(cap=True)} approved",
                            "description": f"**{t['name']}** joins the ladder at rung {rung}.",
                            "color": 0x22C55E})
     except Exception:
@@ -4781,7 +4781,7 @@ def admin_ladder_team_remove(team_id: int, authorization: str | None = Header(de
         cancelled = [r["id"] for r in cur.fetchall()]
         conn.commit()
     try:
-        notify.send(content=(f"🚫 **{name}** has been removed from the KOTH ladder — teams below shift up one rung."
+        notify.send(content=(f"🚫 **{name}** has been removed from the KOTH ladder — {notify.unit(True)} below shift up one rung."
                              + (f" ({len(cancelled)} open challenge(s) cancelled.)" if cancelled else "")))
     except Exception:
         pass
@@ -7517,8 +7517,8 @@ def admin_ladder_team_archive(team_id: int, authorization: str | None = Header(d
     if notify_discord:
         try:
             import notify
-            notify.send(content=(f"🪦 **{t['name']}** has retired from the KOTH ladder — teams below shift up one rung. "
-                                 f"Their stats and match history stay on their team page."))
+            notify.send(content=(f"🪦 **{t['name']}** has retired from the KOTH ladder — {notify.unit(True)} below shift up one rung. "
+                                 f"Their stats and match history stay on their ladder page."))
         except Exception:
             pass
     return {"archived": team_id, "name": t["name"], **res}

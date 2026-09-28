@@ -64,6 +64,12 @@ def current_route() -> str | None:
     return _ROUTE.get()
 
 
+def unit(plural: bool = False, cap: bool = False) -> str:
+    """'team'/'teams' on team ladders, 'player'/'players' on the 1v1 ladder (by the current route)."""
+    w = ("players" if plural else "player") if _ROUTE.get() == "1on1" else ("teams" if plural else "team")
+    return w.capitalize() if cap else w
+
+
 def _url() -> str | None:
     env = ROUTES.get(_ROUTE.get() or "")
     if env:
@@ -219,7 +225,7 @@ def challenge_withdrawn(challenger: str, challenged: str, mention: str | None = 
     """The challenger pulled their (not-yet-scheduled) challenge. Both teams free.
     challenger/challenged are LABELS, challenger first."""
     return send(content=f"↩️ {challenger} withdrew their challenge against {challenged}. "
-                        f"Both teams are free again.")
+                        f"Both {unit(True)} are free again.")
 
 
 def match_reminder(a_name: str, a_ping: str, b_name: str, b_ping: str,
@@ -244,7 +250,7 @@ def match_rescheduled(team_a: str, team_b: str, when: str | None, server: str | 
 def challenge_overdue(team_a: str, team_b: str, deadline: str | None, mention: str | None = None):
     """A challenge blew past its play-by deadline. team_a/team_b are LABELS."""
     return send(content=f"⏳ Challenge overdue — {team_a} vs {team_b} wasn't played by "
-                        f"{fmt_et(deadline)}.\nAdmins — review (forfeit the challenged team, or extend).")
+                        f"{fmt_et(deadline)}.\nAdmins — review (forfeit the challenged {unit()}, or extend).")
 
 
 def data_health_alert(problems: list, latest: str | None):
