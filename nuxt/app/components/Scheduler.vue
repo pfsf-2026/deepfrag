@@ -22,6 +22,7 @@ const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 const tz = computed(() => resolveTz(user.value))
 const tzIsGuess = computed(() => !tzKnown(user.value))
 
+const { isDuel, words } = useLadders()   // 1v1: 'you' / 'player' wording
 const createMode = computed(() => !props.challenge && !!props.createTarget)
 const c = props.challenge || {
   id: null,
@@ -240,7 +241,7 @@ function freeGroups(iso) {
 }
 function freeTitle(iso) {
   const g = freeGroups(iso)
-  return g.length ? `Usually free — ${g.map(x => `${x.team}: ${x.names.join(', ')}`).join(' · ')}` : ''
+  return g.length ? `Usually free — ${g.map(x => isDuel.value ? x.names.join(', ') : `${x.team}: ${x.names.join(', ')}`).join(' · ')}` : ''
 }
 const hasOverlay = computed(() => overlayMeta.value.withAvail > 0)
 async function confirmSlot() {
@@ -285,15 +286,15 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
       <!-- propose / counter-propose availability -->
       <template v-else-if="view === 'fill'">
         <p class="lede">
-          <template v-if="createMode">You're challenging <strong>{{ c.challenged }}</strong> — check every slot <strong>your team</strong> can play. The challenge is issued with these times and they pick one.</template>
-          <template v-else>Check every slot <strong>your team</strong> can play over the next 7 days — the other team picks one (or suggests different times).</template>
+          <template v-if="createMode">You're challenging <strong>{{ c.challenged }}</strong> — check every slot <strong>{{ isDuel ? 'you' : 'your team' }}</strong> can play. The challenge is issued with these times and they pick one.</template>
+          <template v-else>Check every slot <strong>{{ isDuel ? 'you' : 'your team' }}</strong> can play inside the window — the other {{ words.team }} picks one (or suggests different times).</template>
         </p>
         <div class="tz-note">
           🕒 Times shown in <strong>{{ tz }}</strong>. Prime time is 7pm–2am ET.
           <a v-if="tzIsGuess" class="tz-link" @click="showSettings = true">Showing Eastern — set your time zone →</a>
         </div>
         <button v-if="countering" class="link-btn" @click="countering = false">← back to {{ proposerName }}'s times</button>
-        <p v-if="hasOverlay" class="legend"><span class="fdot">2</span> = players (either team) whose general availability covers that time — hover a slot to see who. Set yours from the ladder page.</p>
+        <p v-if="hasOverlay" class="legend"><span class="fdot">2</span> = {{ isDuel ? 'players' : 'players (either team)' }} whose general availability covers that time — hover a slot to see who. Set yours from the ladder page.</p>
         <div class="grid-scroll">
           <div class="grid">
             <div v-for="day in days" :key="day.label" class="day">
@@ -334,13 +335,13 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
             <span class="pl-time">{{ fmtLocal(iso) }}</span>
             <span v-if="freeCount(iso)" class="pl-free">
               <span class="fdot" :class="{ allfree: freeCount(iso) === overlayMeta.withAvail }">{{ freeCount(iso) }}</span>
-              <span v-for="g in freeGroups(iso)" :key="g.team" class="ftag">{{ g.team }}: {{ g.names.join(', ') }}</span>
+              <span v-for="g in freeGroups(iso)" :key="g.team" class="ftag">{{ isDuel ? g.names.join(', ') : g.team + ': ' + g.names.join(', ') }}</span>
             </span>
           </label>
         </div>
         <button class="link-btn" @click="countering = true">None of these work — suggest different times →</button>
         <div class="fld">
-          <span>Server <span class="muted">— suggested from both teams' ping history</span></span>
+          <span>Server <span class="muted">— suggested from both {{ words.teams }}' ping history</span></span>
           <div v-if="sugLoading" class="muted small">Crunching pings…</div>
           <div v-else-if="suggestions.length" class="sug-list">
             <button v-for="(s, i) in suggestions" :key="s.host" class="sug" :class="{ on: server === s.host }" @click="server = s.host">
@@ -371,7 +372,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
       <!-- waiting states -->
       <div v-else class="done">
         <p v-if="view === 'waiting-pick'" class="muted">✓ You proposed {{ proposedLocal.length }} time{{ proposedLocal.length === 1 ? '' : 's' }}. Waiting for <strong>{{ teamName(turnTeamId) }}</strong> to pick one or suggest different times.</p>
-        <p v-else class="muted">No times posted yet — either team can post availability. (Log in as a player on <strong>{{ c.challenger }}</strong> or <strong>{{ c.challenged }}</strong> to post yours.)</p>
+        <p v-else class="muted">No times posted yet — either {{ words.team }} can post availability. (Log in as {{ isDuel ? '' : 'a player on ' }}<strong>{{ c.challenger }}</strong> or <strong>{{ c.challenged }}</strong> to post yours.)</p>
       </div>
     </div>
   </div>

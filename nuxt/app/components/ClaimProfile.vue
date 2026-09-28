@@ -1,4 +1,5 @@
 <script setup>
+const { isDuel } = useLadders()
 // Account<->profile claim UI (option C with B fallback). Shown after Discord
 // login when the user has no linked profile and no pending claim:
 //  1. Fuzzy-match their Discord name(s) to player profiles -> one-click pick.
@@ -65,7 +66,7 @@ async function claim(p) {
       <div class="check">✓</div>
       <div>
         <h3>You're linked to {{ picked.display }}</h3>
-        <p>Your stats are connected. Go ahead and add your team — an admin will verify your profile later.</p>
+        <p>Your stats are connected. Go ahead and {{ isDuel ? 'join the ladder' : 'add your team' }} — an admin will verify your profile later.</p>
       </div>
     </div>
 
