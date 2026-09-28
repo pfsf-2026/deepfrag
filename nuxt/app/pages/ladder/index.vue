@@ -41,6 +41,10 @@ const myOpenChallenge = computed(() => {
   return challenges.value.find(c => c.challenger_id === myTeam.value.id || c.challenged_id === myTeam.value.id) || null
 })
 const ladderOpen = computed(() => !!ladder.value?.rules?.open)
+// Ladder-specific rule numbers (2v2: 2 rungs / 7-day window; 1v1: 3 rungs / 5-day window as of 2026-09-28)
+const rungJump = computed(() => Number(ladder.value?.rules?.rung_jump) || 2)
+const windowDays = computed(() => Number(ladder.value?.rules?.forfeit_days) || 7)
+const shortDays = computed(() => Number(ladder.value?.rules?.short_window_days) || 3)
 const TEAMS_TO_OPEN = 10
 // Launch flow (Peter, 2026-09-23): a sign-up window (rules.signup_until), then admins seed
 // the board and open challenges. Late entrants start at the bottom rung.
@@ -79,7 +83,7 @@ function canChallenge(t) {
   if (!myTeam.value || !myTeam.value.rung || !t.rung || myOpenChallenge.value) return false
   if (myCooldown.value) return false   // my team lost recently — benched from challenging
   const gap = myTeam.value.rung - t.rung
-  return gap === 1 || gap === 2
+  return gap >= 1 && gap <= rungJump.value
 }
 const challengeErr = ref('')
 const schedulerChallenge = ref(null)
@@ -95,8 +99,7 @@ function doChallenge(t) {
     challengerId: myTeam.value.id,
     challengedId: t.id,
     challenger: myTeam.value.name,
-    challenged: t.name
-  }
+    challenged: t.name, windowDays: windowDays.value }
 }
 async function onChallengeCreated() { createTarget.value = null; await load() }
 // "Report match" — self-service for a played bo3 that didn't record.
@@ -322,7 +325,7 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
         <ClaimProfile v-if="needsClaim" />
         <div v-else-if="user?.pending_claim" class="note">⏳ Profile claim for <strong>{{ user.pending_claim.display }}</strong> is awaiting admin approval.</div>
         <div v-if="joined" class="note">✅ You're signed up as <strong>{{ joined.name }}</strong>.
-          <template v-if="ladderOpen">You start at the bottom — challenge someone 1–2 rungs above you.</template>
+          <template v-if="ladderOpen">You start at the bottom — challenge someone 1–{{ rungJump }} rungs above you.</template>
           <template v-else-if="signupWindowOpen">Sign-ups close {{ fmtDay(signupUntil) }}; then we seed the board and open challenges.</template>
           <template v-else>Challenges open once the board is seeded.</template></div>
         <div v-else-if="teamSubmitted" class="note">✅ Team <strong>{{ teamSubmitted }}</strong> submitted — an admin will approve it and you'll appear on the board.</div>
@@ -501,12 +504,12 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
         <section class="card rules">
           <h3>How it works</h3>
           <ul>
-            <li>Challenge a {{ words.team }} <strong>1 or 2 rungs</strong> above you.</li>
+            <li>Challenge a {{ words.team }} <strong>1 to {{ rungJump }} rungs</strong> above you.</li>
             <li><strong>Issuing a challenge includes your availability</strong> — you pick {{ isDuel ? 'your' : "your team's" }} playable time slots as part of the challenge (at least one required). The challenged {{ words.team }} then just picks one.</li>
-            <li><strong>Offer times on at least 2 different days</strong> to get the full <strong>7-day</strong> window. An offer covering <strong>only 1 day</strong> gets a short <strong>3-day</strong> window and, if unplayed, the challenge simply <strong>expires with no ladder movement</strong> — a single take-it-or-leave-it time can't earn a forfeit.</li>
+            <li><strong>Offer times on at least 2 different days</strong> to get the full <strong>{{ windowDays }}-day</strong> window. The match has to be <strong>played inside that window</strong> — times offered after it don't count. An offer covering <strong>only 1 day</strong> gets a short <strong>{{ shortDays }}-day</strong> window and, if unplayed, the challenge simply <strong>expires with no ladder movement</strong> — a single take-it-or-leave-it time can't earn a forfeit.</li>
             <li><strong>Either {{ words.team }} may re-post availability</strong> at any point before a time is locked — scheduling is never stuck waiting on one side.</li>
             <li><strong>Win a 1-rung challenge</strong> → swap places.</li>
-            <li><strong>Win a 2-rung challenge</strong> → swap places too. The two {{ words.teams }} that played simply exchange rungs; no other {{ words.team }} moves (e.g. rung 5 beats rung 3 → 5 and 3 swap, rung 4 is untouched).</li>
+            <li><strong>Win a bigger jump</strong> (2{{ rungJump > 2 ? ' or ' + rungJump : '' }} rungs) → swap places too. The two {{ words.teams }} that played simply exchange rungs; no other {{ words.team }} moves (e.g. rung 5 beats rung 3 → 5 and 3 swap, rung 4 is untouched).</li>
             <li><strong>Forfeit</strong> (no game within the window, with a valid 2-day offer on the table) → the challenged {{ words.team }} drops a rung.</li>
             <li>Best of 3 (first to 2) sets the ladder W/L. Natural Bo3 only — a 2–0 is two games, a 2–1 is three; only those games count toward stats, no extra/dead-rubber games. Winners may challenge again immediately.</li>
             <li><strong>Withdraw:</strong> the <strong>challenging</strong> {{ words.team }} can pull a challenge any time <strong>before it's scheduled</strong> (no agreed time yet) — this frees both sides. The challenged {{ words.team }} can't withdraw; only the side that issued it.</li>

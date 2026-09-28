@@ -77,7 +77,10 @@ const days = computed(() => {
   const out = []
   // "today" in ET
   const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: ET }))
-  for (let off = 0; off < 7; off++) {
+  // Horizon: the challenge's remaining window (deadline) or, when creating, the ladder's window; never past 7 days.
+  const dl = props.challenge?.deadline ? new Date(props.challenge.deadline).getTime() : null
+  const horizon = dl ? Math.max(1, Math.ceil((dl - Date.now()) / 86400000)) : (Number(props.createTarget?.windowDays) || 7)
+  for (let off = 0; off < Math.min(7, horizon); off++) {
     const base = new Date(nowET); base.setDate(nowET.getDate() + off)
     const y = base.getFullYear(), mo = base.getMonth(), d = base.getDate()
     const slots = SLOTS_ET.map((hf) => {

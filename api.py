@@ -6119,8 +6119,9 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
         if cr is None or hr is None:
             raise HTTPException(409, "both teams must be placed on the ladder")
         gap = cr - hr  # challenger is below (larger rung) by this many
-        if gap not in (1, 2):
-            raise HTTPException(409, "you can only challenge 1 or 2 rungs up")
+        max_jump = int((lad.get("rules") or {}).get("rung_jump") or 2)   # 2 on the 2v2 ladder, 3 on 1v1 (2026-09-28)
+        if not (1 <= gap <= max_jump):
+            raise HTTPException(409, f"you can only challenge 1 to {max_jump} rungs up" if max_jump > 1 else "you can only challenge 1 rung up")
         # One open challenge per team at a time (either side).
         cur.execute("""SELECT 1 FROM ladder_challenges
                        WHERE ladder_id=%s AND status IN ('open','scheduled')
@@ -6162,6 +6163,10 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
         else:
             window_days = (lad.get("rules") or {}).get("short_window_days", 3)
         deadline = datetime.now(timezone.utc) + timedelta(days=window_days)
+        # The match must be PLAYED inside the window, so times after the deadline are dropped (2026-09-28 rule).
+        clean = [t for t in clean if datetime.fromisoformat(t.replace("Z", "+00:00")) <= deadline]
+        if not clean:
+            raise HTTPException(400, f"all the times you offered fall after the {window_days}-day window — offer times within {window_days} days")
         cur.execute("""INSERT INTO ladder_challenges
                        (ladder_id, challenger_id, challenged_id, rungs_up, deadline, proposed, proposed_by,
                         proposed_at, proposal_log)
@@ -6474,6 +6479,11 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
         elif not _user_on_team(cur, user, turn):
             raise HTTPException(403, "it's not your team's turn to suggest times")
         clean = sorted(clean)   # chronological in the Discord message + pick list
+        if ch.get("deadline"):   # the match must be played inside the window (2026-09-28 rule)
+            dl = ch["deadline"]
+            clean = [t for t in clean if datetime.fromisoformat(t.replace("Z", "+00:00")) <= dl]
+            if not clean:
+                raise HTTPException(400, f"all those times fall after this challenge's play-by deadline ({dl.astimezone(timezone.utc).strftime('%b %d %H:%M')} UTC)")
         cur.execute("""UPDATE ladder_challenges
                        SET proposed=%s, proposed_by=%s, proposed_at=now(),
                            proposal_log = COALESCE(proposal_log, '[]'::jsonb) || %s::jsonb

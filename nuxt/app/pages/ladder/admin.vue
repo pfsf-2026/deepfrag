@@ -459,7 +459,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               </select>
               <button class="btn" @click="createChallenge">Create</button>
             </div>
-            <p class="muted small" style="margin-top:6px;">Challenger must be 1–2 rungs below the challenged {{ lw.team }}. As admin you can arrange any valid matchup, then schedule it below / on the board.</p>
+            <p class="muted small" style="margin-top:6px;">Challenger must be 1–{{ ladder?.rules?.rung_jump || 2 }} rungs below the challenged {{ lw.team }}. As admin you can arrange any valid matchup, then schedule it below / on the board.</p>
           </section>
 
           <!-- Manual add/seed: a player on 1v1 (nick search), a team on 2v2 -->
