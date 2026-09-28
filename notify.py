@@ -96,14 +96,44 @@ def send(content: str | None = None, embed: dict | None = None) -> bool:
         return False
     try:
         req = urllib.request.Request(
-            url, data=json.dumps(payload).encode(),
+            url + ("&" if "?" in url else "?") + "wait=true",   # wait=true → Discord returns the message (we keep its id for edits)
+            data=json.dumps(payload).encode(),
             # Discord webhooks sit behind Cloudflare, which 403s the default
             # python-urllib User-Agent with "error code: 1010". Send a real UA
             # (same gotcha as the OAuth token call) or the post silently fails.
             headers={"Content-Type": "application/json",
                      "User-Agent": "DeepFrag-KOTH/1.0 (+https://deepfrag.pages.dev)"},
             method="POST")
-        with urllib.request.urlopen(req, timeout=5) as r:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            ok = 200 <= r.status < 300
+            try:
+                _LAST_ID.set(str(json.loads(r.read() or b"{}").get("id") or ""))
+            except Exception:
+                pass
+            return ok
+    except Exception:
+        return False
+
+
+_LAST_ID: contextvars.ContextVar = contextvars.ContextVar("deepfrag_notify_last_id", default="")
+
+
+def last_message_id() -> str:
+    """Discord id of the last message send() posted in this request (empty if none)."""
+    return _LAST_ID.get()
+
+
+def edit(message_id: str, content: str) -> bool:
+    """Edit a previous webhook post (same channel as the current route). Never raises."""
+    url = _url()
+    if not url or not message_id:
+        return False
+    try:
+        req = urllib.request.Request(
+            url.split("?")[0] + f"/messages/{message_id}", data=json.dumps({"content": content}).encode(),
+            headers={"Content-Type": "application/json", "User-Agent": "DeepFrag-KOTH/1.0 (+https://deepfrag.pages.dev)"},
+            method="PATCH")
+        with urllib.request.urlopen(req, timeout=8) as r:
             return 200 <= r.status < 300
     except Exception:
         return False

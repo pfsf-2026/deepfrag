@@ -247,6 +247,14 @@ async function submitReport() {
     note('result recorded'); report.value = null; await load()
   } catch (e) { err.value = e?.data?.detail || 'report failed' }
 }
+async function extendChallenge(c) {
+  const d = Number(window.prompt('Extend the play-by deadline by how many days?', '2'))
+  if (!d || d < 1) return
+  try {
+    const r = await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/extend`, { method: 'POST', headers: authHeader(), body: { days: d } })
+    note(`deadline extended ${r.added_days}d`); await load()
+  } catch (e) { err.value = e?.data?.detail || 'extend failed' }
+}
 async function forfeit(c) {
   try { await $fetch(`${base}/api/admin/ladder/challenge/${c.id}/forfeit`, { method: 'POST', headers: authHeader() }); note('forfeit recorded'); await load() }
   catch (e) { err.value = e?.data?.detail || 'forfeit failed' }
@@ -395,6 +403,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               <button class="btn sm" @click="schedulerC = c">Schedule</button>
               <button v-if="c.agreed_at" class="btn sm ghost" @click="startReschedule(c)">Reschedule</button>
               <button class="btn sm ghost" @click="startReport(c)">Report</button>
+              <button class="btn sm ghost" title="Admin-approved extension of the play-by deadline" @click="extendChallenge(c)">Extend</button>
               <button class="btn sm ghost" @click="forfeit(c)">Forfeit</button>
               <button class="btn sm danger" @click="cancelChallenge(c)">Cancel</button>
               <div v-if="reschedC && reschedC.id === c.id" class="resched" @click.stop>

@@ -7270,7 +7270,24 @@ def admin_notify(authorization: str | None = Header(default=None),
             _notify_route(conn.cursor(), ladder_id=ladder_id)
     else:
         notify.set_route(None)
-    return {"sent": notify.send(content=content)}
+    ok = notify.send(content=content)
+    return {"sent": ok, "message_id": notify.last_message_id() or None}
+
+
+@app.post("/api/admin/notify/edit")
+def admin_notify_edit(authorization: str | None = Header(default=None),
+                      message_id: str = Body(..., embed=True),
+                      content: str = Body(..., embed=True),
+                      ladder_id: int | None = Body(default=None, embed=True)):
+    """Admin: edit an earlier webhook post (its message_id comes back from /api/admin/notify)."""
+    _check_ladder_admin(authorization)
+    import notify
+    if ladder_id is not None:
+        with pg() as conn:
+            _notify_route(conn.cursor(), ladder_id=ladder_id)
+    else:
+        notify.set_route(None)
+    return {"edited": notify.edit(str(message_id), content)}
 
 
 @app.post("/api/admin/players/{canonical_id}/unrated")
@@ -7384,6 +7401,39 @@ def admin_ladder_reschedule(challenge_id: int, authorization: str | None = Heade
     except Exception:
         pass
     return {"challenge_id": challenge_id, "agreed_at": dt.isoformat(), "server": new_server}
+
+
+@app.post("/api/admin/ladder/challenge/{challenge_id}/extend")
+def admin_ladder_extend(challenge_id: int, authorization: str | None = Header(default=None),
+                        days: int = Body(default=2, embed=True)):
+    """Admin-approved extension of a challenge's play-by deadline (the rule: N days without
+    an admin; longer needs one — 2026-09-28). Adds `days` (1-14) to the deadline of an open or
+    scheduled challenge and tells the channel. Times offered after the new deadline still don't count."""
+    import ladder as _ladder
+    import notify
+    _check_ladder_admin(authorization)
+    days = max(1, min(int(days or 2), 14))
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT id, ladder_id, challenger_id, challenged_id, status, deadline FROM ladder_challenges WHERE id=%s", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] not in ("open", "scheduled"):
+            raise HTTPException(409, "only open or scheduled challenges can be extended")
+        _notify_route(cur, ladder_id=ch["ladder_id"])
+        base = ch["deadline"] or datetime.now(timezone.utc)
+        new_deadline = max(base, datetime.now(timezone.utc)) + timedelta(days=days)
+        cur.execute("UPDATE ladder_challenges SET deadline=%s WHERE id=%s", (new_deadline, challenge_id))
+        cl, cd = _team_label(cur, ch["challenger_id"]), _team_label(cur, ch["challenged_id"])
+        conn.commit()
+    try:
+        notify.send(content=(f"⏳ **Extension approved** — {cl} vs {cd} now has until "
+                             f"**{notify.fmt_et(new_deadline.isoformat())}** to get it played (+{days}d)."))
+    except Exception:
+        pass
+    return {"challenge_id": challenge_id, "deadline": new_deadline.isoformat(), "added_days": days}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/forfeit")
