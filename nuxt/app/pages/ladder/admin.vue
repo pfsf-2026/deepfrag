@@ -7,7 +7,7 @@
 const { user, loggedIn, ready, authHeader, fetchMe, login } = useAuth()
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
-const { ladders, current: pickedLadder, loadList, switchTo, words: lw, ladderSlug } = useLadders()
+const { ladders, current: pickedLadder, loadList, switchTo, words: lw, ladderSlug, isDuel } = useLadders()
 
 const ladder = ref(null)
 const teams = ref([])
@@ -20,6 +20,28 @@ const err = ref('')
 const isAdmin = computed(() => loggedIn.value && user.value?.is_admin)
 
 const newTeam = ref({ name: '', members: '', rung: '' })
+// 1v1: seed a player by nick (search), no team fields
+const seedQuery = ref(''); const seedResults = ref([]); const seedPlayer = ref(null); const seedRung = ref('')
+let seedTimer = null
+watch(seedQuery, (v) => {
+  seedPlayer.value = null; clearTimeout(seedTimer)
+  if (!v || v.length < 2) { seedResults.value = []; return }
+  seedTimer = setTimeout(async () => {
+    try { const r = await $fetch(`${base}/api/search?q=${encodeURIComponent(seedQuery.value)}&limit=8`); seedResults.value = r.results || [] }
+    catch { seedResults.value = [] }
+  }, 220)
+})
+function pickSeedPlayer(p) { seedPlayer.value = p; seedResults.value = []; seedQuery.value = p.display }
+async function addPlayer() {
+  if (!seedPlayer.value) return
+  try {
+    await $fetch(`${base}/api/admin/ladder/${ladder.value.id}/teams`, {
+      method: 'POST', headers: authHeader(),
+      body: { name: seedPlayer.value.display, members: [seedPlayer.value.canonical_id], rung: seedRung.value === '' ? null : Number(seedRung.value) }
+    })
+    note(`added ${seedPlayer.value.display}`); seedQuery.value = ''; seedPlayer.value = null; seedRung.value = ''; await load()
+  } catch (e) { err.value = e?.data?.detail || 'add failed' }
+}
 const report = ref(null)  // challenge being reported
 const schedulerC = ref(null)  // challenge being scheduled (admin can act either side)
 const editTeam = ref(null)  // team being edited (roster/name/tag/logo)
@@ -319,15 +341,15 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
           <section class="card" :style="{ borderColor: ladderOpen ? 'rgba(34,197,94,0.4)' : 'rgba(245,158,11,0.4)' }">
             <h2>
               Ladder status: <span :style="{ color: ladderOpen ? 'var(--win)' : 'var(--draw)' }">{{ ladderOpen ? 'OPEN' : 'not open' }}</span>
-              <span class="muted small">· {{ teams.length }} teams seeded</span>
+              <span class="muted small">· {{ teams.length }} {{ lw.teams }} seeded</span>
               <button class="btn sm" style="margin-left:auto;" @click="toggleOpen">{{ ladderOpen ? 'Close ladder' : 'Open ladder' }}</button>
             </h2>
-            <p class="muted small">Closed = pre-launch: players can't challenge (board shows a "not open yet" banner); you can still arrange challenges here for testing. Open it once ~10 teams are seeded.</p>
+            <p class="muted small">Closed = pre-launch: players can't challenge (board shows a "not open yet" banner); you can still arrange challenges here for testing. Open it once the {{ lw.teams }} are seeded.</p>
           </section>
 
           <!-- Pending team approvals -->
           <section class="card">
-            <h2>Pending teams <span class="count">{{ pending.length }}</span></h2>
+            <h2>Pending {{ lw.teams }} <span class="count">{{ pending.length }}</span></h2>
             <div v-if="!pending.length" class="muted small">No pending signups.</div>
             <div v-for="t in pending" :key="t.id" class="prow">
               <img v-if="t.has_logo" :src="`${base}/api/ladder/team/${t.id}/logo`" class="tlogo" alt="">
@@ -336,7 +358,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
                 <span class="muted small">{{ (t.members || []).map(m => m.display).join(' · ') || '—' }}</span>
               </div>
               <span class="spacer" />
-              <button class="btn sm ghost" @click="startEditTeam(t)">Edit</button>
+              <button v-if="!isDuel" class="btn sm ghost" @click="startEditTeam(t)">Edit</button>
               <button class="btn sm" @click="approve(t)">Approve</button>
               <button class="btn sm ghost" @click="reject(t)">Reject</button>
             </div>
@@ -355,7 +377,7 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               <strong>{{ t.name }}</strong>
               <span class="muted small">{{ (t.members || []).map(m => m.display).join(' · ') }}</span>
               <span class="spacer" />
-              <button class="btn sm ghost" draggable="false" @click.stop="startEditTeam(t)">Edit</button>
+              <button v-if="!isDuel" class="btn sm ghost" draggable="false" @click.stop="startEditTeam(t)">Edit</button>
             </div>
             <div v-if="!order.length" class="muted small">No teams placed yet.</div>
           </section>
@@ -437,13 +459,24 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
               </select>
               <button class="btn" @click="createChallenge">Create</button>
             </div>
-            <p class="muted small" style="margin-top:6px;">Challenger must be 1–2 rungs below the challenged team. As admin you can arrange any valid matchup, then schedule it below / on the board.</p>
+            <p class="muted small" style="margin-top:6px;">Challenger must be 1–2 rungs below the challenged {{ lw.team }}. As admin you can arrange any valid matchup, then schedule it below / on the board.</p>
           </section>
 
-          <!-- Manual add/seed team -->
+          <!-- Manual add/seed: a player on 1v1 (nick search), a team on 2v2 -->
           <section class="card">
-            <h2>Add / seed team</h2>
-            <div class="form">
+            <h2>Add / seed {{ lw.team }}</h2>
+            <template v-if="isDuel">
+              <div class="form">
+                <input v-model="seedQuery" placeholder="player nick">
+                <input v-model="seedRung" type="number" placeholder="rung (blank=bottom)" style="width:140px;">
+                <button class="btn" :disabled="!seedPlayer" @click="addPlayer">Add</button>
+              </div>
+              <div v-if="seedResults.length" class="res">
+                <button v-for="p in seedResults" :key="p.canonical_id" class="res-row" @click="pickSeedPlayer(p)"><span>{{ p.display }}</span><span class="muted small">{{ p.matches }} games</span></button>
+              </div>
+              <p class="muted small" style="margin:8px 0 0;">Adds the player's linked profile straight onto the board (no approval step).</p>
+            </template>
+            <div v-else class="form">
               <input v-model="newTeam.name" placeholder="Team name">
               <input v-model="newTeam.members" placeholder="members (canonical_ids, comma-sep)">
               <input v-model="newTeam.rung" type="number" placeholder="rung (blank=bottom)" style="width:120px;">
