@@ -6467,6 +6467,7 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
+        _notify_route(cur, challenge_id=challenge_id)   # 1v1 posts go to the 1v1 channel, never the 2v2 one
         cur.execute("""SELECT c.challenger_id, c.challenged_id, c.proposed, c.proposed_by, c.status,
                               c.rungs_up, c.deadline,
                               ca.name AS challenger, cd.name AS challenged
@@ -7077,6 +7078,7 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
+        _notify_route(cur, challenge_id=challenge_id)   # result post goes to this ladder's channel
         cur.execute("SELECT * FROM ladder_challenges WHERE id=%s", (challenge_id,))
         ch = cur.fetchone()
         if not ch:
@@ -7188,10 +7190,11 @@ def admin_ladder_repost_report(match_id: int, authorization: str | None = Header
     _check_ladder_admin(authorization)
     with pg() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT team_a_id, team_b_id, winner_id, maps, score_a, score_b FROM ladder_matches WHERE id=%s", (match_id,))
+        cur.execute("SELECT team_a_id, team_b_id, winner_id, maps, score_a, score_b, ladder_id FROM ladder_matches WHERE id=%s", (match_id,))
         m = cur.fetchone()
         if not m:
             raise HTTPException(404, "match not found")
+        _notify_route(cur, ladder_id=m["ladder_id"])   # re-post lands in this ladder's channel
         _notify_result(cur, m["team_a_id"], m["team_b_id"], m["winner_id"],
                        list(m["maps"] or []), m["score_a"], m["score_b"], {}, match_id=match_id, preview=True)
     return {"reposted": match_id, "winner_id": m["winner_id"]}
