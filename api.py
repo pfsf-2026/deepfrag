@@ -6082,8 +6082,12 @@ def ladder_player_stats(ladder_id: int, response: Response):
 def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=None),
                      challenger_id: int = Body(..., embed=True),
                      challenged_id: int = Body(..., embed=True),
-                     slots: list = Body(default=[], embed=True)):
-    """A captain (or admin) issues a challenge 1–2 rungs up. As of 2026-07-15 a
+                     slots: list = Body(default=[], embed=True),
+                     agreed_at: str | None = Body(default=None, embed=True)):
+    """A captain (or admin) issues a challenge 1–2 rungs up.
+    2026-09-29: `agreed_at` (ISO) issues the challenge ALREADY SCHEDULED at that time — for
+    pairs who settled it over DM first. Gets the full window; the other side can still
+    reschedule through the normal flow if something changes. As of 2026-07-15 a
     challenge must include the challenger's availability (≥1 future slot) — the
     challenge and its opening proposal are one atomic action, and the combined
     Discord announcement fires immediately. Offering ≥2 distinct evenings gets
@@ -6154,27 +6158,41 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
                                          f"{rem.days}d {rem.seconds // 3600}h. (You can still be challenged, "
                                          f"and winning a defense lifts the cooldown.)")
         # Availability is part of the challenge itself (2026-07-15 rule).
+        agreed_dt = None
+        if agreed_at:
+            try:
+                agreed_dt = datetime.fromisoformat(str(agreed_at).replace("Z", "+00:00"))
+                if agreed_dt.tzinfo is None:
+                    agreed_dt = agreed_dt.replace(tzinfo=timezone.utc)
+            except ValueError:
+                raise HTTPException(400, "agreed_at must be an ISO-8601 time")
+            if agreed_dt <= datetime.now(timezone.utc):
+                raise HTTPException(400, "the agreed time has to be in the future")
+            slots = list(slots or []) + [agreed_dt.isoformat()]
         clean = sorted({str(s) for s in (slots or []) if s and _is_future_slot(s)})[:200]
         if not clean:
             raise HTTPException(400, "post at least one future availability time to issue a challenge")
         evenings = _distinct_evenings(clean)
-        if evenings >= 2:
+        if agreed_dt is not None or evenings >= 2:
             window_days = (lad.get("rules") or {}).get("forfeit_days", 7)
         else:
             window_days = (lad.get("rules") or {}).get("short_window_days", 3)
         deadline = datetime.now(timezone.utc) + timedelta(days=window_days)
+        if agreed_dt is not None and agreed_dt > deadline:
+            raise HTTPException(400, f"the agreed time is outside the {window_days}-day window — ask an admin for an extension after issuing")
         # The match must be PLAYED inside the window, so times after the deadline are dropped (2026-09-28 rule).
         clean = [t for t in clean if datetime.fromisoformat(t.replace("Z", "+00:00")) <= deadline]
         if not clean:
             raise HTTPException(400, f"all the times you offered fall after the {window_days}-day window — offer times within {window_days} days")
         cur.execute("""INSERT INTO ladder_challenges
                        (ladder_id, challenger_id, challenged_id, rungs_up, deadline, proposed, proposed_by,
-                        proposed_at, proposal_log)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s, now(), %s::jsonb) RETURNING id""",
+                        proposed_at, proposal_log, status, agreed_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s, now(), %s::jsonb, %s, %s) RETURNING id""",
                     (ladder_id, challenger_id, challenged_id, gap, deadline,
                      json.dumps(clean), challenger_id,
                      json.dumps([{"at": datetime.now(timezone.utc).isoformat(), "by": challenger_id,
-                                  "slots": clean}])))
+                                  "slots": clean, "agreed": bool(agreed_dt)}]),
+                     "scheduled" if agreed_dt is not None else "open", agreed_dt))
         chid = cur.fetchone()["id"]
         cl_lbl = _team_label(cur, challenger_id)
         cd_lbl = _team_label(cur, challenged_id)
@@ -6183,13 +6201,18 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
     # opening proposal is part of creation.
     try:
         import notify
-        notify.match_proposal(cl_lbl, cd_lbl, clean, initial=True,
-                              challenger=cl_lbl, challenged=cd_lbl,
-                              rungs_up=gap, deadline_iso=deadline.isoformat())
+        if agreed_dt is not None:
+            notify.challenge_prescheduled(cl_lbl, cd_lbl, gap, agreed_dt.isoformat(), deadline.isoformat())
+        else:
+            notify.match_proposal(cl_lbl, cd_lbl, clean, initial=True,
+                                  challenger=cl_lbl, challenged=cd_lbl,
+                                  rungs_up=gap, deadline_iso=deadline.isoformat())
     except Exception:
         pass
     return {"challenge_id": chid, "deadline": deadline.isoformat(), "rungs_up": gap,
-            "evenings": evenings, "window_days": window_days}
+            "evenings": evenings, "window_days": window_days,
+            "agreed_at": agreed_dt.isoformat() if agreed_dt is not None else None,
+            "status": "scheduled" if agreed_dt is not None else "open"}
 
 
 @app.get("/api/ladder/challenge/{challenge_id}/server-suggestion")

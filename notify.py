@@ -177,6 +177,14 @@ def team_signup(name: str, tag: str | None, players: list, pending: bool = True,
     return send(embed=_embed("🆕 New ladder signup" if solo else "🆕 New team signup", desc, COLOR))
 
 
+def challenge_prescheduled(challenger: str, challenged: str, rungs_up: int, when_iso: str, deadline_iso: str | None):
+    """Challenge issued WITH an already-agreed time (2026-09-29: players DM each other first).
+    One post: the challenge and its scheduled time."""
+    rung = f"{rungs_up} rung{'s' if rungs_up != 1 else ''} up"
+    dl = f" Play-by deadline {fmt_et(deadline_iso)}." if deadline_iso else ""
+    return send(content=f"⚔️ **{challenger}** challenges **{challenged}** ({rung}) — already agreed and **scheduled for {fmt_et(when_iso)}**.{dl}")
+
+
 def match_proposal(proposer: str, other: str, slots_iso: list, *, initial: bool,
                    challenger: str, challenged: str, rungs_up: int | None = None,
                    deadline_iso: str | None = None, mention: str | None = None):
