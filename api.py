@@ -1100,7 +1100,7 @@ def _ladder_tick_inner(cur):
         if not (ch["rules"] or {}).get("auto_resolve", True):
             continue
         det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"),
-                          ladder_id=ch.get("ladder_id"))
+                          challenge_id=ch["id"], ladder_id=ch.get("ladder_id"))
         if not det["complete"]:
             continue
         # SAFETY GATE: only auto-resolve when EVERY decisive game had all four
@@ -1260,7 +1260,7 @@ def _ladder_tick_inner(cur):
         # cancelling/forfeiting a played challenge at the deadline.
         try:
             pend = _detect_bo3(cur, list(r["a_members"] or []), list(r["b_members"] or []),
-                               r.get("agreed_at"), r.get("deadline"), r.get("created_at"), ladder_id=r.get("ladder_id"))
+                               r.get("agreed_at"), r.get("deadline"), r.get("created_at"), challenge_id=r["id"], ladder_id=r.get("ladder_id"))
             if pend["complete"] and pend["full_match"]:
                 continue
         except Exception:
@@ -6714,7 +6714,7 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
     return {"challenge_id": challenge_id, "status": "open"}
 
 
-def _detect_bo3(cur, a_roster, b_roster, agreed_at, deadline=None, created_at=None, ladder_id=None):
+def _detect_bo3(cur, a_roster, b_roster, agreed_at, deadline=None, created_at=None, ladder_id=None, challenge_id=None):
     """Find candidate hub games (in the ladder's match_mode — 2on2 for the 2v2
     ladder, 1on1 for the duel ladder) involving BOTH rosters around the
     scheduled time, then walk them in time order into the decisive set (first to
@@ -6736,6 +6736,16 @@ def _detect_bo3(cur, a_roster, b_roster, agreed_at, deadline=None, created_at=No
     # takes the FIRST decisive games, so widening can't displace an earlier set.
     lo_dt, hi_dt = _ladder.search_window(agreed_at, deadline, created_at)
     lo, hi = lo_dt.isoformat(), hi_dt.isoformat()
+    # Never count a game twice (already recorded for ANY match on this ladder), and never count
+    # games an admin voided for this challenge (casual games, 2026-09-29 Bance/eValCat).
+    exclude = set()
+    cur.execute("SELECT hub_game_ids FROM ladder_matches WHERE (%s::bigint IS NULL OR ladder_id=%s)", (ladder_id, ladder_id))
+    for r in cur.fetchall():
+        exclude |= {int(g) for g in (r["hub_game_ids"] or [])}
+    if challenge_id is not None:
+        cur.execute("SELECT ignored_games FROM ladder_challenges WHERE id=%s", (challenge_id,))
+        r = cur.fetchone()
+        exclude |= {int(g) for g in ((r or {}).get("ignored_games") or [])}
     cur.execute("""SELECT mt.hub_game_id, mt.match_map, mt.match_date,
                           SUM(CASE WHEN p.canonical_id = ANY(%(a)s) THEN p.player_frags ELSE 0 END) AS a_frags,
                           SUM(CASE WHEN p.canonical_id = ANY(%(b)s) THEN p.player_frags ELSE 0 END) AS b_frags,
@@ -6751,6 +6761,8 @@ def _detect_bo3(cur, a_roster, b_roster, agreed_at, deadline=None, created_at=No
                 {"a": a_roster, "b": b_roster, "lo": lo, "hi": hi, "mode": mode})
     cands = []
     for r in cur.fetchall():
+        if int(r["hub_game_id"]) in exclude:
+            continue
         a, b = r["a_frags"] or 0, r["b_frags"] or 0
         an, bn = r["a_n"] or 0, r["b_n"] or 0
         # full = BOTH players of BOTH rosters matched in this game. If a roster
@@ -6809,7 +6821,7 @@ def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = 
         b_roster = list(ch["b_members"] or [])
         if not a_roster or not b_roster:
             return {"challenge_id": challenge_id, "candidates": [], "note": "rosters not fully linked yet"}
-        det = _detect_bo3(cur, a_roster, b_roster, ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"), ladder_id=ch.get("ladder_id"))
+        det = _detect_bo3(cur, a_roster, b_roster, ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"), challenge_id=ch["id"], ladder_id=ch.get("ladder_id"))
     return {"challenge_id": challenge_id, "a_name": ch["a_name"], "b_name": ch["b_name"],
             "challenger_id": ch["challenger_id"], "challenged_id": ch["challenged_id"],
             "candidates": det["candidates"],
@@ -7020,7 +7032,7 @@ def ladder_challenge_report_search(challenge_id: int, authorization: str | None 
         # Reuse the open-challenge window branch: created_at→deadline become our
         # explicit search bounds.
         det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []),
-                          None, anchor + timedelta(hours=8), anchor - timedelta(hours=2), ladder_id=ch.get("ladder_id"))
+                          None, anchor + timedelta(hours=8), anchor - timedelta(hours=2), challenge_id=ch["id"], ladder_id=ch.get("ladder_id"))
     return {"challenge_id": challenge_id,
             "candidates": det["candidates"],
             "suggested_score": {"a": det["aw"], "b": det["bw"]},
@@ -7098,7 +7110,7 @@ def admin_ladder_reresolve(challenge_id: int, authorization: str | None = Header
         if not ch:
             raise HTTPException(404, "challenge not found")
         det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []), ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"),
-                          ladder_id=ch.get("ladder_id"))
+                          challenge_id=ch["id"], ladder_id=ch.get("ladder_id"))
         if not det["complete"]:
             raise HTTPException(409, "corrected detection is not a complete Bo3 — fix rosters first")
         if not det.get("full_match"):
@@ -7206,6 +7218,56 @@ def admin_ladder_match_recompute(match_id: int, authorization: str | None = Head
         conn.commit()
     return {"match_id": match_id, "score": [aw, bw], "winner_id": m["winner_id"],
             "changed": changed, "maps": new_maps}
+
+
+@app.post("/api/admin/ladder/match/{match_id}/void")
+def admin_ladder_match_void(match_id: int, authorization: str | None = Header(default=None),
+                            reason: str | None = Body(default=None, embed=True),
+                            notify_discord: bool = Body(default=True, embed=True)):
+    """Void a recorded result that was NOT the ladder match (casual games the resolver picked
+    up — Bance/eValCat 2026-09-29): restore both sides' pre-match rungs, delete the match and
+    its movements, put the challenge back on the board (scheduled if its agreed time is still
+    ahead, else open), and remember the games so the resolver never counts them again for that
+    challenge. The loss cooldown clears with the match. Ladder-admin."""
+    import ladder as _ladder
+    import notify
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""SELECT id, ladder_id, challenge_id, team_a_id, team_b_id, hub_game_ids, played_at
+                       FROM ladder_matches WHERE id=%s""", (match_id,))
+        m = cur.fetchone()
+        if not m:
+            raise HTTPException(404, "match not found")
+        _notify_route(cur, ladder_id=m["ladder_id"])
+        cur.execute("SELECT team_id, from_rung FROM ladder_movements WHERE match_id=%s AND from_rung IS NOT NULL", (match_id,))
+        reverted = [dict(r) for r in cur.fetchall()]
+        for r in reverted:
+            cur.execute("UPDATE ladder_teams SET rung=%s WHERE id=%s", (r["from_rung"], r["team_id"]))
+        cur.execute("DELETE FROM ladder_movements WHERE match_id=%s", (match_id,))
+        cur.execute("DELETE FROM ladder_matches WHERE id=%s", (match_id,))
+        games = [int(g) for g in (m["hub_game_ids"] or [])]
+        status = None
+        if m["challenge_id"]:
+            cur.execute("""UPDATE ladder_challenges
+                           SET status = CASE WHEN agreed_at IS NOT NULL AND agreed_at > now() THEN 'scheduled' ELSE 'open' END,
+                               resolved_at = NULL, flagged_review = FALSE,
+                               ignored_games = COALESCE(ignored_games, '[]'::jsonb) || %s::jsonb
+                           WHERE id=%s RETURNING status""", (json.dumps(games), m["challenge_id"]))
+            row = cur.fetchone(); status = row and row["status"]
+        a_lbl, b_lbl = _team_label(cur, m["team_a_id"]), _team_label(cur, m["team_b_id"])
+        conn.commit()
+    if notify_discord:
+        try:
+            when = notify.fmt_et(m["played_at"].isoformat()) if m.get("played_at") else "recently"
+            notify.send(content=(f"↩️ **Result voided** — the games between {a_lbl} and {b_lbl} ({when}) were casual, not the ladder match"
+                                 + (f": {reason}" if reason else ".") + " Standings restored"
+                                 + ("; the challenge is back on the board." if status else ".")))
+        except Exception:
+            pass
+    return {"voided_match": match_id, "challenge_id": m["challenge_id"], "challenge_status": status,
+            "ignored_games": games, "rungs_restored": reverted}
 
 
 @app.post("/api/admin/ladder/match/{match_id}/delete")

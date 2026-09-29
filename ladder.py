@@ -217,6 +217,9 @@ def _apply_schema(cur):
     # can do -> {canonical_id: [iso, ...]}. When both have picked, the match
     # auto-schedules at the earliest slot common to both.
     cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS picks JSONB NOT NULL DEFAULT '{}'::jsonb")
+    # 2026-09-29: hub game ids an admin voided for this challenge (casual games the resolver
+    # must never count again) — see api.admin_ladder_match_void / _detect_bo3(exclude).
+    cur.execute("ALTER TABLE ladder_challenges ADD COLUMN IF NOT EXISTS ignored_games JSONB NOT NULL DEFAULT '[]'::jsonb")
     # Player-submitted match reports (2026-08-02): "we played it, it didn't
     # record" self-service. Validated through the same gates as auto-resolve;
     # pending = submitted before the games were ingested (tick retries).
