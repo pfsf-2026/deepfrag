@@ -268,3 +268,11 @@ blaze:
   variants:
     - blaze
     - blze
+
+cao:
+  # Merged 2026-09-30 (Peter): wdcao (the "wd" clan-tag form) is cao. Keep cao.
+  display: cao
+  login: ""
+  variants:
+    - cao
+    - wdcao

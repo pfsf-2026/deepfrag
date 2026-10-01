@@ -4755,10 +4755,12 @@ def admin_ladder_team_reject(team_id: int, authorization: str | None = Header(de
 
 
 @app.post("/api/admin/ladder/team/{team_id}/remove")
-def admin_ladder_team_remove(team_id: int, authorization: str | None = Header(default=None)):
+def admin_ladder_team_remove(team_id: int, authorization: str | None = Header(default=None),
+                             quiet: bool = Body(default=False, embed=True)):
     """Remove an ACTIVE team from the ladder: deactivate it, COMPACT the rungs
     (every active team below moves up one to close the gap), and cancel its open/
-    scheduled challenges. Keeps the row (matches/history reference it). Ladder-admin."""
+    scheduled challenges. Keeps the row (matches/history reference it). Ladder-admin.
+    quiet=true skips the Discord post (duplicate / mistaken entries)."""
     import ladder as _ladder
     import notify
     _check_ladder_admin(authorization)
@@ -4780,11 +4782,12 @@ def admin_ladder_team_remove(team_id: int, authorization: str | None = Header(de
                        RETURNING id""", (team_id, team_id))
         cancelled = [r["id"] for r in cur.fetchall()]
         conn.commit()
-    try:
-        notify.send(content=(f"🚫 **{name}** has been removed from the KOTH ladder — {notify.unit(True)} below shift up one rung."
-                             + (f" ({len(cancelled)} open challenge(s) cancelled.)" if cancelled else "")))
-    except Exception:
-        pass
+    if not quiet:
+        try:
+            notify.send(content=(f"🚫 **{name}** has been removed from the KOTH ladder — {notify.unit(True)} below shift up one rung."
+                                 + (f" ({len(cancelled)} open challenge(s) cancelled.)" if cancelled else "")))
+        except Exception:
+            pass
     return {"removed": team_id, "name": name, "was_rung": rung, "cancelled_challenges": cancelled}
 
 
