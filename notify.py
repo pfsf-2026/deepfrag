@@ -150,7 +150,7 @@ def challenge_issued(challenger: str, challenged: str, rungs_up: int, deadline_i
                      mention: str | None = None):
     """challenger/challenged are team LABELS ('**Name** (@p1 @p2)'), challenger
     first. Pings live in content."""
-    by = f" Play by **{deadline_iso[:10]}**." if deadline_iso else ""
+    by = f" Play by **{fmt_et(deadline_iso)}**." if deadline_iso else ""
     ups = f" ({rungs_up} rung{'s' if rungs_up != 1 else ''} up)"
     return send(content=f"⚔️ {challenger} challenged {challenged}{ups}.{by}")
 
@@ -180,9 +180,11 @@ def team_signup(name: str, tag: str | None, players: list, pending: bool = True,
 def challenge_prescheduled(challenger: str, challenged: str, rungs_up: int, when_iso: str, deadline_iso: str | None):
     """Challenge issued WITH an already-agreed time (2026-09-29: players DM each other first).
     One post: the challenge and its scheduled time."""
+    # challenger/challenged are LABELS (already bold, with pings). One time only in this
+    # post — the play-by deadline next to an agreed time just reads as a second match time.
     rung = f"{rungs_up} rung{'s' if rungs_up != 1 else ''} up"
-    dl = f" Play-by deadline {fmt_et(deadline_iso)}." if deadline_iso else ""
-    return send(content=f"⚔️ **{challenger}** challenges **{challenged}** ({rung}) — already agreed and **scheduled for {fmt_et(when_iso)}**.{dl}")
+    return send(content=f"⚔️ {challenger} challenged {challenged} ({rung}).\n"
+                        f"✅ Time already agreed — match scheduled for **{fmt_et(when_iso)}**.")
 
 
 def match_proposal(proposer: str, other: str, slots_iso: list, *, initial: bool,
@@ -203,12 +205,12 @@ def match_proposal(proposer: str, other: str, slots_iso: list, *, initial: bool,
     # proposer/other/challenger/challenged are team LABELS (name + parens pings)
     if initial:
         ups = f" ({rungs_up} rung{'s' if rungs_up != 1 else ''} up)" if rungs_up else ""
-        by = f" Play by **{deadline_iso[:10]}**." if deadline_iso else ""
+        by = f" Play by **{fmt_et(deadline_iso)}**." if deadline_iso else ""
         content = (f"⚔️ {challenger} challenged {challenged}{ups}.{by}\n\n"
                    f"{challenger} can play:\n{times}\n\n"
                    f"{challenged} — pick a time (or suggest your own) on the ladder.")
     else:
-        content = (f"🔄 {proposer} suggested new times vs {other}:\n{times}\n\n"
+        content = (f"🔄 {proposer} offered new times vs {other} — nothing is locked in yet:\n{times}\n\n"
                    f"{other} — pick one (or counter) on the ladder.")
     return send(content=content)
 
@@ -217,7 +219,7 @@ def game_scheduled(a_name: str, a_ping: str, b_name: str, b_ping: str,
                    when: str | None, server: str | None = None, mention: str | None = None):
     """Match scheduled (challenger first). Clean two-line: names+time, then pings."""
     meta = fmt_et(when) + (f" · {server}" if server else "")
-    out = f"🆚 **{a_name}** vs **{b_name}** — {meta}"
+    out = f"✅ **Match scheduled:** **{a_name}** vs **{b_name}** — {meta}"
     if a_ping or b_ping:
         out += f"\n{a_ping or '—'}  vs  {b_ping or '—'}"
     return send(content=out)
@@ -279,10 +281,14 @@ def match_reminder(a_name: str, a_ping: str, b_name: str, b_ping: str,
 
 
 def match_rescheduled(team_a: str, team_b: str, when: str | None, server: str | None,
-                      mention: str | None = None):
-    """An admin moved a scheduled match. team_a/team_b are LABELS, challenger first."""
-    extra = f"\n🖥️ {server}" if server else ""
-    return send(content=f"🔁 Match rescheduled\n{team_a} vs {team_b}\n🗓️ New time: **{fmt_et(when)}**{extra}")
+                      mention: str | None = None, note: str | None = None, was: str | None = None):
+    """A scheduled match moved (admin, or the two sides agreeing a new time — `note`
+    says who). team_a/team_b are LABELS, challenger first. `was` = the old time, shown
+    so nobody has to guess which of two times is the live one."""
+    extra = f" (was {fmt_et(was)})" if was else ""
+    extra += f"\n🖥️ {server}" if server else ""
+    extra += f"\n{note}" if note else ""
+    return send(content=f"🔁 **Match moved** — {team_a} vs {team_b}\n🗓️ New time: **{fmt_et(when)}**{extra}")
 
 
 def challenge_overdue(team_a: str, team_b: str, deadline: str | None, mention: str | None = None):

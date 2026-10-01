@@ -988,6 +988,18 @@ def admin_support_status(ticket_id: int, authorization: str | None = Header(defa
 _LADDER_MODE_CACHE: dict = {}
 
 
+def _duel() -> bool:
+    """True when this request is acting on the 1v1 ladder (per _notify_route) — error
+    text then says 'player' / 'you' instead of 'team'."""
+    import notify
+    return notify.current_route() == "1on1"
+
+
+def _unit(plural: bool = False) -> str:
+    import notify
+    return notify.unit(plural)
+
+
 def _notify_route(cur, ladder_id=None, challenge_id=None, team_id=None):
     """Point this request's Discord posts at the right channel: the 1v1 ladder has its
     own (notify.ROUTES). Resolve the ladder from a challenge or team id when that's all
@@ -6121,10 +6133,10 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
         members = chr_t.get("members") or []
         cid = user.get("canonical_id")
         if not user.get("is_admin") and (not cid or cid not in members):
-            raise HTTPException(403, "you must be a member of the challenging team")
+            raise HTTPException(403, "you can only issue a challenge as yourself" if _duel() else "you must be a member of the challenging team")
         cr, hr = chr_t["rung"], chd_t["rung"]
         if cr is None or hr is None:
-            raise HTTPException(409, "both teams must be placed on the ladder")
+            raise HTTPException(409, f"both {_unit(True)} must be placed on the ladder")
         gap = cr - hr  # challenger is below (larger rung) by this many
         max_jump = int((lad.get("rules") or {}).get("rung_jump") or 2)   # 2 on the 2v2 ladder, 3 on 1v1 (2026-09-28)
         if not (1 <= gap <= max_jump):
@@ -6136,7 +6148,7 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
                        LIMIT 1""",
                     (ladder_id, challenger_id, challenged_id, challenger_id, challenged_id))
         if cur.fetchone():
-            raise HTTPException(409, "one of these teams already has an open challenge")
+            raise HTTPException(409, f"one of these {_unit(True)} already has an open challenge")
         # Loss cooldown: after losing ANY match, a team can't ISSUE challenges for
         # a week (it can still BE challenged). The sting of a loss. Winners stay
         # free to challenge until they lose or get tied up in a challenge.
@@ -6157,7 +6169,7 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
             now = datetime.now(timezone.utc)
             if until > now:
                 rem = until - now
-                raise HTTPException(409, f"your team lost recently — you can't issue challenges for "
+                raise HTTPException(409, f"{'you' if _duel() else 'your team'} lost recently — you can't issue challenges for "
                                          f"{rem.days}d {rem.seconds // 3600}h. (You can still be challenged, "
                                          f"and winning a defense lifts the cooldown.)")
         # Availability is part of the challenge itself (2026-07-15 rule).
@@ -6472,7 +6484,7 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
         _ladder.ensure_schema(cur)
         _notify_route(cur, challenge_id=challenge_id)   # 1v1 posts go to the 1v1 channel, never the 2v2 one
         cur.execute("""SELECT c.challenger_id, c.challenged_id, c.proposed, c.proposed_by, c.status,
-                              c.rungs_up, c.deadline,
+                              c.rungs_up, c.deadline, c.proposal_log,
                               ca.name AS challenger, cd.name AS challenged
                        FROM ladder_challenges c
                        JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -6484,7 +6496,9 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
             raise HTTPException(409, "challenge is already scheduled or resolved")
         # First time anyone posts slots = the challenger's opening proposal. That's
         # when we fire the (held) challenge announcement, bundled with the times.
-        is_initial = not (ch.get("proposed") or [])
+        # A re-pick after a reschedule (slots cleared, but the log has history) is NOT a
+        # new challenge — it must not re-announce "X challenged Y" (2026-09-30).
+        is_initial = not (ch.get("proposed") or []) and not (ch.get("proposal_log") or [])
         turn = _turn_team(ch)
         if turn is None:
             # Opening proposal: either team may post. proposed_by = the poster's
@@ -6502,9 +6516,9 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
             elif user.get("is_admin"):
                 turn = ch["challenger_id"]
             else:
-                raise HTTPException(403, "only players on one of the two teams may suggest times")
+                raise HTTPException(403, "only the two players in this match may suggest times" if _duel() else "only players on one of the two teams may suggest times")
         elif not _user_on_team(cur, user, turn):
-            raise HTTPException(403, "it's not your team's turn to suggest times")
+            raise HTTPException(403, "it's not your turn to suggest times" if _duel() else "it's not your team's turn to suggest times")
         clean = sorted(clean)   # chronological in the Discord message + pick list
         if ch.get("deadline"):   # the match must be played inside the window (2026-09-28 rule)
             dl = ch["deadline"]
@@ -6569,7 +6583,7 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
         # onus lands on the challenged team as intended. Admin always allowed.
         turn = _turn_team(ch)
         if not (user.get("is_admin") or (turn is not None and _user_on_team(cur, user, turn))):
-            raise HTTPException(403, "it's the other team's turn to pick one of the offered times")
+            raise HTTPException(403, f"it's the other {_unit()}'s turn to pick one of the offered times")
         if slot not in (ch["proposed"] or []):
             raise HTTPException(400, "pick one of the proposed slots")
         cur.execute("""UPDATE ladder_challenges
@@ -6683,8 +6697,8 @@ def ladder_challenge_withdraw(challenge_id: int, authorization: str | None = Hea
         # team is never allowed to — they can only play it or let it expire.
         if not _user_on_team(cur, user, ch["challenger_id"]):
             if _user_on_team(cur, user, ch["challenged_id"]):
-                raise HTTPException(403, "only the challenging team can withdraw a challenge")
-            raise HTTPException(403, "you must be on the challenging team to withdraw this")
+                raise HTTPException(403, f"only the challenging {_unit()} can withdraw a challenge")
+            raise HTTPException(403, "only the challenger can withdraw this" if _duel() else "you must be on the challenging team to withdraw this")
         cur.execute("""UPDATE ladder_challenges SET status='cancelled', resolved_at=now()
                        WHERE id=%s AND status='open' RETURNING id""", (challenge_id,))
         row = cur.fetchone()
@@ -6702,18 +6716,37 @@ def ladder_challenge_withdraw(challenge_id: int, authorization: str | None = Hea
 
 
 @app.post("/api/ladder/challenge/{challenge_id}/reschedule")
-def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = Header(default=None)):
-    """Either team in the match (or an admin) reopens an already-scheduled match
-    for re-negotiation: clears the agreed time + offered slots and returns the
-    challenge to the propose/pick flow. Posts a Discord notice so both sides know.
-    (Admins can instead set a specific new time via /api/admin/.../reschedule.)"""
+def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = Header(default=None),
+                                agreed_at: str | None = Body(default=None, embed=True),
+                                server: str | None = Body(default=None, embed=True)):
+    """Either side in the match (or an admin) changes when it's played.
+
+    - With `agreed_at` (2026-09-30): the two sides have ALREADY agreed on a time, so
+      set it directly — the match is scheduled on the spot, no propose/pick round.
+      Works on a scheduled match (it moves) and on an open challenge (it locks in).
+      The time must be in the future and inside the play-by deadline.
+    - Without it: reopen a scheduled match for re-negotiation — clears the agreed
+      time + offered slots and returns the challenge to the propose/pick flow.
+
+    Posts a Discord notice (pinging both sides) either way."""
     import ladder as _ladder
+    import notify
     user = _current_user(authorization, required=True)
+    new_dt = None
+    if agreed_at:
+        try:
+            new_dt = datetime.fromisoformat(str(agreed_at).replace("Z", "+00:00"))
+            if new_dt.tzinfo is None:
+                new_dt = new_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(400, "agreed_at must be an ISO-8601 time")
+        if new_dt <= datetime.now(timezone.utc):
+            raise HTTPException(400, "the agreed time has to be in the future")
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("""SELECT c.status, c.challenger_id, c.challenged_id,
-                              ca.name AS a, cd.name AS b
+        cur.execute("""SELECT c.status, c.challenger_id, c.challenged_id, c.deadline, c.server, c.agreed_at,
+                              ca.name AS a, cd.name AS b, ca.members AS a_members, cd.members AS b_members
                        FROM ladder_challenges c
                        JOIN ladder_teams ca ON ca.id=c.challenger_id
                        JOIN ladder_teams cd ON cd.id=c.challenged_id WHERE c.id=%s""", (challenge_id,))
@@ -6721,11 +6754,49 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
         _notify_route(cur, challenge_id=challenge_id)
         if not ch:
             raise HTTPException(404, "challenge not found")
-        if ch["status"] != "scheduled":
+        if new_dt is None and ch["status"] != "scheduled":
             raise HTTPException(409, "only a scheduled match can be rescheduled")
+        if new_dt is not None and ch["status"] not in ("scheduled", "open"):
+            raise HTTPException(409, "this match is already resolved")
         on_team = _user_on_team(cur, user, ch["challenger_id"]) or _user_on_team(cur, user, ch["challenged_id"])
         if not on_team and not (user or {}).get("is_admin"):
-            raise HTTPException(403, "only a team in this match can reschedule it")
+            raise HTTPException(403, f"only a {notify.unit()} in this match can reschedule it")
+        if new_dt is not None:
+            dl = ch.get("deadline")
+            if dl and new_dt > dl:
+                raise HTTPException(400, "that time is after this match's play-by deadline "
+                                         f"({dl.astimezone(timezone.utc).strftime('%b %d %H:%M')} UTC) — ask an admin for an extension first")
+            was_scheduled = ch["status"] == "scheduled"
+            new_server = (server or "").strip() or ch["server"]
+            me = (user or {}).get("canonical_id")
+            mover_id = (ch["challenger_id"] if me and me in (ch["a_members"] or []) else
+                        ch["challenged_id"] if me and me in (ch["b_members"] or []) else None)
+            mover = ch["a"] if mover_id == ch["challenger_id"] else ch["b"] if mover_id == ch["challenged_id"] else "an admin"
+            cur.execute("""UPDATE ladder_challenges
+                           SET agreed_at=%s, server=%s, status='scheduled',
+                               reminded_soon=FALSE, reminded_10m=FALSE, reminded_24h=FALSE,
+                               proposal_log = COALESCE(proposal_log, '[]'::jsonb) || %s::jsonb
+                           WHERE id=%s""",
+                        (new_dt, new_server,
+                         json.dumps([{"at": datetime.now(timezone.utc).isoformat(), "by": mover_id,
+                                      "slots": [new_dt.isoformat()], "agreed": True}]),
+                         challenge_id))
+            cl_lbl = _team_label(cur, ch["challenger_id"])
+            cd_lbl = _team_label(cur, ch["challenged_id"])
+            cn, cp = _team_np(cur, ch["challenger_id"])
+            dn, dp = _team_np(cur, ch["challenged_id"])
+            conn.commit()
+            try:
+                if was_scheduled:
+                    notify.match_rescheduled(cl_lbl, cd_lbl, new_dt.isoformat(), new_server,
+                                             note=f"Set by {mover} — both {notify.unit(True)} already agreed on the new time.",
+                                             was=(ch["agreed_at"].isoformat() if ch.get("agreed_at") else None))
+                else:
+                    notify.game_scheduled(cn, cp, dn, dp, new_dt.isoformat(), new_server)
+            except Exception:
+                pass
+            return {"challenge_id": challenge_id, "status": "scheduled",
+                    "agreed_at": new_dt.isoformat(), "server": new_server}
         cur.execute("""UPDATE ladder_challenges
                        SET agreed_at=NULL, server=NULL, proposed='[]'::jsonb, proposed_by=NULL,
                            status='open', reminded_soon=FALSE, reminded_10m=FALSE, reminded_24h=FALSE
@@ -6734,8 +6805,9 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
         cd_lbl = _team_label(cur, ch["challenged_id"])
         conn.commit()
     try:
-        import notify
-        notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} is rescheduling — the agreed time was cleared, new times needed.")
+        old = f" set for **{notify.fmt_et(ch['agreed_at'].isoformat())}**" if ch.get("agreed_at") else ""
+        notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} — the match{old} is **off**. "
+                            f"They're picking a new time; it will be posted here once it's set.")
     except Exception:
         pass
     return {"challenge_id": challenge_id, "status": "open"}
@@ -6878,7 +6950,7 @@ def _report_user_side(cur, user, ch):
             return ch["challenged_id"]
     if user.get("is_admin"):
         return None
-    raise HTTPException(403, "only players on one of the two teams may report this match")
+    raise HTTPException(403, "only the two players in this match may report it" if _duel() else "only players on one of the two teams may report this match")
 
 
 def _try_report_games(cur, ch, game_ids, reporter):
@@ -7467,7 +7539,7 @@ def admin_ladder_reschedule(challenge_id: int, authorization: str | None = Heade
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("""SELECT c.status, c.server, c.challenger_id, c.challenged_id,
+        cur.execute("""SELECT c.status, c.server, c.agreed_at, c.challenger_id, c.challenged_id,
                               ca.name AS a, cd.name AS b
                        FROM ladder_challenges c
                        JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -7488,7 +7560,8 @@ def admin_ladder_reschedule(challenge_id: int, authorization: str | None = Heade
         conn.commit()
     try:
         import notify
-        notify.match_rescheduled(cl_lbl, cd_lbl, dt.isoformat(), new_server)
+        notify.match_rescheduled(cl_lbl, cd_lbl, dt.isoformat(), new_server,
+                                 was=(ch["agreed_at"].isoformat() if ch.get("agreed_at") else None))
     except Exception:
         pass
     return {"challenge_id": challenge_id, "agreed_at": dt.isoformat(), "server": new_server}

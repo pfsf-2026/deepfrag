@@ -118,7 +118,7 @@ function canWithdraw(c) {
 const withdrawingId = ref(null)
 async function doWithdraw(c) {
   if (!canWithdraw(c)) return
-  if (!confirm('Withdraw your challenge? Both teams will be freed up.')) return
+  if (!confirm(`Withdraw your challenge? Both ${words.value.teams} will be freed up.`)) return
   withdrawingId.value = c.id
   challengeErr.value = ''
   try {
@@ -128,19 +128,20 @@ async function doWithdraw(c) {
   } catch (e) { challengeErr.value = e?.data?.detail || e?.message || 'Could not withdraw challenge' }
   finally { withdrawingId.value = null }
 }
-const reschedulingId = ref(null)
-async function doReschedule(c) {
-  if (!confirm('Reschedule this match? The agreed time is cleared and both teams re-pick new times.')) return
-  reschedulingId.value = c.id
-  challengeErr.value = ''
-  try {
-    await $fetch(`${base}/api/ladder/challenge/${c.id}/reschedule`, { method: 'POST', headers: useAuth().authHeader() })
-    await load()
-    schedulerChallenge.value = challenges.value.find(x => x.id === c.id) || null   // reopen in propose mode
-  } catch (e) { challengeErr.value = e?.data?.detail || e?.message || 'Could not reschedule' }
-  finally { reschedulingId.value = null }
+// Reschedule opens the scheduler on its "set the new time" picker: a time both sides
+// already agreed on is confirmed on the spot (2026-09-30). Clearing the time and
+// re-picking is still there, inside the modal, for when there is no new time yet.
+const rescheduleOpen = ref(false)
+function doReschedule(c) { challengeErr.value = ''; rescheduleOpen.value = true; schedulerChallenge.value = c }
+function closeScheduler() { schedulerChallenge.value = null; rescheduleOpen.value = false }
+async function onCleared() {
+  const id = schedulerChallenge.value?.id
+  closeScheduler()
+  await load()
+  await nextTick()
+  schedulerChallenge.value = challenges.value.find(x => x.id === id) || null   // reopen in propose mode
 }
-async function onScheduled() { schedulerChallenge.value = null; await load() }
+async function onScheduled() { closeScheduler(); await load() }
 function editTeam(t) { if (!isDuel.value) editingTeam.value = t }
 // Duel ladder: the entry is your linked profile, so joining is one click — no
 // name/tag/logo to fill in, no approval step. The API registers you at the bottom rung.
@@ -448,7 +449,7 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
               <div class="ym-actions">
                 <button class="rail-btn" @click="schedulerChallenge = myOpenChallenge">{{ myChallengeAction(myOpenChallenge) }}</button>
                 <button class="rail-btn ghost" @click="reportChallenge = myOpenChallenge">Report result</button>
-                <button v-if="myOpenChallenge.agreed_at" class="rail-btn ghost" :disabled="reschedulingId === myOpenChallenge.id" @click="doReschedule(myOpenChallenge)">{{ reschedulingId === myOpenChallenge.id ? 'Reopening…' : 'Reschedule' }}</button>
+                <button v-if="myOpenChallenge.agreed_at" class="rail-btn ghost" @click="doReschedule(myOpenChallenge)">Reschedule</button>
                 <button v-if="canWithdraw(myOpenChallenge)" class="rail-btn ghost" :disabled="withdrawingId === myOpenChallenge.id" @click="doWithdraw(myOpenChallenge)">{{ withdrawingId === myOpenChallenge.id ? 'Withdrawing…' : 'Withdraw' }}</button>
               </div>
             </template>
@@ -584,7 +585,7 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
     <ClientOnly>
       <AddTeam v-if="showAddTeam && ladder" :ladder-id="ladder.id" :team-size="Number(ladder.team_size) || 2" @done="onTeamAdded" @close="showAddTeam = false" />
       <AddTeam v-if="editingTeam && ladder" :ladder-id="ladder.id" :team-size="Number(ladder.team_size) || 2" :edit-team="editingTeam" @done="onTeamAdded" @close="editingTeam = null" />
-      <Scheduler v-if="schedulerChallenge" :challenge="schedulerChallenge" :user-team-id="myTeam?.id" @done="onScheduled" @saved="load" @close="schedulerChallenge = null" />
+      <Scheduler v-if="schedulerChallenge" :key="schedulerChallenge.id + ':' + rescheduleOpen" :challenge="schedulerChallenge" :user-team-id="myTeam?.id" :reschedule="rescheduleOpen" @done="onScheduled" @saved="load" @cleared="onCleared" @close="closeScheduler" />
       <Scheduler v-if="createTarget && !schedulerChallenge" :create-target="createTarget" :user-team-id="myTeam?.id" @done="onChallengeCreated" @close="createTarget = null" />
       <ReportMatch v-if="reportChallenge" :challenge="reportChallenge" :user-team-id="myTeam?.id" @done="onReported" @close="reportChallenge = null" />
       <MatchDetailModal v-if="openMatchId" :match-id="openMatchId" @close="openMatchId = null" />

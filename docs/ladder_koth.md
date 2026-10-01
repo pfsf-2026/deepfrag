@@ -138,3 +138,19 @@ after it; without `signup_until` it falls back to the "opens at 10 seeded" banne
   without the `?l=` slug.
 - `LadderStats` per-team aggregates work for one-player teams but the copy says "team".
 - `/api/admin/ladder/movements` defaults to `ladder_id=1`.
+
+## Scheduling a time both sides already agreed on (2026-09-30)
+
+Players usually settle a time in DMs first, so the scheduler lets either side set it directly:
+
+- **Creating a challenge:** "Schedule now" issues it already scheduled (`agreed_at` on create).
+- **Open challenge:** the scheduler shows "Already agreed on a time with X?" → pick date + ET time → scheduled on the spot.
+- **Scheduled match → Reschedule:** opens the same picker, prefilled with the current time. "Move match · confirmed" moves it in one step. "Take it off the schedule and re-pick" is the old clear-and-renegotiate path, kept for when there is no new time yet.
+
+All three go through `POST /api/ladder/challenge/{id}/reschedule` with `{agreed_at}` (no body = clear and re-pick). The time must be in the future and inside the play-by deadline; past the deadline needs an admin extension first. Either side can set it (trust-based, same as create); the Discord post pings both, so a wrong time gets caught.
+
+Discord wording rules (Peter, 2026-09-30 — the old posts confused players about which time was live):
+- One time per post. A moved match says `New time: … (was …)`. A pre-agreed challenge does not also print the play-by deadline.
+- A re-pick after a reschedule says "offered new times — nothing is locked in yet"; it never re-announces "X challenged Y".
+- Deadlines print in ET like every other time, never as a bare ISO date.
+- The scheduled post starts with "✅ Match scheduled:".

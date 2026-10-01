@@ -10,9 +10,10 @@ const props = defineProps({
   // ≥2 distinct days for the full window per the 2026-07-15 rule).
   challenge: { type: Object, default: null },
   createTarget: { type: Object, default: null },  // { ladderId, challengerId, challengedId, challenger, challenged }
-  userTeamId: { type: Number, default: null }
+  userTeamId: { type: Number, default: null },
+  reschedule: { type: Boolean, default: false }   // opened from the Reschedule button → new-time picker open
 })
-const emit = defineEmits(['done', 'saved', 'close'])
+const emit = defineEmits(['done', 'saved', 'close', 'cleared'])
 const { user, authHeader } = useAuth()
 const showSettings = useState('show-settings', () => false)
 const isBrowser = typeof window !== 'undefined'
@@ -112,12 +113,25 @@ const selectedDays = computed(() => {
   return days.size
 })
 // ── "We've already agreed on a time" (2026-09-29): issue the challenge pre-scheduled ──
-const agreedMode = ref(false)
+// 2026-09-30: the same picker now also works on an EXISTING challenge — an open one
+// locks in, a scheduled one moves — so nobody has to clear the time and re-negotiate.
+const agreedMode = ref(!!props.reschedule && !!props.challenge?.agreed_at)
 const todayET = new Date(new Date().toLocaleString('en-US', { timeZone: ET }))
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-const agreedDate = ref(isoDay(todayET))
+// Default evening: tonight, or tomorrow once tonight's 9pm ET default has passed.
+const defDay = new Date(todayET); if (todayET.getHours() >= 21) defDay.setDate(defDay.getDate() + 1)
+const agreedDate = ref(isoDay(defDay))
 const agreedMinDate = isoDay(todayET)
-const agreedMaxDate = computed(() => { const d = new Date(todayET); d.setDate(d.getDate() + (Number(props.createTarget?.windowDays) || 7)); return isoDay(d) })
+const agreedMaxDate = computed(() => {
+  // existing challenge: its play-by deadline; creating: the ladder's window
+  if (props.challenge?.deadline) return isoDay(new Date(new Date(props.challenge.deadline).toLocaleString('en-US', { timeZone: ET })))
+  const d = new Date(todayET); d.setDate(d.getDate() + (Number(props.createTarget?.windowDays) || 7)); return isoDay(d)
+})
+const canAgree = computed(() => !createMode.value && (onEitherTeam.value || isAdmin.value) &&
+  ['open', 'scheduled'].includes(c.status || (c.agreed_at ? 'scheduled' : 'open')))
+const otherName = computed(() => props.userTeamId === c.challenger_id ? c.challenged
+  : (props.userTeamId === c.challenged_id ? c.challenger : null))
+const agreedWho = computed(() => otherName.value ? `you and ${otherName.value}` : `both ${words.value.teams}`)
 // ET prime-time choices (7pm → 2am, half hours) plus a free-typed time
 const AGREED_TIMES = HOURS_ET.flatMap((h) => [h, h + 0.5]).map((hf) => {
   const h = Math.floor(hf), mi = (hf - h) * 60
@@ -126,6 +140,16 @@ const AGREED_TIMES = HOURS_ET.flatMap((h) => [h, h + 0.5]).map((hf) => {
 })
 const agreedTime = ref('21:00')
 const agreedCustom = ref('')
+// Moving a scheduled match: start the picker on the time it's currently set for.
+if (c.agreed_at && new Date(c.agreed_at).getTime() > Date.now()) {
+  const et = new Date(new Date(c.agreed_at).toLocaleString('en-US', { timeZone: ET }))
+  const hh = et.getHours(), mm = et.getMinutes()
+  if (hh < 7) et.setDate(et.getDate() - 1)          // 12am–2am ET belongs to the evening before
+  agreedDate.value = isoDay(et)
+  const v = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+  if (AGREED_TIMES.some((t) => t.value === v)) agreedTime.value = v
+  else { agreedTime.value = 'custom'; agreedCustom.value = v }
+}
 const agreedIso = computed(() => {
   const t = agreedTime.value === 'custom' ? agreedCustom.value : agreedTime.value
   if (!agreedDate.value || !t) return null
@@ -136,14 +160,35 @@ const agreedLocal = computed(() => agreedIso.value ? new Date(agreedIso.value).t
 async function scheduleNow() {
   if (!agreedIso.value) { err.value = 'Pick the date and time you both agreed on'; return }
   if (new Date(agreedIso.value).getTime() < Date.now()) { err.value = 'That time is already in the past'; return }
+  if (!createMode.value) {
+    if (c.agreed_at && new Date(c.agreed_at).getTime() === new Date(agreedIso.value).getTime()) { err.value = 'That is the time it is already set for — pick the new one'; return }
+    if (c.deadline && new Date(agreedIso.value).getTime() > new Date(c.deadline).getTime()) { err.value = `That is after the play-by deadline (${fmtLocal(c.deadline)}) — ask an admin for an extension first`; return }
+  }
   saving.value = true; err.value = ''
   try {
-    await $fetch(`${base}/api/ladder/${props.createTarget.ladderId}/challenge`, {
-      method: 'POST', headers: authHeader(),
-      body: { challenger_id: props.createTarget.challengerId, challenged_id: props.createTarget.challengedId, slots: [], agreed_at: agreedIso.value }
-    })
+    if (createMode.value) {
+      await $fetch(`${base}/api/ladder/${props.createTarget.ladderId}/challenge`, {
+        method: 'POST', headers: authHeader(),
+        body: { challenger_id: props.createTarget.challengerId, challenged_id: props.createTarget.challengedId, slots: [], agreed_at: agreedIso.value }
+      })
+    } else {
+      // existing challenge: confirmed on the spot (open → scheduled, scheduled → moved)
+      await $fetch(`${base}/api/ladder/challenge/${c.id}/reschedule`, {
+        method: 'POST', headers: authHeader(), body: { agreed_at: agreedIso.value }
+      })
+    }
     emit('done')
   } catch (e) { err.value = e?.data?.detail || e?.message || 'Could not schedule' } finally { saving.value = false }
+}
+// The old path, kept for when there is NO new time yet: take the match off the
+// schedule and go back to offering / picking times.
+async function clearAndRepick() {
+  if (!confirm(`Take this match off the schedule? Both ${words.value.teams} then pick a new time.`)) return
+  saving.value = true; err.value = ''
+  try {
+    await $fetch(`${base}/api/ladder/challenge/${c.id}/reschedule`, { method: 'POST', headers: authHeader() })
+    emit('cleared')
+  } catch (e) { err.value = e?.data?.detail || e?.message || 'Could not reschedule' } finally { saving.value = false }
 }
 async function saveAvailability() {
   if (selected.value.size === 0) { err.value = 'Pick at least one slot'; return }
@@ -293,6 +338,7 @@ async function confirmSlot() {
 // challenged-picks (proposed exist) > waiting.
 const view = computed(() => {
   if (scheduled.value) return 'done'
+  if (!createMode.value && agreedMode.value) return 'agree'   // open challenge, setting an already-agreed time
   const has = proposedLocal.value.length > 0
   if (!has) return isMyTurn.value ? 'fill' : 'waiting-fill'  // challenger proposes first
   if (isMyTurn.value) return countering.value ? 'fill' : 'act'  // pick OR suggest different
@@ -310,12 +356,65 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
         <button class="x" @click="emit('close')">✕</button>
       </div>
 
-      <!-- already scheduled -->
-      <div v-if="view === 'done'" class="done">
-        <div class="big">📅 {{ fmtLocal(c.agreed_at) }}</div>
-        <div v-if="c.server" class="muted">Server: <strong>{{ c.server }}</strong></div>
-        <div class="muted small" style="margin-top:8px;">Shown in your local time. Good luck!</div>
+      <!-- existing OPEN challenge: lock in a time both sides already agreed on -->
+      <div v-if="canAgree && !scheduled" class="agreed-box">
+        <template v-if="!agreedMode">
+          <span>Already agreed on a time{{ otherName ? ` with ${otherName}` : '' }}?</span>
+          <button class="btn sm" @click="agreedMode = true">📅 Schedule now</button>
+        </template>
+        <template v-else>
+          <div class="agreed-title">Schedule the match now <span class="muted small">— {{ agreedWho }} already agreed on this time, so it's confirmed right away</span></div>
+          <div class="agreed-row">
+            <label class="fld"><span>Date</span><input type="date" v-model="agreedDate" :min="agreedMinDate" :max="agreedMaxDate"></label>
+            <label class="fld"><span>Time (ET)</span>
+              <select v-model="agreedTime">
+                <option v-for="t in AGREED_TIMES" :key="t.value" :value="t.value">{{ t.label }}</option>
+                <option value="custom">Other time…</option>
+              </select></label>
+            <label v-if="agreedTime === 'custom'" class="fld"><span>Type a time (ET)</span><input type="time" step="900" v-model="agreedCustom"></label>
+          </div>
+          <div v-if="agreedLocal" class="muted small">That's <strong>{{ agreedLocal }}</strong> in your time zone ({{ tz }}).</div>
+          <p v-if="err" class="err agreed-err">{{ err }}</p>
+          <div class="agreed-actions">
+            <button class="link-btn" @click="agreedMode = false; err = ''">← back to offering times</button>
+            <button class="btn" :disabled="saving || !agreedIso" @click="scheduleNow">{{ saving ? 'Scheduling…' : 'Schedule match · confirmed' }}</button>
+          </div>
+        </template>
       </div>
+
+      <!-- already scheduled -->
+      <template v-if="view === 'done'">
+        <div class="done">
+          <div class="big">📅 {{ fmtLocal(c.agreed_at) }}</div>
+          <div v-if="c.server" class="muted">Server: <strong>{{ c.server }}</strong></div>
+          <div class="muted small" style="margin-top:8px;">Shown in your local time. Good luck!</div>
+        </div>
+        <!-- move it: a new time both sides already agreed on is confirmed on the spot -->
+        <div v-if="canAgree" class="agreed-box">
+          <template v-if="!agreedMode">
+            <span>Need to move it? Already agreed on a new time{{ otherName ? ` with ${otherName}` : '' }}?</span>
+            <button class="btn sm" @click="agreedMode = true">📅 Set new time</button>
+          </template>
+          <template v-else>
+            <div class="agreed-title">Move the match <span class="muted small">— {{ agreedWho }} already agreed on the new time, so it's confirmed right away</span></div>
+            <div class="agreed-row">
+              <label class="fld"><span>Date</span><input type="date" v-model="agreedDate" :min="agreedMinDate" :max="agreedMaxDate"></label>
+              <label class="fld"><span>Time (ET)</span>
+                <select v-model="agreedTime">
+                  <option v-for="t in AGREED_TIMES" :key="t.value" :value="t.value">{{ t.label }}</option>
+                  <option value="custom">Other time…</option>
+                </select></label>
+              <label v-if="agreedTime === 'custom'" class="fld"><span>Type a time (ET)</span><input type="time" step="900" v-model="agreedCustom"></label>
+            </div>
+            <div v-if="agreedLocal" class="muted small">That's <strong>{{ agreedLocal }}</strong> in your time zone ({{ tz }}).</div>
+            <p v-if="err" class="err agreed-err">{{ err }}</p>
+            <div class="agreed-actions">
+              <button class="link-btn" :disabled="saving" @click="clearAndRepick">No new time yet? Take it off the schedule and re-pick →</button>
+              <button class="btn" :disabled="saving || !agreedIso" @click="scheduleNow">{{ saving ? 'Moving…' : 'Move match · confirmed' }}</button>
+            </div>
+          </template>
+        </div>
+      </template>
 
       <!-- propose / counter-propose availability -->
       <template v-else-if="view === 'fill'">
@@ -340,8 +439,9 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
               <label v-if="agreedTime === 'custom'" class="fld"><span>Type a time (ET)</span><input type="time" step="900" v-model="agreedCustom"></label>
             </div>
             <div v-if="agreedLocal" class="muted small">That's <strong>{{ agreedLocal }}</strong> in your time zone ({{ tz }}).</div>
+            <p v-if="err" class="err agreed-err">{{ err }}</p>
             <div class="agreed-actions">
-              <button class="link-btn" @click="agreedMode = false">← offer times instead</button>
+              <button class="link-btn" @click="agreedMode = false; err = ''">← offer times instead</button>
               <button class="btn" :disabled="saving || !agreedIso" @click="scheduleNow">{{ saving ? 'Scheduling…' : 'Issue challenge · scheduled' }}</button>
             </div>
           </template>
@@ -429,7 +529,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
       </template>
 
       <!-- waiting states -->
-      <div v-else class="done">
+      <div v-else-if="view !== 'agree'" class="done">
         <p v-if="view === 'waiting-pick'" class="muted">✓ You proposed {{ proposedLocal.length }} time{{ proposedLocal.length === 1 ? '' : 's' }}. Waiting for <strong>{{ teamName(turnTeamId) }}</strong> to pick one or suggest different times.</p>
         <p v-else class="muted">No times posted yet — either {{ words.team }} can post availability. (Log in as {{ isDuel ? '' : 'a player on ' }}<strong>{{ c.challenger }}</strong> or <strong>{{ c.challenged }}</strong> to post yours.)</p>
       </div>
@@ -444,7 +544,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
 .modal.wide { max-width: 780px; }
 .m-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .m-head h3 { margin: 0; font-size: 17px; font-weight: 800; }
-.x { background: none; border: 0; color: var(--fg-3); font-size: 18px; cursor: pointer; }
+.x { background: none; border: 0; color: var(--fg-3); font-size: 18px; cursor: pointer; min-width: 36px; min-height: 36px; margin: -4px -8px -4px 0; }
 .lede { color: var(--fg-2); font-size: 13px; margin: 6px 0 16px; }
 .grid-scroll { overflow-x: auto; }
 .grid { display: flex; flex-direction: column; gap: 8px; min-width: 560px; }
@@ -501,11 +601,13 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
 .ftag { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1px 7px; }
 .ftag strong { color: var(--fg-2); }
 .agreed-box { background: rgba(255,122,26,0.08); border: 1px solid rgba(255,122,26,0.35); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; }
-.agreed-box .btn.sm { padding: 6px 10px; font-size: 12px; }
+.agreed-box .btn.sm { padding: 6px 10px; font-size: 12px; min-height: 36px; }
 .agreed-title { font-weight: 700; width: 100%; }
 .agreed-row { display: flex; gap: 12px; flex-wrap: wrap; width: 100%; }
 .agreed-row .fld { display: flex; flex-direction: column; gap: 4px; }
 .agreed-row .fld > span { font-size: 11px; color: var(--fg-3); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
 .agreed-row input, .agreed-row select { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg); padding: 8px 10px; border-radius: 8px; font-family: inherit; font-size: 14px; color-scheme: dark; }
 .agreed-actions { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 10px; flex-wrap: wrap; }
+.agreed-actions .link-btn { text-align: left; padding: 8px 0; min-height: 36px; }
+.agreed-err { width: 100%; margin: 0; }
 </style>
