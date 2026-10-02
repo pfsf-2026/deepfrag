@@ -63,7 +63,7 @@ def main():
     ap.add_argument("--days", type=int, default=45)
     ap.add_argument("--mode", default="1on1")
     ap.add_argument("--max", type=int, default=4000, help="stop after this many games")
-    ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--workers", type=int, default=8)
     a = ap.parse_args()
     if not SECRET:
         sys.exit("set DEEPFRAG_SYNC_SECRET")
@@ -75,8 +75,9 @@ def main():
         if not games:
             break
         rows = []
-        with cf.ThreadPoolExecutor(a.workers) as ex:
-            for out in ex.map(lambda g: process(g, a.mode, version), games):
+        # processes, not threads: the analysis is pure-Python CPU work
+        with cf.ProcessPoolExecutor(a.workers) as ex:
+            for out in ex.map(process, games, [a.mode] * len(games), [version] * len(games), chunksize=4):
                 rows.extend(out)
                 if len(rows) >= 200:
                     call("POST", "/api/admin/movement/load", {"rows": rows})

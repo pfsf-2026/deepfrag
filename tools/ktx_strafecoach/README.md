@@ -10,39 +10,65 @@ nightly rebuild are untouched.
 - **Rebuild:** copy a new `strafecoach.patch` to `/opt/qw/coach/`, then
   `sudo -u qw -H bash /opt/qw/coach/build_coach.sh [ktx-commit]` and change map (or
   `systemctl restart qw-coach`). Pinned to KTX `f67d6cc5`; bump it if mvdsv's game API changes.
-- **In game:** `strafecoach` (or `scoach`) cycles HUD + orb, HUD only, orb only, off. The choice is kept in
+- **In game:** `strafecoach` (or `scoach`) cycles HUD + orb, HUD only, orb only, off. `scpace` changes the orb's sweep speed. The choice is kept in
   the client's userinfo (`setinfo stc N`) so it survives map changes. Only runs outside a live match
   (prewar, race, practice) unless `k_strafecoach_match 1`.
 - **Map:** the coach port defaults to `speed` (wide open, Peter's old training map). `speed2`, `rawspeed` and
   `speedrush` are on the box too.
 
-## What it shows
+## What it shows (v3)
 
-QuakeWorld air acceleration adds speed along the direction your keys point, capped at 30 ups measured along
-that direction. A frame gains the most when that direction is exactly sideways to your velocity; the window
-that gains anything is only a few degrees wide and rotates as your velocity turns.
+**The physics.** QuakeWorld adds speed along the direction your keys point, capped at a speed measured along
+that direction. In the air the cap is 30, so a frame gains the most when that direction is exactly sideways to
+your velocity, and the window that gains anything is only a few degrees wide. As you gain, your velocity turns
+and the window turns with it. So a bunnyhop is a smooth mouse sweep, and **what you gain is set by how fast
+you sweep while staying in the window**. On the ground the cap is your full run speed (320) and friction takes
+about 5% a frame; aiming ~35 degrees off your direction of travel still nets speed, up to an equilibrium near
+485. That run-up is the circle jump.
 
-- **HUD** (centerprint, 10 Hz), three short lines. v2 after Peter's first test: the first version drew a
-  one-character-per-degree gauge that nobody could read.
+Holding the perfect angle every air frame is 100% and the maximum gain, but at 400 ups it needs a ~300 deg/s
+sweep and would spin you 200 degrees in one hop. Nobody does. From the physics simulation at 400 ups:
 
-  ```
-  437                 your speed
-       33%  >>        33% of the possible gain right now; turn RIGHT for more
-  last hop +19        what the hop you just finished gained
-  ```
+| sweep | gain per hop | share of the possible gain |
+|---|---|---|
+| none | +1 | 1% |
+| 60 deg/s | +20 | 35% |
+| 90 deg/s | +27 | 47% |
+| 120 deg/s | +34 | 62% |
+| 200 deg/s | +48 | 87% |
 
-  One rule: make the number go up by turning the way the arrows point. More arrows = further off (1 = 1 deg,
-  2 = 3 deg, 3 = 6 deg or more). The values are averaged over the 0.1 s between refreshes so the line is steady.
-- **Orb** (`progs/s_light.spr`): the yaw to aim at. Always 320 units away, so its size never changes. It sits
-  on the plane of the player's standing eye height, so it does not bob with jumps. Its yaw is smoothed
-  (60 ms) and it is led by the player's ping so the direction is right when the client draws it. Glows blue
-  while the crosshair is gaining speed. It is a normal entity, so other players on the server see it too, and
-  on a tight map it can end up inside a wall.
-- **Hop number:** speed gained from takeoff to landing.
+**HUD** (centerprint, 10 Hz):
 
-Holding 100% needs a ~300 deg/s turn at 400 ups, so nobody scores 100%. What you gain is set by how
-fast you can turn while keeping the number above zero. From the physics simulation at 400 ups, 77 fps, one hop:
-60 deg/s turn = +20 ups (35%), 120 deg/s = +35 (62%), 200 deg/s = +48 (87%), no turn = +1.
+```
+437                 your speed
+     33%  >>        33% of the possible gain right now; turn RIGHT for more
+last hop +22        or "circle jump 405" after the first hop of a run
+```
+
+**Hop log** (console, so the last few lines sit top left of the screen): one line per hop.
+
+```
+circle jump 444  (left the ground at 417)
+hop 2  +27  now 471  52%
+hop 3  +33  now 504  69%
+```
+
+The first hop after standing or running on the ground is the circle jump; the number is the speed it reaches.
+About 400 is fine, 440 is good, 480+ is exceptional (the ground equilibrium is ~485).
+
+**Orb.**
+- *In the air it is a pacer.* It starts where your view should be and sweeps the way you are strafing at a set
+  rate. Keep your crosshair on it and you are sweeping at that pace. `scpace` steps through 60 / 90 / 120 / 150 /
+  180 deg/s (default 90, saved as `setinfo stcp N`). It re-anchors on every takeoff and every time you switch
+  strafe key, and it waits when it gets 20 degrees ahead of you.
+- *On the ground* it marks the best aim for the run-up, unsmoothed, because that aim itself sweeps fast.
+- Always 320 units away (constant size), on the plane of your standing eye height (no bobbing), led by your
+  ping. Glows blue while you are gaining. Other players on the server can see it.
+
+**History.** v1 was a one-character-per-degree gauge nobody could read, with an orb that changed size and
+jumped. v2 made the HUD three plain lines and stabilised the orb, but the orb marked the instantaneous best
+angle, which always sits a few degrees ahead of wherever you are looking, so it seemed to follow the crosshair
+instead of leading it (Peter). v3 made it a pacer and added circle-jump tracking, ground guidance and the hop log.
 
 ## Files
 

@@ -184,6 +184,8 @@ function runManual() {
     </div>
     <CoachFours v-if="mode === '4on4'" :cid="props.cid" />
     <template v-else>
+    <!-- movement report: its own endpoint, shown without waiting for "Analyze my game" -->
+    <CoachMovement :cid="props.cid" />
     <!-- gate -->
     <div v-if="!requested" class="intro">
       <p>Get a data-driven read on your 1on1 game — item control, stack management, first-spawn efficiency, and the specific levers separating your wins from losses.</p>
