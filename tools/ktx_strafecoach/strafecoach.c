@@ -29,14 +29,18 @@
  *
  *   HUD (centerprint):
  *         437                 your speed
- *              33%  >>        33% of the possible gain right now; turn RIGHT for more
+ *            +21/hop  >>      at this moment you are gaining at a rate of 21 ups a hop;
+ *                             turn RIGHT for more  (on the ground it reads +N/s)
  *         last hop +22        (or "circle jump 405" after the first hop of a run)
+ *
+ *   The rate is in real units on purpose. A percent of the theoretical best frame was
+ *   tried first and misled: that ceiling needs a ~300 deg/sec sweep and is not a target.
  *
  *   Console (top left of the screen): one line per hop, so the last few stay visible.
  *
  *   ORB: in the air it is a PACER. It starts where your view should be and sweeps in the
- *   direction you are strafing at a set rate ("scpace" picks 60 / 90 / 120 / 150 / 180
- *   deg/sec). Keep your crosshair on it and you are sweeping at that pace. It waits if
+ *   direction you are strafing at a set rate ("scpace" picks 45 / 60 / 75 / 90 / 120
+ *   deg/sec; good players sweep at about 60). Keep your crosshair on it and you are sweeping at that pace. It waits if
  *   you fall far behind and re-anchors every hop and every time you switch strafe key.
  *   On the ground it shows the best aim for the run-up.
  *   It sits at a fixed distance (constant size) on the plane of your standing eye height
@@ -59,12 +63,13 @@
 #define STC_MIN_HOP_FRAMES	15					// ignore stair steps and tiny drops
 #define STC_MAX_LEAD		0.15f				// never lead the orb by more than this many seconds
 #define STC_GAIN_EFF		0.10f				// "gaining": this share of the best possible frame
-#define STC_PACE_DEFAULT	90					// pacer sweep, degrees a second
+#define STC_PACE_DEFAULT	60					// pacer sweep, degrees a second: what the top quarter of duel players do
+#define STC_HOP_FRAMES		52					// air frames in a flat jump at 77 fps
 #define STC_PACE_WAIT		20.0f				// the pacer stops while it is this far ahead of your view
 #define STC_GROUND_SETTLE	3					// ground frames in a row before ground maths applies
 #define STC_CHAIN_BREAK		20					// ground frames in a row that end a hop chain (~0.27 s)
 
-static const int stc_paces[] = { 60, 90, 120, 150, 180 };
+static const int stc_paces[] = { 45, 60, 75, 90, 120 };
 #define STC_NUM_PACES ((int)(sizeof(stc_paces) / sizeof(stc_paces[0])))
 
 static float stc_angdiff(float a, float b)
@@ -191,13 +196,13 @@ static float stc_frame_eff(float speed, float wish_vs_vel_deg, float cap, float 
 
 // Three short lines:
 //     437                      your speed
-//     <<  21%                  21% of the possible gain right now; turn LEFT for more
+//     <<  +21/hop              gaining at a rate of 21 ups a hop right now; turn LEFT for more
 //     last hop +22             or "circle jump 405" after the first hop of a run
-// eff / offset are averages over the frames since the last refresh, so the line does not flicker.
-static void stc_print(gedict_t *p, float speed, qbool guide, float eff, float offset, qbool strafing)
+// rate / offset are averages over the frames since the last refresh, so the line does not flicker.
+static void stc_print(gedict_t *p, float speed, qbool guide, float rate, qbool ground, float offset, qbool strafing)
 {
-	char mid[32], last[40];
-	int arrows, pct;
+	char mid[40], num[16], last[40];
+	int arrows;
 	float off_abs = (offset < 0) ? -offset : offset;
 
 	last[0] = 0;
@@ -218,22 +223,30 @@ static void stc_print(gedict_t *p, float speed, qbool guide, float eff, float of
 		return;
 	}
 
-	pct = (int)floor(eff * 100 + 0.5f);
-	pct = (pct < 0) ? 0 : ((pct > 100) ? 100 : pct);
+	snprintf(num, sizeof(num), "%+d%s", (int)floor(rate + 0.5f), ground ? "/s" : "/hop");
 	arrows = (off_abs >= 6) ? 3 : ((off_abs >= 3) ? 2 : ((off_abs >= 1) ? 1 : 0));
 
 	// fixed-width, so the number stays put: 3 arrow cells, the number, 3 arrow cells.
 	// '<' | 0x80 and '>' | 0x80 are the red glyphs.
 	if (offset > 0)			// the best aim is to your LEFT
 	{
-		snprintf(mid, sizeof(mid), "%.*s%*s %3d%%    ", arrows, "\xbc\xbc\xbc", 3 - arrows, "", pct);
+		snprintf(mid, sizeof(mid), "%.*s%*s %8s    ", arrows, "\xbc\xbc\xbc", 3 - arrows, "", num);
 	}
 	else
 	{
-		snprintf(mid, sizeof(mid), "    %3d%% %*s%.*s", pct, 3 - arrows, "", arrows, "\xbe\xbe\xbe");
+		snprintf(mid, sizeof(mid), "    %8s %*s%.*s", num, 3 - arrows, "", arrows, "\xbe\xbe\xbe");
 	}
 
 	G_centerprint(p, "%d\n%s\n%s", (int)speed, mid, last);
+}
+
+// What a steady sweep at `pace` deg/sec gains over one flat hop at `speed`.
+static float stc_pace_gain(float speed, float pace, float ft)
+{
+	float a = speed * (pace * M_PI / 180) * ft;
+	float d = STC_AIR_WISH - ((a > STC_AIR_WISH) ? STC_AIR_WISH : a);
+
+	return (sqrt(speed * speed + (STC_AIR_WISH * STC_AIR_WISH - d * d) * STC_HOP_FRAMES) - speed);
 }
 
 void StrafeCoachPrecache(void)
@@ -287,7 +300,7 @@ void StrafeCoachCmd(void)
 	if (self->stc_mode == 1)
 	{
 		G_sprint(self, PRINT_HIGH, "In the air: hold a strafe key and sweep the mouse the same way.\n"
-					"The %% is how much of the possible speed you are gaining. Arrows = turn that way for more.\n"
+					"+N/hop is the speed you are gaining right now. Arrows = turn that way for more.\n"
 					"The orb sweeps at %d deg/sec: keep your crosshair on it. scpace changes the pace.\n",
 					self->stc_pace);
 	}
@@ -315,7 +328,8 @@ void StrafeCoachPaceCmd(void)
 	self->stc_pace = stc_paces[next];
 	self->stc_orb_live = false;
 	stuffcmd_flags(self, STUFFCMD_IGNOREINDEMO, "setinfo stcp %d\n", self->stc_pace);
-	G_sprint(self, PRINT_HIGH, "Strafe coach pace: %s deg/sec\n", dig3(self->stc_pace));
+	G_sprint(self, PRINT_HIGH, "Strafe coach pace: %s deg/sec (about %+d a hop at 400 speed)\n", dig3(self->stc_pace),
+				(int)floor(stc_pace_gain(400, self->stc_pace, 0.013f) + 0.5f));
 }
 
 // Runs from PlayerPreThink: self->movement holds this command's keys and velocity is what
@@ -440,9 +454,8 @@ void StrafeCoachFrame(void)
 
 					if ((self->stc_mode == 1) || (self->stc_mode == 2))
 					{
-						G_sprint(self, PRINT_HIGH, "hop %d  %+d  now %d  %d%%\n", self->stc_chain_hops,
-									(int)floor(self->stc_last_gain + 0.5f), (int)floor(speed + 0.5f),
-									(int)floor(self->stc_last_eff * 100 + 0.5f));
+						G_sprint(self, PRINT_HIGH, "hop %d  %+d  now %d\n", self->stc_chain_hops,
+									(int)floor(self->stc_last_gain + 0.5f), (int)floor(speed + 0.5f));
 					}
 				}
 			}
@@ -566,9 +579,24 @@ void StrafeCoachFrame(void)
 		if ((self->stc_mode == 1) || (self->stc_mode == 2))
 		{
 			qbool have = guide && (self->stc_acc_n > 0);
+			float rate = 0;
 
-			stc_print(self, speed, have,
-						have ? (self->stc_acc_eff / self->stc_acc_n) : 0,
+			if (have)
+			{
+				// speed^2 one frame adds at the averaged efficiency
+				float g2 = (self->stc_acc_eff / self->stc_acc_n) * ideal_step;
+
+				if (ground_phys)
+				{
+					rate = (sqrt(v_eff * v_eff + g2) - speed) / ft;				// net of friction, per second
+				}
+				else
+				{
+					rate = sqrt(speed * speed + g2 * STC_HOP_FRAMES) - speed;	// kept up for one whole hop
+				}
+			}
+
+			stc_print(self, speed, have, rate, ground_phys,
 						have ? (self->stc_acc_off / self->stc_acc_n) : 0, smove != 0);
 		}
 
