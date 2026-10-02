@@ -4885,6 +4885,195 @@ def admin_duel_adv_load(authorization: str | None = Header(default=None), rows: 
     return {"upserted": len(vals)}
 
 
+# ── Movement report: per-hop air-strafe analysis from demos (maths in movement.py) ────────────
+# One row per player per game, computed OUTSIDE the API by tools/movement/extract_movement.py
+# (each game is a 7 MB raw track from the mvd-api) and pushed here. The API only aggregates.
+MOVEMENT_VERSION = 1
+_MOVEMENT_READY = False
+_MOVEMENT_POOL: dict = {}      # mode -> (expires_at, pool)
+# key, label, unit, how to weight across games ('hops' | 'minutes'), which way is better (or None)
+MOVEMENT_METRICS = [
+    ("gain_med",     "Speed gained per hop",          "ups",   "hops",    "high"),
+    ("gaining_pct",  "Hops that gain speed",          "%",     "hops",    "high"),
+    ("eff_mean",     "Share of the possible gain",    "%",     "hops",    "high"),
+    ("turn_med",     "Turn rate while hopping",       "deg/s", "hops",    "high"),
+    ("chain_p90",    "Long hop chains",               "hops",  "minutes", "high"),
+    ("over_400_pct", "Time above 400 speed",          "%",     "minutes", "high"),
+    ("speed_p90",    "Cruising top speed",            "ups",   "minutes", "high"),
+    ("speed_p50",    "Typical speed",                 "ups",   "minutes", "high"),
+    ("bumped_pct",   "Hops cut short (walls, braking)", "%",   "hops",    None),
+    ("hops_per_min", "Hops per minute",               "",      "minutes", None),
+]
+
+
+def _movement_ensure(cur):
+    global _MOVEMENT_READY
+    if _MOVEMENT_READY:
+        return
+    cur.execute("""CREATE TABLE IF NOT EXISTS movement_games (
+                     hub_game_id  BIGINT NOT NULL,
+                     canonical_id TEXT NOT NULL,
+                     player_name  TEXT,
+                     map          TEXT,
+                     played_at    TIMESTAMPTZ,
+                     mode         TEXT NOT NULL DEFAULT '1on1',
+                     version      INT NOT NULL DEFAULT 1,
+                     clean_hops   INT,
+                     minutes      REAL,
+                     metrics      JSONB NOT NULL DEFAULT '{}'::jsonb,
+                     PRIMARY KEY (hub_game_id, canonical_id))""")
+    cur.execute("CREATE INDEX IF NOT EXISTS movement_games_cid ON movement_games (canonical_id, played_at DESC)")
+    _MOVEMENT_READY = True
+
+
+@app.get("/api/admin/movement/todo")
+def admin_movement_todo(authorization: str | None = Header(default=None), mode: str = "1on1",
+                        days: int = 45, limit: int = Query(500, le=5000)):
+    """Games the movement extractor has not processed yet (newest first), each with the
+    players to analyse: [{gid, map, date, players: [{cid, name}]}]. God key."""
+    _check_sync_secret(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _movement_ensure(cur)
+        conn.commit()
+        cur.execute("""SELECT m.hub_game_id AS gid, m.match_map AS map, m.match_date AS date,
+                              json_agg(json_build_object('cid', p.canonical_id, 'name', p.player_name)) AS players
+                       FROM matches m JOIN players p ON p.match_id = m.match_id
+                       WHERE m.match_mode = %s AND m.hub_game_id IS NOT NULL AND m.hub_game_id > 0
+                         AND COALESCE(m.has_bots, 0) = 0 AND p.canonical_id IS NOT NULL
+                         AND m.match_date::timestamptz >= now() - make_interval(days => %s)
+                         AND NOT EXISTS (SELECT 1 FROM movement_games g
+                                         WHERE g.hub_game_id = m.hub_game_id AND g.version >= %s)
+                       GROUP BY m.hub_game_id, m.match_map, m.match_date
+                       ORDER BY m.match_date DESC LIMIT %s""", (mode, days, MOVEMENT_VERSION, limit))
+        return {"version": MOVEMENT_VERSION, "games": [dict(r) for r in cur.fetchall()]}
+
+
+@app.post("/api/admin/movement/load")
+def admin_movement_load(authorization: str | None = Header(default=None), rows: list = Body(..., embed=True)):
+    """Bulk upsert of movement rows (god key): {hub_game_id, canonical_id, player_name, map,
+    played_at, mode, version, clean_hops, minutes, metrics}. A player the extractor could not
+    find in the demo is sent with empty metrics so the game is not retried forever."""
+    _check_sync_secret(authorization)
+    if not isinstance(rows, list) or len(rows) > 2000:
+        raise HTTPException(400, "rows must be a list of at most 2000")
+    vals = []
+    for r in {(r.get("hub_game_id"), r.get("canonical_id")): r for r in rows}.values():
+        try:
+            vals.append((int(r["hub_game_id"]), str(r["canonical_id"]), r.get("player_name"), r.get("map"),
+                         r.get("played_at"), r.get("mode") or "1on1", int(r.get("version") or MOVEMENT_VERSION),
+                         r.get("clean_hops"), r.get("minutes"), json.dumps(r.get("metrics") or {})))
+        except Exception:
+            raise HTTPException(400, "bad row")
+    with pg() as conn:
+        cur = conn.cursor()
+        _movement_ensure(cur)
+        psycopg2.extras.execute_values(
+            cur, """INSERT INTO movement_games (hub_game_id, canonical_id, player_name, map, played_at, mode,
+                                                 version, clean_hops, minutes, metrics) VALUES %s
+                    ON CONFLICT (hub_game_id, canonical_id) DO UPDATE SET
+                      player_name=EXCLUDED.player_name, map=EXCLUDED.map, played_at=EXCLUDED.played_at,
+                      mode=EXCLUDED.mode, version=EXCLUDED.version, clean_hops=EXCLUDED.clean_hops,
+                      minutes=EXCLUDED.minutes, metrics=EXCLUDED.metrics""", vals, page_size=500)
+        conn.commit()
+    _MOVEMENT_POOL.clear()
+    return {"upserted": len(vals)}
+
+
+def _movement_agg_sql(where: str, group: str) -> str:
+    """Weighted per-group means of every metric over a player's most recent 40 usable games."""
+    cols = []
+    for key, _label, _unit, w, _better in MOVEMENT_METRICS:
+        wcol = "clean_hops" if w == "hops" else "minutes"
+        cols.append(f"SUM((metrics->>'{key}')::float * {wcol}) FILTER (WHERE metrics ? '{key}' AND (metrics->>'{key}') IS NOT NULL)"
+                    f" / NULLIF(SUM({wcol}) FILTER (WHERE metrics ? '{key}' AND (metrics->>'{key}') IS NOT NULL), 0) AS {key}")
+    return f"""SELECT {group}, COUNT(*) AS games, SUM(clean_hops) AS hops, MAX(played_at) AS latest,
+                      MAX((metrics->>'chain_max')::float) AS chain_max, {', '.join(cols)}
+               FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY canonical_id ORDER BY played_at DESC) AS rn
+                     FROM movement_games WHERE mode = %s AND clean_hops >= 8 {where}) t
+               WHERE rn <= 40 GROUP BY {group}"""
+
+
+def _movement_pool(cur, mode: str) -> dict:
+    """Every analysed player's own averages (5+ games) -> sorted values per metric, cached 15 min."""
+    hit = _MOVEMENT_POOL.get(mode)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    cur.execute(_movement_agg_sql("", "canonical_id") + " HAVING COUNT(*) >= 5", (mode,))
+    rows = cur.fetchall()
+    pool = {"players": len(rows)}
+    for key, *_ in MOVEMENT_METRICS:
+        pool[key] = sorted(float(r[key]) for r in rows if r[key] is not None)
+    _MOVEMENT_POOL[mode] = (time.time() + 900, pool)
+    return pool
+
+
+@app.get("/api/players/{canonical_id}/movement")
+def player_movement(canonical_id: str, mode: str = "1on1"):
+    """Movement report for the AI Coach: what each hop gains, how fast the player turns while
+    hopping, how long the chains run and how much of the game is spent at speed, each next to
+    the middle player and the top quarter of everyone analysed. Plus the same per map."""
+    def pick(vals, q):
+        return vals[min(len(vals) - 1, int(len(vals) * q))] if vals else None
+
+    with pg() as conn:
+        cur = conn.cursor()
+        _movement_ensure(cur)
+        conn.commit()
+        cur.execute(_movement_agg_sql("AND canonical_id = %s", "canonical_id"), (mode, canonical_id))
+        me = cur.fetchone()
+        if not me:
+            return {"canonical_id": canonical_id, "mode": mode, "games": 0, "metrics": [], "maps": [], "read": []}
+        pool = _movement_pool(cur, mode)
+        cur.execute(_movement_agg_sql("AND canonical_id = %s", "canonical_id, map") + " HAVING COUNT(*) >= 3 ORDER BY COUNT(*) DESC",
+                    (mode, canonical_id))
+        map_rows = cur.fetchall()
+
+    metrics = []
+    for key, label, unit, _w, better in MOVEMENT_METRICS:
+        you = None if me[key] is None else round(float(me[key]), 1)
+        vals = pool.get(key) or []
+        rank = None
+        if you is not None and len(vals) >= 8:
+            below = sum(1 for v in vals if v < you)
+            rank = round(100.0 * below / len(vals))
+        metrics.append({"key": key, "label": label, "unit": unit, "better": better, "you": you,
+                        "median": None if not vals else round(pick(vals, 0.5), 1),
+                        "top": None if not vals else round(pick(vals, 0.75), 1),
+                        "rank": rank})
+    by = {m["key"]: m for m in metrics}
+
+    read = []
+    g, t = by["gain_med"], by["turn_med"]
+    if g["you"] is not None:
+        line = f"A typical hop of yours gains {g['you']:g} ups"
+        if g["top"] is not None:
+            line += f"; the top quarter of players gain {g['top']:g}"
+        read.append(line + ".")
+    if t["you"] is not None and t["top"] is not None:
+        if t["you"] < t["top"] - 5:
+            read.append(f"Gain comes from turning faster while your view stays just behind your direction of travel. "
+                        f"You turn at {t['you']:g} degrees a second in the air; the top quarter turn at {t['top']:g}.")
+        else:
+            read.append(f"Your turn rate in the air ({t['you']:g} degrees a second) is already with the top quarter.")
+    weakest = [m for m in metrics if m["better"] and m["rank"] is not None and m["key"] in
+               ("gaining_pct", "chain_p90", "over_400_pct", "speed_p90")]
+    if weakest:
+        w = min(weakest, key=lambda m: m["rank"])
+        if w["rank"] < 40:
+            read.append(f"Furthest behind: {w['label'].lower()} ({w['you']:g}{w['unit'] if w['unit'] == '%' else ' ' + w['unit'] if w['unit'] else ''}, "
+                        f"middle player {w['median']:g}).")
+
+    maps = [{"map": r["map"], "games": r["games"],
+             **{k: (None if r[k] is None else round(float(r[k]), 1))
+                for k in ("gain_med", "gaining_pct", "turn_med", "over_400_pct", "speed_p90")}} for r in map_rows]
+    return {"canonical_id": canonical_id, "mode": mode, "games": me["games"], "hops": int(me["hops"] or 0),
+            "latest": me["latest"].isoformat() if me["latest"] else None,
+            "chain_max": None if me["chain_max"] is None else int(me["chain_max"]),
+            "pool_players": pool.get("players", 0), "metrics": metrics, "maps": maps, "read": read,
+            "trainer": {"server": "den.qwsrv.com:29001", "command": "strafecoach"}}
+
+
 _DUEL_ADV_AGG = """
     COUNT(*) AS games, ROUND(AVG(win)*100.0, 1) AS win_pct, ROUND(SUM(minutes)::numeric, 0) AS minutes,
     ROUND((SUM(frags)/NULLIF(SUM(minutes),0))::numeric, 2) AS frags_pm,

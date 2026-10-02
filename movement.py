@@ -1,9 +1,11 @@
 """Movement report: per-hop air-strafe analysis from 13 ms demo tracks.
 
-Input is one player's column track from the mvd-api
-(`/v1/demos/gameId:{id}/buckets?windowMs=13&layout=column&fields=pos,view,vel,hgt`):
-`alive`, `x/y/z`, `vx/vy/vz` (central difference of positions), `hgt` (height above the
-floor from the BSP, ~0 when standing) and `vya` (view yaw, angle16).
+Input is one player's RAW track from the mvd-api
+(`/v1/demos/gameId:{id}/stream-slice?from=0&to=99999&fields=pos,view,hgt`): every server
+frame's position with its real timestamp (`pos.t` in ms, frames are 13 or 14 ms apart),
+`hgt.h` (height above the floor from the BSP, ~0 when standing) and `view.vya` (view yaw,
+angle16). Do NOT use the `buckets` endpoint for this: 13 ms buckets against ~13.5 ms frames
+leave about 4% of buckets empty, which makes speed dip by half for one sample at a time.
 
 QuakeWorld air acceleration adds speed along the direction the movement keys point, capped
 at 30 ups of speed measured ALONG that direction. One air frame therefore adds at most
@@ -60,35 +62,17 @@ def _frame_eff(speed: float, lag_deg: float) -> float:
 
 
 def analyze_track(me: dict) -> dict | None:
-    """Hops + summary for one player in one game. None if the track is unusable."""
-    alive = me.get("alive") or []
-    X, Y, Z = me.get("x") or [], me.get("y") or [], me.get("z") or []
-    H, VYA = me.get("hgt") or [], me.get("vya") or []
-    N = min(len(alive), len(X), len(Y), len(Z), len(H), len(VYA))
-    if N < 2000:
+    """Hops + summary for one player in one game (a `players[]` entry of stream-slice).
+    None if the track is unusable."""
+    pos = me.get("pos") or {}
+    T, px, py, pz = pos.get("t") or [], pos.get("x") or [], pos.get("y") or [], pos.get("z") or []
+    hgt = (me.get("hgt") or {}).get("h") or []
+    vya = (me.get("view") or {}).get("vya") or []
+    n = min(len(T), len(px), len(py), len(pz), len(hgt), len(vya))
+    if n < 2000:
         return None
-
-    # A player's physics runs once per client packet. About 4% of 13 ms buckets carry no new
-    # packet for him: the position simply repeats and is NOT made up on the next frame. Those
-    # buckets are not physics frames, and left in they make speed dip by half for one sample.
-    # So work on the frames where he actually moved (plus the first frame of standing still).
-    raw_ok = [bool(alive[i]) and None not in (X[i], Y[i], Z[i], H[i]) for i in range(N)]
-    keep = []
-    for i in range(N):
-        if not raw_ok[i]:
-            keep.append(i)              # keeps dead / missing stretches as breaks
-            continue
-        if not keep or not raw_ok[keep[-1]]:
-            keep.append(i)
-            continue
-        j = keep[-1]
-        if abs(X[i] - X[j]) + abs(Y[i] - Y[j]) + abs(Z[i] - Z[j]) > 0.01:
-            keep.append(i)
-    n = len(keep)
-    ok = [raw_ok[i] for i in keep]
-    px, py, pz = [X[i] for i in keep], [Y[i] for i in keep], [Z[i] for i in keep]
-    hgt, vya = [H[i] for i in keep], [VYA[i] for i in keep]
-    dt = FRAME_MS / 1000.0
+    ok = [None not in (px[k], py[k], pz[k], hgt[k]) for k in range(n)]
+    dt = FRAME_MS / 1000.0                 # nominal; real intervals come from T
 
     # Per-frame speed is too noisy to trust: positions are in 1/8 units and a client's frames
     # are 12, 13 or 14 ms long, so one step can be 15% off. Speed and heading are therefore
@@ -107,16 +91,19 @@ def analyze_track(me: dict) -> dict | None:
         seg = step[lo + 1:hi + 1]
         if any(x < 0 for x in seg) or not all(ok[lo:hi + 1]):
             # near a spawn / death / teleport: fall back to the two-frame difference
-            if ok[k - 1] and ok[k + 1] and step[k] >= 0 and step[k + 1] >= 0:
-                spd[k] = math.hypot(px[k + 1] - px[k - 1], py[k + 1] - py[k - 1]) / (2 * dt)
+            if ok[k - 1] and ok[k + 1] and step[k] >= 0 and step[k + 1] >= 0 and T[k + 1] > T[k - 1]:
+                spd[k] = math.hypot(px[k + 1] - px[k - 1], py[k + 1] - py[k - 1]) / ((T[k + 1] - T[k - 1]) / 1000.0)
             continue
-        spd[k] = sum(seg) / (2 * WIDE * dt)
+        el = (T[hi] - T[lo]) / 1000.0
+        if el <= 0:
+            continue
+        spd[k] = sum(seg) / el
         dx, dy = px[hi] - px[lo], py[hi] - py[lo]
         if abs(dx) + abs(dy) > 1.0:
             head[k] = math.degrees(math.atan2(dy, dx))
     for k in range(1, n - 1):
-        if ok[k - 1] and ok[k] and ok[k + 1] and step[k] >= 0 and step[k + 1] >= 0:
-            vz[k] = (pz[k + 1] - pz[k - 1]) / (2 * dt)
+        if ok[k - 1] and ok[k] and ok[k + 1] and step[k] >= 0 and step[k + 1] >= 0 and T[k + 1] > T[k - 1]:
+            vz[k] = (pz[k + 1] - pz[k - 1]) / ((T[k + 1] - T[k - 1]) / 1000.0)
     ground = [ok[k] and hgt[k] <= GROUND_HGT for k in range(n)]
 
     hops = []
@@ -161,7 +148,7 @@ def analyze_track(me: dict) -> dict | None:
             view = (vya[k] or 0) * 360.0 / 65536.0
             offs.append((_angdiff(view, head[k]), spd[k]))
         sign = 1.0 if turn >= 0 else -1.0        # +1 = turning left (yaw grows)
-        dur = span * dt
+        dur = (T[ib] - T[ia]) / 1000.0
         per_frame = abs(turn) / span if span else 0.0
 
         # Where the view sits relative to the heading says which keys are held: ~0 for
@@ -208,26 +195,10 @@ def analyze_track(me: dict) -> dict | None:
         chains.append(cur)
     chain_lens = [len(c) for c in chains]
 
-    # Speed over time uses every alive bucket: a dropped bucket inside movement takes the
-    # speed of the frame before it, a real standstill counts as 0.
-    alive_spd, kp, run = [], 0, 0
-    kept = set(keep)
-    pos_of = {i: k for k, i in enumerate(keep)}
-    last = 0.0
-    for i in range(N):
-        if not raw_ok[i]:
-            run = 0
-            continue
-        if i in kept:
-            last = spd[pos_of[i]]
-            run = 0
-            alive_spd.append(last if last < 2000 else 0.0)
-        else:
-            run += 1
-            alive_spd.append(last if run <= 2 and last < 2000 else 0.0)
+    alive_spd = [spd[k] for k in range(n) if ok[k] and spd[k] < 2000]
     if not alive_spd:
         return None
-    minutes = len(alive_spd) * FRAME_MS / 60000.0
+    minutes = (T[n - 1] - T[0]) / 60000.0
     r1 = lambda v: None if v is None else round(v, 1)
     styled = [h for h in clean if h["style"] in ("strafe", "diagonal")]
     summary = {
