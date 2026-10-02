@@ -262,6 +262,46 @@ function teamTag(id) { const t = teams.value.find(t => t.id === id); return t?.t
 function teamLabel(id) { const t = teams.value.find(x => x.id === id); return t ? (t.tag || t.name) : `#${id}` }
 const scheduledMatches = computed(() => challenges.value.filter(c => c.agreed_at).sort((a, b) => new Date(a.agreed_at) - new Date(b.agreed_at)))
 const openChallengeCount = computed(() => challenges.value.length)
+// Schedule tab (2026-10-02): upcoming matches soonest → latest, grouped by day; open
+// challenges (no time yet) get their own card below, soonest deadline first.
+const LIVE_MS = 2 * 3600e3   // a match that started under 2h ago still reads as "now"
+const upcomingMatches = computed(() => scheduledMatches.value.filter(c => new Date(c.agreed_at).getTime() > now.value - LIVE_MS))
+const awaitingResult = computed(() => scheduledMatches.value.filter(c => new Date(c.agreed_at).getTime() <= now.value - LIVE_MS))
+const openChallenges = computed(() => challenges.value.filter(c => !c.agreed_at)
+  .sort((a, b) => new Date(a.deadline || 8.64e15) - new Date(b.deadline || 8.64e15)))
+function dayKey(d) { return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` }
+const upcomingDays = computed(() => {
+  const today = dayKey(new Date(now.value)), tomorrow = dayKey(new Date(now.value + 86400e3))
+  const groups = []
+  for (const c of upcomingMatches.value) {
+    const d = new Date(c.agreed_at), k = dayKey(d)
+    let g = groups.find(x => x.key === k)
+    if (!g) {
+      const date = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+      const rel = k === today ? 'Today' : (k === tomorrow ? 'Tomorrow' : '')
+      g = { key: k, label: rel ? `${rel} · ${date}` : date, items: [] }
+      groups.push(g)
+    }
+    g.items.push(c)
+  }
+  return groups
+})
+function fmtClock(iso) { return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) }
+function fmtShortDay(iso) { return new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) }
+// "in 3h 20m" for anything inside the next 24h; "now" once it has started.
+function startsIn(iso) {
+  const ms = new Date(iso).getTime() - now.value
+  if (ms <= 0) return 'now'
+  if (ms > 24 * 3600e3) return ''
+  const m = Math.round(ms / 60000)
+  return m < 60 ? `in ${m}m` : `in ${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`
+}
+// Who owes the next move on an open challenge.
+function openStatus(c) {
+  if (!(c.proposed || []).length) return 'no times offered yet'
+  const picker = c.proposed_by === c.challenger_id ? c.challenged_id : c.challenger_id
+  return `${teamName(picker)} to pick a time`
+}
 function fmtMatchTime(iso) { return new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
 function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '' }
 // Recent results are shown WINNER-first (⚔ marks the challenger) so a row never
@@ -399,8 +439,8 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
 
           <section class="card">
             <h3>📅 Upcoming <button class="exp" @click="setTab('schedule')">schedule →</button></h3>
-            <div v-if="!scheduledMatches.length" class="muted small">Nothing scheduled yet.</div>
-            <div v-for="c in scheduledMatches.slice(0, 4)" :key="c.id" class="uprow">
+            <div v-if="!upcomingMatches.length" class="muted small">Nothing scheduled yet.</div>
+            <div v-for="c in upcomingMatches.slice(0, 4)" :key="c.id" class="uprow">
               <span class="up-teams">
                 <NuxtLink class="up-tag" :to="`/ladder/team/${c.challenger_id}`">{{ teamTag(c.challenger_id) }}</NuxtLink>
                 <span class="up-vs">vs</span>
@@ -439,47 +479,72 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
       </div>
 
       <!-- ============ SCHEDULE ============ -->
+      <!-- Upcoming matches first (soonest → latest, by day), open challenges below,
+           your own match + its actions in the rail (first on phones). -->
       <div v-show="tab === 'schedule'" class="bento">
-        <section class="card board-card">
-          <h3>📅 Your match</h3>
-          <ClientOnly>
-            <template v-if="myOpenChallenge">
-              <div class="ym-teams"><strong>{{ teamName(myOpenChallenge.challenger_id) }}</strong><span class="vs">vs</span><strong>{{ teamName(myOpenChallenge.challenged_id) }}</strong></div>
-              <div class="ym-status">{{ challengeStatus(myOpenChallenge) }}</div>
-              <div class="ym-actions">
-                <button class="rail-btn" @click="schedulerChallenge = myOpenChallenge">{{ myChallengeAction(myOpenChallenge) }}</button>
-                <button class="rail-btn ghost" @click="reportChallenge = myOpenChallenge">Report result</button>
-                <button v-if="myOpenChallenge.agreed_at" class="rail-btn ghost" @click="doReschedule(myOpenChallenge)">Reschedule</button>
-                <button v-if="canWithdraw(myOpenChallenge)" class="rail-btn ghost" :disabled="withdrawingId === myOpenChallenge.id" @click="doWithdraw(myOpenChallenge)">{{ withdrawingId === myOpenChallenge.id ? 'Withdrawing…' : 'Withdraw' }}</button>
+        <div class="sx-main">
+          <section class="card">
+            <h3>📅 Upcoming matches <span v-if="upcomingMatches.length" class="sx-n">{{ upcomingMatches.length }}</span></h3>
+            <div v-if="!upcomingMatches.length" class="muted small">No matches scheduled yet.</div>
+            <template v-for="g in upcomingDays" :key="g.key">
+              <div class="sx-day">{{ g.label }}</div>
+              <div v-for="c in g.items" :key="c.id" class="sx-row" :class="{ mine: involvesMe(c) }">
+                <span class="sx-time">{{ fmtClock(c.agreed_at) }}</span>
+                <span class="sx-names"><strong>{{ teamName(c.challenger_id) }}</strong><span class="vs">vs</span><strong>{{ teamName(c.challenged_id) }}</strong></span>
+                <span v-if="startsIn(c.agreed_at)" class="sx-in" :class="{ live: startsIn(c.agreed_at) === 'now' }">{{ startsIn(c.agreed_at) }}</span>
+                <span v-if="c.server" class="sx-srv">🖥️ {{ c.server }}</span>
+                <span v-if="involvesMe(c)" class="sx-actions">
+                  <button class="sched-btn" @click="schedulerChallenge = c">View</button>
+                  <button class="sched-btn ghost" title="Played it but it didn't record? Point DeepFrag at the games." @click="reportChallenge = c">Report</button>
+                </span>
               </div>
             </template>
-            <p v-else-if="myTeam" class="muted small">No active match. Go to <a class="lnk" @click="setTab('standings')">Standings</a> and hit ⚔ Challenge on a {{ words.team }} 1–2 rungs above you.</p>
-            <p v-else-if="loggedIn && user?.canonical_id" class="muted small">{{ isDuel ? 'Join the ladder to start scheduling matches.' : 'Join or create a team to start scheduling matches.' }}</p>
-            <p v-else class="muted small">Sign in and {{ isDuel ? 'join the ladder' : 'join a team' }} to schedule matches.</p>
-          </ClientOnly>
+            <template v-if="awaitingResult.length">
+              <div class="sx-day past">Awaiting result</div>
+              <div v-for="c in awaitingResult" :key="c.id" class="sx-row past" :class="{ mine: involvesMe(c) }">
+                <span class="sx-time">{{ fmtShortDay(c.agreed_at) }}</span>
+                <span class="sx-names"><strong>{{ teamName(c.challenger_id) }}</strong><span class="vs">vs</span><strong>{{ teamName(c.challenged_id) }}</strong></span>
+                <span v-if="involvesMe(c)" class="sx-actions">
+                  <button class="sched-btn" @click="schedulerChallenge = c">View</button>
+                  <button class="sched-btn ghost" title="Played it but it didn't record? Point DeepFrag at the games." @click="reportChallenge = c">Report</button>
+                </span>
+              </div>
+            </template>
+          </section>
 
-          <h3 style="margin-top:18px">Active challenges</h3>
-          <div v-if="!challenges.length" class="muted small">No active challenges.</div>
-          <div v-for="c in challenges" :key="c.id" class="chal-row">
-            <strong>{{ teamName(c.challenger_id) }}</strong><span class="arrow">→</span><strong>{{ teamName(c.challenged_id) }}</strong>
-            <span class="cstatus">{{ challengeStatus(c) }}</span>
-            <span class="spacer" />
-            <button v-if="involvesMe(c)" class="sched-btn" @click="schedulerChallenge = c">{{ c.agreed_at ? 'View' : 'Schedule' }}</button>
-            <button v-if="involvesMe(c)" class="sched-btn ghost" title="Played it but it didn't record? Point DeepFrag at the games." @click="reportChallenge = c">Report</button>
-            <button v-if="canWithdraw(c)" class="sched-btn ghost" :disabled="withdrawingId === c.id" @click="doWithdraw(c)">{{ withdrawingId === c.id ? '…' : 'Withdraw' }}</button>
-            <span v-else-if="!involvesMe(c) && c.deadline && !c.agreed_at" class="deadline">by {{ new Date(c.deadline).toLocaleDateString() }}</span>
-          </div>
-        </section>
-
-        <div class="rail">
           <section class="card">
-            <h3>Scheduled matches</h3>
-            <div v-if="!scheduledMatches.length" class="muted small">Nothing scheduled yet.</div>
-            <div v-for="c in scheduledMatches" :key="c.id" class="sm-row">
-              <div class="sm-teams">{{ teamName(c.challenger_id) }} vs {{ teamName(c.challenged_id) }}</div>
-              <div class="sm-when">📅 {{ fmtMatchTime(c.agreed_at) }}</div>
-              <div v-if="c.server" class="sm-srv">🖥️ {{ c.server }}</div>
+            <h3>⚔️ Open challenges <span v-if="openChallenges.length" class="sx-n">{{ openChallenges.length }}</span><span class="sx-h3note">no time set yet</span></h3>
+            <div v-if="!openChallenges.length" class="muted small">No open challenges.</div>
+            <div v-for="c in openChallenges" :key="c.id" class="chal-row" :class="{ mine: involvesMe(c) }">
+              <strong>{{ teamName(c.challenger_id) }}</strong><span class="arrow">→</span><strong>{{ teamName(c.challenged_id) }}</strong>
+              <span class="cstatus">{{ openStatus(c) }}</span>
+              <span class="spacer" />
+              <span v-if="c.deadline" class="deadline">play by {{ fmtShortDay(c.deadline) }}</span>
+              <button v-if="involvesMe(c)" class="sched-btn" @click="schedulerChallenge = c">Schedule</button>
+              <button v-if="involvesMe(c)" class="sched-btn ghost" title="Played it but it didn't record? Point DeepFrag at the games." @click="reportChallenge = c">Report</button>
+              <button v-if="canWithdraw(c)" class="sched-btn ghost" :disabled="withdrawingId === c.id" @click="doWithdraw(c)">{{ withdrawingId === c.id ? '…' : 'Withdraw' }}</button>
             </div>
+          </section>
+        </div>
+
+        <div class="rail" :class="{ 'rail-first': !!myOpenChallenge }">
+          <section class="card">
+            <h3>🎯 Your match</h3>
+            <ClientOnly>
+              <template v-if="myOpenChallenge">
+                <div class="ym-teams"><strong>{{ teamName(myOpenChallenge.challenger_id) }}</strong><span class="vs">vs</span><strong>{{ teamName(myOpenChallenge.challenged_id) }}</strong></div>
+                <div class="ym-status">{{ challengeStatus(myOpenChallenge) }}</div>
+                <div class="ym-actions">
+                  <button class="rail-btn" @click="schedulerChallenge = myOpenChallenge">{{ myChallengeAction(myOpenChallenge) }}</button>
+                  <button class="rail-btn ghost" @click="reportChallenge = myOpenChallenge">Report result</button>
+                  <button v-if="myOpenChallenge.agreed_at" class="rail-btn ghost" @click="doReschedule(myOpenChallenge)">Reschedule</button>
+                  <button v-if="canWithdraw(myOpenChallenge)" class="rail-btn ghost" :disabled="withdrawingId === myOpenChallenge.id" @click="doWithdraw(myOpenChallenge)">{{ withdrawingId === myOpenChallenge.id ? 'Withdrawing…' : 'Withdraw' }}</button>
+                </div>
+              </template>
+              <p v-else-if="myTeam" class="muted small">No active match. Go to <a class="lnk" @click="setTab('standings')">Standings</a> and hit ⚔ Challenge on a {{ words.team }} 1–{{ rungJump }} rungs above you.</p>
+              <p v-else-if="loggedIn && user?.canonical_id" class="muted small">{{ isDuel ? 'Join the ladder to start scheduling matches.' : 'Join or create a team to start scheduling matches.' }}</p>
+              <p v-else class="muted small">Sign in and {{ isDuel ? 'join the ladder' : 'join a team' }} to schedule matches.</p>
+            </ClientOnly>
           </section>
         </div>
       </div>
@@ -718,6 +783,29 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
 .chal-row .arrow { color: var(--accent); } .chal-row .cstatus { color: var(--fg-2); font-size: 12px; } .chal-row .spacer { flex: 1; }
 .chal-row .deadline { color: var(--draw); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
 .sched-btn { background: var(--accent); color: var(--bg); border: 0; border-radius: 6px; padding: 4px 12px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+/* Schedule tab: upcoming matches (by day, soonest first) + open challenges */
+.sx-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.sx-n { background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; font-size: 11px; color: var(--fg-2); letter-spacing: 0; }
+.sx-h3note { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11px; }
+.sx-day { font-size: 12px; font-weight: 800; color: var(--fg); margin: 14px 0 0; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.card h3 + .sx-day { margin-top: 2px; }
+.sx-day.past { color: var(--fg-3); }
+.sx-row { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid rgba(42,32,24,.5); font-size: 14px; }
+.sx-day + .sx-row { border-top: 0; }
+.sx-time { color: var(--accent); font-weight: 800; font-variant-numeric: tabular-nums; min-width: 76px; }
+.sx-names { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
+.sx-names .vs { color: var(--fg-3); font-size: 12px; }
+.sx-in { font-size: 11px; font-weight: 700; color: var(--fg-2); background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.sx-in.live { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.sx-srv { color: var(--fg-3); font-size: 12px; font-family: 'JetBrains Mono', monospace; overflow-wrap: anywhere; min-width: 0; }
+.sx-actions { margin-left: auto; display: inline-flex; gap: 6px; }
+.sx-row.mine, .chal-row.mine { background: rgba(255,122,26,0.06); margin: 0 -10px; padding-left: 10px; padding-right: 10px; border-radius: 8px; }
+.sx-row.past { opacity: .8; } .sx-row.past .sx-time { color: var(--fg-3); font-weight: 700; }
+.ym-actions { flex-wrap: wrap; } .ym-actions .rail-btn { flex: 1 1 110px; width: auto; }
+@media (max-width: 880px) {
+  .rail-first { order: -1; }                                                        /* your match leads on phones/tablets */
+  .sx-row .sched-btn, .chal-row .sched-btn { min-height: 36px; padding: 6px 14px; } /* touch target */
+}
 .sm-row { padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; } .sm-row:first-of-type { border-top: 0; }
 .sm-teams { font-weight: 600; } .sm-when { color: var(--accent); font-size: 12px; margin-top: 2px; } .sm-srv { color: var(--fg-3); font-size: 12px; font-family: 'JetBrains Mono', monospace; }
 
@@ -779,6 +867,10 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
   .legend { gap: 5px 12px; padding: 12px 14px 4px; margin: 0 -14px; }
   /* schedule + rules already stack via their own breakpoints */
   .chal-row { font-size: 13px; }
+  .sx-row { font-size: 13px; }
+  .sx-srv { flex-basis: 100%; padding-left: 86px; }          /* server drops under the names */
+  .sx-actions { flex-basis: 100%; margin-left: 0; padding-left: 86px; }
+  .sx-h3note { display: none; }
   .koth-team { font-size: 17px; }
 }
 @media (max-width: 380px) {

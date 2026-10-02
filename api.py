@@ -1234,13 +1234,10 @@ def _ladder_tick_inner(cur):
             left = f"<t:{int(dl.timestamp())}:R>" if dl else "soon"
             cl, cd = _team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"])
             if not (r["proposed"] or []):
-                msg = (f"⏳ {cl} vs {cd} still isn't scheduled — no times posted yet. "
-                       f"EITHER team can open the scheduler and post availability "
-                       f"(deadline {left}); the other side then picks a slot.")
+                msg = f"⏳ {cl} vs {cd}: no times posted yet — either {notify.unit()} can post them. Deadline {left}."
             else:
-                msg = (f"⏳ {cl} vs {cd} still isn't scheduled. It's on {cd} "
-                       f"(challenged) to pick one of the offered times — deadline {left}, "
-                       f"or they risk forfeiting their ladder position to {cl}.")
+                msg = (f"⏳ {cd}: pick one of {notify._name(cl)}'s offered times — deadline {left}, "
+                       f"or risk a forfeit.")
             notify.send(content=msg)
         except Exception:
             pass
@@ -1285,10 +1282,9 @@ def _ladder_tick_inner(cur):
                         (r["id"],))
             counts["expired_short"] = counts.get("expired_short", 0) + 1
             try:
-                notify.send(content=(f"⌛ The challenge {_team_label(cur, r['challenger_id'])} vs "
-                                     f"{_team_label(cur, r['challenged_id'])} expired — the offered times "
-                                     f"didn't span at least 2 days, so it's cancelled with **no ladder "
-                                     f"movement**. Re-issue with times on 2+ different days for the full window."))
+                notify.send(content=(f"⌛ {_team_label(cur, r['challenger_id'])} vs "
+                                     f"{_team_label(cur, r['challenged_id'])} expired — times were offered on "
+                                     f"one day only. Cancelled, no ladder movement."))
             except Exception:
                 pass
             continue
@@ -1308,11 +1304,9 @@ def _ladder_tick_inner(cur):
                         (r["id"],))
             counts["expired_challenger_stall"] = counts.get("expired_challenger_stall", 0) + 1
             try:
-                notify.send(content=(f"⌛ The challenge {_team_label(cur, r['challenger_id'])} vs "
-                                     f"{_team_label(cur, r['challenged_id'])} expired — "
-                                     f"{_team_label(cur, r['challenged_id'])} offered times but "
-                                     f"{_team_label(cur, r['challenger_id'])} never picked one. "
-                                     f"Cancelled with **no ladder movement**."))
+                cl_x, cd_x = _team_label(cur, r['challenger_id']), _team_label(cur, r['challenged_id'])
+                notify.send(content=(f"⌛ {cl_x} vs {cd_x} expired — {notify._name(cl_x)} never picked one of "
+                                     f"{notify._name(cd_x)}'s times. Cancelled, no ladder movement."))
             except Exception:
                 pass
             continue
@@ -1329,10 +1323,9 @@ def _ladder_tick_inner(cur):
                         (r["id"],))
             counts["expired_late_offer"] = counts.get("expired_late_offer", 0) + 1
             try:
-                notify.send(content=(f"⌛ The challenge {_team_label(cur, r['challenger_id'])} vs "
-                                     f"{_team_label(cur, r['challenged_id'])} expired — the offer on the table "
-                                     f"was posted less than {min_hours}h before the deadline, so nobody forfeits. "
-                                     f"Cancelled with **no ladder movement**; re-issue to try again."))
+                notify.send(content=(f"⌛ {_team_label(cur, r['challenger_id'])} vs "
+                                     f"{_team_label(cur, r['challenged_id'])} expired — times were offered less "
+                                     f"than {min_hours}h before the deadline. Cancelled, no ladder movement."))
             except Exception:
                 pass
             continue
@@ -1355,8 +1348,8 @@ def _ladder_tick_inner(cur):
                         continue
                     parts.append(f"{'⬇️' if tid == r['challenged_id'] else '↘️'} **{names.get(tid, tid)}** → #{rk}")
                 movement = "\n".join(parts)
-            notify.send(content=(f"🏳️ {_team_label(cur, r['challenged_id'])} failed to schedule by the deadline — "
-                                 f"**auto-forfeit**. {_team_label(cur, r['challenger_id'])} takes their ladder position."
+            notify.send(content=(f"🏳️ {_team_label(cur, r['challenged_id'])} didn't schedule in time — **forfeit**. "
+                                 f"{_team_label(cur, r['challenger_id'])} takes the spot."
                                  + (f"\n{movement}" if movement else "")))
             if new_koth:
                 notify.koth_changed(_team_label(cur, new_koth))
@@ -6789,7 +6782,6 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
             try:
                 if was_scheduled:
                     notify.match_rescheduled(cl_lbl, cd_lbl, new_dt.isoformat(), new_server,
-                                             note=f"Set by {mover} — both {notify.unit(True)} already agreed on the new time.",
                                              was=(ch["agreed_at"].isoformat() if ch.get("agreed_at") else None))
                 else:
                     notify.game_scheduled(cn, cp, dn, dp, new_dt.isoformat(), new_server)
@@ -6805,9 +6797,8 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
         cd_lbl = _team_label(cur, ch["challenged_id"])
         conn.commit()
     try:
-        old = f" set for **{notify.fmt_et(ch['agreed_at'].isoformat())}**" if ch.get("agreed_at") else ""
-        notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} — the match{old} is **off**. "
-                            f"They're picking a new time; it will be posted here once it's set.")
+        old = f"{notify.fmt_et(ch['agreed_at'].isoformat())} is off" if ch.get("agreed_at") else "time cleared"
+        notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} — {old}, new time coming.")
     except Exception:
         pass
     return {"challenge_id": challenge_id, "status": "open"}

@@ -153,4 +153,9 @@ Discord wording rules (Peter, 2026-09-30 — the old posts confused players abou
 - One time per post. A moved match says `New time: … (was …)`. A pre-agreed challenge does not also print the play-by deadline.
 - A re-pick after a reschedule says "offered new times — nothing is locked in yet"; it never re-announces "X challenged Y".
 - Deadlines print in ET like every other time, never as a bare ISO date.
-- The scheduled post starts with "✅ Match scheduled:".
+- The scheduled post starts with "✅ Scheduled:".
+- **Keep them short (Peter, 2026-10-02: "way too verbose").** One header line. Offered times print one line per evening in ET via `notify.fmt_slots` (12am–6am rides with the night before; 3+ half-hour slots collapse to a range), never one bullet per slot. No trailing instructions, no "both players are free again" filler. Second mentions use `notify._name(label)` so nobody is pinged twice. Deadlines are a day ("play by Sat Oct 3"), not a minute.
+
+## Schedule tab layout (2026-10-02)
+
+Upcoming matches first, soonest to latest, grouped by day ("Today · Fri, Oct 2") with a start-in chip inside 24h. Scheduled matches more than 2h past their time drop to an "Awaiting result" group at the bottom of that card. Open challenges (no time yet) sit in their own card below, soonest deadline first, each saying who owes the pick. "Your match" with its action buttons lives in the side rail, and moves to the top on phones when you have one.
