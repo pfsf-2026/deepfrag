@@ -10,7 +10,7 @@ nightly rebuild are untouched.
 - **Rebuild:** copy a new `strafecoach.patch` to `/opt/qw/coach/`, then
   `sudo -u qw -H bash /opt/qw/coach/build_coach.sh [ktx-commit]` and change map (or
   `systemctl restart qw-coach`). Pinned to KTX `f67d6cc5`; bump it if mvdsv's game API changes.
-- **In game:** `strafecoach` (or `scoach`) cycles HUD + orb, HUD only, orb only, off. `scpace` changes the orb's sweep speed. The choice is kept in
+- **In game:** `strafecoach` (or `scoach`) cycles HUD + orb, HUD only, orb only, off. `scpace` changes the orb's sweep speed, `scpos <rows>` moves the display down, `scsound` toggles the mistake sound. The choice is kept in
   the client's userinfo (`setinfo stc N`) so it survives map changes. Only runs outside a live match
   (prewar, race, practice) unless `k_strafecoach_match 1`.
 - **Map:** the coach port defaults to `speed` (wide open, Peter's old training map). `speed2`, `rawspeed` and
@@ -37,28 +37,39 @@ sweep and would spin you 200 degrees in one hop. Nobody does. From the physics s
 | 120 deg/s | +34 | 62% |
 | 200 deg/s | +48 | 87% |
 
-**HUD** (centerprint, 10 Hz):
+**The display (v5)** is one centerprint block, refreshed 10 times a second:
 
 ```
-437                 your speed
-   +21/hop  >>      right now you are gaining at a rate of 21 ups a hop; turn RIGHT for more
-last hop +22        or "circle jump 405" after the first hop of a run
+         437                    speed
+    <<   ###--                  meter = how hard you are gaining right now; arrows = turn that way
+   last +22   avg +18           last hop, and the average of your last 10
+   TOO FAR  lost 12             the mistake you just made and what it cost (red, 1.5 s, plus a tick sound)
+
++19  455                        last five hops, newest first, set to the left
+-12  436  too far
+circle jump 448
 ```
 
-On the ground the middle line reads `+N/s` (net of friction). The rate is in real units on purpose: v2/v3
-showed a percent of the theoretical best frame, and since that ceiling needs a ~300 deg/s sweep it read as
-"the coach is asking for something impossible" (Peter).
-
-**Hop log** (console, so the last few lines sit top left of the screen): one line per hop.
-
-```
-circle jump 444  (left the ground at 417)
-hop 2  +19  now 455
-hop 3  +23  now 478
-```
-
-The first hop after standing or running on the ground is the circle jump; the number is the speed it reaches.
-About 400 is fine, 440 is good, 480+ is exceptional (the ground equilibrium is ~485).
+- **Position.** With more than four lines the client starts a centerprint 48 pixels from the top, so the
+  block is pushed down with blank rows: `scpos <rows>` (default 14, saved as `setinfo stcy N`). A line is
+  centred in a 40-column box, so the hop list is padded with trailing spaces to sit at the box's left edge.
+  A player using ezQuake's new-HUD centerprint element positions the whole block with that element instead.
+- **Mistakes called out as they happen:**
+  - `TOO FAR`: the push went past sideways and is taking speed. This is the "quick flip to the side": at
+    180 degrees it costs 42 ups every frame, so 474 becomes 244 inside one hop.
+  - `LATE JUMP`: touched down mid-run without jump held and friction took speed.
+  - `HIT A WALL`: speed dropped by more than the push explains.
+  - `TURN MORE`: a whole hop with the push too far forward to gain anything.
+  - `NO STRAFE KEY`: a hop with no strafe key held.
+  `scsound` toggles the tick (played with `play`, so only that player hears it).
+- **Arrows and meter** come from values smoothed over a quarter second, and the orb and arrows are held for
+  0.35 s after guidance drops. Without that they blinked off on every strafe-key switch, because a switch
+  leaves a few frames with no key held and `sv_safestrafe` adds more (Peter: "arrows disappear too fast").
+- v4 showed a live `+N/hop` rate above `last hop +N`; the two read as the same number, so the rate became the
+  meter and the average of the last 10 hops was added.
+- The **gain window is asin(30 / speed) wide**: 4.3 degrees at 400, 3.4 at 500, 2.6 at 650, 2.1 at 800. A
+  steady 60 deg/s sweep still gains about +18 a hop at 650, but the same hand error now falls out of the
+  window, which is why gains drop off up there.
 
 **Orb.**
 - *In the air it is a pacer.* It starts where your view should be and sweeps the way you are strafing at a set
@@ -73,6 +84,16 @@ About 400 is fine, 440 is good, 480+ is exceptional (the ground equilibrium is ~
 jumped. v2 made the HUD three plain lines and stabilised the orb, but the orb marked the instantaneous best
 angle, which always sits a few degrees ahead of wherever you are looking, so it seemed to follow the crosshair
 instead of leading it (Peter). v3 made it a pacer and added circle-jump tracking, ground guidance and the hop log.
+
+## Reset gotcha (found 2026-10-02)
+
+When a KTX server empties it execs `configs/reset.cfg` -> `server.cfg` -> `mvdsv.cfg`, and the shared
+`mvdsv.cfg` sets `sv_progsname qwprogs`. The next map change on the coach port then loaded the STOCK mod and
+the coach silently vanished. Fix, without touching the shared configs: `port_29001.cfg` sets
+`k_stc_progs qwprogs_coach`, and the coach build runs a small guard entity that puts `sv_progsname` back to
+that value every 3 seconds. Checked by exec'ing `configs/reset.cfg` over rcon and changing map: the coach
+build loaded again. If the port ever does come up on the stock mod: `rcon sv_progsname qwprogs_coach`, then
+`rcon map speed`.
 
 ## Is the maths right? (checked 2026-10-02 after Peter asked)
 
