@@ -94,7 +94,7 @@ function tone(m) {
 .mv-row > :not(.mv-label) { text-align: right; font-variant-numeric: tabular-nums; }
 .mv-head { border-top: 0; padding: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--fg-3); font-weight: 700; }
 .mv-label { color: var(--fg-2); min-width: 0; overflow-wrap: anywhere; }
-.mv-label small { color: var(--fg-3); font-size: 11px; }
+.mv-label small { color: var(--fg-3); font-size: 11px; margin-left: 4px; }
 .mv-you { font-size: 15px; color: var(--fg); }
 .mv-you.good { color: var(--win); }
 .mv-you.behind { color: var(--loss); }
