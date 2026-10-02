@@ -18,19 +18,23 @@
  *
  * The server knows everything needed to solve this exactly, every client frame:
  * the keys held (self->movement), the view angle (v_angle) and the velocity the
- * move is about to use. The coach turns that into:
+ * move is about to use. The coach turns that into two things:
  *
- *   - an ORB placed in the world along the yaw you should be looking at right now,
- *     led by your ping so it is in the right place when your client draws it;
- *   - a GAUGE (centerprint): one character per degree, your crosshair in the middle
- *     (the caret). The band of '=' is where your crosshair gains speed, the knob is
- *     the best spot in it. Above it: your speed, and for the last hop the speed gained
- *     and what share of the theoretically possible gain that was.
+ *   - a HUD (centerprint), three short lines:
+ *         your speed
+ *         NN% with arrows  -- NN% is how much of the possible speed gain you are getting
+ *                             right now; the arrows say which way to turn for more
+ *         last hop +N      -- speed gained by the hop you just finished
+ *     One rule for the player: make the number go up by turning the way the arrows point.
  *
- * Holding the knob exactly needs a turn of ~300 deg/sec at 400 ups, so nobody scores
- * 100%: the gain you get is set by how fast you can turn while staying inside the band.
+ *   - an ORB in the world at the yaw to aim at. It sits at a fixed distance (so it never
+ *     changes size) on the plane of your standing eye height (so it does not bob with your
+ *     jumps), is smoothed, and is led by your ping.
  *
- * "strafecoach" (or "scoach") cycles: orb + gauge, gauge only, orb only, off.
+ * Holding 100% needs a turn of ~300 deg/sec at 400 ups, so nobody does: the gain you get
+ * is set by how fast you can turn while keeping the number above zero.
+ *
+ * "strafecoach" (or "scoach") cycles: HUD + orb, HUD only, orb only, off.
  * It is a practice aid, so it only runs outside a live match (prewar, race,
  * practice mode) unless k_strafecoach_match is set.
  */
@@ -38,17 +42,14 @@
 #include "g_local.h"
 
 #define STC_MODEL			"progs/s_light.spr"	// id1 light globe: a sprite, so it always faces you
-#define STC_REFRESH			0.1f				// gauge refresh, seconds (same rate race mode prints at)
-#define STC_DIST			300.0f				// how far ahead the orb sits
-#define STC_MIN_DIST		64.0f				// ...and the closest a wall may push it
+#define STC_REFRESH			0.1f				// HUD refresh, seconds (same rate race mode prints at)
+#define STC_DIST			320.0f				// the orb is always this far away, so its size never changes
 #define STC_AIR_WISH		30.0f				// PM_AirAccelerate's wishspeed cap
-#define STC_MIN_SPEED		100.0f				// below this there is nothing to coach
-#define STC_GROUND_SPEED	300.0f				// on the ground, only coach while carrying bunny speed
+#define STC_MIN_SPEED		200.0f				// below this there is nothing to coach
 #define STC_MIN_HOP_FRAMES	15					// ignore stair steps and tiny drops
-#define STC_GAUGE_HALF		12					// gauge is 2 * HALF + 1 characters
-#define STC_DEG_PER_CHAR	1.0f
 #define STC_MAX_LEAD		0.15f				// never lead the orb by more than this many seconds
-#define STC_ZONE_EFF		0.25f				// "gaining": this share of the best possible frame
+#define STC_ORB_TAU			0.06f				// orb yaw smoothing time constant, seconds
+#define STC_GAIN_EFF		0.10f				// "gaining": this share of the best possible frame
 
 static float stc_angdiff(float a, float b)
 {
@@ -90,6 +91,10 @@ static void stc_reset_stats(gedict_t *p)
 	p->stc_last_ground = 0;
 	p->stc_have_hop = false;
 	p->stc_next_draw = 0;
+	p->stc_orb_live = false;
+	p->stc_acc_eff = 0;
+	p->stc_acc_off = 0;
+	p->stc_acc_n = 0;
 }
 
 // The orb entity can be freed under us (map change); never trust a stale pointer.
@@ -161,64 +166,47 @@ static float stc_frame_eff(float speed, float wish_vs_vel_deg, float a_cap, floa
 	return ((2 * a * d + a * a) / ideal_step);
 }
 
-// Line 1: speed, last hop (speed gained, share of the possible gain).
-// Line 2: one character per degree with your crosshair in the middle. '=' marks where the
-//         crosshair gains speed, the knob the best spot. Knob left of the caret = turn left.
-// Line 3: the caret (your crosshair).
-static void stc_print(gedict_t *p, float speed, qbool guide, float wish_vs_vel, float offset,
-						float a_cap, float ideal_step, qbool strafing)
+// Three short lines:
+//     437                      your speed
+//     <<  21%                  21% of the possible gain right now; turn LEFT for more
+//     last hop +22             what the hop you just finished gained
+// eff / offset are averages over the frames since the last refresh, so the line does not flicker.
+static void stc_print(gedict_t *p, float speed, qbool guide, float eff, float offset, qbool strafing)
 {
-	char gauge[2 * STC_GAUGE_HALF + 2];
-	char hop[48];
-	int i, best = -1;
-	float best_eff = STC_ZONE_EFF;
+	char mid[32], hop[32];
+	int arrows, pct;
+	float off_abs = (offset < 0) ? -offset : offset;
 
 	hop[0] = 0;
 	if (p->stc_have_hop)
 	{
-		snprintf(hop, sizeof(hop), "  hop %+d  %d%%", (int)floor(p->stc_last_gain + 0.5f),
-					(int)floor(p->stc_last_eff * 100 + 0.5f));
+		snprintf(hop, sizeof(hop), "last hop %+d", (int)floor(p->stc_last_gain + 0.5f));
 	}
 
 	if (!guide)
 	{
-		G_centerprint(p, "%d%s\n%s", (int)speed, hop,
-						((speed >= STC_MIN_SPEED) && !strafing) ? "hold a strafe key" : " ");
+		G_centerprint(p, "%d\n%s\n%s", (int)speed,
+						((speed >= STC_MIN_SPEED) && !strafing) ? "hold a strafe key" : " ", hop);
 
 		return;
 	}
 
-	// Cell i sits (i - HALF) degrees to the RIGHT of the crosshair. Turning the view right
-	// by x degrees lowers the yaw by x, and the wish direction turns with the view.
-	for (i = 0; i < 2 * STC_GAUGE_HALF + 1; i++)
+	pct = (int)floor(eff * 100 + 0.5f);
+	pct = (pct < 0) ? 0 : ((pct > 100) ? 100 : pct);
+	arrows = (off_abs >= 6) ? 3 : ((off_abs >= 3) ? 2 : ((off_abs >= 1) ? 1 : 0));
+
+	// fixed-width, so the number stays put: 3 arrow cells, the number, 3 arrow cells.
+	// '<' | 0x80 and '>' | 0x80 are the red glyphs.
+	if (offset > 0)			// the best aim is to your LEFT
 	{
-		float eff = stc_frame_eff(speed, wish_vs_vel - (i - STC_GAUGE_HALF) * STC_DEG_PER_CHAR, a_cap, ideal_step);
-
-		gauge[i] = (eff >= STC_ZONE_EFF) ? (char)('=' | 0x80) : '-';	// red '=' : gaining here
-
-		if (eff > best_eff)
-		{
-			best_eff = eff;
-			best = i;
-		}
-	}
-
-	gauge[2 * STC_GAUGE_HALF + 1] = 0;
-
-	if (best >= 0)
-	{
-		gauge[best] = (char)0x83;					// slider knob: the best spot
-	}
-	else if (offset > 0)
-	{
-		gauge[0] = '<';								// the window is off the gauge to the left
+		snprintf(mid, sizeof(mid), "%.*s%*s %3d%%    ", arrows, "\xbc\xbc\xbc", 3 - arrows, "", pct);
 	}
 	else
 	{
-		gauge[2 * STC_GAUGE_HALF] = '>';
+		snprintf(mid, sizeof(mid), "    %3d%% %*s%.*s", pct, 3 - arrows, "", arrows, "\xbe\xbe\xbe");
 	}
 
-	G_centerprint(p, "%d%s\n%s\n^", (int)speed, hop, gauge);
+	G_centerprint(p, "%d\n%s\n%s", (int)speed, mid, hop);
 }
 
 void StrafeCoachPrecache(void)
@@ -235,6 +223,7 @@ void StrafeCoachConnect(gedict_t *p)
 	p->stc_marker = NULL;
 	p->stc_marker_shown = false;
 	p->stc_lead = 0;
+	p->stc_plane_z = 0;
 	p->stc_mode = (mode < 0 || mode > 3) ? 0 : mode;
 	stc_reset_stats(p);
 }
@@ -247,7 +236,7 @@ void StrafeCoachDisconnect(gedict_t *p)
 
 void StrafeCoachCmd(void)
 {
-	static char *names[] = { "off", "orb + gauge", "gauge only", "orb only" };
+	static char *names[] = { "off", "HUD + orb", "HUD only", "orb only" };
 
 	self->stc_mode = (self->stc_mode + 1) % 4;
 	stc_reset_stats(self);
@@ -263,8 +252,9 @@ void StrafeCoachCmd(void)
 
 	if (self->stc_mode == 1)
 	{
-		G_sprint(self, PRINT_HIGH, "Jump, hold a strafe key in the air, and keep your crosshair on the orb.\n"
-					"Gauge: ^ = your aim, red = gains speed, knob = best. hop = speed gained, %% of the possible gain.\n");
+		G_sprint(self, PRINT_HIGH, "In the air: hold a strafe key and turn the mouse the same way.\n"
+					"The %% is how much of the possible speed you are gaining. Arrows = turn that way for more.\n"
+					"The orb marks where to aim.\n");
 	}
 
 	if (self->stc_mode && !stc_allowed())
@@ -360,9 +350,14 @@ void StrafeCoachFrame(void)
 	}
 
 	// ---- where should the view be right now? ----
-	// Needs a strafe key (it picks the turn direction), some speed, and to be airborne --
-	// or touching down while still carrying bunny speed, so the orb does not blink each landing.
-	guide = (smove != 0) && (speed >= STC_MIN_SPEED) && (!onground || (speed >= STC_GROUND_SPEED));
+	// Needs a strafe key (it picks the turn direction) and some speed. It stays on through
+	// landings so nothing blinks between hops.
+	guide = (smove != 0) && (speed >= STC_MIN_SPEED);
+
+	if (onground)
+	{
+		self->stc_plane_z = self->s.v.origin[2] + self->s.v.view_ofs[2];	// standing eye height
+	}
 
 	if (guide)
 	{
@@ -381,42 +376,43 @@ void StrafeCoachFrame(void)
 		eff_now = stc_frame_eff(speed, wish_vs_vel, a_cap, ideal_step);
 	}
 
+	if (guide)
+	{
+		self->stc_acc_eff += eff_now;
+		self->stc_acc_off += offset;
+		self->stc_acc_n++;
+	}
+
 	// ---- the orb ----
 	if (guide && ((self->stc_mode == 1) || (self->stc_mode == 3)))
 	{
 		gedict_t *m = stc_marker_get(self);
-		vec3_t eye, target;
-		float yaw_r = ideal_view * M_PI / 180, frac, len;
+		float jump = stc_angdiff(ideal_view, self->stc_orb_yaw), yaw_r, k;
+		vec3_t at;
 
-		eye[0] = self->s.v.origin[0] + self->s.v.view_ofs[0];
-		eye[1] = self->s.v.origin[1] + self->s.v.view_ofs[1];
-		eye[2] = self->s.v.origin[2] + self->s.v.view_ofs[2];
-
-		// Your client predicts you ahead of what the server sees by about your ping, and the
-		// orb's position takes half a ping to reach you. Aim the orb from where you WILL be,
-		// so its direction is right at the moment it is drawn.
-		target[0] = eye[0] + self->s.v.velocity[0] * self->stc_lead + cos(yaw_r) * STC_DIST;
-		target[1] = eye[1] + self->s.v.velocity[1] * self->stc_lead + sin(yaw_r) * STC_DIST;
-		target[2] = eye[2];
-
-		// keep it out of walls: pull it back along the line of sight
-		traceline(PASSVEC3(eye), PASSVEC3(target), true, self);
-		frac = g_globalvars.trace_fraction;
-		len = sqrt((target[0] - eye[0]) * (target[0] - eye[0]) + (target[1] - eye[1]) * (target[1] - eye[1]));
-
-		if ((frac < 1) && (len > 1))
+		// Smooth the yaw so the orb glides. A big jump (keys changed) snaps instead.
+		if (!self->stc_orb_live || (jump > 40) || (jump < -40))
 		{
-			float keep = (len * frac - 12) / len;
-			float floor_keep = STC_MIN_DIST / len;
-
-			keep = (keep < floor_keep) ? floor_keep : keep;
-			keep = (keep > 1) ? 1 : keep;
-			target[0] = eye[0] + (target[0] - eye[0]) * keep;
-			target[1] = eye[1] + (target[1] - eye[1]) * keep;
+			self->stc_orb_yaw = ideal_view;
+			self->stc_orb_live = true;
+		}
+		else
+		{
+			k = ft / (STC_ORB_TAU + ft);
+			self->stc_orb_yaw += jump * k;
 		}
 
-		setorigin(m, PASSVEC3(target));
-		m->s.v.effects = (eff_now >= STC_ZONE_EFF) ? EF_BLUE : 0;	// glows while your crosshair is gaining speed
+		// Fixed distance: its size on screen never changes. Fixed plane: your standing eye
+		// height, so it does not bob with your jumps. Your client predicts you ahead of what
+		// the server sees by about your ping and the orb's position takes half a ping to reach
+		// you, so place it from where you WILL be: the direction is then right when drawn.
+		yaw_r = self->stc_orb_yaw * M_PI / 180;
+		at[0] = self->s.v.origin[0] + self->s.v.view_ofs[0] + self->s.v.velocity[0] * self->stc_lead + cos(yaw_r) * STC_DIST;
+		at[1] = self->s.v.origin[1] + self->s.v.view_ofs[1] + self->s.v.velocity[1] * self->stc_lead + sin(yaw_r) * STC_DIST;
+		at[2] = self->stc_plane_z;
+
+		setorigin(m, PASSVEC3(at));
+		m->s.v.effects = (eff_now >= STC_GAIN_EFF) ? EF_BLUE : 0;	// glows while you are gaining speed
 
 		if (!self->stc_marker_shown)
 		{
@@ -427,9 +423,10 @@ void StrafeCoachFrame(void)
 	else
 	{
 		stc_marker_hide(self);
+		self->stc_orb_live = false;
 	}
 
-	// ---- the gauge (and the ping the orb is led by), ten times a second ----
+	// ---- the HUD (and the ping the orb is led by), ten times a second ----
 	if (g_globalvars.time >= self->stc_next_draw)
 	{
 		float lead = atof(ezinfokey(self, "ping")) / 1000.0f;
@@ -439,7 +436,15 @@ void StrafeCoachFrame(void)
 
 		if ((self->stc_mode == 1) || (self->stc_mode == 2))
 		{
-			stc_print(self, speed, guide, wish_vs_vel, offset, a_cap, ideal_step, smove != 0);
+			qbool have = guide && (self->stc_acc_n > 0);
+
+			stc_print(self, speed, have,
+						have ? (self->stc_acc_eff / self->stc_acc_n) : 0,
+						have ? (self->stc_acc_off / self->stc_acc_n) : 0, smove != 0);
 		}
+
+		self->stc_acc_eff = 0;
+		self->stc_acc_off = 0;
+		self->stc_acc_n = 0;
 	}
 }
