@@ -163,6 +163,12 @@ them destroys credibility with the exact audience the content targets.
   red armor at all. Schloss is the big-four map where quad control least
   predicts the winner (65.2% quad-majority win rate vs 80.7% on dm3). Never
   claim a map lacks or has an item/weapon without checking.
+- **Duel maps come from the data, never from web research.** Name only maps
+  that appear in the `1on1` rows of `map-activity`. Any "best/most played duel
+  maps" piece covers at least the top 15 there, in that order of play. As of
+  October 2026 the core duel pool is aerowalk, bravado, ztndm3, dm4, dm2, dm6,
+  skull, followed by metron, pocket, shifter, toxicity, catalyst, katt, zite,
+  tron. There is no QuakeWorld duel map called "Defect".
 - **Every statistic must come from a connector dataset or the public API.**
   If the data is not available, write without the number — never approximate,
   never invent, never attribute untracked metrics ("return rate", "first-night
