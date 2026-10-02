@@ -1,0 +1,586 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8a9b071d..24972421 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -111,6 +111,7 @@ set(SRC_COMMON
+ 	"${DIR_SRC}/sp_ai.c"
+ 	"${DIR_SRC}/sp_boss.c"
+ 	"${DIR_SRC}/sp_client.c"
++	"${DIR_SRC}/strafecoach.c"
+ 	"${DIR_SRC}/sp_demon.c"
+ 	"${DIR_SRC}/sp_dog.c"
+ 	"${DIR_SRC}/spectate.c"
+diff --git a/include/g_local.h b/include/g_local.h
+index ff9ba432..0fef0f7a 100644
+--- a/include/g_local.h
++++ b/include/g_local.h
+@@ -1050,6 +1050,13 @@ typedef struct race_stats_score_s
+ } race_stats_score_t;
+ 
+ qbool isRACE(void);
++
++// strafecoach.c
++void StrafeCoachPrecache(void);
++void StrafeCoachConnect(gedict_t *p);
++void StrafeCoachDisconnect(gedict_t *p);
++void StrafeCoachFrame(void);
++void StrafeCoachCmd(void);
+ void apply_race_settings(void);
+ void ToggleRace(void);
+ void RaceCountdownChange(float t);
+diff --git a/include/progs.h b/include/progs.h
+index 6ed78411..dac1d322 100644
+--- a/include/progs.h
++++ b/include/progs.h
+@@ -1269,6 +1269,22 @@ typedef struct gedict_s
+ 	qbool hideplayers_default;				// racer can choose to have this on or off
+ 	int race_closest_guide_pos;				// when guide route loaded, this is closest position
+ 
++	// strafe coach (DeepFrag): opt-in air-strafe trainer, see src/strafecoach.c
++	int stc_mode;							// 0 off, 1 orb + gauge, 2 gauge only, 3 orb only
++	struct gedict_s *stc_marker;			// the orb: where to look right now for the most speed
++	qbool stc_marker_shown;					// orb currently has its model set
++	float stc_next_draw;					// next gauge refresh
++	float stc_lead;							// seconds to lead the orb by (the player's ping)
++	qbool stc_in_air;						// airborne on the previous command
++	float stc_takeoff_speed;				// 2D speed when the current hop left the ground
++	float stc_ideal_v2;						// most speed^2 this hop could have added so far
++	int stc_air_frames;						// client physics frames in the air this hop
++	int stc_ground_frames;					// frames on the ground since the last landing
++	float stc_last_gain;					// last finished hop: speed gained (ups)
++	float stc_last_eff;						// last finished hop: share of the possible gain
++	int stc_last_ground;					// ground frames before the last takeoff
++	qbool stc_have_hop;						// stc_last_* hold a real hop
++
+ 	// race_route_start entity fields
+ 	char *race_route_name;					// the name of the route
+ 	char *race_route_description;			// the description of the route
+diff --git a/src/client.c b/src/client.c
+index 3e38c26f..24410783 100644
+--- a/src/client.c
++++ b/src/client.c
+@@ -3309,6 +3309,8 @@ void ClientDisconnect(void)
+ 
+ 	mv_stop_playback();
+ 
++	StrafeCoachDisconnect(self);
++
+ 	del_from_specs_favourites(self);
+ 
+ 	// Clean up spectators tracking this player
+@@ -4043,6 +4045,11 @@ void PlayerPreThink(void)
+ 	self->client_lastupdated = g_globalvars.time;
+ 	time_corrected = g_globalvars.time;
+ 
++	if (self->stc_mode)
++	{
++		StrafeCoachFrame();	// reads this command's keys + the velocity the move is about to use
++	}
++
+ 	if (self->sc_stats && self->sc_stats_time && (self->sc_stats_time <= g_globalvars.time)
+ 			&& (match_in_progress != 1) && !isRACE())
+ 	{
+diff --git a/src/commands.c b/src/commands.c
+index 83ebc07e..8b07d584 100644
+--- a/src/commands.c
++++ b/src/commands.c
+@@ -271,6 +271,7 @@ qbool race_match_mode(void);
+ void race_switch_usermode(const char *displayName, int players_per_team);
+ void race_scoring_system_toggle(void);
+ void race_hide_players_toggle(void);
++void StrafeCoachCmd(void);
+ // }
+ 
+ // { CHEATS
+@@ -656,6 +657,7 @@ const char CD_NODESC[] = "no desc";
+ #define CD_RMATCHMODE		"toggle race match mode"
+ #define CD_RSCORINGMODE		"toggle between scoring systems"
+ #define CD_RHIDEPLAYERS		"toggle visible players during race"
++#define CD_STRAFECOACH		"air-strafe trainer: orb to aim at + gauge (cycles modes)"
+ // }
+ 
+ #define CD_NOSPECS			"allow/disallow spectators"
+@@ -1038,6 +1040,8 @@ cmd_t cmds[] =
+ 	{ "race_match", 				race_match_toggle, 				0, 			CF_PLAYER, 																CD_RMATCHMODE },
+ 	{ "race_scoring", 				race_scoring_system_toggle, 	0, 			CF_PLAYER, 																CD_RSCORINGMODE },
+ 	{ "race_hide_players", 			race_hide_players_toggle, 		0, 			CF_PLAYER, 																CD_RHIDEPLAYERS },
++	{ "strafecoach", 				StrafeCoachCmd, 				0, 			CF_PLAYER | CF_MATCHLESS, 												CD_STRAFECOACH },
++	{ "scoach", 					StrafeCoachCmd, 				0, 			CF_PLAYER | CF_MATCHLESS, 												CD_STRAFECOACH },
+ 	// }
+ 	{ "nospecs", 					nospecs, 						0, 			CF_PLAYER | CF_SPC_ADMIN, 												CD_NOSPECS },
+ 	{ "nospray", 					nospray, 						0, 			CF_PLAYER | CF_SPC_ADMIN, 												CD_NOSPRAY },
+diff --git a/src/g_main.c b/src/g_main.c
+index a969c62a..7801d1f9 100644
+--- a/src/g_main.c
++++ b/src/g_main.c
+@@ -246,6 +246,7 @@ intptr_t VISIBILITY_VISIBLE vmMain(
+ 
+ 			update_ghosts();
+ 			self->hideplayers_default = (self->ezquake_version < 4957);
++			StrafeCoachConnect(self);
+ 
+ 			return 1;
+ 
+diff --git a/src/strafecoach.c b/src/strafecoach.c
+new file mode 100644
+index 00000000..631fc079
+--- /dev/null
++++ b/src/strafecoach.c
+@@ -0,0 +1,445 @@
++/*
++ * Strafe coach (DeepFrag) -- an opt-in air-strafe trainer.
++ *
++ * QuakeWorld air acceleration (PM_AirAccelerate) adds speed along the direction
++ * your movement keys point (the "wish direction"), but only up to 30 units/sec of
++ * speed measured ALONG that direction:
++ *
++ *     addspeed   = 30 - dot(velocity, wishdir)
++ *     accelspeed = min(sv_accelerate * sv_maxspeed * frametime, addspeed)
++ *     velocity  += accelspeed * wishdir
++ *
++ * So a frame adds the most speed when the wish direction is exactly sideways to
++ * your velocity (dot = 0): speed^2 grows by 30^2 = 900. Point it more along your
++ * velocity and addspeed shrinks to nothing; point it past sideways and you start
++ * pushing against yourself. The useful window is only a few degrees wide, and it
++ * rotates as your velocity turns -- which is why bunnyhopping is a smooth mouse
++ * turn, and why it is hard to learn blind.
++ *
++ * The server knows everything needed to solve this exactly, every client frame:
++ * the keys held (self->movement), the view angle (v_angle) and the velocity the
++ * move is about to use. The coach turns that into:
++ *
++ *   - an ORB placed in the world along the yaw you should be looking at right now,
++ *     led by your ping so it is in the right place when your client draws it;
++ *   - a GAUGE (centerprint): one character per degree, your crosshair in the middle
++ *     (the caret). The band of '=' is where your crosshair gains speed, the knob is
++ *     the best spot in it. Above it: your speed, and for the last hop the speed gained
++ *     and what share of the theoretically possible gain that was.
++ *
++ * Holding the knob exactly needs a turn of ~300 deg/sec at 400 ups, so nobody scores
++ * 100%: the gain you get is set by how fast you can turn while staying inside the band.
++ *
++ * "strafecoach" (or "scoach") cycles: orb + gauge, gauge only, orb only, off.
++ * It is a practice aid, so it only runs outside a live match (prewar, race,
++ * practice mode) unless k_strafecoach_match is set.
++ */
++
++#include "g_local.h"
++
++#define STC_MODEL			"progs/s_light.spr"	// id1 light globe: a sprite, so it always faces you
++#define STC_REFRESH			0.1f				// gauge refresh, seconds (same rate race mode prints at)
++#define STC_DIST			300.0f				// how far ahead the orb sits
++#define STC_MIN_DIST		64.0f				// ...and the closest a wall may push it
++#define STC_AIR_WISH		30.0f				// PM_AirAccelerate's wishspeed cap
++#define STC_MIN_SPEED		100.0f				// below this there is nothing to coach
++#define STC_GROUND_SPEED	300.0f				// on the ground, only coach while carrying bunny speed
++#define STC_MIN_HOP_FRAMES	15					// ignore stair steps and tiny drops
++#define STC_GAUGE_HALF		12					// gauge is 2 * HALF + 1 characters
++#define STC_DEG_PER_CHAR	1.0f
++#define STC_MAX_LEAD		0.15f				// never lead the orb by more than this many seconds
++#define STC_ZONE_EFF		0.25f				// "gaining": this share of the best possible frame
++
++static float stc_angdiff(float a, float b)
++{
++	float d = a - b;
++
++	while (d > 180)
++	{
++		d -= 360;
++	}
++
++	while (d <= -180)
++	{
++		d += 360;
++	}
++
++	return d;
++}
++
++static float stc_speed2d(gedict_t *p)
++{
++	return sqrt(p->s.v.velocity[0] * p->s.v.velocity[0] + p->s.v.velocity[1] * p->s.v.velocity[1]);
++}
++
++// A practice aid: never during a live match unless the server explicitly allows it.
++static qbool stc_allowed(void)
++{
++	return ((match_in_progress != 2) || isRACE() || k_practice || cvar("k_strafecoach_match"));
++}
++
++static void stc_reset_stats(gedict_t *p)
++{
++	p->stc_in_air = false;
++	p->stc_takeoff_speed = 0;
++	p->stc_ideal_v2 = 0;
++	p->stc_air_frames = 0;
++	p->stc_ground_frames = 0;
++	p->stc_last_gain = 0;
++	p->stc_last_eff = 0;
++	p->stc_last_ground = 0;
++	p->stc_have_hop = false;
++	p->stc_next_draw = 0;
++}
++
++// The orb entity can be freed under us (map change); never trust a stale pointer.
++static gedict_t* stc_marker_get(gedict_t *p)
++{
++	gedict_t *m = p->stc_marker;
++
++	if (m && !(m->classname && streq(m->classname, "stc_marker")))
++	{
++		m = NULL;
++	}
++
++	if (!m)
++	{
++		m = spawn();
++		m->classname = "stc_marker";
++		m->s.v.movetype = MOVETYPE_NONE;
++		m->s.v.solid = SOLID_NOT;
++		m->s.v.owner = EDICT_TO_PROG(p);
++		setsize(m, 0, 0, 0, 0, 0, 0);
++		p->stc_marker = m;
++		p->stc_marker_shown = false;
++	}
++
++	return m;
++}
++
++static void stc_marker_hide(gedict_t *p)
++{
++	gedict_t *m = p->stc_marker;
++
++	if (!m || !p->stc_marker_shown)
++	{
++		return;
++	}
++
++	if (m->classname && streq(m->classname, "stc_marker"))
++	{
++		setmodel(m, "");
++		m->s.v.effects = 0;
++	}
++
++	p->stc_marker_shown = false;
++}
++
++static void stc_marker_remove(gedict_t *p)
++{
++	gedict_t *m = p->stc_marker;
++
++	if (m && m->classname && streq(m->classname, "stc_marker"))
++	{
++		ent_remove(m);
++	}
++
++	p->stc_marker = NULL;
++	p->stc_marker_shown = false;
++}
++
++// One air frame of PM_AirAccelerate for a given wish direction, as a share of the best
++// frame possible. d = speed along the wish direction.
++//   addspeed = 30 - d;  accelspeed = min(a_cap, addspeed);  speed^2 grows by 2*a*d + a*a
++static float stc_frame_eff(float speed, float wish_vs_vel_deg, float a_cap, float ideal_step)
++{
++	float d = speed * cos(wish_vs_vel_deg * M_PI / 180);
++	float a = STC_AIR_WISH - d;
++
++	a = (a > a_cap) ? a_cap : ((a < 0) ? 0 : a);
++
++	return ((2 * a * d + a * a) / ideal_step);
++}
++
++// Line 1: speed, last hop (speed gained, share of the possible gain).
++// Line 2: one character per degree with your crosshair in the middle. '=' marks where the
++//         crosshair gains speed, the knob the best spot. Knob left of the caret = turn left.
++// Line 3: the caret (your crosshair).
++static void stc_print(gedict_t *p, float speed, qbool guide, float wish_vs_vel, float offset,
++						float a_cap, float ideal_step, qbool strafing)
++{
++	char gauge[2 * STC_GAUGE_HALF + 2];
++	char hop[48];
++	int i, best = -1;
++	float best_eff = STC_ZONE_EFF;
++
++	hop[0] = 0;
++	if (p->stc_have_hop)
++	{
++		snprintf(hop, sizeof(hop), "  hop %+d  %d%%", (int)floor(p->stc_last_gain + 0.5f),
++					(int)floor(p->stc_last_eff * 100 + 0.5f));
++	}
++
++	if (!guide)
++	{
++		G_centerprint(p, "%d%s\n%s", (int)speed, hop,
++						((speed >= STC_MIN_SPEED) && !strafing) ? "hold a strafe key" : " ");
++
++		return;
++	}
++
++	// Cell i sits (i - HALF) degrees to the RIGHT of the crosshair. Turning the view right
++	// by x degrees lowers the yaw by x, and the wish direction turns with the view.
++	for (i = 0; i < 2 * STC_GAUGE_HALF + 1; i++)
++	{
++		float eff = stc_frame_eff(speed, wish_vs_vel - (i - STC_GAUGE_HALF) * STC_DEG_PER_CHAR, a_cap, ideal_step);
++
++		gauge[i] = (eff >= STC_ZONE_EFF) ? (char)('=' | 0x80) : '-';	// red '=' : gaining here
++
++		if (eff > best_eff)
++		{
++			best_eff = eff;
++			best = i;
++		}
++	}
++
++	gauge[2 * STC_GAUGE_HALF + 1] = 0;
++
++	if (best >= 0)
++	{
++		gauge[best] = (char)0x83;					// slider knob: the best spot
++	}
++	else if (offset > 0)
++	{
++		gauge[0] = '<';								// the window is off the gauge to the left
++	}
++	else
++	{
++		gauge[2 * STC_GAUGE_HALF] = '>';
++	}
++
++	G_centerprint(p, "%d%s\n%s\n^", (int)speed, hop, gauge);
++}
++
++void StrafeCoachPrecache(void)
++{
++	trap_precache_model(STC_MODEL);
++}
++
++// Called once per (re)connect, i.e. also after every map change. The mode survives in
++// the client's userinfo ("setinfo stc N") so the coach stays on across maps.
++void StrafeCoachConnect(gedict_t *p)
++{
++	int mode = iKey(p, "stc");
++
++	p->stc_marker = NULL;
++	p->stc_marker_shown = false;
++	p->stc_lead = 0;
++	p->stc_mode = (mode < 0 || mode > 3) ? 0 : mode;
++	stc_reset_stats(p);
++}
++
++void StrafeCoachDisconnect(gedict_t *p)
++{
++	stc_marker_remove(p);
++	p->stc_mode = 0;
++}
++
++void StrafeCoachCmd(void)
++{
++	static char *names[] = { "off", "orb + gauge", "gauge only", "orb only" };
++
++	self->stc_mode = (self->stc_mode + 1) % 4;
++	stc_reset_stats(self);
++
++	if (!self->stc_mode)
++	{
++		stc_marker_remove(self);
++		G_centerprint(self, " ");
++	}
++
++	stuffcmd_flags(self, STUFFCMD_IGNOREINDEMO, "setinfo stc %d\n", self->stc_mode);
++	G_sprint(self, PRINT_HIGH, "Strafe coach: %s\n", redtext(names[self->stc_mode]));
++
++	if (self->stc_mode == 1)
++	{
++		G_sprint(self, PRINT_HIGH, "Jump, hold a strafe key in the air, and keep your crosshair on the orb.\n"
++					"Gauge: ^ = your aim, red = gains speed, knob = best. hop = speed gained, %% of the possible gain.\n");
++	}
++
++	if (self->stc_mode && !stc_allowed())
++	{
++		G_sprint(self, PRINT_HIGH, "It only runs outside a live match.\n");
++	}
++}
++
++// Runs from PlayerPreThink: self->movement holds this command's keys and velocity is what
++// the move is about to use, so the answer is exact for this frame.
++void StrafeCoachFrame(void)
++{
++	static float cached_at = -1, sv_accel = 10, sv_maxspd = 320;
++	float speed, fmove, smove, ft, wishspeed, a_cap, ideal_step, d_opt, theta_opt;
++	float vel_yaw, view_yaw, wish_rel, side, ideal_view = 0, offset = 0, wish_vs_vel = 0, eff_now = 0;
++	qbool onground, guide;
++
++	if (!self->stc_mode)
++	{
++		return;
++	}
++
++	if ((self->ct != ctPlayer) || self->isBot || !ISLIVE(self) || !stc_allowed())
++	{
++		stc_marker_hide(self);
++		self->stc_in_air = false;
++
++		return;
++	}
++
++	// physics cvars: one lookup a second is plenty
++	if ((g_globalvars.time < cached_at) || (g_globalvars.time - cached_at > 1))
++	{
++		cached_at = g_globalvars.time;
++		sv_accel = cvar("sv_accelerate");
++		sv_maxspd = cvar("sv_maxspeed");
++		sv_accel = (sv_accel > 0) ? sv_accel : 10;
++		sv_maxspd = (sv_maxspd > 0) ? sv_maxspd : 320;
++	}
++
++	speed = stc_speed2d(self);
++	onground = ((int)self->s.v.flags & FL_ONGROUND) ? true : false;
++	fmove = self->movement[0];
++	smove = self->movement[1];
++
++	// accelspeed is capped by sv_accelerate * wishspeed * frametime (41.6 at 77 fps) as well as
++	// by addspeed. Below ~106 fps the first cap never limits the best frame, so that frame adds
++	// 30^2 = 900 to speed^2 with the wish direction exactly sideways. Above it the cap bites:
++	// the best frame is smaller and sits a little short of sideways (d_opt > 0).
++	ft = g_globalvars.frametime;
++	ft = ((ft <= 0) || (ft > 0.1f)) ? 0.013f : ft;
++	wishspeed = sqrt(fmove * fmove + smove * smove);
++	wishspeed = ((wishspeed <= 0) || (wishspeed > sv_maxspd)) ? sv_maxspd : wishspeed;
++	a_cap = sv_accel * wishspeed * ft;
++	d_opt = (a_cap >= STC_AIR_WISH) ? 0 : (STC_AIR_WISH - a_cap);
++	ideal_step = (a_cap >= STC_AIR_WISH) ? (STC_AIR_WISH * STC_AIR_WISH) : (a_cap * (2 * STC_AIR_WISH - a_cap));
++
++	// ---- hop bookkeeping: takeoff speed -> landing speed, against what was possible ----
++	if (!onground)
++	{
++		if (!self->stc_in_air)
++		{
++			self->stc_in_air = true;
++			self->stc_takeoff_speed = speed;
++			self->stc_ideal_v2 = 0;
++			self->stc_air_frames = 0;
++			self->stc_last_ground = self->stc_ground_frames;
++		}
++
++		self->stc_air_frames++;
++		self->stc_ideal_v2 += ideal_step;
++	}
++	else
++	{
++		if (self->stc_in_air)
++		{
++			self->stc_in_air = false;
++
++			if ((self->stc_air_frames >= STC_MIN_HOP_FRAMES) && (self->stc_takeoff_speed >= STC_MIN_SPEED)
++					&& (self->stc_ideal_v2 > 0))
++			{
++				float eff = (speed * speed - self->stc_takeoff_speed * self->stc_takeoff_speed) / self->stc_ideal_v2;
++
++				self->stc_last_gain = speed - self->stc_takeoff_speed;
++				self->stc_last_eff = (eff < -0.99f) ? -0.99f : ((eff > 1.5f) ? 1.5f : eff);
++				self->stc_have_hop = true;
++			}
++
++			self->stc_ground_frames = 0;
++		}
++
++		self->stc_ground_frames++;
++	}
++
++	// ---- where should the view be right now? ----
++	// Needs a strafe key (it picks the turn direction), some speed, and to be airborne --
++	// or touching down while still carrying bunny speed, so the orb does not blink each landing.
++	guide = (smove != 0) && (speed >= STC_MIN_SPEED) && (!onground || (speed >= STC_GROUND_SPEED));
++
++	if (guide)
++	{
++		vel_yaw = atan2(self->s.v.velocity[1], self->s.v.velocity[0]) * 180 / M_PI;
++		view_yaw = self->s.v.v_angle[1];
++		wish_rel = atan2(-smove, fmove) * 180 / M_PI;	// wish direction relative to the view (right is -90)
++		side = (smove < 0) ? 1 : -1;					// strafing left turns you left (yaw grows)
++
++		// best wish direction: sideways to the velocity (or just short of it at very high fps),
++		// on the side you are strafing to
++		theta_opt = acos(d_opt / speed) * 180 / M_PI;
++		ideal_view = vel_yaw + side * theta_opt - wish_rel;
++		offset = stc_angdiff(ideal_view, view_yaw);		// + = the orb is to your left
++
++		wish_vs_vel = stc_angdiff(view_yaw + wish_rel, vel_yaw);
++		eff_now = stc_frame_eff(speed, wish_vs_vel, a_cap, ideal_step);
++	}
++
++	// ---- the orb ----
++	if (guide && ((self->stc_mode == 1) || (self->stc_mode == 3)))
++	{
++		gedict_t *m = stc_marker_get(self);
++		vec3_t eye, target;
++		float yaw_r = ideal_view * M_PI / 180, frac, len;
++
++		eye[0] = self->s.v.origin[0] + self->s.v.view_ofs[0];
++		eye[1] = self->s.v.origin[1] + self->s.v.view_ofs[1];
++		eye[2] = self->s.v.origin[2] + self->s.v.view_ofs[2];
++
++		// Your client predicts you ahead of what the server sees by about your ping, and the
++		// orb's position takes half a ping to reach you. Aim the orb from where you WILL be,
++		// so its direction is right at the moment it is drawn.
++		target[0] = eye[0] + self->s.v.velocity[0] * self->stc_lead + cos(yaw_r) * STC_DIST;
++		target[1] = eye[1] + self->s.v.velocity[1] * self->stc_lead + sin(yaw_r) * STC_DIST;
++		target[2] = eye[2];
++
++		// keep it out of walls: pull it back along the line of sight
++		traceline(PASSVEC3(eye), PASSVEC3(target), true, self);
++		frac = g_globalvars.trace_fraction;
++		len = sqrt((target[0] - eye[0]) * (target[0] - eye[0]) + (target[1] - eye[1]) * (target[1] - eye[1]));
++
++		if ((frac < 1) && (len > 1))
++		{
++			float keep = (len * frac - 12) / len;
++			float floor_keep = STC_MIN_DIST / len;
++
++			keep = (keep < floor_keep) ? floor_keep : keep;
++			keep = (keep > 1) ? 1 : keep;
++			target[0] = eye[0] + (target[0] - eye[0]) * keep;
++			target[1] = eye[1] + (target[1] - eye[1]) * keep;
++		}
++
++		setorigin(m, PASSVEC3(target));
++		m->s.v.effects = (eff_now >= STC_ZONE_EFF) ? EF_BLUE : 0;	// glows while your crosshair is gaining speed
++
++		if (!self->stc_marker_shown)
++		{
++			setmodel(m, STC_MODEL);
++			self->stc_marker_shown = true;
++		}
++	}
++	else
++	{
++		stc_marker_hide(self);
++	}
++
++	// ---- the gauge (and the ping the orb is led by), ten times a second ----
++	if (g_globalvars.time >= self->stc_next_draw)
++	{
++		float lead = atof(ezinfokey(self, "ping")) / 1000.0f;
++
++		self->stc_next_draw = g_globalvars.time + STC_REFRESH;
++		self->stc_lead = (lead < 0) ? 0 : ((lead > STC_MAX_LEAD) ? STC_MAX_LEAD : lead);
++
++		if ((self->stc_mode == 1) || (self->stc_mode == 2))
++		{
++			stc_print(self, speed, guide, wish_vs_vel, offset, a_cap, ideal_step, smove != 0);
++		}
++	}
++}
+diff --git a/src/world.c b/src/world.c
+index 27570032..4ad390e5 100644
+--- a/src/world.c
++++ b/src/world.c
+@@ -215,6 +215,7 @@ void SP_worldspawn(void)
+ 
+ // player precaches     
+ 	W_Precache();		// get weapon precaches
++	StrafeCoachPrecache();
+ 	WPredict_Initialize();
+ 
+ // sounds used from C physics code
