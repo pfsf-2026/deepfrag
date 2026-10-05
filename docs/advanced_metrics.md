@@ -262,13 +262,19 @@ win-rate quarter the held rate runs 45 / 52 / 55 / 63% and the 1-second on-time 
 Red armor on-time rate does not separate players at any window (18 / 20 / 17 / 21% at 1 s); red armor
 share does (38 / 45 / 52 / 60%).
 
-So "mega timing" on the site is three numbers, in this order of weight: **Mega share**, **Held**
-(you had the timer: did you get the next one), **On time** (within one second, `MEGA_ON_TIME_MS`).
-A player who owns the mega can take it late and lose nothing, which is why the on-time rate alone
-is a weak guide.
+On the site (names set by Peter, 2026-10-05): **Mega Timing** = share of megas taken within 3 s of
+coming back, **Mega Control** = the held rate (you had the timer: did you get the next one), **Mega %** =
+share of the megas. **RA Timing** and **RA %** are the same two ideas for red armor. Both timing columns
+use one window, `ITEM_ON_TIME_MS` = 3 s. Of these, share and control are the ones that go with winning;
+a player who owns the item can take it late and lose nothing, which is why a timing rate alone is a
+light guide (the glossary says so).
 
-Movement in the same table: of the movement numbers (`movement.py`), cruising top speed (`speed_p90`)
-is the one that goes with duel win rate (+0.34 across 107 players with 15+ games); speed gained per hop
-is close to unrelated (+0.13), because a hop adds less the faster a player is already moving.
+Movement in the same table: **Top 10% Speed** (`speed_p90` from `movement.py`) goes with duel win rate
+most (+0.40 across 138 players with 15+ games); **Avg Speed** is KTX's own end-of-match average
+(`players.player_speed_avg`, +0.24). Speed gained per hop was shown first and dropped: it is close to
+unrelated to winning (+0.13), because a hop adds less the faster a player is already moving.
+
+Every ladder number can also be cut by opponent rating (even / higher / lower at a 200-point gap going
+into the game); see `docs/ladder_koth.md` for how the 200 was measured.
 
 There is **no +/- on duel pages**: in a 1on1 it restates the score.

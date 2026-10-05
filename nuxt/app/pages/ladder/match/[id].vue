@@ -64,7 +64,7 @@ const allPlayers = computed(() => {
   return [...tag(A.value, A.value?.team?.tag, A.value?.team?.id), ...tag(B.value, B.value?.team?.tag, B.value?.team?.id)]
     .sort((x, y) => (y.frags ?? 0) - (x.frags ?? 0))
 })
-// Duel: each player's row from the stats tab's 60-day view (every duel they finished).
+// Duel: each player's row from the stats tab's overall view (every duel in the last N days).
 const duelTape = computed(() => {
   const rows = duelStats.value?.lenses?.recent?.players || []
   const a = rows.find(r => r.canonical_id === A.value?.team?.members?.[0]?.id)
@@ -82,9 +82,9 @@ const duelTape = computed(() => {
   return [
     row('Even fights won', 'even_win_pct', '%'), row('Stacked damage ratio', 'stacked_ratio', '', false, 2),
     row('Damage / min', 'dmg_pm'), row('Fights from behind', 'behind_pct', '%', true),
-    row('Red armor share', 'ra_share', '%'), row('Mega share', 'mh_share', '%'),
-    row('Mega held', 'mh_held_pct', '%'), row('Mega on time', 'mh_on_time_pct', '%'),
-    row('Cruising top speed', 'top_speed'), row('Speed per hop', 'hop_gain', '', false, 1),
+    row('RA %', 'ra_share', '%'), row('RA timing', 'ra_on_time_pct', '%'),
+    row('Mega timing', 'mh_on_time_pct', '%'), row('Mega control', 'mh_held_pct', '%'), row('Mega %', 'mh_share', '%'),
+    row('Top 10% speed', 'top_speed'), row('Avg speed', 'avg_speed'),
   ].filter(Boolean)
 })
 const tape = computed(() => {
@@ -274,7 +274,7 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
     <!-- FULL-WIDTH: tale of the tape + players -->
     <div class="wide" v-if="tape.length">
       <div class="card">
-        <div class="card-h"><h3>Tale of the Tape</h3><span class="brand">{{ duelTape.length ? `last ${duelStats.days} days · every duel` : 'team avg / map' }}</span></div>
+        <div class="card-h"><h3>Tale of the Tape</h3><span class="brand">{{ duelTape.length ? `last ${duelStats.days} days overall` : 'team avg / map' }}</span></div>
         <div class="card-b">
           <div class="tcols"><span class="l a">{{ A.team.name }}</span><span class="c"></span><span class="r b">{{ B.team.name }}</span></div>
           <div v-for="t in tape" :key="t.label" class="trow">

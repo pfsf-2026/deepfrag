@@ -15,7 +15,7 @@ useHead(() => ({ title: `KOTH ${words.value.short} Stats · DeepFrag` }))
 <template>
   <div class="wrap">
     <header class="head">
-      <div><h1>KOTH {{ words.short }} — Stats</h1><p class="sub">{{ isDuel ? 'Advanced numbers read from the demos, plus the scoreboard and map breakdown from ladder matches.' : 'Per-map averages &amp; map analytics from reported ladder matches.' }}</p></div>
+      <div><h1>KOTH {{ words.short }} — Stats</h1><p class="sub">{{ isDuel ? 'Advanced metrics read from the demos, plus the standard end-of-match numbers and the map breakdown.' : 'Per-map averages &amp; map analytics from reported ladder matches.' }}</p></div>
       <NuxtLink :to="`/ladder?l=${ladderSlug(current)}#stats`" class="back">← Ladder</NuxtLink>
     </header>
     <ClientOnly>

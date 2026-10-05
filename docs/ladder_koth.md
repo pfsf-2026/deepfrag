@@ -162,24 +162,34 @@ Upcoming matches first, soonest to latest, grouped by day ("Today · Fri, Oct 2"
 
 ## Stats tab on the 1v1 ladder (2026-10-05)
 
-A duel ladder has no teams, so its Stats tab has two views instead of three: **Advanced** (opens first)
-and **Scoreboard** (the end-of-match numbers, without the team-kill and quad columns). The 2v2 ladder is
-unchanged (Team Stats / Player Stats / Enhanced).
+A duel ladder has no teams, so its Stats tab has two views instead of three: **Advanced Metrics** (opens
+first) and **Standard Metrics** (the end-of-match numbers, without the team-kill and quad columns). The
+2v2 ladder is unchanged (Team Stats / Player Stats / Enhanced).
 
-Advanced is `LadderDuelStats.vue` on `GET /api/ladder/{id}/duel-stats`: one row per active ladder player,
-in ladder order, with even fights won, stacked damage ratio, damage per minute, fights started from
-behind, red armor share, mega share / held / on time, cruising top speed and speed per hop. No +/-.
-Definitions and the evidence behind each one: `docs/advanced_metrics.md`; the player-facing glossary is
-`/ladder/advanced-guide`.
+Advanced Metrics is `LadderDuelStats.vue` on `GET /api/ladder/{id}/duel-stats`: one row per active ladder
+player, in ladder order. Columns, in Peter's wording (2026-10-05): Even, Stacked, Dmg/min | Behind |
+RA %, RA Timing, Mega Timing, Mega Control, Mega % | Top 10% Speed, Avg Speed. No +/-. Definitions and
+the evidence behind each one: `docs/advanced_metrics.md`; the player-facing glossary is
+`/ladder/advanced-guide` (one anchor per term).
 
-- **Two lenses.** "Last 60 days" counts every duel a ladder player finished, any opponent. "Ladder
-  matches" counts only maps played in ladder matches. The 60-day lens is the default until the ladder
-  has 60 maps (`DUEL_LADDER_DEFAULT_MAPS`).
+- **Games.** "Ladder Matches" (default whenever the ladder has scored maps) counts only maps played in
+  ladder matches. "Last 90 Days Overall" (`DUEL_LENS_DAYS`) counts every duel a ladder player finished.
+- **Opponent rating.** A second switch cuts either set by the rating gap going into each game (global
+  1on1 mu before the game, from `rating_history`): All / Evenly matched (within `DUEL_OPP_GAP` = 200) /
+  Higher rated (opponent 200+ above) / Lower rated (200+ below). 200 is measured, not picked: inside it
+  the higher-rated player wins 60%; at 200-250, 74%; 300-400, 82%; 500+, 95%. A game with no rating row
+  yet counts under All only.
+- **Timing columns** use one window, `ITEM_ON_TIME_MS` = 3 s after the item comes back, opening item
+  excluded. **Avg Speed** is KTX's end-of-match average (`players.player_speed_avg`); **Top 10% Speed**
+  is `speed_p90` from the demo track.
+- **Tooltips.** Each header carries an (i); hovering the header shows the definition after 0.25 s
+  (`TIP_DELAY`), tapping the (i) shows it at once without sorting. Leader cards link to their glossary
+  term, not to the player.
 - **Floors.** A number shows a dash until it has enough behind it (5 decided even fights, 5 megas,
-  30 hops, ...). A row with under 5 games (2 in the ladder lens) is dimmed and cannot lead a column or
+  30 hops, ...). A row with under 5 games (2 in the ladder set) is dimmed and cannot lead a column or
   appear in the leader cards.
 - **Staying current.** The ladder tick (`_stats_catchup`) scores up to three new duels and three
   movement games every five minutes, newest first. A ladder match shows up in the tab a few minutes
   after its games are in the database.
 - **Tale of the tape.** On a 1v1 match preview (`/ladder/match/{challenge}`) the tape is the two
-  players' rows from the 60-day lens.
+  players' rows from the 90-day set, all opponents.

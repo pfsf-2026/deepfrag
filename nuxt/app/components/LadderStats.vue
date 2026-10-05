@@ -1,8 +1,8 @@
 <script setup>
 // Full ladder stats: sortable Team Statistics, Map Statistics, and the reports
 // list (→ MatchDetailModal). Used by the Stats tab and the /ladder/stats route.
-// A duel ladder (`duel`) has no teams: it opens on the Advanced view (LadderDuelStats,
-// demo-derived numbers) with the end-of-match numbers behind a "Scoreboard" tab.
+// A duel ladder (`duel`) has no teams: it opens on Advanced Metrics (LadderDuelStats,
+// demo-derived numbers) with the end-of-match numbers behind "Standard Metrics".
 const props = defineProps({ ladderId: { type: Number, required: true }, duel: { type: Boolean, default: false } })
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
@@ -51,7 +51,7 @@ const COLS = [
   { k: 'sg', l: 'SG', grp: true, pct: true, cls: 'c-wpn' }, { k: 'lg', l: 'LG', pct: true, cls: 'c-wpn' },
   { k: 'rl', l: 'RL', pct: true, cls: 'c-wpn' }, { k: 'quad', l: 'Q', grp: true, cls: 'c-q' },
 ]
-// A duel has no team kills and no quad, so the scoreboard table drops those two.
+// A duel has no team kills and no quad, so the standard table drops those two.
 const DUEL_COLS = COLS.filter(c => c.k !== 'tk' && c.k !== 'quad')
 const playerCols = computed(() => (props.duel ? DUEL_COLS : COLS))
 // Enhanced (mvd-api) leaderboard columns — the stats KTX box-score can't give.
@@ -85,8 +85,8 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
       <section class="panel">
         <h2>
           <span v-if="duel" class="toggle">
-            <button :class="{ on: statView === 'advanced' }" @click="setView('advanced')">Advanced</button>
-            <button :class="{ on: statView === 'players' }" @click="setView('players')">Scoreboard</button>
+            <button :class="{ on: statView === 'advanced' }" @click="setView('advanced')">Advanced Metrics</button>
+            <button :class="{ on: statView === 'players' }" @click="setView('players')">Standard Metrics</button>
           </span>
           <span v-else class="toggle">
             <button :class="{ on: statView === 'team' }" @click="setView('team')">Team Stats</button>
@@ -130,7 +130,7 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
               </tr>
             </tbody>
           </table>
-          <div v-else class="muted small" style="padding:8px 0;">{{ duel ? 'No ladder matches reported yet. The scoreboard numbers fill in after the first one.' : 'No player stats yet.' }}</div>
+          <div v-else class="muted small" style="padding:8px 0;">{{ duel ? 'No ladder matches reported yet. These numbers fill in after the first one.' : 'No player stats yet.' }}</div>
         </div>
         <!-- Enhanced (mvd-api) Statistics -->
         <div v-else-if="statView === 'enhanced'">
