@@ -36,26 +36,7 @@ def call(method, path, body=None, timeout=120):
 
 
 def process(game, mode, version):
-    gid = game["gid"]
-    rows = []
-    b = C._get(f"/v1/demos/gameId:{gid}/stream-slice?from=0&to=99999&fields=pos,view,hgt", timeout=240)
-    tracks = {p["name"]: p for p in (b or {}).get("players", [])}
-    for pl in game["players"]:
-        row = {"hub_game_id": gid, "canonical_id": pl["cid"], "player_name": pl["name"], "map": game["map"],
-               "played_at": game["date"], "mode": mode, "version": version,
-               "clean_hops": None, "minutes": None, "metrics": {}}
-        key = (C._resolve_player_key(pl["name"], list(tracks)) or C._resolve_player_key(pl["cid"], list(tracks))) if tracks else None
-        if key:
-            try:
-                r = M.analyze_track(tracks[key])
-            except Exception as e:          # one bad track must not sink the batch
-                r = None
-                print(f"  analyse failed {gid} {pl['name']}: {e}", file=sys.stderr)
-            if r:
-                s = r["summary"]
-                row.update(clean_hops=s["clean_hops"], minutes=s["minutes"], metrics=s)
-        rows.append(row)
-    return rows
+    return M.rows_for_game(game, lambda path: C._get(path, timeout=240), mode, version)
 
 
 def main():

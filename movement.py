@@ -227,3 +227,30 @@ def analyze_track(me: dict) -> dict | None:
         "boosted_hops": len(hops) - len(unboosted),
     }
     return {"summary": summary, "hops": hops, "chains": chain_lens}
+
+
+def rows_for_game(game: dict, get, mode: str = "1on1", version: int = 1) -> list:
+    """Rows ready for movement_games for one game from the todo list
+    ({gid, map, date, players: [{cid, name}]}). get(path) returns parsed mvd-api JSON or
+    None. A player who cannot be found in the demo gets a row with empty metrics, so the
+    game is not retried forever."""
+    import coaching as C                      # demo-name resolver shared with the coach
+    gid = game["gid"]
+    b = get(f"/v1/demos/gameId:{gid}/stream-slice?from=0&to=99999&fields=pos,view,hgt")
+    tracks = {p["name"]: p for p in (b or {}).get("players", [])}
+    rows = []
+    for pl in game["players"]:
+        row = {"hub_game_id": gid, "canonical_id": pl["cid"], "player_name": pl["name"], "map": game.get("map"),
+               "played_at": game.get("date"), "mode": mode, "version": version,
+               "clean_hops": None, "minutes": None, "metrics": {}}
+        key = (C._resolve_player_key(pl["name"], list(tracks)) or C._resolve_player_key(pl["cid"], list(tracks))) if tracks else None
+        if key:
+            try:
+                r = analyze_track(tracks[key])
+            except Exception:                 # one bad track must not sink the game
+                r = None
+            if r:
+                s = r["summary"]
+                row.update(clean_hops=s["clean_hops"], minutes=s["minutes"], metrics=s)
+        rows.append(row)
+    return rows

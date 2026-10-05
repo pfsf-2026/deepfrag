@@ -1405,7 +1405,7 @@ def _ladder_tick_inner(cur):
 
 @app.post("/api/cron/ladder-tick")
 def cron_ladder_tick(authorization: str | None = Header(default=None)):
-    """Cloud Scheduler hits this (every ~30 min). Auth: SYNC_SECRET or CRON_SECRET."""
+    """Cloud Scheduler hits this every 5 minutes. Auth: SYNC_SECRET or CRON_SECRET."""
     expected = {os.environ.get("SYNC_SECRET"), os.environ.get("CRON_SECRET")} - {None, ""}
     if not expected or (authorization or "").removeprefix("Bearer ") not in expected:
         raise HTTPException(401, "bad cron token")
@@ -1413,7 +1413,8 @@ def cron_ladder_tick(authorization: str | None = Header(default=None)):
         cur = conn.cursor()
         counts = _ladder_tick(cur)
         conn.commit()
-    return {"ok": True, **counts}
+    # after the ladder work, with no connection held: score a few new duels for the Stats tab
+    return {"ok": True, **counts, "stats": _stats_catchup()}
 
 
 def _team_np(cur, team_id):
@@ -4824,20 +4825,30 @@ ENH_PARSER_VERSION = 37
 
 
 # ── Duel advanced metrics (demo-derived) ────────────────────────────────────
-# Per player per duel, computed from the demo by tools/mvd_features/duel_corpus.py
-# (fight table + duel win-probability model) and pushed here in batches by
-# tools/mvd_features/push_duel_adv.py. Definitions: docs/advanced_metrics.md.
+# Per player per duel, computed from the demo. duel_adv.py does one game from the mvd-api
+# (same definitions and fitted models as tools/mvd_features/duel_corpus.py, which built the
+# history up to 2026-09-11 from locally parsed demos). New games are scored by the ladder
+# tick (_stats_catchup) a few at a time; tools/duel_adv/extract_duel_adv.py backfills in
+# bulk. Definitions: docs/advanced_metrics.md.
 # Keyed on hub_game_id like ladder_enh_stats (the demo-addressing key).
-DUEL_ADV_VERSION = 1
+# model_version 2 adds item timing detail (mh_waits .. ra_all); version 1 rows have NULLs there.
+DUEL_ADV_VERSION = 2
 DUEL_ADV_COLS = ["hub_game_id", "canonical_id", "played_at", "map", "opponent_id", "win", "minutes",
                  "frags", "kills", "deaths", "adj_kills", "dmg", "taken", "stacked_given", "stacked_taken",
                  "spawn_deaths", "spawnfrags_vs", "chained_real",
                  "fights", "started", "started_behind", "started_ahead",
                  "even_w", "even_n", "behind_w", "behind_n", "ahead_w", "ahead_n",
-                 "item_first", "ra", "ra_on_timer", "ya", "mh", "plus_minus", "model_version"]
+                 "item_first", "ra", "ra_on_timer", "ya", "mh", "plus_minus",
+                 "mh_waits", "mh_kept", "mh_lost", "mh_all", "ra_waits", "ra_all", "model_version"]
+_DUEL_ADV_READY = False
 
 
 def _duel_adv_ensure(cur):
+    """Create / migrate the duel tables once per process. Commits, so call it before
+    any other work on the connection."""
+    global _DUEL_ADV_READY
+    if _DUEL_ADV_READY:
+        return
     cur.execute("""CREATE TABLE IF NOT EXISTS duel_advanced_stats (
         hub_game_id BIGINT NOT NULL, canonical_id TEXT NOT NULL,
         played_at TIMESTAMPTZ, map TEXT, opponent_id TEXT, win SMALLINT, minutes REAL,
@@ -4850,6 +4861,16 @@ def _duel_adv_ensure(cur):
         plus_minus REAL, model_version INT NOT NULL DEFAULT 1,
         PRIMARY KEY (hub_game_id, canonical_id))""")
     cur.execute("CREATE INDEX IF NOT EXISTS duel_adv_cid ON duel_advanced_stats (canonical_id, played_at DESC)")
+    for col, typ in (("mh_waits", "INT[]"), ("mh_kept", "INT"), ("mh_lost", "INT"), ("mh_all", "INT"),
+                     ("ra_waits", "INT[]"), ("ra_all", "INT")):
+        cur.execute(f"ALTER TABLE duel_advanced_stats ADD COLUMN IF NOT EXISTS {col} {typ}")
+    # games that cannot be scored (aborted, not a real duel, names that do not line up), so
+    # nothing retries them forever. "no demo" is retried after a few hours.
+    cur.execute("""CREATE TABLE IF NOT EXISTS duel_adv_skip (
+        hub_game_id BIGINT PRIMARY KEY, version INT NOT NULL, reason TEXT,
+        at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+    cur.connection.commit()
+    _DUEL_ADV_READY = True
 
 
 def _check_sync_secret(authorization):
@@ -4858,36 +4879,141 @@ def _check_sync_secret(authorization):
         raise HTTPException(401, "unauthorized")
 
 
-@app.post("/api/admin/duel-advanced/load")
-def admin_duel_adv_load(authorization: str | None = Header(default=None), rows: list = Body(..., embed=True)):
-    """Bulk upsert of per-player-per-duel advanced rows (god key). Batches of up
-    to 2000; a row is the DUEL_ADV_COLS dict. Re-sending a game overwrites it, so
-    a model refit just re-pushes with a higher model_version."""
-    _check_sync_secret(authorization)
-    if not isinstance(rows, list) or len(rows) > 2000:
-        raise HTTPException(400, "rows must be a list of at most 2000")
+def _duel_adv_upsert(cur, rows):
+    """Upsert DUEL_ADV_COLS dicts (last row wins per game + player). Returns the count."""
     cols = DUEL_ADV_COLS
-    uniq = {(r.get("hub_game_id"), r.get("canonical_id")): r for r in rows}   # last row wins per key
-    vals = []
-    for r in uniq.values():
-        try:
-            vals.append(tuple(r.get(c) if c != "model_version" else int(r.get(c) or DUEL_ADV_VERSION) for c in cols))
-        except Exception:
-            raise HTTPException(400, "bad row")
+    uniq = {(r.get("hub_game_id"), r.get("canonical_id")): r for r in rows}
+    vals = [tuple(r.get(c) if c != "model_version" else int(r.get(c) or 1) for c in cols) for r in uniq.values()]
+    if not vals:
+        return 0
+    sets = ", ".join(f"{c}=EXCLUDED.{c}" for c in cols if c not in ("hub_game_id", "canonical_id"))
+    psycopg2.extras.execute_values(
+        cur, f"INSERT INTO duel_advanced_stats ({', '.join(cols)}) VALUES %s "
+             f"ON CONFLICT (hub_game_id, canonical_id) DO UPDATE SET {sets}", vals, page_size=500)
+    return len(vals)
+
+
+def _duel_adv_skip(cur, skips):
+    """Record games that could not be scored: [{hub_game_id, reason}]."""
+    vals = [(int(s["hub_game_id"]), DUEL_ADV_VERSION, str(s.get("reason") or "")[:80]) for s in skips]
+    if vals:
+        psycopg2.extras.execute_values(
+            cur, """INSERT INTO duel_adv_skip (hub_game_id, version, reason) VALUES %s
+                    ON CONFLICT (hub_game_id) DO UPDATE SET version=EXCLUDED.version, reason=EXCLUDED.reason, at=now()""", vals)
+    return len(vals)
+
+
+def _duel_adv_pending(cur, days, limit):
+    """Duels in the last `days` not scored at the current version, newest first:
+    [{gid, map, date, players: [{cid, name}, {cid, name}]}]."""
+    cur.execute("""SELECT m.hub_game_id AS gid, m.match_map AS map, m.match_date AS date,
+                          json_agg(json_build_object('cid', p.canonical_id, 'name', p.player_name)) AS players
+                   FROM matches m JOIN players p ON p.match_id = m.match_id
+                   WHERE m.match_mode = '1on1' AND m.hub_game_id IS NOT NULL AND m.hub_game_id > 0
+                     AND COALESCE(m.has_bots, 0) = 0 AND p.canonical_id IS NOT NULL
+                     AND m.match_date::timestamptz >= now() - make_interval(days => %s)
+                     AND NOT EXISTS (SELECT 1 FROM duel_advanced_stats d
+                                     WHERE d.hub_game_id = m.hub_game_id AND d.model_version >= %s)
+                     AND NOT EXISTS (SELECT 1 FROM duel_adv_skip s
+                                     WHERE s.hub_game_id = m.hub_game_id AND s.version >= %s
+                                       AND (s.reason <> 'no demo' OR s.at > now() - interval '6 hours'))
+                   GROUP BY m.hub_game_id, m.match_map, m.match_date
+                   HAVING COUNT(*) = 2
+                   ORDER BY m.match_date DESC LIMIT %s""", (days, DUEL_ADV_VERSION, DUEL_ADV_VERSION, limit))
+    return [dict(r) for r in cur.fetchall()]
+
+
+@app.get("/api/admin/duel-advanced/todo")
+def admin_duel_adv_todo(authorization: str | None = Header(default=None),
+                        days: int = 60, limit: int = Query(500, le=5000)):
+    """Duels the advanced-stats extractor has not scored yet (newest first). God key."""
+    _check_sync_secret(authorization)
     with pg() as conn:
         cur = conn.cursor()
         _duel_adv_ensure(cur)
-        sets = ", ".join(f"{c}=EXCLUDED.{c}" for c in cols if c not in ("hub_game_id", "canonical_id"))
-        psycopg2.extras.execute_values(
-            cur, f"INSERT INTO duel_advanced_stats ({', '.join(cols)}) VALUES %s "
-                 f"ON CONFLICT (hub_game_id, canonical_id) DO UPDATE SET {sets}", vals, page_size=500)
+        return {"version": DUEL_ADV_VERSION, "games": _duel_adv_pending(cur, days, limit)}
+
+
+@app.post("/api/admin/duel-advanced/load")
+def admin_duel_adv_load(authorization: str | None = Header(default=None), rows: list = Body(..., embed=True),
+                        skips: list = Body(default=[], embed=True)):
+    """Bulk upsert of per-player-per-duel advanced rows (god key). Batches of up
+    to 2000; a row is the DUEL_ADV_COLS dict. Re-sending a game overwrites it, so
+    a model refit just re-pushes with a higher model_version. `skips` =
+    [{hub_game_id, reason}] for games that could not be scored."""
+    _check_sync_secret(authorization)
+    if not isinstance(rows, list) or len(rows) > 2000 or not isinstance(skips, list) or len(skips) > 2000:
+        raise HTTPException(400, "rows and skips must be lists of at most 2000")
+    with pg() as conn:
+        cur = conn.cursor()
+        _duel_adv_ensure(cur)
+        try:
+            n = _duel_adv_upsert(cur, rows)
+            k = _duel_adv_skip(cur, skips)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            raise HTTPException(400, "bad row")
         conn.commit()
-    return {"upserted": len(vals)}
+    _DUEL_LADDER_CACHE.clear()
+    return {"upserted": n, "skipped": k}
+
+
+def _stats_catchup(max_games=3, budget_s=15.0):
+    """Score the newest duels that have no advanced stats / movement rows yet: a few per
+    ladder tick, so a ladder match shows up in the Stats tab without anyone running a
+    script. Each game is five small mvd-api calls for the duel numbers and one 7 MB track
+    for movement; no DB connection is held while fetching. No new game is started once
+    `budget_s` has passed (the tick's scheduler deadline is 120 s). Never raises."""
+    t0 = time.time()
+    out = {"duel_adv": 0, "duel_adv_skipped": 0, "movement": 0}
+    try:
+        import coaching as C
+        import duel_adv as DA
+        import movement as MV
+        get = lambda path: C._get(path, timeout=15)   # noqa: E731
+        with pg() as conn:
+            cur = conn.cursor()
+            _duel_adv_ensure(cur)
+            _movement_ensure(cur)
+            conn.commit()
+            duels = _duel_adv_pending(cur, 14, max_games)
+            moves = _movement_pending(cur, "1on1", 14, max_games)
+        for g in duels:
+            if time.time() - t0 > budget_s:
+                break
+            try:
+                rows, reason = DA.rows_for_game(g, get)
+            except Exception as e:
+                rows, reason = None, f"error: {type(e).__name__}"
+            with pg() as conn:
+                cur = conn.cursor()
+                if rows:
+                    out["duel_adv"] += 1 if _duel_adv_upsert(cur, rows) else 0
+                else:
+                    out["duel_adv_skipped"] += _duel_adv_skip(cur, [{"hub_game_id": g["gid"], "reason": reason}])
+                conn.commit()
+        for g in moves:
+            if time.time() - t0 > budget_s:
+                break
+            try:
+                rows = MV.rows_for_game(g, get, "1on1", MOVEMENT_VERSION)
+            except Exception:
+                continue
+            with pg() as conn:
+                cur = conn.cursor()
+                out["movement"] += 1 if _movement_upsert(cur, rows) else 0
+                conn.commit()
+        if out["duel_adv"] or out["movement"]:
+            _DUEL_LADDER_CACHE.clear()
+            _MOVEMENT_POOL.clear()
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {str(e)[:120]}"
+    out["seconds"] = round(time.time() - t0, 1)
+    return out
 
 
 # ── Movement report: per-hop air-strafe analysis from demos (maths in movement.py) ────────────
-# One row per player per game, computed OUTSIDE the API by tools/movement/extract_movement.py
-# (each game is a 7 MB raw track from the mvd-api) and pushed here. The API only aggregates.
+# One row per player per game (each game is a 7 MB raw track from the mvd-api). New duels are
+# done a few per ladder tick (_stats_catchup); tools/movement/extract_movement.py backfills in bulk.
 MOVEMENT_VERSION = 1
 _MOVEMENT_READY = False
 _MOVEMENT_POOL: dict = {}      # mode -> (expires_at, pool)
@@ -4926,6 +5052,40 @@ def _movement_ensure(cur):
     _MOVEMENT_READY = True
 
 
+def _movement_pending(cur, mode, days, limit):
+    """Games with no movement rows at the current version, newest first:
+    [{gid, map, date, players: [{cid, name}]}]."""
+    cur.execute("""SELECT m.hub_game_id AS gid, m.match_map AS map, m.match_date AS date,
+                          json_agg(json_build_object('cid', p.canonical_id, 'name', p.player_name)) AS players
+                   FROM matches m JOIN players p ON p.match_id = m.match_id
+                   WHERE m.match_mode = %s AND m.hub_game_id IS NOT NULL AND m.hub_game_id > 0
+                     AND COALESCE(m.has_bots, 0) = 0 AND p.canonical_id IS NOT NULL
+                     AND m.match_date::timestamptz >= now() - make_interval(days => %s)
+                     AND NOT EXISTS (SELECT 1 FROM movement_games g
+                                     WHERE g.hub_game_id = m.hub_game_id AND g.version >= %s)
+                   GROUP BY m.hub_game_id, m.match_map, m.match_date
+                   ORDER BY m.match_date DESC LIMIT %s""", (mode, days, MOVEMENT_VERSION, limit))
+    return [dict(r) for r in cur.fetchall()]
+
+
+def _movement_upsert(cur, rows):
+    """Upsert movement rows (last row wins per game + player). Returns the count."""
+    vals = []
+    for r in {(r.get("hub_game_id"), r.get("canonical_id")): r for r in rows}.values():
+        vals.append((int(r["hub_game_id"]), str(r["canonical_id"]), r.get("player_name"), r.get("map"),
+                     r.get("played_at"), r.get("mode") or "1on1", int(r.get("version") or MOVEMENT_VERSION),
+                     r.get("clean_hops"), r.get("minutes"), json.dumps(r.get("metrics") or {})))
+    if vals:
+        psycopg2.extras.execute_values(
+            cur, """INSERT INTO movement_games (hub_game_id, canonical_id, player_name, map, played_at, mode,
+                                                 version, clean_hops, minutes, metrics) VALUES %s
+                    ON CONFLICT (hub_game_id, canonical_id) DO UPDATE SET
+                      player_name=EXCLUDED.player_name, map=EXCLUDED.map, played_at=EXCLUDED.played_at,
+                      mode=EXCLUDED.mode, version=EXCLUDED.version, clean_hops=EXCLUDED.clean_hops,
+                      minutes=EXCLUDED.minutes, metrics=EXCLUDED.metrics""", vals, page_size=500)
+    return len(vals)
+
+
 @app.get("/api/admin/movement/todo")
 def admin_movement_todo(authorization: str | None = Header(default=None), mode: str = "1on1",
                         days: int = 45, limit: int = Query(500, le=5000)):
@@ -4936,17 +5096,7 @@ def admin_movement_todo(authorization: str | None = Header(default=None), mode: 
         cur = conn.cursor()
         _movement_ensure(cur)
         conn.commit()
-        cur.execute("""SELECT m.hub_game_id AS gid, m.match_map AS map, m.match_date AS date,
-                              json_agg(json_build_object('cid', p.canonical_id, 'name', p.player_name)) AS players
-                       FROM matches m JOIN players p ON p.match_id = m.match_id
-                       WHERE m.match_mode = %s AND m.hub_game_id IS NOT NULL AND m.hub_game_id > 0
-                         AND COALESCE(m.has_bots, 0) = 0 AND p.canonical_id IS NOT NULL
-                         AND m.match_date::timestamptz >= now() - make_interval(days => %s)
-                         AND NOT EXISTS (SELECT 1 FROM movement_games g
-                                         WHERE g.hub_game_id = m.hub_game_id AND g.version >= %s)
-                       GROUP BY m.hub_game_id, m.match_map, m.match_date
-                       ORDER BY m.match_date DESC LIMIT %s""", (mode, days, MOVEMENT_VERSION, limit))
-        return {"version": MOVEMENT_VERSION, "games": [dict(r) for r in cur.fetchall()]}
+        return {"version": MOVEMENT_VERSION, "games": _movement_pending(cur, mode, days, limit)}
 
 
 @app.post("/api/admin/movement/load")
@@ -4957,27 +5107,17 @@ def admin_movement_load(authorization: str | None = Header(default=None), rows: 
     _check_sync_secret(authorization)
     if not isinstance(rows, list) or len(rows) > 2000:
         raise HTTPException(400, "rows must be a list of at most 2000")
-    vals = []
-    for r in {(r.get("hub_game_id"), r.get("canonical_id")): r for r in rows}.values():
-        try:
-            vals.append((int(r["hub_game_id"]), str(r["canonical_id"]), r.get("player_name"), r.get("map"),
-                         r.get("played_at"), r.get("mode") or "1on1", int(r.get("version") or MOVEMENT_VERSION),
-                         r.get("clean_hops"), r.get("minutes"), json.dumps(r.get("metrics") or {})))
-        except Exception:
-            raise HTTPException(400, "bad row")
     with pg() as conn:
         cur = conn.cursor()
         _movement_ensure(cur)
-        psycopg2.extras.execute_values(
-            cur, """INSERT INTO movement_games (hub_game_id, canonical_id, player_name, map, played_at, mode,
-                                                 version, clean_hops, minutes, metrics) VALUES %s
-                    ON CONFLICT (hub_game_id, canonical_id) DO UPDATE SET
-                      player_name=EXCLUDED.player_name, map=EXCLUDED.map, played_at=EXCLUDED.played_at,
-                      mode=EXCLUDED.mode, version=EXCLUDED.version, clean_hops=EXCLUDED.clean_hops,
-                      minutes=EXCLUDED.minutes, metrics=EXCLUDED.metrics""", vals, page_size=500)
+        try:
+            n = _movement_upsert(cur, rows)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            raise HTTPException(400, "bad row")
         conn.commit()
     _MOVEMENT_POOL.clear()
-    return {"upserted": len(vals)}
+    _DUEL_LADDER_CACHE.clear()
+    return {"upserted": n}
 
 
 def _movement_agg_sql(where: str, group: str) -> str:
@@ -5580,6 +5720,117 @@ def ladder_match_enhanced(match_id: int, response: Response):
             for mem in (t["members"] or []): cid_tag[mem] = t["tag"]
         for p in players: p["team"] = cid_tag.get(p["canonical_id"])
     return {"players": players}
+
+
+# ── KOTH 1v1 Stats tab: demo-derived duel numbers per ladder player ─────────
+# Two lenses over duel_advanced_stats + movement_games for the ladder's active players:
+# "ladder" = the maps played in ladder matches, "recent" = every duel they played in the
+# last DUEL_LENS_DAYS (a ladder is two to four maps per player for its first weeks, too
+# thin to read on its own). No +/-: in a duel that is the score.
+DUEL_LENS_DAYS = 60
+MEGA_ON_TIME_MS = 1000             # "on time" = taken within a second of coming back
+DUEL_LADDER_DEFAULT_MAPS = 60      # ladder lens becomes the default once this many maps are in
+_DUEL_LADDER_CACHE: dict = {}      # ladder_id -> (expires_at, payload)
+
+_DUEL_LENS_SQL = """
+    SELECT canonical_id, COUNT(*) AS games, SUM(win) AS wins, SUM(minutes) AS minutes,
+           SUM(dmg) AS dmg, SUM(stacked_given) AS sg, SUM(stacked_taken) AS st,
+           SUM(even_w) AS even_w, SUM(even_n) AS even_n,
+           SUM(started) AS started, SUM(started_behind) AS started_behind,
+           SUM(ra) FILTER (WHERE ra_all IS NOT NULL) AS ra, SUM(ra_all) AS ra_all,
+           SUM(mh) FILTER (WHERE mh_all IS NOT NULL) AS mh, SUM(mh_all) AS mh_all,
+           SUM(mh_kept) AS mh_kept, SUM(mh_lost) AS mh_lost
+    FROM duel_advanced_stats WHERE canonical_id = ANY(%(cids)s) AND {where} GROUP BY canonical_id"""
+_DUEL_WAIT_SQL = """
+    SELECT d.canonical_id, COUNT(*) AS n, COUNT(*) FILTER (WHERE w <= %(lim)s) AS on_time,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY w) AS med
+    FROM duel_advanced_stats d, unnest(d.mh_waits) AS w
+    WHERE d.canonical_id = ANY(%(cids)s) AND {where} GROUP BY d.canonical_id"""
+_DUEL_MOVE_SQL = """
+    SELECT canonical_id, SUM(clean_hops) AS hops,
+           SUM((metrics->>'gain_med')::float * clean_hops) / NULLIF(SUM(clean_hops), 0) AS hop_gain
+    FROM movement_games
+    WHERE mode = '1on1' AND clean_hops >= 8 AND (metrics->>'gain_med') IS NOT NULL
+      AND canonical_id = ANY(%(cids)s) AND {where} GROUP BY canonical_id"""
+
+
+def _duel_lens_rows(cur, entrants, where, params):
+    """One row per ladder player with games under `where`. A number is None until it has
+    enough behind it to mean something (5 decided even fights, 5 megas, 30 hops, ...)."""
+    q = dict(params, cids=list(entrants), lim=MEGA_ON_TIME_MS)
+    cur.execute(_DUEL_LENS_SQL.format(where=where), q)
+    base = {r["canonical_id"]: r for r in cur.fetchall()}
+    cur.execute(_DUEL_WAIT_SQL.format(where=where), q)
+    waits = {r["canonical_id"]: r for r in cur.fetchall()}
+    cur.execute(_DUEL_MOVE_SQL.format(where=where), q)
+    moves = {r["canonical_id"]: r for r in cur.fetchall()}
+
+    def pct(n, d, floor):
+        n, d = n or 0, d or 0
+        return round(100.0 * n / d, 1) if d >= floor else None
+
+    out = []
+    for cid, r in base.items():
+        w, m, e = waits.get(cid) or {}, moves.get(cid) or {}, entrants[cid]
+        held = (r["mh_kept"] or 0) + (r["mh_lost"] or 0)
+        out.append({
+            "canonical_id": cid, "name": e["name"], "team_id": e["team_id"], "rung": e["rung"],
+            "games": r["games"], "wins": int(r["wins"] or 0), "losses": r["games"] - int(r["wins"] or 0),
+            "even_win_pct": pct(r["even_w"], r["even_n"], 5), "even_n": int(r["even_n"] or 0),
+            "stacked_ratio": round(r["sg"] / r["st"], 2) if (r["st"] or 0) >= 200 else None,
+            "dmg_pm": round(r["dmg"] / r["minutes"]) if r["minutes"] else None,
+            "behind_pct": pct(r["started_behind"], r["started"], 10),
+            "ra_share": pct(r["ra"], r["ra_all"], 5),
+            "mh_share": pct(r["mh"], r["mh_all"], 5),
+            "mh_held_pct": pct(r["mh_kept"], held, 5),
+            "mh_on_time_pct": pct(w.get("on_time"), w.get("n"), 5),
+            "mh_wait_s": round(float(w["med"]) / 1000.0, 1) if (w.get("n") or 0) >= 5 else None,
+            "mh_timed": int(w.get("n") or 0),
+            "hop_gain": round(float(m["hop_gain"]), 1) if (m.get("hops") or 0) >= 30 and m.get("hop_gain") is not None else None,
+        })
+    out.sort(key=lambda p: (p["rung"] is None, p["rung"] or 0, p["name"].lower()))
+    return out
+
+
+@app.get("/api/ladder/{ladder_id}/duel-stats")
+def ladder_duel_stats(ladder_id: int, response: Response):
+    """Advanced (demo-derived) numbers for a duel ladder's players, two lenses:
+    `ladder` (maps played in ladder matches) and `recent` (all their duels, last 60 days)."""
+    import ladder as _ladder
+    response.headers["Cache-Control"] = "public, max-age=120"
+    hit = _DUEL_LADDER_CACHE.get(ladder_id)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    with pg() as conn:
+        cur = conn.cursor()
+        _duel_adv_ensure(cur)
+        _ladder.ensure_schema(cur)
+        _movement_ensure(cur)
+        conn.commit()
+        cur.execute("SELECT id, name, members, rung FROM ladder_teams WHERE ladder_id=%s AND status='active'", (ladder_id,))
+        entrants = {}
+        for t in cur.fetchall():
+            for cid in (t["members"] or []):
+                entrants[cid] = {"name": t["name"], "team_id": t["id"], "rung": t["rung"]}
+        cur.execute("SELECT maps, hub_game_ids FROM ladder_matches WHERE ladder_id=%s", (ladder_id,))
+        gids = set()
+        for r in cur.fetchall():
+            for mp in (r["maps"] or []):
+                if mp.get("hub_game_id"):
+                    gids.add(int(mp["hub_game_id"]))
+            for g in (r["hub_game_ids"] or []):
+                if g is not None:
+                    gids.add(int(g))
+        ladder_rows = _duel_lens_rows(cur, entrants, "hub_game_id = ANY(%(gids)s)", {"gids": list(gids)}) if entrants and gids else []
+        recent_rows = _duel_lens_rows(cur, entrants, "played_at >= now() - make_interval(days => %(days)s)",
+                                      {"days": DUEL_LENS_DAYS}) if entrants else []
+    payload = {"ladder_id": ladder_id, "days": DUEL_LENS_DAYS, "on_time_ms": MEGA_ON_TIME_MS,
+               "default": "ladder" if len(gids) >= DUEL_LADDER_DEFAULT_MAPS else "recent",
+               "entrants": len(entrants),
+               "lenses": {"ladder": {"maps": len(gids), "players": ladder_rows},
+                          "recent": {"players": recent_rows}}}
+    _DUEL_LADDER_CACHE[ladder_id] = (time.time() + 120, payload)
+    return payload
 
 
 def _team_summary(team_id):
