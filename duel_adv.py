@@ -284,12 +284,21 @@ def compute(data, map_name=None):
     return rows
 
 
-def rows_for_game(game, get):
+def data_from_full(full):
+    """compute()'s input from one `qw-analyze -view full` JSON (a locally parsed demo), for
+    bulk backfills: same fields the five mvd-api calls return."""
+    streams = full.get("streams") or {}
+    return {"overview": {"matchEnd": (streams.get("global") or {}).get("matchEnd"),
+                         "players": (full.get("match") or {}).get("players") or []},
+            "streams": {"players": streams.get("players") or []},
+            "damage": full.get("damage") or {}, "frags": full.get("frags") or {}, "items": full.get("items") or {}}
+
+
+def rows_from_data(game, data):
     """Rows ready for duel_advanced_stats for one game from the todo list
     ({gid, map, date, players: [{cid, name}, {cid, name}]}), or (None, reason).
     Reasons: "no demo" (worth retrying later) | "not a duel" | "players not matched"."""
     import coaching as C                      # demo-name resolver shared with the coach
-    data = fetch(game["gid"], get)
     if not data or not data.get("streams"):
         return None, "no demo"
     out = compute(data, game.get("map"))
@@ -316,3 +325,8 @@ def rows_for_game(game, get):
                    played_at=game.get("date"), map=game.get("map"))
         rows.append(row)
     return rows, None
+
+
+def rows_for_game(game, get):
+    """rows_from_data() for a game fetched from the mvd-api. get(path) -> parsed JSON or None."""
+    return rows_from_data(game, fetch(game["gid"], get))

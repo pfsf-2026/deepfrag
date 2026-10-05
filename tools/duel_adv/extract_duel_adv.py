@@ -4,16 +4,23 @@
     DEEPFRAG_SYNC_SECRET=... python3 tools/duel_adv/extract_duel_adv.py [--days 60] [--max 10000] [--workers 8]
 
 Asks the API which duels are not scored at the current version (`/api/admin/duel-advanced/todo`),
-scores each one with `duel_adv.rows_for_game` (four small mvd-api calls per game) and pushes the
-rows to `/api/admin/duel-advanced/load`. Games that cannot be scored are sent as skips so they are
-not retried. Safe to re-run. Day to day this is not needed: the ladder tick scores new duels a few
-at a time. Use it after a version bump or to fill a long window.
+scores each one with duel_adv.py and pushes the rows to `/api/admin/duel-advanced/load`. Games that
+cannot be scored are sent as skips so they are not retried. Safe to re-run. Day to day this is not
+needed: the ladder tick scores new duels a few at a time. Use it after a version bump or to fill a
+long window.
+
+By default each game is five mvd-api calls. That is slow in bulk (about 17 games a minute): the
+mvd-api runs several instances and each one parses the demo for itself. For thousands of games
+pass --analyzer with a locally built parser (`go build ./cmd/qw-analyze` in mvd_analyzer's
+mvd-analytics); the demo is then downloaded and parsed here, about 20 games a second.
 """
 import argparse
 import concurrent.futures as cf
 import json
 import os
+import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 
@@ -35,9 +42,26 @@ def call(method, path, body=None, timeout=120):
         return json.loads(r.read() or b"null")
 
 
+ANALYZER = None        # path to a local qw-analyze, set by --analyzer
+
+
+def parse_local(sha):
+    """Download one demo from the hub's store and parse it with the local analyzer."""
+    with tempfile.TemporaryDirectory(prefix="mvd_") as tmp:
+        path = os.path.join(tmp, "d.mvd.gz")
+        with urllib.request.urlopen(f"https://d.quake.world/{sha[:3]}/{sha}.mvd.gz", timeout=60) as r, open(path, "wb") as f:
+            f.write(r.read())
+        out = subprocess.run([ANALYZER, "-view", "full", path], capture_output=True, timeout=120)
+        return json.loads(out.stdout) if out.stdout.strip() else None
+
+
 def process(game):
     try:
-        rows, reason = D.rows_for_game(game, lambda path: C._get(path, timeout=120))
+        if ANALYZER and game.get("sha"):
+            full = parse_local(game["sha"])
+            rows, reason = D.rows_from_data(game, D.data_from_full(full) if full else None)
+        else:
+            rows, reason = D.rows_for_game(game, lambda path: C._get(path, timeout=120))
     except Exception as e:                    # one bad demo must not sink the batch
         rows, reason = None, f"error: {type(e).__name__}"
     return game["gid"], rows, reason
@@ -48,9 +72,12 @@ def main():
     ap.add_argument("--days", type=int, default=60)
     ap.add_argument("--max", type=int, default=10000, help="stop after this many games")
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--analyzer", help="path to a local qw-analyze: parse demos here instead of asking the mvd-api")
     a = ap.parse_args()
     if not SECRET:
         sys.exit("set DEEPFRAG_SYNC_SECRET")
+    global ANALYZER
+    ANALYZER = a.analyzer
     done = ok = 0
     reasons = {}
     t0 = time.time()

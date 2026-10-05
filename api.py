@@ -4905,8 +4905,9 @@ def _duel_adv_skip(cur, skips):
 
 def _duel_adv_pending(cur, days, limit):
     """Duels in the last `days` not scored at the current version, newest first:
-    [{gid, map, date, players: [{cid, name}, {cid, name}]}]."""
+    [{gid, map, date, sha, players: [{cid, name}, {cid, name}]}] (sha = the demo file)."""
     cur.execute("""SELECT m.hub_game_id AS gid, m.match_map AS map, m.match_date AS date,
+                          MAX(m.match_demo_sha256) AS sha,
                           json_agg(json_build_object('cid', p.canonical_id, 'name', p.player_name)) AS players
                    FROM matches m JOIN players p ON p.match_id = m.match_id
                    WHERE m.match_mode = '1on1' AND m.hub_game_id IS NOT NULL AND m.hub_game_id > 0
@@ -5748,7 +5749,9 @@ _DUEL_WAIT_SQL = """
     WHERE d.canonical_id = ANY(%(cids)s) AND {where} GROUP BY d.canonical_id"""
 _DUEL_MOVE_SQL = """
     SELECT canonical_id, SUM(clean_hops) AS hops,
-           SUM((metrics->>'gain_med')::float * clean_hops) / NULLIF(SUM(clean_hops), 0) AS hop_gain
+           SUM((metrics->>'gain_med')::float * clean_hops) / NULLIF(SUM(clean_hops), 0) AS hop_gain,
+           SUM((metrics->>'speed_p90')::float * minutes) FILTER (WHERE (metrics->>'speed_p90') IS NOT NULL)
+             / NULLIF(SUM(minutes) FILTER (WHERE (metrics->>'speed_p90') IS NOT NULL), 0) AS top_speed
     FROM movement_games
     WHERE mode = '1on1' AND clean_hops >= 8 AND (metrics->>'gain_med') IS NOT NULL
       AND canonical_id = ANY(%(cids)s) AND {where} GROUP BY canonical_id"""
@@ -5786,6 +5789,9 @@ def _duel_lens_rows(cur, entrants, where, params):
             "mh_on_time_pct": pct(w.get("on_time"), w.get("n"), 5),
             "mh_wait_s": round(float(w["med"]) / 1000.0, 1) if (w.get("n") or 0) >= 5 else None,
             "mh_timed": int(w.get("n") or 0),
+            # movement: cruising top speed (the speed held for the fastest tenth of the game) is the
+            # movement number that tracks winning; speed gained per hop is what the strafe coach trains
+            "top_speed": round(float(m["top_speed"])) if (m.get("hops") or 0) >= 30 and m.get("top_speed") is not None else None,
             "hop_gain": round(float(m["hop_gain"]), 1) if (m.get("hops") or 0) >= 30 and m.get("hop_gain") is not None else None,
         })
     out.sort(key=lambda p: (p["rung"] is None, p["rung"] or 0, p["name"].lower()))
