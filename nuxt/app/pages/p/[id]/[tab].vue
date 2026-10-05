@@ -260,15 +260,13 @@ const TABS = computed(() => {
 })
 
 function fmtDate(d) { if (!d) return '—'; const x = new Date(d); return isNaN(x) ? d : x.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
-function fmtSigned(v) { if (v == null) return '—'; const n = Number(v); return (n > 0 ? '+' : '') + n.toFixed(1) }
-function signCls(v) { const n = Number(v); return n > 0 ? 'pos' : n < 0 ? 'neg' : '' }
 function pct(v) { return v == null ? '—' : `${v}%` }
 const advCards = computed(() => {
   const c = adv.value?.career, b = adv.value?.baseline || {}
   if (!c) return []
   const better = (v, base, higher = true) => (v == null || base == null) ? '' : ((higher ? v > base : v < base) ? 'good' : (v === base ? '' : 'bad'))
   return [
-    { key: 'pm', label: '+/- per game', val: fmtSigned(c.plus_minus_pg), base: fmtSigned(b.plus_minus_pg), tone: better(c.plus_minus_pg, b.plus_minus_pg) },
+    // no +/- in a duel: with two players it restates the score
     { key: 'adj', label: 'adjusted kills / min', val: c.adj_kills_pm, base: b.adj_kills_pm, tone: better(c.adj_kills_pm, b.adj_kills_pm) },
     { key: 'sddr', label: 'stacked DDR', val: c.sddr, base: b.sddr, tone: better(c.sddr, b.sddr) },
     { key: 'even', label: 'even-fight win %', val: pct(c.even_win_pct), base: pct(b.even_win_pct), tone: better(c.even_win_pct, b.even_win_pct) },
@@ -319,16 +317,15 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
             <div class="adv-b muted small">avg {{ c.base }}</div>
           </div>
         </div>
-        <p class="muted small" style="margin:8px 2px 18px">{{ adv.games }} duels · adjusted kills weight each frag by the stack edge at first contact · +/- is the frag differential weighted by how much each kill moved the win probability (1.0 = a frag at even score, half the game left) · even fights = first contact within 60 effective HP · "avg" is the active duelist over the same window.</p>
+        <p class="muted small" style="margin:8px 2px 18px">{{ adv.games }} duels · adjusted kills weight each frag by the stack edge at first contact · even fights = first contact within 60 effective HP · "avg" is the active duelist over the same window.</p>
 
         <div class="section-h"><h2>By map</h2></div>
         <div class="panel">
           <table class="rtab">
-            <thead><tr><th>Map</th><th class="num">Games</th><th class="num">Win%</th><th class="num">+/- /g</th><th class="num">Adj K/min</th><th class="num">sDDR</th><th class="num">Even fights</th><th class="num">Started behind</th><th class="num">Item-first</th><th class="num">Chained</th><th class="num">RA/g</th></tr></thead>
+            <thead><tr><th>Map</th><th class="num">Games</th><th class="num">Win%</th><th class="num">Adj K/min</th><th class="num">sDDR</th><th class="num">Even fights</th><th class="num">Started behind</th><th class="num">Item-first</th><th class="num">Chained</th><th class="num">RA/g</th></tr></thead>
             <tbody>
               <tr v-for="m in adv.by_map" :key="m.map">
                 <td>{{ m.map }}</td><td class="num">{{ m.games }}</td><td class="num">{{ m.win_pct }}%</td>
-                <td class="num" :class="signCls(m.plus_minus_pg)">{{ fmtSigned(m.plus_minus_pg) }}</td>
                 <td class="num">{{ m.adj_kills_pm }}</td><td class="num">{{ m.sddr }}</td>
                 <td class="num">{{ m.even_win_pct ?? '—' }}%<span class="muted small"> ({{ m.even_n }})</span></td>
                 <td class="num">{{ m.started_behind_pct ?? '—' }}%</td><td class="num">{{ m.item_first_pct ?? '—' }}%</td>
@@ -341,7 +338,7 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
         <div class="section-h"><h2>Recent duels</h2></div>
         <div class="panel">
           <table class="rtab">
-            <thead><tr><th>When</th><th>Map</th><th>Opp</th><th>Result</th><th class="num">F / D</th><th class="num">Adj K</th><th class="num">Dmg</th><th class="num">sDDR</th><th class="num">Fights started</th><th class="num">From behind</th><th class="num">Even W-L</th><th class="num">Chained</th><th class="num">RA</th><th class="num">+/-</th></tr></thead>
+            <thead><tr><th>When</th><th>Map</th><th>Opp</th><th>Result</th><th class="num">F / D</th><th class="num">Adj K</th><th class="num">Dmg</th><th class="num">sDDR</th><th class="num">Fights started</th><th class="num">From behind</th><th class="num">Even W-L</th><th class="num">Chained</th><th class="num">RA</th></tr></thead>
             <tbody>
               <tr v-for="g in adv.recent" :key="g.hub_game_id">
                 <td>{{ fmtDate(g.played_at) }}</td><td>{{ g.map }}</td>
@@ -352,7 +349,6 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
                 <td class="num">{{ g.started }}</td><td class="num">{{ g.started_behind }}</td>
                 <td class="num">{{ g.even_w }}-{{ (g.even_n || 0) - (g.even_w || 0) }}</td>
                 <td class="num">{{ g.chained_real }}</td><td class="num">{{ g.ra ?? '—' }}</td>
-                <td class="num" :class="signCls(g.plus_minus)">{{ fmtSigned(g.plus_minus) }}</td>
               </tr>
             </tbody>
           </table>
@@ -487,6 +483,11 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .page { max-width: 1200px; margin: 0 auto; padding: 24px 32px 80px; }
 .head .back { color: var(--fg-2); text-decoration: none; font-size: 13px; font-weight: 600; }
 .head .back:hover { color: var(--accent); }
+@media (max-width: 880px) {
+  /* taller tap areas for the small text links, without changing row heights */
+  .head .back { display: inline-block; padding: 10px 0; }
+  .section-h a, .rtab a { display: inline-block; padding: 10px 0; margin: -10px 0; }
+}
 .profile-tabbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .profile-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .ptab { padding: 8px 14px; color: var(--fg-2); text-decoration: none; font-size: 13px; font-weight: 600; border-bottom: 2px solid transparent; cursor: pointer; }

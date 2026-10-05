@@ -551,7 +551,7 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
 
       <!-- ============ STATS ============ -->
       <div v-show="tab === 'stats'">
-        <LadderStats :ladder-id="ladder.id" />
+        <LadderStats :key="ladder.id" :ladder-id="ladder.id" :duel="isDuel" />
       </div>
 
       <!-- ============ RULES ============ -->

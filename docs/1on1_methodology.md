@@ -260,14 +260,16 @@ Default filter: `min_matches >= 100`. Region and map filters available.
 
 ### 7b. Demo-derived duel metrics (added 2026-09-17, profile "Advanced" tab)
 
-Computed from the match demo by `tools/mvd_features/duel_corpus.py` (fight table `fight_table_1on1.json`
-+ duel win-probability model `winprob_1on1.json`: held-out log-loss 0.288, AUC 0.947 on 13,857 duels), pushed
-to `duel_advanced_stats` (keyed `hub_game_id, canonical_id`) by `push_duel_adv.py`, served by
-`GET /api/players/{id}/advanced`. Full definitions: [advanced_metrics.md](./advanced_metrics.md).
+Computed from the match demo (fight table `fight_table_1on1.json` + duel win-probability model
+`winprob_1on1.json`: held-out log-loss 0.288, AUC 0.947 on 13,857 duels) into `duel_advanced_stats`
+(keyed `hub_game_id, canonical_id`), served by `GET /api/players/{id}/advanced`. History up to 2026-09-11
+came from `tools/mvd_features/duel_corpus.py` + `push_duel_adv.py`; since 2026-10-05 every new duel is
+scored by `duel_adv.py` from the mvd-api on the ladder tick (same definitions, identical rows).
+Full definitions: [advanced_metrics.md](./advanced_metrics.md). The KOTH 1v1 ladder's Stats tab shows a
+ladder-wide table of these plus item share / mega timing and movement: [ladder_koth.md](./ladder_koth.md).
 
 | Stat | Direction | Notes |
 |---|---|---|
-| **+/-** per game | desc | leverage-weighted frag differential; 1.0 = a frag at even score with half the duel left (≈ 7 pp of win probability) |
 | Adjusted kills / min | desc | each frag worth 0.5 / P(win fight) from both players' stack at first contact, cap 3 |
 | Stacked DDR | desc | damage given at ≥150 effective HP / taken at ≥150 |
 | Even-fight win % | desc | fights decided by a frag where the edge at first contact was within 60 eff HP |
@@ -276,7 +278,8 @@ to `duel_advanced_stats` (keyed `hub_game_id, canonical_id`) by `push_duel_adv.p
 | Chained deaths % | asc | died within 14 s of the previous death after living > 3 s (spawn deaths excluded) |
 | RA / game · on-timer % | desc | red armors taken; taken within 3 s of the respawn |
 
-Reference on the tab = the average active duelist (50+ duels) over the same window. Units and the
+No +/- row (removed 2026-10-05): in a duel the leverage-weighted frag differential restates the score.
+The column is still stored. Reference on the tab = the average active duelist (50+ duels) over the same window. Units and the
 "tested and rejected" list are in the advanced-metrics doc; the corpus covers Den, LA, Mom's Basement
 and NY duels from 2024-03 (14,028 games as of 2026-09-17).
 

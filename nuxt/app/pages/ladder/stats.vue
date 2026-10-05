@@ -3,7 +3,7 @@
 // ladder's Stats tab.
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
-const { loadList, current, words, ladderSlug } = useLadders()
+const { loadList, current, words, ladderSlug, isDuel } = useLadders()
 const ladderId = computed(() => current.value?.id || null)
 const ready = ref(false)
 onMounted(async () => {
@@ -15,21 +15,21 @@ useHead(() => ({ title: `KOTH ${words.value.short} Stats · DeepFrag` }))
 <template>
   <div class="wrap">
     <header class="head">
-      <div><h1>KOTH {{ words.short }} — Stats</h1><p class="sub">Per-map averages &amp; map analytics from reported ladder matches.</p></div>
+      <div><h1>KOTH {{ words.short }} — Stats</h1><p class="sub">{{ isDuel ? 'Advanced numbers read from the demos, plus the scoreboard and map breakdown from ladder matches.' : 'Per-map averages &amp; map analytics from reported ladder matches.' }}</p></div>
       <NuxtLink :to="`/ladder?l=${ladderSlug(current)}#stats`" class="back">← Ladder</NuxtLink>
     </header>
     <ClientOnly>
       <div v-if="!ready" class="muted pad">Loading…</div>
       <div v-else-if="!ladderId" class="muted pad">No ladder yet.</div>
-      <LadderStats v-else :ladder-id="ladderId" />
+      <LadderStats v-else :key="ladderId" :ladder-id="ladderId" :duel="isDuel" />
     </ClientOnly>
   </div>
 </template>
 
 <style scoped>
 .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 80px; }
-.head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 22px; }
+.head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 22px; }
 h1 { font-size: 24px; font-weight: 900; margin: 0; } .sub { color: var(--fg-3); font-size: 13px; margin: 4px 0 0; }
-.back { color: var(--accent); text-decoration: none; font-size: 13px; }
+.back { color: var(--accent); text-decoration: none; font-size: 13px; white-space: nowrap; flex: none; padding: 8px 0; }
 .muted { color: var(--fg-3); } .pad { padding: 40px 0; text-align: center; }
 </style>

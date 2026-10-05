@@ -1,20 +1,22 @@
 <script setup>
 // Full ladder stats: sortable Team Statistics, Map Statistics, and the reports
 // list (→ MatchDetailModal). Used by the Stats tab and the /ladder/stats route.
-const props = defineProps({ ladderId: { type: Number, required: true } })
+// A duel ladder (`duel`) has no teams: it opens on the Advanced view (LadderDuelStats,
+// demo-derived numbers) with the end-of-match numbers behind a "Scoreboard" tab.
+const props = defineProps({ ladderId: { type: Number, required: true }, duel: { type: Boolean, default: false } })
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 
 const teamStats = ref([]); const playerStats = ref([]); const mapStats = ref(null); const matches = ref([])
 const enhanced = ref([])
 const loading = ref(true); const openMatchId = ref(null)
-const statView = ref('team')   // 'team' | 'players' | 'enhanced'
+const statView = ref(props.duel ? 'advanced' : 'team')   // 'team' | 'players' | 'enhanced', or on a duel ladder 'advanced' | 'players'
 
 async function load() {
   loading.value = true
   try {
     const [ts, ps, ms, mr] = await Promise.all([
-      $fetch(`${base}/api/ladder/${props.ladderId}/team-stats`),
+      props.duel ? { teams: [] } : $fetch(`${base}/api/ladder/${props.ladderId}/team-stats`),
       $fetch(`${base}/api/ladder/${props.ladderId}/player-stats`),
       $fetch(`${base}/api/ladder/${props.ladderId}/map-stats`),
       $fetch(`${base}/api/ladder/${props.ladderId}/matches`),
@@ -23,6 +25,7 @@ async function load() {
     mapStats.value = ms; matches.value = mr.matches || []
   } catch (e) { console.error('[ladderstats]', e) } finally { loading.value = false }
   // enhanced (mvd-api) stats — separate so a miss never breaks the core tables
+  if (props.duel) return
   try { enhanced.value = (await $fetch(`${base}/api/ladder/${props.ladderId}/enhanced-stats`)).players || [] }
   catch { enhanced.value = [] }
 }
@@ -48,6 +51,9 @@ const COLS = [
   { k: 'sg', l: 'SG', grp: true, pct: true, cls: 'c-wpn' }, { k: 'lg', l: 'LG', pct: true, cls: 'c-wpn' },
   { k: 'rl', l: 'RL', pct: true, cls: 'c-wpn' }, { k: 'quad', l: 'Q', grp: true, cls: 'c-q' },
 ]
+// A duel has no team kills and no quad, so the scoreboard table drops those two.
+const DUEL_COLS = COLS.filter(c => c.k !== 'tk' && c.k !== 'quad')
+const playerCols = computed(() => (props.duel ? DUEL_COLS : COLS))
 // Enhanced (mvd-api) leaderboard columns — the stats KTX box-score can't give.
 const ENH_COLS = [
   { k: 'damage', l: 'Dmg', fmt: 'int' }, { k: 'frag_diff', l: '+/–', signed: true },
@@ -62,7 +68,7 @@ const sortedTeams = computed(() => [...teamStats.value].sort((a, b) => ((a[sortK
 const sortedPlayers = computed(() => [...playerStats.value].sort((a, b) => ((a[sortKey.value] ?? -1) - (b[sortKey.value] ?? -1)) * sortDir.value))
 // react_ms sorts ascending-as-better, but generic sort handles it via header click; default is damage desc.
 const sortedEnhanced = computed(() => [...enhanced.value].sort((a, b) => ((a[sortKey.value] ?? -1e9) - (b[sortKey.value] ?? -1e9)) * sortDir.value))
-const anyData = computed(() => teamStats.value.some(t => t.maps > 0))
+const anyData = computed(() => props.duel || teamStats.value.some(t => t.maps > 0))
 function fmtCell(v, c) { if (v == null) return '—'; if (c.pct) return v + '%'; if (c.fmt === 'ms') return v + 'ms'; if (c.fmt === 'int') return Math.round(v).toLocaleString(); if (c.signed) return (v >= 0 ? '+' : '') + v; return v }
 function logoUrl(id) { return `${base}/api/ladder/team/${id}/logo` }
 function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '' }
@@ -78,15 +84,21 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
     <template v-else>
       <section class="panel">
         <h2>
-          <span class="toggle">
+          <span v-if="duel" class="toggle">
+            <button :class="{ on: statView === 'advanced' }" @click="setView('advanced')">Advanced</button>
+            <button :class="{ on: statView === 'players' }" @click="setView('players')">Scoreboard</button>
+          </span>
+          <span v-else class="toggle">
             <button :class="{ on: statView === 'team' }" @click="setView('team')">Team Stats</button>
             <button :class="{ on: statView === 'players' }" @click="setView('players')">Player Stats</button>
             <button :class="{ on: statView === 'enhanced' }" @click="setView('enhanced')">✨ Enhanced</button>
           </span>
-          <span class="meta">{{ statView === 'enhanced' ? 'mvd-api deep stats · per-map averages · click a header to sort' : 'per-map averages · click a header to sort' }}</span>
+          <span class="meta">{{ statView === 'advanced' ? 'from the demos · click a header to sort' : statView === 'enhanced' ? 'mvd-api deep stats · per-map averages · click a header to sort' : (duel ? 'end-of-match numbers · per-map averages · click a header to sort' : 'per-map averages · click a header to sort') }}</span>
         </h2>
+        <!-- Advanced (duel ladders): demo-derived numbers -->
+        <LadderDuelStats v-if="statView === 'advanced'" :ladder-id="ladderId" />
         <!-- Team Statistics -->
-        <div v-if="statView === 'team'" class="scroll">
+        <div v-else-if="statView === 'team'" class="scroll">
           <table class="stats">
             <thead><tr>
               <th class="team">Team</th>
@@ -107,18 +119,18 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
           <table v-if="playerStats.length" class="stats">
             <thead><tr>
               <th class="team">Player</th>
-              <th v-for="c in COLS" :key="c.k" :class="[{ sorted: sortKey === c.k, colgrp: c.grp }]" @click="sortBy(c.k)">{{ c.l }}<span v-if="sortKey === c.k">{{ sortDir < 0 ? ' ▾' : ' ▴' }}</span></th>
+              <th v-for="c in playerCols" :key="c.k" :class="[{ sorted: sortKey === c.k, colgrp: c.grp }]" @click="sortBy(c.k)">{{ c.l }}<span v-if="sortKey === c.k">{{ sortDir < 0 ? ' ▾' : ' ▴' }}</span></th>
               <th>Maps</th>
             </tr></thead>
             <tbody>
               <tr v-for="p in sortedPlayers" :key="p.canonical_id">
                 <td class="team"><span class="tc"><NuxtLink :to="`/p/${p.canonical_id}`" class="pl-name">{{ p.name }}</NuxtLink><span v-if="p.tag" class="tag sm">{{ p.tag }}</span></span></td>
-                <td v-for="c in COLS" :key="c.k" :class="[c.cls, { colgrp: c.grp }]">{{ fmtCell(p[c.k], c) }}</td>
+                <td v-for="c in playerCols" :key="c.k" :class="[c.cls, { colgrp: c.grp }]">{{ fmtCell(p[c.k], c) }}</td>
                 <td class="muted">{{ p.maps }}</td>
               </tr>
             </tbody>
           </table>
-          <div v-else class="muted small" style="padding:8px 0;">No player stats yet.</div>
+          <div v-else class="muted small" style="padding:8px 0;">{{ duel ? 'No ladder matches reported yet. The scoreboard numbers fill in after the first one.' : 'No player stats yet.' }}</div>
         </div>
         <!-- Enhanced (mvd-api) Statistics -->
         <div v-else-if="statView === 'enhanced'">
@@ -185,7 +197,7 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
 .empty { text-align: center; padding: 50px 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
 .empty h3 { margin: 0 0 8px; } .empty p { color: var(--fg-2); margin: 0; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; margin-bottom: 16px; }
-.panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-3); margin: 0 0 14px; font-weight: 800; display: flex; gap: 8px; }
+.panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-3); margin: 0 0 14px; font-weight: 800; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .panel h2 .meta { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
 .toggle { display: inline-flex; gap: 2px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
 .toggle button { background: none; border: 0; color: var(--fg-3); font-family: inherit; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 6px; cursor: pointer; text-transform: none; letter-spacing: 0; }
@@ -194,7 +206,20 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
 .pl-name:hover { color: var(--accent); }
 .tag.sm { font-size: 9px; }
 .two { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+.two > * { min-width: 0; }   /* let a panel shrink below its longest team name */
 @media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+@media (max-width: 880px) {
+  .toggle button { min-height: 36px; padding: 8px 12px; }
+  .pl-name { display: inline-block; padding: 8px 0; margin: -8px 0; }   /* taller tap area, same row height */
+  .enh-note .glink { display: inline-block; padding: 9px 0; }
+}
+@media (max-width: 480px) {
+  /* three buttons are wider than a phone: let them share the row instead of pushing the page sideways */
+  .toggle { display: flex; flex: 1 1 100%; min-width: 0; }
+  .toggle button { flex: 1 1 0; min-width: 0; padding: 8px 4px; white-space: nowrap; }
+  .panel { padding: 14px 12px; }
+}
+@media (max-width: 360px) { .toggle button { font-size: 11px; } }
 .scroll { overflow-x: auto; }
 .enh-note { font-size: 12px; color: var(--fg-3); margin: 0 2px 10px; }
 .enh-note .glink { color: var(--accent); text-decoration: none; font-weight: 600; }
@@ -214,14 +239,14 @@ table.stats tbody tr:hover { background: var(--panel-2); }
 .lg { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; }
 .eff { color: var(--accent); font-weight: 700; }
 .c-ya { color: #fbbf24; } .c-ra { color: var(--loss); } .c-mh { color: #60a5fa; } .c-wpn { color: var(--accent); } .c-q { color: #22d3ee; }
-.mapgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
-.mcard { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; }
+.mapgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(180px, 100%), 1fr)); gap: 10px; }
+.mcard { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; min-width: 0; }
 .mcard .mh { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); font-weight: 800; margin-bottom: 7px; }
 .mcard .mh small { color: var(--fg-3); text-transform: none; font-weight: 400; }
-.mrow { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px solid rgba(42,32,24,.4); }
+.mrow { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 3px 0; border-bottom: 1px solid rgba(42,32,24,.4); }
 .mrow:last-child { border-bottom: 0; }
-.mrow .k { color: var(--fg-2); font-family: 'JetBrains Mono', monospace; }
-.mrow .v { font-family: 'JetBrains Mono', monospace; font-weight: 700; } .mrow .v small { color: var(--fg-3); font-weight: 400; }
+.mrow .k { color: var(--fg-2); font-family: 'JetBrains Mono', monospace; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mrow .v { font-family: 'JetBrains Mono', monospace; font-weight: 700; flex: none; white-space: nowrap; } .mrow .v small { color: var(--fg-3); font-weight: 400; }
 .mrow.match .k { font-family: system-ui, sans-serif; font-size: 11px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reports { display: flex; flex-direction: column; gap: 7px; }
 .rep-head { display: flex; align-items: center; gap: 9px; padding: 0 12px 1px; }
@@ -230,7 +255,7 @@ table.stats tbody tr:hover { background: var(--panel-2); }
 .rep-head .rs { min-width: 30px; text-align: center; } .rep-head .rd { width: 44px; }
 .rep { display: flex; align-items: center; gap: 9px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; font-size: 13px; cursor: pointer; color: var(--fg); font-family: inherit; text-align: left; }
 .rep:hover { border-color: var(--accent); }
-.rep .rt { display: flex; align-items: center; gap: 7px; flex: 1; } .rep .rt.right { justify-content: flex-end; }
+.rep .rt { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; overflow-wrap: anywhere; } .rep .rt.right { justify-content: flex-end; text-align: right; }
 .rep .rs { font-family: 'JetBrains Mono', monospace; font-weight: 800; } .rep .rs b { color: var(--fg-3); } .rep .rs b.w { color: var(--accent); }
 .rep .rd { color: var(--fg-3); font-size: 11px; width: 44px; text-align: right; }
 .chal { font-size: 10px; opacity: .5; margin: 0 3px; cursor: help; }

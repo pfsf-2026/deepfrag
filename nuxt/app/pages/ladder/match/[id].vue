@@ -1,7 +1,8 @@
 <script setup>
-// KOTH 2v2 ladder — MATCH PREVIEW (ESPN-gamecast layout: left/right rails + center
+// KOTH ladder — MATCH PREVIEW (ESPN-gamecast layout: left/right rails + center
 // editorial). id = challenge id. Reads /api/ladder/challenge/{id}/preview: prediction
-// (2v2-ladder-based) + LLM article + both team summaries. All real data.
+// (ladder-based) + LLM article + both team summaries. All real data. On a duel ladder
+// the tale of the tape is the two players' advanced numbers (/api/ladder/{id}/duel-stats).
 const route = useRoute()
 const isBrowser = typeof window !== 'undefined'
 const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
@@ -9,6 +10,7 @@ const base = isBrowser ? '' : (useRuntimeConfig().public.apiBase || '')
 const id = computed(() => parseInt(route.params.id))
 const d = ref(null)
 const meetingEnh = ref([])
+const duelStats = ref(null)
 const loading = ref(true)
 const err = ref(null)
 
@@ -30,12 +32,24 @@ async function load() {
     const mt = (d.value?.challenger?.matches || []).find(m => m.opponent_id === d.value?.defender?.team?.id)
     meetingEnh.value = mt ? ((await $fetch(`${base}/api/ladder/match/${mt.id}/enhanced`)).players || []) : []
   } catch { meetingEnh.value = [] }
+  // duel ladder: both players' advanced numbers for the tale of the tape
+  duelStats.value = null
+  if (isDuelMatch.value) {
+    try { duelStats.value = await $fetch(`${base}/api/ladder/${d.value.challenger.team.ladder_id}/duel-stats`) }
+    catch { duelStats.value = null }
+  }
 }
 onMounted(load)
 watch(() => route.params.id, load)
 
 const A = computed(() => d.value?.challenger)
 const B = computed(() => d.value?.defender)
+const isDuelMatch = computed(() => (A.value?.team?.members || []).length === 1 && (B.value?.team?.members || []).length === 1)
+const short = computed(() => (isDuelMatch.value ? '1v1' : '2v2'))
+// a duel entry has no tag: label each side with the player's name instead of a blank
+const tagA = computed(() => A.value?.team?.tag || A.value?.team?.name || '')
+const tagB = computed(() => B.value?.team?.tag || B.value?.team?.name || '')
+const crest = t => t?.tag || (t?.name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase()
 const P = computed(() => d.value?.prediction)
 const probA = computed(() => Math.round((P.value?.win_prob_challenger || 0) * 100))
 const probB = computed(() => Math.round((P.value?.win_prob_defender || 0) * 100))
@@ -50,7 +64,31 @@ const allPlayers = computed(() => {
   return [...tag(A.value, A.value?.team?.tag, A.value?.team?.id), ...tag(B.value, B.value?.team?.tag, B.value?.team?.id)]
     .sort((x, y) => (y.frags ?? 0) - (x.frags ?? 0))
 })
+// Duel: each player's row from the stats tab's 60-day view (every duel they finished).
+const duelTape = computed(() => {
+  const rows = duelStats.value?.lenses?.recent?.players || []
+  const a = rows.find(r => r.canonical_id === A.value?.team?.members?.[0]?.id)
+  const b = rows.find(r => r.canonical_id === B.value?.team?.members?.[0]?.id)
+  if (!a || !b) return []
+  const row = (label, k, unit = '', lowerBetter = false, digits = 0) => {
+    const av = a[k], bv = b[k]
+    if (av == null && bv == null) return null
+    const max = Math.max(av || 0, bv || 0) || 1
+    const both = av != null && bv != null && av !== bv
+    const aLead = both && (lowerBetter ? av < bv : av > bv)
+    const show = v => (v == null ? '—' : v.toFixed(digits) + unit)
+    return { label, av: show(av), bv: show(bv), aw: Math.round(60 * (av || 0) / max), bw: Math.round(60 * (bv || 0) / max), aLead, bLead: both && !aLead }
+  }
+  return [
+    row('Even fights won', 'even_win_pct', '%'), row('Stacked damage ratio', 'stacked_ratio', '', false, 2),
+    row('Damage / min', 'dmg_pm'), row('Fights from behind', 'behind_pct', '%', true),
+    row('Red armor share', 'ra_share', '%'), row('Mega share', 'mh_share', '%'),
+    row('Mega held', 'mh_held_pct', '%'), row('Mega on time', 'mh_on_time_pct', '%'),
+    row('Cruising top speed', 'top_speed'), row('Speed per hop', 'hop_gain', '', false, 1),
+  ].filter(Boolean)
+})
 const tape = computed(() => {
+  if (duelTape.value.length) return duelTape.value
   const a = A.value?.team_stats || {}, b = B.value?.team_stats || {}
   const row = (label, av, bv, lowerBetter = false) => {
     const max = Math.max(av || 0, bv || 0) || 1
@@ -70,7 +108,10 @@ const donutStyle = computed(() => ({
 function mdToHtml(s) {
   if (!s) return ''
   const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return s.split(/\n\n+/).map(p => '<p>' + esc(p).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') + '</p>').join('')
+  return s.split(/\n\n+/).map((p) => {
+    const h = p.match(/^#{1,3}\s+(.*)$/s)
+    return h ? '<h2>' + esc(h[1]) + '</h2>' : '<p>' + esc(p).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') + '</p>'
+  }).join('')
 }
 const articleHtml = computed(() => mdToHtml(d.value?.preview_article || ''))
 useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} · Preview · DeepFrag` : 'Match Preview · DeepFrag' }))
@@ -92,15 +133,15 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
           <div class="tname a">{{ A.team.name }}</div>
           <div class="trec">{{ (A.team.members||[]).map(m=>m.display).join(' · ') }} · {{ A.team.match_w }}–{{ A.team.match_l }}</div>
         </div>
-        <img v-if="A.team.has_logo" :src="logoUrl(A.team.id)" class="crest" alt=""><div v-else class="crest ph">{{ A.team.tag }}</div>
+        <img v-if="A.team.has_logo" :src="logoUrl(A.team.id)" class="crest" alt=""><div v-else class="crest ph">{{ crest(A.team) }}</div>
       </NuxtLink>
       <div class="center">
         <div class="time">{{ fmtWhen(d.challenge.agreed_at) }}</div>
-        <div class="pill-line"><span class="pill">Bo3 · KOTH 2v2</span><span class="pill stake">⚔ winner takes rung {{ B.team.rung }}</span></div>
+        <div class="pill-line"><span class="pill">Bo3 · KOTH {{ short }}</span><span class="pill stake">⚔ winner takes rung {{ B.team.rung }}</span></div>
         <div v-if="h2h.played" class="rematch">⟲ rematch — H2H maps {{ h2h.maps_a }}–{{ h2h.maps_b }}</div>
       </div>
       <NuxtLink class="team home" :to="`/ladder/team/${B.team.id}`">
-        <img v-if="B.team.has_logo" :src="logoUrl(B.team.id)" class="crest" alt=""><div v-else class="crest ph">{{ B.team.tag }}</div>
+        <img v-if="B.team.has_logo" :src="logoUrl(B.team.id)" class="crest" alt=""><div v-else class="crest ph">{{ crest(B.team) }}</div>
         <div class="ti">
           <div class="trung">RUNG {{ B.team.rung }} · DEFENDER</div>
           <div class="tname b">{{ B.team.name }}</div>
@@ -117,8 +158,8 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
           <table class="odds">
             <thead><tr><th>Team</th><th>Win</th><th>Total</th></tr></thead>
             <tbody>
-              <tr><td class="t a">{{ A.team.tag }}</td><td><span class="bk">{{ ml(P.moneyline_challenger) }}</span></td><td rowspan="2" class="ou">o/u<br><b>{{ P.total_frags_line }}</b><br><span class="muted xs">frags</span></td></tr>
-              <tr><td class="t b">{{ B.team.tag }}</td><td><span class="bk">{{ ml(P.moneyline_defender) }}</span></td></tr>
+              <tr><td class="t a">{{ tagA }}</td><td><span class="bk">{{ ml(P.moneyline_challenger) }}</span></td><td rowspan="2" class="ou">o/u<br><b>{{ P.total_frags_line }}</b><br><span class="muted xs">frags</span></td></tr>
+              <tr><td class="t b">{{ tagB }}</td><td><span class="bk">{{ ml(P.moneyline_defender) }}</span></td></tr>
             </tbody>
           </table>
           <div class="for-fun">for fun · ~{{ P.expected_maps }} maps projected</div>
@@ -129,10 +170,10 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
           <div class="card-b donut-wrap">
             <div class="donut" :style="donutStyle"><div class="inner"><div class="big">{{ pickPct }}<span>%</span></div><div class="lbl">{{ P.pick_name }}</div></div></div>
             <div class="dleg">
-              <span><i class="sw a"></i>{{ A.team.tag }} {{ probA }}%</span>
-              <span><i class="sw track"></i>{{ B.team.tag }} {{ probB }}%</span>
+              <span><i class="sw a"></i>{{ tagA }} {{ probA }}%</span>
+              <span><i class="sw track"></i>{{ tagB }} {{ probB }}%</span>
             </div>
-            <div class="muted xs cf">confidence: {{ P.confidence }} · from 2v2 ladder results</div>
+            <div class="muted xs cf">confidence: {{ P.confidence }} · from {{ short }} ladder results</div>
           </div>
         </div>
 
@@ -149,17 +190,17 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
       <div class="col">
         <div class="card" v-if="d.preview_article">
           <div class="card-b article"><div v-html="articleHtml"></div>
-            <div class="byline">generated by DeepFrag Predictor from live 2v2 ladder data</div>
+            <div class="byline">generated by DeepFrag Predictor from live {{ short }} ladder data</div>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-h"><h3>Players to Watch</h3><span class="brand">top fragger · each side</span></div>
+          <div class="card-h"><h3>Players to Watch</h3><span class="brand">{{ isDuelMatch ? 'ladder maps so far' : 'top fragger · each side' }}</span></div>
           <div class="card-b">
             <div class="pp">
-              <div class="side"><div class="av a">{{ (topPlayer(A)?.name||'?')[0] }}</div><div class="nm">{{ topPlayer(A)?.name }}</div><div class="meta">{{ A.team.tag }}</div></div>
+              <div class="side"><div class="av a">{{ (topPlayer(A)?.name||'?')[0] }}</div><div class="nm">{{ topPlayer(A)?.name }}</div><div class="meta">{{ tagA }}</div></div>
               <div class="vs">vs</div>
-              <div class="side"><div class="av b">{{ (topPlayer(B)?.name||'?')[0] }}</div><div class="nm">{{ topPlayer(B)?.name }}</div><div class="meta">{{ B.team.tag }}</div></div>
+              <div class="side"><div class="av b">{{ (topPlayer(B)?.name||'?')[0] }}</div><div class="nm">{{ topPlayer(B)?.name }}</div><div class="meta">{{ tagB }}</div></div>
             </div>
             <table class="stat">
               <thead><tr><th>Player</th><th>Eff</th><th>Frags</th><th title="RL direct hits / map">RLd</th></tr></thead>
@@ -179,7 +220,7 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
               <span class="mn">{{ mp.map }}</span>
               <span class="split"><span class="sa" :style="{ width: (100*(mp.our_frags||0)/Math.max(1,(mp.our_frags||0)+(mp.their_frags||0)))+'%' }"></span></span>
               <span class="sc"><span class="a">{{ mp.our_frags }}</span>–<span class="b">{{ mp.their_frags }}</span>
-                <span class="w" :class="mp.our_frags>mp.their_frags?'sa':'sb'">{{ mp.our_frags>mp.their_frags?A.team.tag:B.team.tag }}</span></span>
+                <span class="w" :class="mp.our_frags>mp.their_frags?'sa':'sb'">{{ mp.our_frags>mp.their_frags?tagA:tagB }}</span></span>
             </div>
             <table v-if="meetingEnh.length" class="meet-enh">
               <thead><tr><th class="l">From that match</th><th>Dmg</th><th>+/–</th><th title="line-of-sight to first hit">Spot→Fire</th><th title="rockets that hit">Rkts</th></tr></thead>
@@ -202,8 +243,8 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
         <div class="card">
           <div class="card-h"><h3>Predicted First Picks</h3></div>
           <div class="card-b">
-            <div class="fprow"><span class="who a">{{ A.team.tag }} ▸</span><span class="map">{{ P.first_pick_challenger || '—' }}</span></div>
-            <div class="fprow"><span class="who b">{{ B.team.tag }} ▸</span><span class="map">{{ P.first_pick_defender || '—' }}</span></div>
+            <div class="fprow"><span class="who a">{{ tagA }} ▸</span><span class="map">{{ P.first_pick_challenger || '—' }}</span></div>
+            <div class="fprow"><span class="who b">{{ tagB }} ▸</span><span class="map">{{ P.first_pick_defender || '—' }}</span></div>
             <div class="muted xs" style="margin-top:8px">each team's strongest map</div>
           </div>
         </div>
@@ -211,8 +252,8 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
         <div class="card">
           <div class="card-h"><h3>Recent Form</h3></div>
           <div class="card-b">
-            <div class="formrow"><span class="ft a">{{ A.team.tag }}</span><span class="wls"><i v-for="(r,i) in formOf(A)" :key="i" class="wl" :class="r==='W'?'w':'l'">{{ r }}</i><span v-if="!formOf(A).length" class="muted xs">no games</span></span></div>
-            <div class="formrow"><span class="ft b">{{ B.team.tag }}</span><span class="wls"><i v-for="(r,i) in formOf(B)" :key="i" class="wl" :class="r==='W'?'w':'l'">{{ r }}</i><span v-if="!formOf(B).length" class="muted xs">no games</span></span></div>
+            <div class="formrow"><span class="ft a">{{ tagA }}</span><span class="wls"><i v-for="(r,i) in formOf(A)" :key="i" class="wl" :class="r==='W'?'w':'l'">{{ r }}</i><span v-if="!formOf(A).length" class="muted xs">no games</span></span></div>
+            <div class="formrow"><span class="ft b">{{ tagB }}</span><span class="wls"><i v-for="(r,i) in formOf(B)" :key="i" class="wl" :class="r==='W'?'w':'l'">{{ r }}</i><span v-if="!formOf(B).length" class="muted xs">no games</span></span></div>
           </div>
         </div>
 
@@ -221,7 +262,7 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
           <div class="card-b center-b">
             <template v-if="h2h.played">
               <div class="big2">{{ h2h.maps_a }}–{{ h2h.maps_b }}</div>
-              <div class="muted small">maps · {{ A.team.tag }} vs {{ B.team.tag }}</div>
+              <div class="muted small">maps · {{ tagA }} vs {{ tagB }}</div>
               <div class="muted xs" style="margin-top:6px">series frags {{ h2h.frags_a }}–{{ h2h.frags_b }}</div>
             </template>
             <template v-else><div class="big2" style="font-size:18px">First meeting</div><div class="muted small">no prior games on record</div></template>
@@ -233,13 +274,13 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
     <!-- FULL-WIDTH: tale of the tape + players -->
     <div class="wide" v-if="tape.length">
       <div class="card">
-        <div class="card-h"><h3>Tale of the Tape</h3><span class="brand">team avg / map</span></div>
+        <div class="card-h"><h3>Tale of the Tape</h3><span class="brand">{{ duelTape.length ? `last ${duelStats.days} days · every duel` : 'team avg / map' }}</span></div>
         <div class="card-b">
           <div class="tcols"><span class="l a">{{ A.team.name }}</span><span class="c"></span><span class="r b">{{ B.team.name }}</span></div>
           <div v-for="t in tape" :key="t.label" class="trow">
-            <span class="vv l"><span :class="{lead:t.aLead}">{{ t.av }}</span><i class="bar a" :style="{width:t.aw+'px'}"></i></span>
+            <span class="vv l"><span :class="{lead:t.aLead}">{{ t.av }}</span><i class="bar a" :style="{'--w':t.aw}"></i></span>
             <span class="lbl">{{ t.label }}</span>
-            <span class="vv r"><i class="bar b" :style="{width:t.bw+'px'}"></i><span :class="{lead:t.bLead}">{{ t.bv }}</span></span>
+            <span class="vv r"><i class="bar b" :style="{'--w':t.bw}"></i><span :class="{lead:t.bLead}">{{ t.bv }}</span></span>
           </div>
         </div>
       </div>
@@ -248,27 +289,27 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
     <div class="wide" v-if="allPlayers.length">
       <div class="card">
         <div class="card-h"><h3>Players</h3><span class="brand">per map</span></div>
-        <table class="stat full">
-          <thead><tr><th class="lft">Player</th><th>Team</th><th>Eff</th><th>Frags</th><th title="RL direct hits / map">RLd</th></tr></thead>
+        <div class="tscroll"><table class="stat full">
+          <thead><tr><th class="lft">Player</th><th v-if="!isDuelMatch">Team</th><th>Eff</th><th>Frags</th><th title="RL direct hits / map">RLd</th></tr></thead>
           <tbody>
             <tr v-for="p in allPlayers" :key="p.canonical_id">
               <td class="lft"><NuxtLink class="plink" :to="`/p/${p.canonical_id}`">{{ p.name }}</NuxtLink></td>
-              <td><span class="tt" :class="p._id===A.team.id?'a':'b'">{{ p._tag }}</span></td>
+              <td v-if="!isDuelMatch"><span class="tt" :class="p._id===A.team.id?'a':'b'">{{ p._tag }}</span></td>
               <td>{{ p.eff }}%</td><td>{{ p.frags }}</td><td>{{ p.rl }}</td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
 
-    <div class="note">Predictions use <b>2v2 ladder results</b> (head-to-head, maps won, series frag share, team stats) — not 1v1 ratings. With little data the model stays humble; moneyline / total / first-picks are illustrative.</div>
+    <div class="note">Predictions use <b>{{ short }} ladder results</b> (head-to-head, maps won, series frag share, {{ isDuelMatch ? 'ladder stats' : 'team stats' }}){{ isDuelMatch ? '' : ' — not 1v1 ratings' }}. With little data the model stays humble; moneyline / total / first-picks are illustrative.</div>
   </template>
 </div>
 </template>
 
 <style scoped>
 .preview{max-width:1180px;margin:0 auto;padding:6px 16px 60px;color:var(--fg,#f2ead9)}
-.back{display:inline-block;margin:14px 0 10px;font-size:13px;color:var(--accent,#ff7a1a);text-decoration:none}
+.back{display:inline-block;margin:6px 0 2px;padding:8px 0;font-size:13px;color:var(--accent,#ff7a1a);text-decoration:none}
 .state{padding:40px;text-align:center;color:var(--fg-2,#c9bca9)} .state.err{color:var(--loss,#ef4444)}
 .muted{color:var(--fg-2,#c9bca9)} .xs{font-size:11px} .small{font-size:12px}
 .a{color:var(--accent,#ff7a1a)} .b{color:var(--draw,#f59e0b)}
@@ -277,6 +318,7 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
 .matchbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:14px;background:linear-gradient(180deg,#10151d,#0d0b09);border:1px solid var(--border,#2a2018);border-radius:14px;padding:16px 18px}
 .team{display:flex;align-items:center;gap:13px;text-decoration:none;color:var(--fg,#f2ead9);min-width:0}
 .team.away{justify-content:flex-end;text-align:right} .team.home{justify-content:flex-start}
+.ti{min-width:0}
 .team:hover .tname{text-decoration:underline}
 .crest{width:54px;height:54px;border-radius:12px;object-fit:cover;border:1px solid var(--border-2,#3a2f22);flex:none;background:#0d0b09}
 .crest.ph{display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-weight:800;font-size:16px}
@@ -329,7 +371,8 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
 
 /* article */
 .article :deep(p){margin:0 0 12px;color:#d9cfbd;line-height:1.6}
-.article :deep(p:first-child){font-size:15px}
+.article :deep(p:first-child),.article :deep(h2 + p){font-size:15px}
+.article :deep(h2){margin:0 0 10px;font-size:18px;font-weight:800;line-height:1.25;text-wrap:balance}
 .article :deep(strong){color:var(--fg,#f2ead9)}
 .article .byline{font-size:11px;color:var(--fg-3,#988977);margin-top:6px}
 
@@ -345,6 +388,7 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
 .stat td{padding:8px 6px;text-align:center;font-size:12.5px;border-top:1px solid rgba(42,32,24,.5)}
 .stat td.nmc{text-align:left;font-weight:700;font-family:inherit} .stat td.nmc.a{color:var(--accent,#ff7a1a)} .stat td.nmc.b{color:var(--draw,#f59e0b)}
 .stat.full td.lft,.stat.full th.lft{text-align:left;padding-left:14px}
+.tscroll{overflow-x:auto}
 .plink{color:var(--fg,#f2ead9);text-decoration:none}.plink:hover{color:var(--accent,#ff7a1a)}
 .tt{font-size:9.5px;font-weight:800;padding:1px 5px;border-radius:4px}.tt.a{background:#ff7a1a22;color:var(--accent,#ff7a1a)}.tt.b{background:#f59e0b22;color:var(--draw,#f59e0b)}
 
@@ -385,8 +429,25 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
 .lbl{text-align:center;font-size:10.5px;text-transform:uppercase;color:var(--fg-3,#988977)}
 .vv{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px;color:var(--fg-2,#c9bca9);display:flex;align-items:center;gap:8px}
 .vv.l{justify-content:flex-end}.vv.r{justify-content:flex-start}
-.vv .bar{height:6px;border-radius:4px}.vv.l .bar.a{background:var(--accent,#ff7a1a)}.vv.r .bar.b{background:var(--draw,#f59e0b)}
+.vv .bar{height:6px;border-radius:4px;width:calc(var(--w,0) * 1px);flex:none}.vv.l .bar.a{background:var(--accent,#ff7a1a)}.vv.r .bar.b{background:var(--draw,#f59e0b)}
 .lead{color:var(--win,#22c55e)}
+@media(max-width:880px){
+  .plink{display:inline-block;padding:9px 0}
+}
+@media(max-width:640px){
+  /* header: date and stakes on top, the two sides underneath, so nothing runs off a phone */
+  .matchbar{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"center center" "away home";gap:12px 10px;padding:14px 12px}
+  .center{grid-area:center;min-width:0}
+  .team.away{grid-area:away} .team.home{grid-area:home}
+  .team{gap:8px} .crest{width:40px;height:40px;border-radius:10px} .crest.ph{font-size:13px}
+  .tname{font-size:16px} .trung{font-size:9px;letter-spacing:.03em}
+}
+@media(max-width:560px){
+  .tcols,.trow{grid-template-columns:minmax(0,1fr) 104px minmax(0,1fr)}
+  .tcols span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vv{font-size:13px;gap:5px} .vv .bar{width:calc(var(--w,0) * .4px)}
+  .lbl{font-size:10px;line-height:1.25}
+}
 .note{background:var(--panel-2,#1c1610);border:1px solid var(--border,#2a2018);border-left:3px solid var(--accent,#ff7a1a);border-radius:10px;padding:12px 14px;color:var(--fg-2,#c9bca9);font-size:12px;margin-top:16px}
 .note b{color:var(--fg,#f2ead9)}
 </style>
