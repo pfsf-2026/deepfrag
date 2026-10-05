@@ -228,3 +228,47 @@ The same machinery scores every 1on1 in the corpus (`tools/mvd_features/duel_cor
   damage exchange. Needs `items_pass.py 1on1` (item takes) to have run.
 - Not available in duels: the per-minute "fights started while behind and in range" version (needs
   position samples), multi-kills, power-up runs (rare in the duel pool).
+
+### Duel stats from the mvd-api, and item timing (added 2026-10-05)
+
+`duel_adv.py` scores one duel from five mvd-api calls (overview, stream-slice `h,a,at,sp,d,rl,lg,q,pe`,
+damage, frags, items) with the same definitions and fitted models as the pipeline above. On 40 games it
+reproduces the old pipeline's rows exactly, field for field. The ladder tick scores up to three new duels
+(and three movement games) per run, so nothing depends on a local script any more;
+`tools/duel_adv/extract_duel_adv.py` backfills in bulk (`--analyzer` parses demos locally, about four
+times faster, identical rows). Rows written this way carry `model_version = 2`.
+
+Version 2 adds item timing detail per player per game:
+
+- `mh_waits`, `ra_waits`: how long each mega / red armor sat before this player took it (ms). The one
+  on the map at the start is left out.
+- `mh_kept`, `mh_lost`: after this player took a mega, who took the next one.
+- `mh_all`, `ra_all`: megas / red armors taken in the game by both players.
+
+What the 14,109 duels up to 2026-09-11 say about megas (the opening mega excluded):
+
+| question | answer |
+|---|---|
+| The player who took more megas won | 75.2% |
+| The player with the better **held** rate (took the next mega after taking one) won | 72.3% |
+| The player with more megas taken within 3 s of coming back won | 73.1% |
+| The player with the better **on-time rate** (share of megas taken within 1 s) won | 59% |
+| ... within 3 s | 53.8% |
+| One player had more megas, the other the better on-time rate: the one with more megas won | 72.2% |
+
+Across the 45 players with 50+ duels, career win rate goes with megas per game (+0.86), mega share
+(+0.89) and held rate (+0.85), and only weakly with on-time rate (+0.45 at 1 s, +0.35 at 3 s). By
+win-rate quarter the held rate runs 45 / 52 / 55 / 63% and the 1-second on-time rate 11 / 14 / 14 / 17%.
+Red armor on-time rate does not separate players at any window (18 / 20 / 17 / 21% at 1 s); red armor
+share does (38 / 45 / 52 / 60%).
+
+So "mega timing" on the site is three numbers, in this order of weight: **Mega share**, **Held**
+(you had the timer: did you get the next one), **On time** (within one second, `MEGA_ON_TIME_MS`).
+A player who owns the mega can take it late and lose nothing, which is why the on-time rate alone
+is a weak guide.
+
+Movement in the same table: of the movement numbers (`movement.py`), cruising top speed (`speed_p90`)
+is the one that goes with duel win rate (+0.34 across 107 players with 15+ games); speed gained per hop
+is close to unrelated (+0.13), because a hop adds less the faster a player is already moving.
+
+There is **no +/- on duel pages**: in a 1on1 it restates the score.

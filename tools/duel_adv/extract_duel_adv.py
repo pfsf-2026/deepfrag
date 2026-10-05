@@ -9,10 +9,11 @@ cannot be scored are sent as skips so they are not retried. Safe to re-run. Day 
 needed: the ladder tick scores new duels a few at a time. Use it after a version bump or to fill a
 long window.
 
-By default each game is five mvd-api calls. That is slow in bulk (about 17 games a minute): the
-mvd-api runs several instances and each one parses the demo for itself. For thousands of games
-pass --analyzer with a locally built parser (`go build ./cmd/qw-analyze` in mvd_analyzer's
-mvd-analytics); the demo is then downloaded and parsed here, about 20 games a second.
+By default each game is five mvd-api calls, about 80 games a minute with 8 workers (the mvd-api
+runs several instances and each one parses the demo for itself). For thousands of games pass
+--analyzer with a locally built parser (`go build ./cmd/qw-analyze` in mvd_analyzer's
+mvd-analytics): the demo is then downloaded and parsed here, about 380 games a minute, with
+identical results.
 """
 import argparse
 import concurrent.futures as cf

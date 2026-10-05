@@ -4865,7 +4865,7 @@ def _duel_adv_ensure(cur):
                      ("ra_waits", "INT[]"), ("ra_all", "INT")):
         cur.execute(f"ALTER TABLE duel_advanced_stats ADD COLUMN IF NOT EXISTS {col} {typ}")
     # games that cannot be scored (aborted, not a real duel, names that do not line up), so
-    # nothing retries them forever. "no demo" is retried after a few hours.
+    # nothing retries them forever. "no demo" and "error: ..." are retried after a few hours.
     cur.execute("""CREATE TABLE IF NOT EXISTS duel_adv_skip (
         hub_game_id BIGINT PRIMARY KEY, version INT NOT NULL, reason TEXT,
         at TIMESTAMPTZ NOT NULL DEFAULT now())""")
@@ -4917,7 +4917,8 @@ def _duel_adv_pending(cur, days, limit):
                                      WHERE d.hub_game_id = m.hub_game_id AND d.model_version >= %s)
                      AND NOT EXISTS (SELECT 1 FROM duel_adv_skip s
                                      WHERE s.hub_game_id = m.hub_game_id AND s.version >= %s
-                                       AND (s.reason <> 'no demo' OR s.at > now() - interval '6 hours'))
+                                       AND ((s.reason <> 'no demo' AND s.reason NOT LIKE 'error%%')
+                                            OR s.at > now() - interval '6 hours'))
                    GROUP BY m.hub_game_id, m.match_map, m.match_date
                    HAVING COUNT(*) = 2
                    ORDER BY m.match_date DESC LIMIT %s""", (days, DUEL_ADV_VERSION, DUEL_ADV_VERSION, limit))

@@ -159,3 +159,27 @@ Discord wording rules (Peter, 2026-09-30 — the old posts confused players abou
 ## Schedule tab layout (2026-10-02)
 
 Upcoming matches first, soonest to latest, grouped by day ("Today · Fri, Oct 2") with a start-in chip inside 24h. Scheduled matches more than 2h past their time drop to an "Awaiting result" group at the bottom of that card. Open challenges (no time yet) sit in their own card below, soonest deadline first, each saying who owes the pick. "Your match" with its action buttons lives in the side rail, and moves to the top on phones when you have one.
+
+## Stats tab on the 1v1 ladder (2026-10-05)
+
+A duel ladder has no teams, so its Stats tab has two views instead of three: **Advanced** (opens first)
+and **Scoreboard** (the end-of-match numbers, without the team-kill and quad columns). The 2v2 ladder is
+unchanged (Team Stats / Player Stats / Enhanced).
+
+Advanced is `LadderDuelStats.vue` on `GET /api/ladder/{id}/duel-stats`: one row per active ladder player,
+in ladder order, with even fights won, stacked damage ratio, damage per minute, fights started from
+behind, red armor share, mega share / held / on time, cruising top speed and speed per hop. No +/-.
+Definitions and the evidence behind each one: `docs/advanced_metrics.md`; the player-facing glossary is
+`/ladder/advanced-guide`.
+
+- **Two lenses.** "Last 60 days" counts every duel a ladder player finished, any opponent. "Ladder
+  matches" counts only maps played in ladder matches. The 60-day lens is the default until the ladder
+  has 60 maps (`DUEL_LADDER_DEFAULT_MAPS`).
+- **Floors.** A number shows a dash until it has enough behind it (5 decided even fights, 5 megas,
+  30 hops, ...). A row with under 5 games (2 in the ladder lens) is dimmed and cannot lead a column or
+  appear in the leader cards.
+- **Staying current.** The ladder tick (`_stats_catchup`) scores up to three new duels and three
+  movement games every five minutes, newest first. A ladder match shows up in the tab a few minutes
+  after its games are in the database.
+- **Tale of the tape.** On a 1v1 match preview (`/ladder/match/{challenge}`) the tape is the two
+  players' rows from the 60-day lens.
