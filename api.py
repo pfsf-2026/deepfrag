@@ -5726,74 +5726,93 @@ def ladder_match_enhanced(match_id: int, response: Response):
 
 # ── KOTH 1v1 Stats tab: demo-derived duel numbers per ladder player ─────────
 # Two lenses over duel_advanced_stats + movement_games for the ladder's active players:
-# "ladder" = the maps played in ladder matches, "recent" = every duel they played in the
-# last DUEL_LENS_DAYS (a ladder is two to four maps per player for its first weeks, too
-# thin to read on its own). No +/-: in a duel that is the score.
-DUEL_LENS_DAYS = 60
-MEGA_ON_TIME_MS = 1000             # "on time" = taken within a second of coming back
-DUEL_LADDER_DEFAULT_MAPS = 60      # ladder lens becomes the default once this many maps are in
+# "ladder" = the maps played in ladder matches (shown first), "recent" = every duel they
+# played in the last DUEL_LENS_DAYS, any opponent. Each lens is also cut by how the opponent
+# was rated going into the game (even / higher / lower), because a player who mostly plays
+# up has every overall number dragged down by it. No +/-: in a duel that is the score.
+DUEL_LENS_DAYS = 90
+ITEM_ON_TIME_MS = 3000             # RA / mega "timing" = taken within 3 s of coming back
+# Rating gap (global 1on1 mu before the game) that splits "evenly matched" from playing up or
+# down. Measured on 22,446 duels between settled ratings: inside 200 the higher-rated player
+# wins 60%; at 200-250 he wins 74%, 300-400 82%, 500+ 95%.
+DUEL_OPP_GAP = 200
 _DUEL_LADDER_CACHE: dict = {}      # ladder_id -> (expires_at, payload)
 
-_DUEL_LENS_SQL = """
-    SELECT canonical_id, COUNT(*) AS games, SUM(win) AS wins, SUM(minutes) AS minutes,
-           SUM(dmg) AS dmg, SUM(stacked_given) AS sg, SUM(stacked_taken) AS st,
-           SUM(even_w) AS even_w, SUM(even_n) AS even_n,
-           SUM(started) AS started, SUM(started_behind) AS started_behind,
-           SUM(ra) FILTER (WHERE ra_all IS NOT NULL) AS ra, SUM(ra_all) AS ra_all,
-           SUM(mh) FILTER (WHERE mh_all IS NOT NULL) AS mh, SUM(mh_all) AS mh_all,
-           SUM(mh_kept) AS mh_kept, SUM(mh_lost) AS mh_lost
-    FROM duel_advanced_stats WHERE canonical_id = ANY(%(cids)s) AND {where} GROUP BY canonical_id"""
-_DUEL_WAIT_SQL = """
-    SELECT d.canonical_id, COUNT(*) AS n, COUNT(*) FILTER (WHERE w <= %(lim)s) AS on_time,
-           percentile_cont(0.5) WITHIN GROUP (ORDER BY w) AS med
-    FROM duel_advanced_stats d, unnest(d.mh_waits) AS w
-    WHERE d.canonical_id = ANY(%(cids)s) AND {where} GROUP BY d.canonical_id"""
-_DUEL_MOVE_SQL = """
-    SELECT canonical_id, SUM(clean_hops) AS hops,
-           SUM((metrics->>'gain_med')::float * clean_hops) / NULLIF(SUM(clean_hops), 0) AS hop_gain,
-           SUM((metrics->>'speed_p90')::float * minutes) FILTER (WHERE (metrics->>'speed_p90') IS NOT NULL)
-             / NULLIF(SUM(minutes) FILTER (WHERE (metrics->>'speed_p90') IS NOT NULL), 0) AS top_speed
+# One row per player per game for both lenses, with the rating gap (mine minus the opponent's)
+# and KTX's own end-of-match average speed attached.
+_DUEL_GAME_SQL = """
+    SELECT d.hub_game_id, d.canonical_id, d.win, d.minutes, d.dmg, d.stacked_given, d.stacked_taken,
+           d.even_w, d.even_n, d.started, d.started_behind, d.ra, d.ra_all, d.mh, d.mh_all,
+           d.mh_kept, d.mh_lost, d.mh_waits, d.ra_waits,
+           (d.played_at >= now() - make_interval(days => %(days)s)) AS recent,
+           (SELECT MAX(p.player_speed_avg) FROM players p
+             WHERE p.match_id = m.match_id AND p.canonical_id = d.canonical_id) AS speed_avg,
+           a.mu_before - b.mu_before AS gap
+    FROM duel_advanced_stats d
+    LEFT JOIN matches m ON m.hub_game_id = d.hub_game_id
+    LEFT JOIN rating_history a ON a.match_id = m.match_id AND a.canonical_id = d.canonical_id
+                              AND a.mode = '1on1' AND a.map = ''
+    LEFT JOIN rating_history b ON b.match_id = m.match_id AND b.canonical_id = d.opponent_id
+                              AND b.mode = '1on1' AND b.map = ''
+    WHERE d.canonical_id = ANY(%(cids)s)
+      AND (d.played_at >= now() - make_interval(days => %(days)s) OR d.hub_game_id = ANY(%(gids)s))"""
+_DUEL_MOVE_GAME_SQL = """
+    SELECT hub_game_id, canonical_id, clean_hops, minutes, (metrics->>'speed_p90')::float AS p90
     FROM movement_games
-    WHERE mode = '1on1' AND clean_hops >= 8 AND (metrics->>'gain_med') IS NOT NULL
-      AND canonical_id = ANY(%(cids)s) AND {where} GROUP BY canonical_id"""
+    WHERE mode = '1on1' AND clean_hops >= 8 AND canonical_id = ANY(%(cids)s)
+      AND (played_at >= now() - make_interval(days => %(days)s) OR hub_game_id = ANY(%(gids)s))"""
 
 
-def _duel_lens_rows(cur, entrants, where, params):
-    """One row per ladder player with games under `where`. A number is None until it has
+def _duel_rows(games, moves, entrants):
+    """Aggregate per-game rows into one row per ladder player. A number is None until it has
     enough behind it to mean something (5 decided even fights, 5 megas, 30 hops, ...)."""
-    q = dict(params, cids=list(entrants), lim=MEGA_ON_TIME_MS)
-    cur.execute(_DUEL_LENS_SQL.format(where=where), q)
-    base = {r["canonical_id"]: r for r in cur.fetchall()}
-    cur.execute(_DUEL_WAIT_SQL.format(where=where), q)
-    waits = {r["canonical_id"]: r for r in cur.fetchall()}
-    cur.execute(_DUEL_MOVE_SQL.format(where=where), q)
-    moves = {r["canonical_id"]: r for r in cur.fetchall()}
+    from collections import defaultdict
+    T = defaultdict(lambda: defaultdict(float))
 
     def pct(n, d, floor):
-        n, d = n or 0, d or 0
         return round(100.0 * n / d, 1) if d >= floor else None
 
+    for g in games:
+        t = T[g["canonical_id"]]
+        t["games"] += 1
+        for k in ("win", "minutes", "dmg", "stacked_given", "stacked_taken", "even_w", "even_n",
+                  "started", "started_behind", "mh_kept", "mh_lost"):
+            t[k] += g[k] or 0
+        for item in ("ra", "mh"):
+            if g[item + "_all"] is not None:            # version-2 rows only: both players' totals known
+                t[item] += g[item] or 0
+                t[item + "_all"] += g[item + "_all"]
+            waits = g[item + "_waits"] or []
+            t[item + "_timed"] += len(waits)
+            t[item + "_on_time"] += sum(1 for w in waits if w <= ITEM_ON_TIME_MS)
+        if g["speed_avg"]:
+            t["speed_sum"] += g["speed_avg"]
+            t["speed_n"] += 1
+        m = moves.get((g["hub_game_id"], g["canonical_id"]))
+        if m:
+            t["hops"] += m["clean_hops"] or 0
+            if m["p90"] is not None and m["minutes"]:
+                t["p90_w"] += m["p90"] * m["minutes"]
+                t["p90_min"] += m["minutes"]
     out = []
-    for cid, r in base.items():
-        w, m, e = waits.get(cid) or {}, moves.get(cid) or {}, entrants[cid]
-        held = (r["mh_kept"] or 0) + (r["mh_lost"] or 0)
+    for cid, t in T.items():
+        e, games_n, wins = entrants[cid], int(t["games"]), int(t["win"])
         out.append({
             "canonical_id": cid, "name": e["name"], "team_id": e["team_id"], "rung": e["rung"],
-            "games": r["games"], "wins": int(r["wins"] or 0), "losses": r["games"] - int(r["wins"] or 0),
-            "even_win_pct": pct(r["even_w"], r["even_n"], 5), "even_n": int(r["even_n"] or 0),
-            "stacked_ratio": round(r["sg"] / r["st"], 2) if (r["st"] or 0) >= 200 else None,
-            "dmg_pm": round(r["dmg"] / r["minutes"]) if r["minutes"] else None,
-            "behind_pct": pct(r["started_behind"], r["started"], 10),
-            "ra_share": pct(r["ra"], r["ra_all"], 5),
-            "mh_share": pct(r["mh"], r["mh_all"], 5),
-            "mh_held_pct": pct(r["mh_kept"], held, 5),
-            "mh_on_time_pct": pct(w.get("on_time"), w.get("n"), 5),
-            "mh_wait_s": round(float(w["med"]) / 1000.0, 1) if (w.get("n") or 0) >= 5 else None,
-            "mh_timed": int(w.get("n") or 0),
-            # movement: cruising top speed (the speed held for the fastest tenth of the game) is the
-            # movement number that tracks winning; speed gained per hop is what the strafe coach trains
-            "top_speed": round(float(m["top_speed"])) if (m.get("hops") or 0) >= 30 and m.get("top_speed") is not None else None,
-            "hop_gain": round(float(m["hop_gain"]), 1) if (m.get("hops") or 0) >= 30 and m.get("hop_gain") is not None else None,
+            "games": games_n, "wins": wins, "losses": games_n - wins,
+            "even_win_pct": pct(t["even_w"], t["even_n"], 5), "even_n": int(t["even_n"]),
+            "stacked_ratio": round(t["stacked_given"] / t["stacked_taken"], 2) if t["stacked_taken"] >= 200 else None,
+            "dmg_pm": round(t["dmg"] / t["minutes"]) if t["minutes"] else None,
+            "behind_pct": pct(t["started_behind"], t["started"], 10),
+            "ra_share": pct(t["ra"], t["ra_all"], 5),
+            "ra_on_time_pct": pct(t["ra_on_time"], t["ra_timed"], 5), "ra_timed": int(t["ra_timed"]),
+            "mh_on_time_pct": pct(t["mh_on_time"], t["mh_timed"], 5), "mh_timed": int(t["mh_timed"]),
+            "mh_held_pct": pct(t["mh_kept"], t["mh_kept"] + t["mh_lost"], 5),
+            "mh_share": pct(t["mh"], t["mh_all"], 5),
+            # movement: the speed held for the fastest tenth of the game (from the demo track), and
+            # the plain average the end-of-match stats report
+            "top_speed": round(t["p90_w"] / t["p90_min"]) if t["hops"] >= 30 and t["p90_min"] else None,
+            "avg_speed": round(t["speed_sum"] / t["speed_n"]) if t["speed_n"] else None,
         })
     out.sort(key=lambda p: (p["rung"] is None, p["rung"] or 0, p["name"].lower()))
     return out
@@ -5801,8 +5820,10 @@ def _duel_lens_rows(cur, entrants, where, params):
 
 @app.get("/api/ladder/{ladder_id}/duel-stats")
 def ladder_duel_stats(ladder_id: int, response: Response):
-    """Advanced (demo-derived) numbers for a duel ladder's players, two lenses:
-    `ladder` (maps played in ladder matches) and `recent` (all their duels, last 60 days)."""
+    """Advanced (demo-derived) numbers for a duel ladder's players. Two lenses: `ladder`
+    (maps played in ladder matches) and `recent` (all their duels, last DUEL_LENS_DAYS).
+    Each has `players` (every opponent) and `opp` = the same rows for games where the
+    opponent was rated within DUEL_OPP_GAP (`even`), that much `higher`, or that much `lower`."""
     import ladder as _ladder
     response.headers["Cache-Control"] = "public, max-age=120"
     hit = _DUEL_LADDER_CACHE.get(ladder_id)
@@ -5828,14 +5849,29 @@ def ladder_duel_stats(ladder_id: int, response: Response):
             for g in (r["hub_game_ids"] or []):
                 if g is not None:
                     gids.add(int(g))
-        ladder_rows = _duel_lens_rows(cur, entrants, "hub_game_id = ANY(%(gids)s)", {"gids": list(gids)}) if entrants and gids else []
-        recent_rows = _duel_lens_rows(cur, entrants, "played_at >= now() - make_interval(days => %(days)s)",
-                                      {"days": DUEL_LENS_DAYS}) if entrants else []
-    payload = {"ladder_id": ladder_id, "days": DUEL_LENS_DAYS, "on_time_ms": MEGA_ON_TIME_MS,
-               "default": "ladder" if len(gids) >= DUEL_LADDER_DEFAULT_MAPS else "recent",
+        games, moves = [], {}
+        if entrants:
+            q = {"cids": list(entrants), "gids": list(gids), "days": DUEL_LENS_DAYS}
+            cur.execute(_DUEL_GAME_SQL, q)
+            games = list({(r["hub_game_id"], r["canonical_id"]): r for r in cur.fetchall()}.values())
+            cur.execute(_DUEL_MOVE_GAME_SQL, q)
+            moves = {(r["hub_game_id"], r["canonical_id"]): r for r in cur.fetchall()}
+
+    def lens(pick):
+        mine = [g for g in games if pick(g)]
+        rated = [g for g in mine if g["gap"] is not None]
+        return {"players": _duel_rows(mine, moves, entrants),
+                "opp": {"even": _duel_rows([g for g in rated if abs(g["gap"]) < DUEL_OPP_GAP], moves, entrants),
+                        "higher": _duel_rows([g for g in rated if g["gap"] <= -DUEL_OPP_GAP], moves, entrants),
+                        "lower": _duel_rows([g for g in rated if g["gap"] >= DUEL_OPP_GAP], moves, entrants)}}
+
+    ladder_lens = lens(lambda g: g["hub_game_id"] in gids)
+    payload = {"ladder_id": ladder_id, "days": DUEL_LENS_DAYS, "on_time_ms": ITEM_ON_TIME_MS,
+               "opp_gap": DUEL_OPP_GAP,
+               "default": "ladder" if ladder_lens["players"] else "recent",   # ladder matches first; overall until there are any
                "entrants": len(entrants),
-               "lenses": {"ladder": {"maps": len(gids), "players": ladder_rows},
-                          "recent": {"players": recent_rows}}}
+               "lenses": {"ladder": {"maps": len(gids), **ladder_lens},
+                          "recent": lens(lambda g: g["recent"])}}
     _DUEL_LADDER_CACHE[ladder_id] = (time.time() + 120, payload)
     return payload
 
