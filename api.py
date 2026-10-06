@@ -5876,6 +5876,92 @@ def ladder_duel_stats(ladder_id: int, response: Response):
     return payload
 
 
+# ── Head-to-head duel report (the /non-entity page): record by map, standard numbers, advanced numbers ──
+_VS_STANDARD_SQL = """
+    SELECT p.canonical_id, COUNT(*) AS games,
+           AVG(p.player_frags) AS frags, AVG(p.player_deaths) AS deaths,
+           AVG(p.player_damage_given) AS dmg_given, AVG(p.player_damage_taken) AS dmg_taken,
+           AVG(p.player_ra_taken) AS ra, AVG(p.player_ya_taken) AS ya, AVG(p.player_health100_taken) AS mh,
+           100.0 * SUM(p.player_sg_hits) / NULLIF(SUM(p.player_sg_attacks), 0) AS sg,
+           100.0 * SUM(p.player_lg_hits) / NULLIF(SUM(p.player_lg_attacks), 0) AS lg,
+           100.0 * SUM(p.player_rl_directs) / NULLIF(SUM(p.player_rl_attacks), 0) AS rl,
+           AVG(NULLIF(p.player_speed_avg, 0)) AS speed
+    FROM players p JOIN matches m ON m.match_id = p.match_id
+    WHERE m.hub_game_id = ANY(%(gids)s) AND p.canonical_id = ANY(%(cids)s) GROUP BY p.canonical_id"""
+_VS_GAME_SQL = """
+    SELECT d.hub_game_id, d.canonical_id, d.win, d.minutes, d.dmg, d.stacked_given, d.stacked_taken,
+           d.even_w, d.even_n, d.started, d.started_behind, d.ra, d.ra_all, d.mh, d.mh_all,
+           d.mh_kept, d.mh_lost, d.mh_waits, d.ra_waits, TRUE AS recent,
+           (SELECT MAX(p.player_speed_avg) FROM players p
+             WHERE p.match_id = m.match_id AND p.canonical_id = d.canonical_id) AS speed_avg, NULL::float AS gap
+    FROM duel_advanced_stats d LEFT JOIN matches m ON m.hub_game_id = d.hub_game_id
+    WHERE d.canonical_id = ANY(%(cids)s) AND d.opponent_id = ANY(%(cids)s)
+      AND d.played_at >= now() - make_interval(days => %(days)s)"""
+
+
+@app.get("/api/duel/vs")
+def duel_vs(response: Response, a: str = Query(..., min_length=1), b: str = Query(..., min_length=1),
+            days: int = Query(90, ge=1, le=3650)):
+    """Everything about the duels between two players in the last `days`: record by map, the
+    end-of-match numbers for both, and the demo-derived advanced numbers for both (same
+    definitions as the ladder's Advanced Metrics tab). Public."""
+    if a == b:
+        raise HTTPException(400, "two different players, please")
+    response.headers["Cache-Control"] = "public, max-age=300, stale-while-revalidate=3600"
+    cids = [a, b]
+    with pg() as conn:
+        cur = conn.cursor()
+        _duel_adv_ensure(cur)
+        _movement_ensure(cur)
+        conn.commit()
+        cur.execute("SELECT canonical_id, display_name FROM players_canonical WHERE canonical_id = ANY(%s)", (cids,))
+        names = {r["canonical_id"]: r["display_name"] or r["canonical_id"] for r in cur.fetchall()}
+        if len(names) < 2:
+            raise HTTPException(404, "player not found")
+        cur.execute("""SELECT m.hub_game_id, m.match_date, m.match_map, pa.player_frags AS fa, pb.player_frags AS fb
+                       FROM matches m
+                       JOIN players pa ON pa.match_id = m.match_id AND pa.canonical_id = %s
+                       JOIN players pb ON pb.match_id = m.match_id AND pb.canonical_id = %s
+                       WHERE m.match_mode = '1on1' AND m.hub_game_id > 0 AND COALESCE(m.has_bots, 0) = 0
+                         AND m.match_date::timestamptz >= now() - make_interval(days => %s)
+                       ORDER BY m.match_date DESC""", (a, b, days))
+        games = [dict(r) for r in cur.fetchall()]
+        gids = [g["hub_game_id"] for g in games]
+        standard, adv = {}, []
+        if gids:
+            cur.execute(_VS_STANDARD_SQL, {"gids": gids, "cids": cids})
+            standard = {r["canonical_id"]: {k: (round(float(v), 1) if v is not None else None) for k, v in dict(r).items() if k not in ("canonical_id", "games")}
+                        for r in cur.fetchall()}
+            cur.execute(_VS_GAME_SQL, {"cids": cids, "days": days})
+            rows = list({(r["hub_game_id"], r["canonical_id"]): r for r in cur.fetchall()}.values())
+            cur.execute(_DUEL_MOVE_GAME_SQL, {"cids": cids, "days": days, "gids": gids})
+            moves = {(r["hub_game_id"], r["canonical_id"]): r for r in cur.fetchall()}
+            entrants = {c: {"name": names[c], "team_id": None, "rung": None} for c in cids}
+            adv = _duel_rows(rows, moves, entrants)
+    by_map = {}
+    for g in games:
+        mp = by_map.setdefault(g["match_map"], {"map": g["match_map"], "games": 0, "wins_a": 0, "wins_b": 0, "frags_a": 0, "frags_b": 0})
+        mp["games"] += 1
+        mp["frags_a"] += g["fa"] or 0
+        mp["frags_b"] += g["fb"] or 0
+        if (g["fa"] or 0) > (g["fb"] or 0):
+            mp["wins_a"] += 1
+        elif (g["fb"] or 0) > (g["fa"] or 0):
+            mp["wins_b"] += 1
+    for mp in by_map.values():
+        mp["avg_a"] = round(mp["frags_a"] / mp["games"], 1)
+        mp["avg_b"] = round(mp["frags_b"] / mp["games"], 1)
+    wins_a = sum(1 for g in games if (g["fa"] or 0) > (g["fb"] or 0))
+    wins_b = sum(1 for g in games if (g["fb"] or 0) > (g["fa"] or 0))
+    return {"a": {"canonical_id": a, "name": names[a]}, "b": {"canonical_id": b, "name": names[b]}, "days": days,
+            "games": len(games), "wins_a": wins_a, "wins_b": wins_b,
+            "first": games[-1]["match_date"] if games else None, "last": games[0]["match_date"] if games else None,
+            "maps": sorted(by_map.values(), key=lambda m: -m["games"]),
+            "standard": standard,
+            "advanced": {r["canonical_id"]: r for r in adv},
+            "recent": [{"game_id": g["hub_game_id"], "date": g["match_date"], "map": g["match_map"], "fa": g["fa"], "fb": g["fb"]} for g in games[:12]]}
+
+
 def _team_summary(team_id):
     """Assemble a team's home-page summary (header + record + team-scoped match
     history + per-map record + aggregate team stats + per-player stats). Shared by
