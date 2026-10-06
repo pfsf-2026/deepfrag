@@ -85,10 +85,14 @@ chris:
   login: ""
   # Confirmed by Cronus: chris/chr1s/Eatmyass are the same person
   # Added 2026-05-21 — apply via: python canonicalize.py
+  # 2026-10-06 (Peter): "chris2pl" (the clan-tag spelling, raw name chris\22\5p\5l) is chris too;
+  # 53 duels and 8 fours had minted their own chris2pl profile. Merged into chris via the admin
+  # merge endpoint (canon_merges) the same day; the KOTH 1v1 chris vs grl match was recorded after.
   variants:
     - chris
     - chr1s
     - eatmyass
+    - chris2pl
     # chris+back merged 2026-08-17 (Peter): one-night name 08-04; chris absent
     # under own name 08-03..08-05; LG .423 matches chris's elite .386 LG.
     - chris+back
