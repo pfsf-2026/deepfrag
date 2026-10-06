@@ -31,6 +31,15 @@ function tone(m) {
   if (m.median != null && m.you < m.median) return 'behind'
   return ''
 }
+// Practice sessions on the strafe-coach server (logged by the patched KTX, pulled by the API).
+const sessions = computed(() => data.value?.trainer?.sessions || [])
+function when(s) { return s ? new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '' }
+function signed(v) { return v == null ? '—' : (v > 0 ? '+' : '') + Math.round(v) }
+// The mistakes that happened, worst first, as "too far ×5".
+const MISS = [['too_far', 'too far'], ['wall', 'wall'], ['late', 'late jump'], ['turn_more', 'turn more'], ['no_key', 'no strafe key']]
+function misses(s) {
+  return MISS.map(([k, l]) => [l, s.miss?.[k] || 0]).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).map(([l, n]) => `${l} ×${n}`).join(', ')
+}
 </script>
 
 <template>
@@ -70,16 +79,36 @@ function tone(m) {
         </div>
       </div>
 
+      <div v-if="sessions.length" class="mv-sess">
+        <div class="mv-sub">Trainer sessions on {{ data.trainer.server }} <span class="muted">· {{ data.trainer.session_count }} kept, {{ data.trainer.session_hops }} hops</span></div>
+        <div v-for="s in sessions" :key="s.start" class="mv-s" role="row">
+          <span class="mv-s-when">{{ when(s.start) }}<small>{{ s.map }} · {{ Math.round(s.min) }} min</small></span>
+          <b class="mv-s-gain">{{ signed(s.avg) }}<small> a hop</small></b>
+          <span class="mv-s-facts">{{ s.hops }} hops · best chain {{ s.best_chain }} · top {{ s.top_speed }}<span v-if="misses(s)" class="mv-s-miss"> · {{ misses(s) }}</span></span>
+        </div>
+      </div>
+
       <p class="mv-foot">
         Speed in the air comes from turning: hold a strafe key and turn the same way, with your view just behind your direction of travel.
-        Practise it live on <code>{{ data.trainer?.server }}</code> — type <code>{{ data.trainer?.command }}</code> for the in-game coach.
-        <span v-if="data.pool_players" class="muted">Compared with {{ data.pool_players }} players.</span>
+        <template v-if="sessions.length">The coach on <code>{{ data.trainer?.server }}</code> is on when you join; <code>scend</code> closes a session, <code>scstats</code> shows it.</template>
+        <template v-else>Practise it live on <code>{{ data.trainer?.server }}</code>: the in-game coach is on when you join, and every session you play there shows up here.</template>
+        {{ ' ' }}<span v-if="data.pool_players" class="muted">Compared with {{ data.pool_players }} players.</span>
       </p>
     </div>
   </section>
   <section v-else-if="data && !data.games" class="sec mv">
     <div class="sectitle">🏃 Movement</div>
-    <div class="card"><p class="mv-foot nomargin">No recent duels with demos to read your movement from yet. Play a few and it fills in.</p></div>
+    <div class="card">
+      <div v-if="sessions.length" class="mv-sess nomargin">
+        <div class="mv-sub">Trainer sessions on {{ data.trainer.server }} <span class="muted">· {{ data.trainer.session_count }} kept, {{ data.trainer.session_hops }} hops</span></div>
+        <div v-for="s in sessions" :key="s.start" class="mv-s" role="row">
+          <span class="mv-s-when">{{ when(s.start) }}<small>{{ s.map }} · {{ Math.round(s.min) }} min</small></span>
+          <b class="mv-s-gain">{{ signed(s.avg) }}<small> a hop</small></b>
+          <span class="mv-s-facts">{{ s.hops }} hops · best chain {{ s.best_chain }} · top {{ s.top_speed }}<span v-if="misses(s)" class="mv-s-miss"> · {{ misses(s) }}</span></span>
+        </div>
+      </div>
+      <p class="mv-foot" :class="{ nomargin: !sessions.length }">No recent duels with demos to read your movement from yet. Play a few and it fills in.</p>
+    </div>
   </section>
 </template>
 
@@ -107,6 +136,15 @@ function tone(m) {
 .mv-chip { border: 1px solid var(--b, var(--border)); border-radius: 8px; padding: 5px 10px; font-size: 13px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
 .mv-chip b { color: var(--fg); margin-right: 4px; }
 .mv-chip small { color: var(--fg-3); font-size: 11px; margin-left: 6px; }
+.mv-sess { margin-top: 14px; }
+.mv-sess.nomargin { margin-top: 0; }
+.mv-s { display: grid; grid-template-columns: 92px 76px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--b, var(--border)); font-size: 13px; }
+.mv-s-when { color: var(--fg); font-weight: 600; display: grid; }
+.mv-s-when small { color: var(--fg-3); font-weight: 500; font-size: 11px; }
+.mv-s-gain { font-size: 15px; color: var(--fg); font-variant-numeric: tabular-nums; }
+.mv-s-gain small { font-size: 11px; color: var(--fg-3); font-weight: 500; }
+.mv-s-facts { color: var(--fg-2); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+.mv-s-miss { color: var(--loss); }
 .mv-foot { margin: 14px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--fg-2); }
 .mv-foot.nomargin { margin: 0; }
 .mv-foot code { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent); overflow-wrap: anywhere; }
@@ -115,5 +153,8 @@ function tone(m) {
   .mv-row { grid-template-columns: minmax(0, 1fr) 46px 52px 58px; gap: 6px; font-size: 13px; }
   .mv-head { font-size: 10px; letter-spacing: .02em; }
   .mv-head span:last-child { white-space: normal; line-height: 1.1; }
+  /* phones: date and gain on one line, the facts underneath */
+  .mv-s { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .mv-s-facts { grid-column: 1 / -1; font-size: 12.5px; }
 }
 </style>

@@ -56,8 +56,15 @@
  *   On the ground it shows the best aim for the run-up. Fixed distance (constant size),
  *   on the plane of your standing eye height (no bobbing), led by your ping.
  *
- * "strafecoach" (or "scoach") cycles: HUD + orb, HUD only, orb only, off.
+ * "strafecoach" (or "scoach") cycles: HUD + orb, HUD only, orb only, off. A player with no
+ * saved choice starts in the mode k_strafecoach_default names (1 on the coach port).
  * A practice aid: only runs outside a live match unless k_strafecoach_match is set.
+ *
+ * SESSIONS. A session starts at your first hop and ends on "scend", on turning the coach off,
+ * on disconnect or map change, or after two minutes without a hop. You get a summary (hops,
+ * average gain, best chain, top speed, mistakes) and the same line is appended as JSON to
+ * demos/strafecoach_sessions.txt, which QTV serves over http: the DeepFrag API reads it from
+ * there and shows your sessions on the Movement card. "scstats" shows the running session.
  */
 
 #include "g_local.h"
@@ -83,6 +90,10 @@
 #define STC_HIST			10					// hops remembered
 #define STC_HIST_SHOWN		5
 #define STC_LINE			40					// a centerprint line is at most 40 characters
+#define STC_SESSION_IDLE	120.0f				// seconds without a hop that close a session
+#define STC_SESSION_MIN		10					// hops a session needs before it is kept
+#define STC_SESSION_LOG		"demos/strafecoach_sessions.txt"	// under the mod dir: QTV serves demos/ over http
+#define STC_TIME_FMT		"%Y-%m-%dT%H:%M:%SZ"				// the box keeps UTC
 
 enum
 {
@@ -272,6 +283,212 @@ static void stc_hist_push(gedict_t *p, float gain, float speed, int tag)
 	p->stc_h_n++;
 }
 
+// ---- sessions ----
+
+static void stc_session_clear(gedict_t *p)
+{
+	int i;
+
+	p->stc_s_active = false;
+	p->stc_s_start[0] = 0;
+	p->stc_s_t0 = 0;
+	p->stc_s_last = 0;
+	p->stc_s_hops = 0;
+	p->stc_s_gaining = 0;
+	p->stc_s_best_chain = 0;
+	p->stc_s_gain_sum = 0;
+	p->stc_s_best_hop = 0;
+	p->stc_s_top_speed = 0;
+	p->stc_s_best_cj = 0;
+	p->stc_s_lost = 0;
+
+	for (i = 0; i < 7; i++)
+	{
+		p->stc_s_miss[i] = 0;
+	}
+}
+
+// Every counted hop feeds the session; the first one starts it.
+static void stc_session_hop(gedict_t *p, float gain, float speed, int tag, float lost)
+{
+	if (!p->stc_s_active)
+	{
+		stc_session_clear(p);
+		p->stc_s_active = true;
+		p->stc_s_t0 = g_globalvars.time;
+
+		if (!QVMstrftime(p->stc_s_start, sizeof(p->stc_s_start), STC_TIME_FMT, 0))
+		{
+			p->stc_s_start[0] = 0;
+		}
+	}
+
+	p->stc_s_last = g_globalvars.time;
+	p->stc_s_hops++;
+	p->stc_s_gain_sum += gain;
+	p->stc_s_lost += lost;
+	p->stc_s_gaining += (gain >= 4) ? 1 : 0;
+	p->stc_s_best_hop = (gain > p->stc_s_best_hop) ? gain : p->stc_s_best_hop;
+	p->stc_s_top_speed = (speed > p->stc_s_top_speed) ? speed : p->stc_s_top_speed;
+	p->stc_s_best_chain = (p->stc_chain_hops > p->stc_s_best_chain) ? p->stc_chain_hops : p->stc_s_best_chain;
+
+	if ((tag == STC_MISS_CJ) && (speed > p->stc_s_best_cj))
+	{
+		p->stc_s_best_cj = speed;
+	}
+
+	if ((tag > STC_MISS_CJ) && (tag < 7))
+	{
+		p->stc_s_miss[tag]++;
+	}
+}
+
+static int stc_session_misses(gedict_t *p)
+{
+	return (p->stc_s_miss[STC_MISS_TOOFAR] + p->stc_s_miss[STC_MISS_WALL] + p->stc_s_miss[STC_MISS_LATE]
+			+ p->stc_s_miss[STC_MISS_TURNMORE] + p->stc_s_miss[STC_MISS_NOKEY]);
+}
+
+// The session in words, to the player.
+static void stc_session_say(gedict_t *p, const char *head)
+{
+	float avg = p->stc_s_hops ? (p->stc_s_gain_sum / p->stc_s_hops) : 0;
+	int gaining = p->stc_s_hops ? stc_round(100.0f * p->stc_s_gaining / p->stc_s_hops) : 0;
+
+	G_sprint(p, PRINT_HIGH, "%s: %d hops in %d min, avg %+d a hop, %d%% gaining, best hop %+d, best chain %d, top speed %d, circle jump %d\n",
+				head, p->stc_s_hops, stc_round((p->stc_s_last - p->stc_s_t0) / 60), stc_round(avg), gaining,
+				stc_round(p->stc_s_best_hop), p->stc_s_best_chain, stc_round(p->stc_s_top_speed), stc_round(p->stc_s_best_cj));
+
+	if (stc_session_misses(p))
+	{
+		G_sprint(p, PRINT_HIGH, "  mistakes: too far %d, wall %d, late jump %d, turn more %d, no strafe key %d (cost %d ups)\n",
+					p->stc_s_miss[STC_MISS_TOOFAR], p->stc_s_miss[STC_MISS_WALL], p->stc_s_miss[STC_MISS_LATE],
+					p->stc_s_miss[STC_MISS_TURNMORE], p->stc_s_miss[STC_MISS_NOKEY], stc_round(p->stc_s_lost));
+	}
+}
+
+// A player's name as plain JSON text: Quake's fun characters mapped back to plain ones, quotes
+// and backslashes escaped.
+static void stc_json_name(char *dst, int size, const char *src)
+{
+	int i, n = 0;
+
+	for (i = 0; src[i] && (n < size - 3); i++)
+	{
+		unsigned char c = (unsigned char)src[i] & 0x7f;
+
+		if ((c >= 18) && (c <= 27))
+		{
+			c = '0' + (c - 18);		// fun digits
+		}
+		else if ((c < 32) || (c == 127))
+		{
+			c = '_';
+		}
+
+		if ((c == '"') || (c == '\\'))
+		{
+			dst[n++] = '\\';
+		}
+
+		dst[n++] = (char)c;
+	}
+
+	dst[n] = 0;
+}
+
+// Close the session: tell the player, append the line. Short ones are dropped.
+static void stc_session_end(gedict_t *p, const char *reason)
+{
+	fileHandle_t h;
+	char name[64], line[512], end[24];
+	float avg;
+
+	if (!p->stc_s_active)
+	{
+		return;
+	}
+
+	p->stc_s_active = false;
+
+	if (p->stc_s_hops < STC_SESSION_MIN)
+	{
+		if (streq(reason, "scend"))
+		{
+			G_sprint(p, PRINT_HIGH, "Strafe coach: only %d hops, not kept (a session is %d or more).\n", p->stc_s_hops, STC_SESSION_MIN);
+		}
+
+		return;
+	}
+
+	stc_session_say(p, "Strafe coach session");
+
+	if (!QVMstrftime(end, sizeof(end), STC_TIME_FMT, 0))
+	{
+		end[0] = 0;
+	}
+
+	stc_json_name(name, sizeof(name), getname(p));
+	avg = p->stc_s_gain_sum / p->stc_s_hops;
+	snprintf(line, sizeof(line),
+				"{\"v\":1,\"name\":\"%s\",\"start\":\"%s\",\"end\":\"%s\",\"map\":\"%s\",\"min\":%.1f,\"hops\":%d,\"gaining\":%d,"
+				"\"avg\":%.1f,\"best_hop\":%.1f,\"best_chain\":%d,\"top_speed\":%d,\"cj\":%d,\"pace\":%d,\"lost\":%d,"
+				"\"miss\":{\"too_far\":%d,\"wall\":%d,\"late\":%d,\"turn_more\":%d,\"no_key\":%d},\"reason\":\"%s\"}\n",
+				name, p->stc_s_start, end, mapname, (p->stc_s_last - p->stc_s_t0) / 60, p->stc_s_hops, p->stc_s_gaining,
+				avg, p->stc_s_best_hop, p->stc_s_best_chain, stc_round(p->stc_s_top_speed), stc_round(p->stc_s_best_cj),
+				p->stc_pace, stc_round(p->stc_s_lost), p->stc_s_miss[STC_MISS_TOOFAR], p->stc_s_miss[STC_MISS_WALL],
+				p->stc_s_miss[STC_MISS_LATE], p->stc_s_miss[STC_MISS_TURNMORE], p->stc_s_miss[STC_MISS_NOKEY], reason);
+
+	if (trap_FS_OpenFile(STC_SESSION_LOG, &h, FS_APPEND_TXT) >= 0)
+	{
+		trap_FS_WriteFile(line, strlen(line), h);
+		trap_FS_CloseFile(h);
+	}
+	else
+	{
+		G_cprint("strafecoach: cannot append to %s\n", STC_SESSION_LOG);
+	}
+
+	G_cprint("strafecoach session %s", line);
+}
+
+// Map change or server stop: close every running session while the players are still here.
+void StrafeCoachShutdown(void)
+{
+	gedict_t *p;
+
+	for (p = world; (p = find_plr(p));)
+	{
+		stc_session_end(p, "mapchange");
+	}
+}
+
+// "scend": close the running session now; the next hop starts a new one.
+void StrafeCoachEndCmd(void)
+{
+	if (!self->stc_s_active)
+	{
+		G_sprint(self, PRINT_HIGH, "Strafe coach: no session running. One starts with your first hop.\n");
+
+		return;
+	}
+
+	stc_session_end(self, "scend");
+}
+
+// "scstats": the running session so far.
+void StrafeCoachStatsCmd(void)
+{
+	if (!self->stc_s_active)
+	{
+		G_sprint(self, PRINT_HIGH, "Strafe coach: no session running. One starts with your first hop.\n");
+
+		return;
+	}
+
+	stc_session_say(self, "Strafe coach session so far");
+}
+
 // What a steady sweep at `pace` deg/sec gains over one flat hop (52 frames) at `speed`.
 static float stc_pace_gain(float speed, float pace, float ft)
 {
@@ -447,12 +664,15 @@ void StrafeCoachPrecache(void)
 }
 
 // Called once per (re)connect, i.e. also after every map change. The settings survive in the
-// client's userinfo (setinfo stc / stcp / stcy / stcs) so the coach stays as you left it.
+// client's userinfo (setinfo stc / stcp / stcy / stcs) so the coach stays as you left it. No
+// saved choice at all (a fresh client) means the server's default, k_strafecoach_default.
 void StrafeCoachConnect(gedict_t *p)
 {
-	int mode = iKey(p, "stc"), pace = iKey(p, "stcp"), row = iKey(p, "stcy");
-	char *snd = ezinfokey(p, "stcs");
+	char *mode_s = ezinfokey(p, "stc"), *snd = ezinfokey(p, "stcs");
+	int mode = (mode_s && mode_s[0]) ? atoi(mode_s) : (int)cvar("k_strafecoach_default");
+	int pace = iKey(p, "stcp"), row = iKey(p, "stcy");
 
+	stc_session_clear(p);
 	p->stc_marker = NULL;
 	p->stc_marker_shown = false;
 	p->stc_lead = 0;
@@ -467,6 +687,7 @@ void StrafeCoachConnect(gedict_t *p)
 
 void StrafeCoachDisconnect(gedict_t *p)
 {
+	stc_session_end(p, "disconnect");
 	stc_marker_remove(p);
 	p->stc_mode = 0;
 }
@@ -491,6 +712,7 @@ void StrafeCoachCmd(void)
 
 	if (!self->stc_mode)
 	{
+		stc_session_end(self, "off");
 		stc_marker_remove(self);
 		G_centerprint(self, " ");
 	}
@@ -503,7 +725,8 @@ void StrafeCoachCmd(void)
 		G_sprint(self, PRINT_HIGH, "In the air: hold a strafe key and sweep the mouse the same way.\n"
 					"Meter = how hard you are gaining. Arrows = turn that way. Red text = the mistake you just made.\n"
 					"The orb sweeps at %d deg/sec: keep your crosshair on it.\n"
-					"scpace = orb speed, scpos <rows> = move the display down, scsound = mistake sound.\n",
+					"scpace = orb speed, scpos <rows> = move the display down, scsound = mistake sound.\n"
+					"A session starts with your first hop: scstats shows it, scend closes it (so does 2 min without a hop).\n",
 					self->stc_pace);
 	}
 
@@ -574,6 +797,12 @@ void StrafeCoachFrame(void)
 	if (!self->stc_mode)
 	{
 		return;
+	}
+
+	// a session that has gone quiet closes itself
+	if (self->stc_s_active && (g_globalvars.time - self->stc_s_last > STC_SESSION_IDLE))
+	{
+		stc_session_end(self, "idle");
 	}
 
 	if ((self->ct != ctPlayer) || self->isBot || !ISLIVE(self) || !stc_allowed())
@@ -717,6 +946,7 @@ void StrafeCoachFrame(void)
 				}
 
 				stc_hist_push(self, gain, speed, tag);
+				stc_session_hop(self, gain, speed, tag, self->stc_hop_loss + self->stc_hop_bump + self->stc_hop_late);
 			}
 
 			self->stc_ground_frames = 0;

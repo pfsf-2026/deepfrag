@@ -5009,8 +5009,142 @@ def _stats_catchup(max_games=3, budget_s=15.0):
             _MOVEMENT_POOL.clear()
     except Exception as e:
         out["error"] = f"{type(e).__name__}: {str(e)[:120]}"
+    # the strafe-coach server's practice sessions: one small http GET, skipped if the file has not grown
+    if time.time() - t0 < budget_s:
+        try:
+            out["trainer"] = _trainer_pull()
+        except Exception as e:
+            out["trainer_error"] = f"{type(e).__name__}: {str(e)[:120]}"
     out["seconds"] = round(time.time() - t0, 1)
     return out
+
+
+# ── Strafe-coach trainer sessions ──────────────────────────────────────────────────────────────
+# The patched KTX on the Denver coach port appends one JSON line per practice session to its
+# demos/ folder (tools/ktx_strafecoach/README.md has the format). QTV serves that folder over
+# http, so the ladder tick pulls the file and keeps what is new: no secret on the game box.
+TRAINER_LOGS = {"den.qwsrv.com:29001": "http://den.qwsrv.com:28000/demos/strafecoach_sessions.txt"}
+_TRAINER_READY = False
+_TRAINER_SEEN = {}   # url -> byte length at the last pull; the file only ever grows
+
+
+def _trainer_ensure(cur):
+    global _TRAINER_READY
+    if _TRAINER_READY:
+        return
+    cur.execute("""CREATE TABLE IF NOT EXISTS trainer_sessions (
+                     server       TEXT NOT NULL,
+                     player_name  TEXT NOT NULL,
+                     started_at   TIMESTAMPTZ NOT NULL,
+                     ended_at     TIMESTAMPTZ,
+                     canonical_id TEXT,
+                     map          TEXT,
+                     minutes      REAL,
+                     hops         INT,
+                     gaining      INT,
+                     avg_gain     REAL,
+                     best_hop     REAL,
+                     best_chain   INT,
+                     top_speed    INT,
+                     circle_jump  INT,
+                     pace         INT,
+                     lost         INT,
+                     miss         JSONB NOT NULL DEFAULT '{}'::jsonb,
+                     reason       TEXT,
+                     PRIMARY KEY (server, player_name, started_at))""")
+    cur.execute("CREATE INDEX IF NOT EXISTS trainer_sessions_cid ON trainer_sessions (canonical_id, started_at DESC)")
+    _TRAINER_READY = True
+
+
+def _trainer_resolve(cur, name):
+    """A session's player name -> canonical id, the way the live server rosters do it: the
+    raw-name map first (aliases.yaml lands there), then the normalized name as an id."""
+    import name_canon as NC
+    norm = NC.normalize(name)
+    cur.execute("SELECT raw_name, canonical_id FROM player_name_map WHERE raw_name = ANY(%s)", ([name, norm],))
+    by_raw = {r["raw_name"]: r["canonical_id"] for r in cur.fetchall()}
+    if by_raw.get(name) or by_raw.get(norm):
+        return by_raw.get(name) or by_raw.get(norm)
+    cur.execute("SELECT 1 FROM players_canonical WHERE canonical_id = %s", (norm,))
+    return norm if cur.fetchone() else None
+
+
+def _trainer_pull(timeout_s=6.0):
+    """Fetch every trainer log and store the sessions not stored yet. Returns how many were
+    added. A missing file (nobody has finished a session yet) is not an error."""
+    import urllib.request
+    added = 0
+    for server, url in TRAINER_LOGS.items():
+        try:
+            with urllib.request.urlopen(url, timeout=timeout_s) as r:
+                raw = r.read()
+        except Exception:
+            continue
+        if _TRAINER_SEEN.get(url) == len(raw):
+            continue
+        rows = []
+        for line in raw.decode("utf-8", "replace").splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if d.get("name") and d.get("start"):
+                rows.append(d)
+        with pg() as conn:
+            cur = conn.cursor()
+            _trainer_ensure(cur)
+            cids = {}
+            for d in rows:
+                if d["name"] not in cids:
+                    cids[d["name"]] = _trainer_resolve(cur, d["name"])
+                cur.execute("""INSERT INTO trainer_sessions (server, player_name, started_at, ended_at, canonical_id, map,
+                                   minutes, hops, gaining, avg_gain, best_hop, best_chain, top_speed, circle_jump, pace,
+                                   lost, miss, reason)
+                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                               ON CONFLICT (server, player_name, started_at) DO NOTHING""",
+                            (server, d["name"], d["start"], d.get("end") or None, cids[d["name"]], d.get("map"),
+                             d.get("min"), d.get("hops"), d.get("gaining"), d.get("avg"), d.get("best_hop"),
+                             d.get("best_chain"), d.get("top_speed"), d.get("cj"), d.get("pace"), d.get("lost"),
+                             json.dumps(d.get("miss") or {}), d.get("reason")))
+                added += cur.rowcount
+            # a name nobody knew when its session was stored may be an alias by now
+            cur.execute("SELECT DISTINCT player_name FROM trainer_sessions WHERE canonical_id IS NULL LIMIT 50")
+            for r in cur.fetchall():
+                cid = _trainer_resolve(cur, r["player_name"])
+                if cid:
+                    cur.execute("UPDATE trainer_sessions SET canonical_id = %s WHERE player_name = %s AND canonical_id IS NULL",
+                                (cid, r["player_name"]))
+            conn.commit()
+        _TRAINER_SEEN[url] = len(raw)
+    return added
+
+
+def _trainer_sessions(cur, canonical_id, limit=8):
+    """The newest practice sessions for the Movement card, plus totals."""
+    _trainer_ensure(cur)
+    cur.execute("""SELECT server, started_at, map, minutes, hops, gaining, avg_gain, best_hop, best_chain, top_speed,
+                          circle_jump, pace, lost, miss, reason
+                   FROM trainer_sessions WHERE canonical_id = %s ORDER BY started_at DESC LIMIT %s""", (canonical_id, limit))
+    rows = cur.fetchall()
+    cur.execute("SELECT COUNT(*) AS n, COALESCE(SUM(hops), 0) AS hops FROM trainer_sessions WHERE canonical_id = %s", (canonical_id,))
+    tot = cur.fetchone()
+    return {"session_count": int(tot["n"] or 0), "session_hops": int(tot["hops"] or 0),
+            "sessions": [{"server": r["server"], "start": r["started_at"].isoformat(), "map": r["map"],
+                          "min": r["minutes"], "hops": r["hops"], "gaining": r["gaining"], "avg": r["avg_gain"],
+                          "best_hop": r["best_hop"], "best_chain": r["best_chain"], "top_speed": r["top_speed"],
+                          "cj": r["circle_jump"], "pace": r["pace"], "lost": r["lost"], "miss": r["miss"] or {},
+                          "reason": r["reason"]} for r in rows]}
+
+
+@app.post("/api/admin/trainer/pull")
+def admin_trainer_pull(authorization: str | None = Header(default=None)):
+    """Pull the trainer logs now instead of waiting for the ladder tick (god key)."""
+    _check_sync_secret(authorization)
+    _TRAINER_SEEN.clear()
+    return {"ok": True, "added": _trainer_pull()}
 
 
 # ── Movement report: per-hop air-strafe analysis from demos (maths in movement.py) ────────────
@@ -5158,14 +5292,18 @@ def player_movement(canonical_id: str, mode: str = "1on1"):
     def pick(vals, q):
         return vals[min(len(vals) - 1, int(len(vals) * q))] if vals else None
 
+    trainer = {"server": "den.qwsrv.com:29001", "command": "strafecoach"}
     with pg() as conn:
         cur = conn.cursor()
         _movement_ensure(cur)
         conn.commit()
+        trainer.update(_trainer_sessions(cur, canonical_id))
+        conn.commit()
         cur.execute(_movement_agg_sql("AND canonical_id = %s", "canonical_id"), (mode, canonical_id))
         me = cur.fetchone()
         if not me:
-            return {"canonical_id": canonical_id, "mode": mode, "games": 0, "metrics": [], "maps": [], "read": []}
+            return {"canonical_id": canonical_id, "mode": mode, "games": 0, "metrics": [], "maps": [], "read": [],
+                    "trainer": trainer}
         pool = _movement_pool(cur, mode)
         cur.execute(_movement_agg_sql("AND canonical_id = %s", "canonical_id, map") + " HAVING COUNT(*) >= 3 ORDER BY COUNT(*) DESC",
                     (mode, canonical_id))
@@ -5213,7 +5351,7 @@ def player_movement(canonical_id: str, mode: str = "1on1"):
             "latest": me["latest"].isoformat() if me["latest"] else None,
             "chain_max": None if me["chain_max"] is None else int(me["chain_max"]),
             "pool_players": pool.get("players", 0), "metrics": metrics, "maps": maps, "read": read,
-            "trainer": {"server": "den.qwsrv.com:29001", "command": "strafecoach"}}
+            "trainer": trainer}
 
 
 _DUEL_ADV_AGG = """

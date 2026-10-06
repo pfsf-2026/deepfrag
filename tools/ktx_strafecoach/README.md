@@ -10,7 +10,7 @@ nightly rebuild are untouched.
 - **Rebuild:** copy a new `strafecoach.patch` to `/opt/qw/coach/`, then
   `sudo -u qw -H bash /opt/qw/coach/build_coach.sh [ktx-commit]` and change map (or
   `systemctl restart qw-coach`). Pinned to KTX `f67d6cc5`; bump it if mvdsv's game API changes.
-- **In game:** `strafecoach` (or `scoach`) cycles HUD + orb, HUD only, orb only, off. `scpace` changes the orb's sweep speed, `scpos <rows>` moves the display down, `scsound` toggles the mistake sound. The choice is kept in
+- **In game:** on by default on this port (`k_strafecoach_default 1`). `strafecoach` (or `scoach`) cycles HUD + orb, HUD only, orb only, off. `scpace` changes the orb's sweep speed, `scpos <rows>` moves the display down, `scsound` toggles the mistake sound, `scstats` shows the practice session so far, `scend` closes it. The choice is kept in
   the client's userinfo (`setinfo stc N`) so it survives map changes. Only runs outside a live match
   (prewar, race, practice) unless `k_strafecoach_match 1`.
 - **Map:** the coach port defaults to `speed` (wide open, Peter's old training map). `speed2`, `rawspeed` and
@@ -84,6 +84,36 @@ circle jump 448
 jumped. v2 made the HUD three plain lines and stabilised the orb, but the orb marked the instantaneous best
 angle, which always sits a few degrees ahead of wherever you are looking, so it seemed to follow the crosshair
 instead of leading it (Peter). v3 made it a pacer and added circle-jump tracking, ground guidance and the hop log.
+
+## Sessions and the default (v6, 2026-10-06)
+
+- **On by default.** `port_29001.cfg` sets `k_strafecoach_default 1`: a client with no saved choice spawns with
+  HUD + orb. Cycling it off (`strafecoach`) is saved in the client's userinfo as before, so a player who wants it
+  off keeps it off for that client session. Peter's finding: "the trainer itself is still off" every fresh
+  client, because ezQuake does not keep `setinfo stc` across restarts.
+- **A session** starts at the player's first hop and ends on `scend`, on turning the coach off, on disconnect,
+  on map change (hooked into `G_ShutDown`, so the players are still there to write for) or after
+  `STC_SESSION_IDLE` = 120 s without a hop. Fewer than `STC_SESSION_MIN` = 10 hops and it is dropped.
+  `scstats` prints the running one. On end the player sees:
+
+  ```
+  Strafe coach session: 142 hops in 11 min, avg +17 a hop, 78% gaining, best hop +31, best chain 9, top speed 512, circle jump 441
+    mistakes: too far 5, wall 2, late jump 3, turn more 1, no strafe key 0 (cost 118 ups)
+  ```
+
+  and one JSON line is appended to `ktx/demos/strafecoach_sessions.txt` (relative to the mod dir, via
+  `trap_FS_OpenFile` in append mode; mvdsv resolves it under `fs_gamedir`):
+
+  ```
+  {"v":1,"name":"cronus","start":"2026-10-06T16:01:12Z","end":"2026-10-06T16:12:40Z","map":"speed","min":11.4,"hops":142,"gaining":111,"avg":17.2,"best_hop":31.0,"best_chain":9,"top_speed":512,"cj":441,"pace":60,"lost":118,"miss":{"too_far":5,"wall":2,"late":3,"turn_more":1,"no_key":0},"reason":"scend"}
+  ```
+
+  Times are UTC (the box runs on UTC; the `Z` is written on that assumption). `gaining` = hops that gained 4 or
+  more; `lost` = speed lost to the mistakes counted; `cj` = the fastest first hop of a run.
+- **Why the demos folder:** QTV on the box serves everything in `demos/` over http (`den.qwsrv.com:28000/demos/`),
+  text files included, so the DeepFrag API pulls `http://den.qwsrv.com:28000/demos/strafecoach_sessions.txt`
+  on the ladder tick and no secret has to live on the game box. Sessions land in `trainer_sessions` and show
+  on the Movement card (`GET /api/players/{id}/movement` → `trainer.sessions`).
 
 ## Reset gotcha (found 2026-10-02)
 
