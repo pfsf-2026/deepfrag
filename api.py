@@ -5015,6 +5015,13 @@ def _stats_catchup(max_games=3, budget_s=15.0):
             out["trainer"] = _trainer_pull()
         except Exception as e:
             out["trainer_error"] = f"{type(e).__name__}: {str(e)[:120]}"
+    # keep the played-time rank table warm so the Time tab never waits for the 4 s scan
+    if time.time() - t0 < budget_s:
+        try:
+            with pg() as conn:
+                _playtime_rank(conn.cursor(), PLAYTIME_SINCE, max_age=600)
+        except Exception as e:
+            out["playtime_error"] = f"{type(e).__name__}: {str(e)[:120]}"
     out["seconds"] = round(time.time() - t0, 1)
     return out
 
@@ -5137,6 +5144,171 @@ def _trainer_sessions(cur, canonical_id, limit=8):
                           "best_hop": r["best_hop"], "best_chain": r["best_chain"], "top_speed": r["top_speed"],
                           "cj": r["circle_jump"], "pace": r["pace"], "lost": r["lost"], "miss": r["miss"] or {},
                           "reason": r["reason"]} for r in rows]}
+
+
+# ── Played time: hours in matches, from every game a player's POV appears in ────────────────────
+# matches.match_duration_secs is the real clock (overtime and early ends included), so hours
+# played = the sum over the player's games. Idle outside matches is not in the hub data at all.
+PLAYTIME_SINCE = "2024-01-01"
+_PLAYTIME_RANK = {}   # since -> (built_at, {canonical_id: hours}) for the rank line
+
+
+def _playtime_rank(cur, since, max_age=900):
+    """Hours per player since `since`, for the rank line. A 4 s scan of the whole base, so it
+    is cached and the ladder tick refreshes it (max_age 600) before a visitor's copy (900)
+    goes stale. match_date is ISO text, so the text comparison is the day cut the index knows."""
+    hit = _PLAYTIME_RANK.get(since)
+    if hit and time.time() - hit[0] < max_age:
+        return hit[1]
+    cur.execute("""SELECT canonical_id, SUM(secs) / 3600.0 AS hours FROM (
+                     SELECT DISTINCT p.canonical_id, m.match_id, m.match_duration_secs AS secs
+                     FROM players p JOIN matches m ON m.match_id = p.match_id
+                     WHERE p.canonical_id IS NOT NULL AND COALESCE(m.has_bots, 0) = 0 AND m.match_date >= %s) x
+                   GROUP BY canonical_id""", (since,))
+    table = {r["canonical_id"]: float(r["hours"]) for r in cur.fetchall()}
+    _PLAYTIME_RANK[since] = (time.time(), table)
+    return table
+
+
+@app.get("/api/players/{canonical_id}/playtime")
+def player_playtime(canonical_id: str, since: str = PLAYTIME_SINCE, tz: str = "UTC"):
+    """Hours in matches since `since`, cut every way a player asks: per day, per active day,
+    by year / month / mode / weekday / hour of day, sessions (games less than 45 minutes
+    apart), best day, streaks, and the rank among everyone by hours. Days are bucketed in `tz`
+    (the viewer's browser zone) so a Friday-night session is a Friday."""
+    import datetime as dt
+    import re
+    import statistics
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", since):
+        raise HTTPException(400, "since must be YYYY-MM-DD")
+    with pg() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute("SELECT (now() AT TIME ZONE %s) AS t", (tz,))
+            cur.fetchone()
+        except Exception:
+            conn.rollback()
+            tz = "UTC"
+        canonical_id = _resolve_merged_canonical(cur, canonical_id)
+        # the player's match ids first, then those matches by primary key. Written as one join
+        # (or an IN subquery) the planner walks every match since 2024: 1.3 s against 0.4 s.
+        cur.execute("SELECT DISTINCT match_id FROM players WHERE canonical_id = %s", (canonical_id,))
+        ids = [r["match_id"] for r in cur.fetchall()]
+        cur.execute("""SELECT m.match_id, m.match_mode AS mode, m.match_map AS map, m.match_duration_secs AS secs,
+                              (m.match_date::timestamptz AT TIME ZONE %s) AS t
+                       FROM matches m
+                       WHERE m.match_id = ANY(%s) AND COALESCE(m.has_bots, 0) = 0 AND m.match_date >= %s
+                       ORDER BY t""", (tz, ids, since))
+        games = [dict(r) for r in cur.fetchall()]
+        cur.execute("SELECT (now() AT TIME ZONE %s)::date AS today", (tz,))
+        today = cur.fetchone()["today"]
+        rank_table = _playtime_rank(cur, since)
+
+    out = {"canonical_id": canonical_id, "since": since, "tz": tz, "games": len(games), "hours": 0.0}
+    if not games:
+        return out
+    secs_total = sum(g["secs"] or 0 for g in games)
+    first_day, last_day = games[0]["t"].date(), games[-1]["t"].date()
+    start_day = max(first_day, dt.date.fromisoformat(since))
+    days_span = max(1, (today - start_day).days + 1)
+    per_day = {}
+    for g in games:
+        d = g["t"].date()
+        per_day.setdefault(d, [0, 0])
+        per_day[d][0] += g["secs"] or 0
+        per_day[d][1] += 1
+    active_days = len(per_day)
+
+    def bucket(key):
+        acc = {}
+        for g in games:
+            k = key(g)
+            acc.setdefault(k, [0, 0])
+            acc[k][0] += g["secs"] or 0
+            acc[k][1] += 1
+        return acc
+
+    def rows(acc, name, order=None):
+        keys = order if order is not None else sorted(acc)
+        return [{name: k, "hours": round(acc.get(k, [0, 0])[0] / 3600.0, 1), "games": acc.get(k, [0, 0])[1]} for k in keys]
+
+    by_mode = bucket(lambda g: g["mode"] or "?")
+    by_year = bucket(lambda g: g["t"].year)
+    by_month = bucket(lambda g: g["t"].strftime("%Y-%m"))
+    by_weekday = bucket(lambda g: g["t"].weekday())
+    by_hour = bucket(lambda g: g["t"].hour)
+    by_map = bucket(lambda g: g["map"] or "?")
+
+    # every month from the start month to this month, so the chart has no gaps
+    months, y, m = [], start_day.year, start_day.month
+    while (y, m) <= (today.year, today.month):
+        months.append(f"{y:04d}-{m:02d}")
+        m += 1
+        if m == 13:
+            y, m = y + 1, 1
+    for yr in by_year:
+        y0 = max(dt.date(yr, 1, 1), start_day)
+        y1 = min(dt.date(yr, 12, 31), today)
+        by_year[yr].append(max(1, (y1 - y0).days + 1))
+
+    # sessions: games less than 45 minutes apart belong together
+    sessions = []
+    for g in games:
+        start, end = g["t"], g["t"] + dt.timedelta(seconds=g["secs"] or 0)
+        if sessions and (start - sessions[-1]["end"]).total_seconds() <= 45 * 60:
+            sessions[-1]["end"] = max(sessions[-1]["end"], end)
+            sessions[-1]["games"] += 1
+            sessions[-1]["secs"] += g["secs"] or 0
+        else:
+            sessions.append({"start": start, "end": end, "games": 1, "secs": g["secs"] or 0})
+    wall = [(s["end"] - s["start"]).total_seconds() / 3600.0 for s in sessions]
+    longest = max(sessions, key=lambda s: (s["end"] - s["start"]).total_seconds())
+
+    # streaks of consecutive active days
+    days_sorted = sorted(per_day)
+    best_streak = cur_streak = 1
+    for a, b in zip(days_sorted, days_sorted[1:]):
+        cur_streak = cur_streak + 1 if (b - a).days == 1 else 1
+        best_streak = max(best_streak, cur_streak)
+    streak_now = 0
+    d = today
+    while d in per_day:
+        streak_now += 1
+        d -= dt.timedelta(days=1)
+    if streak_now == 0 and (today - dt.timedelta(days=1)) in per_day:   # today not played yet
+        d = today - dt.timedelta(days=1)
+        while d in per_day:
+            streak_now += 1
+            d -= dt.timedelta(days=1)
+    best_day = max(per_day.items(), key=lambda kv: kv[1][0])
+
+    hours = secs_total / 3600.0
+    ranked = sorted(rank_table.values(), reverse=True)
+    mine = rank_table.get(canonical_id, hours)
+    out.update({
+        "hours": round(hours, 1),
+        "first": games[0]["t"].isoformat(), "last": games[-1]["t"].isoformat(),
+        "days_span": days_span, "active_days": active_days,
+        "per_day": round(hours / days_span, 2), "per_active_day": round(hours / active_days, 2),
+        "per_week": round(hours * 7 / days_span, 1),
+        "avg_game_min": round(secs_total / len(games) / 60.0, 1),
+        "by_mode": sorted(rows(by_mode, "mode"), key=lambda r: -r["hours"]),
+        "by_year": [{"year": yr, "hours": round(v[0] / 3600.0, 1), "games": v[1], "days": v[2],
+                     "per_day": round(v[0] / 3600.0 / v[2], 2)} for yr, v in sorted(by_year.items())],
+        "by_month": rows(by_month, "month", months),
+        "by_weekday": rows(by_weekday, "weekday", list(range(7))),
+        "by_hour": rows(by_hour, "hour", list(range(24))),
+        "by_map": sorted(rows(by_map, "map"), key=lambda r: -r["hours"])[:8],
+        "sessions": {"count": len(sessions), "median_hours": round(statistics.median(wall), 1),
+                     "median_games": statistics.median(s["games"] for s in sessions),
+                     "longest": {"date": longest["start"].date().isoformat(), "hours": round(wall[sessions.index(longest)], 1),
+                                 "games": longest["games"]}},
+        "best_day": {"date": best_day[0].isoformat(), "hours": round(best_day[1][0] / 3600.0, 1), "games": best_day[1][1]},
+        "streak": {"best": best_streak, "current": streak_now},
+        "rank": {"pos": 1 + sum(1 for h in ranked if h > mine), "of": len(ranked),
+                 "pct": round(100.0 * sum(1 for h in ranked if h < mine) / max(1, len(ranked)))},
+    })
+    return out
 
 
 @app.post("/api/admin/trainer/pull")

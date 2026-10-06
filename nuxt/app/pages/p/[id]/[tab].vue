@@ -11,7 +11,32 @@ const id = computed(() => String(route.params.id))
 const tab = computed(() => String(route.params.tab || ''))
 const windowKey = ref('90')
 
-const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2', 'trends', 'compare', 'dmm', 'servers', 'advanced'])
+const PORTED = new Set(['recent', 'opponents', '1on1', '4on4', '2on2', 'trends', 'compare', 'dmm', 'servers', 'advanced', 'time'])
+// Played time: /api/players/{id}/playtime — hours in matches since 2024, bucketed in the viewer's time zone.
+const playtime = ref(null)
+const playtimePending = ref(false)
+async function loadPlaytime() {
+  playtimePending.value = true
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    const r = await fetch(`/api/players/${encodeURIComponent(id.value)}/playtime?tz=${encodeURIComponent(tz)}`)
+    playtime.value = r.ok ? await r.json() : null
+  } catch { playtime.value = null } finally { playtimePending.value = false }
+}
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+function h1(v) { return v == null ? '—' : (Math.abs(v) >= 100 ? Math.round(v).toLocaleString() : Number(v).toFixed(1)) }
+// month axis: only quarter months are labelled (plus the first), January carries the year
+function ymLabel(ym) { const [y, m] = ym.split('-'); return `${MONTHS[+m - 1]}${m === '01' || ym === playtime.value?.by_month?.[0]?.month ? ' ' + y.slice(2) : ''}` }
+function ymShown(ym) { return ['01', '04', '07', '10'].includes(ym.split('-')[1]) || ym === playtime.value?.by_month?.[0]?.month }
+function fmtDay(s) { if (!s) return '—'; const x = new Date(s + (s.length === 10 ? 'T12:00:00' : '')); return isNaN(x) ? s : x.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) }
+// bar heights as a share of the tallest bar in the series
+function bars(list, key) { const top = Math.max(...list.map(x => x.hours), 0.1); return list.map(x => ({ ...x, k: x[key], pct: Math.round(100 * x.hours / top) })) }
+const monthBars = computed(() => bars(playtime.value?.by_month || [], 'month'))
+const weekdayBars = computed(() => bars(playtime.value?.by_weekday || [], 'weekday'))
+const hourBars = computed(() => bars(playtime.value?.by_hour || [], 'hour'))
+const modeShare = computed(() => { const t = playtime.value?.hours || 1; return (playtime.value?.by_mode || []).map(m => ({ ...m, pct: Math.round(100 * m.hours / t) })) })
+const hourLabel = h => (h % 6 === 0 ? (h === 0 ? '12am' : h === 12 ? '12pm' : h < 12 ? h + 'am' : (h - 12) + 'pm') : '')
 // Advanced (demo-derived duel metrics): /api/players/{id}/advanced — see docs/advanced_metrics.md
 const adv = ref(null)
 const advPending = ref(false)
@@ -40,6 +65,7 @@ async function load() {
     const r = await fetch(url)
     profile.value = r.ok ? await r.json() : null
         if (tab.value === 'advanced') loadAdvanced()
+    if (tab.value === 'time' && !playtime.value) loadPlaytime()
     // Alias/merge-emptied id (e.g. /p/george/recent): the API answers with the
     // owning profile — move to its id so sub-fetches and the URL agree.
     const real = profile.value?.canonical_id
@@ -248,7 +274,7 @@ const TABS = computed(() => {
   const defs = [
     { key: 'overview', label: 'Overview', to: b },
     { key: 'advanced', label: 'Advanced' },
-    { key: 'trends', label: 'Trends' }, { key: 'compare', label: 'Compare' },
+    { key: 'trends', label: 'Trends' }, { key: 'compare', label: 'Compare' }, { key: 'time', label: 'Time' },
     { key: '1on1', label: '1on1' }, { key: '4on4', label: '4on4' }, { key: '2on2', label: '2on2' },
     { key: 'dmm', label: 'By DMM' },
     { key: 'maps', label: 'Maps', to: `${b}/maps` },
@@ -443,6 +469,83 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
       <div v-else class="placeholder">No {{ trendsMode }} trend data in this window.</div>
     </template>
 
+    <!-- TIME (hours in matches since 2024) -->
+    <template v-else-if="tab === 'time'">
+      <div class="section-h"><h2>Played time</h2><span class="meta">since Jan 2024 · match clock only, idle not counted · days in your time zone</span></div>
+      <div v-if="playtimePending && !playtime" class="placeholder">Adding it up…</div>
+      <div v-else-if="!playtime || !playtime.games" class="placeholder">No games since 2024.</div>
+      <template v-else>
+        <div class="ptgrid">
+          <div class="tcard"><div class="tc-l">Hours played</div><div class="tc-v big">{{ h1(playtime.hours) }}</div><div class="tc-s">{{ playtime.games.toLocaleString() }} games · {{ playtime.avg_game_min }} min each</div></div>
+          <div class="tcard"><div class="tc-l">Per day</div><div class="tc-v big">{{ h1(playtime.per_day) }}<small> h</small></div><div class="tc-s">{{ h1(playtime.per_week) }} h a week · {{ h1(playtime.per_active_day) }} h on a day you play</div></div>
+          <div class="tcard"><div class="tc-l">Days with a game</div><div class="tc-v big">{{ playtime.active_days.toLocaleString() }}</div><div class="tc-s">of {{ playtime.days_span.toLocaleString() }} days · {{ Math.round(100 * playtime.active_days / playtime.days_span) }}%</div></div>
+          <div class="tcard"><div class="tc-l">Rank by hours</div><div class="tc-v big">#{{ playtime.rank.pos }}</div><div class="tc-s">of {{ playtime.rank.of.toLocaleString() }} players since 2024 · top {{ Math.max(1, Math.ceil(100 * playtime.rank.pos / playtime.rank.of)) }}%</div></div>
+        </div>
+
+        <div class="section-h" style="margin-top:20px"><h2>By year</h2></div>
+        <div class="ptgrid">
+          <div v-for="y in playtime.by_year" :key="y.year" class="tcard">
+            <div class="tc-l">{{ y.year }}</div><div class="tc-v">{{ h1(y.hours) }}<small> h</small></div>
+            <div class="tc-s">{{ y.games.toLocaleString() }} games · {{ h1(y.per_day) }} h a day</div>
+          </div>
+        </div>
+
+        <div class="section-h" style="margin-top:20px"><h2>By mode</h2></div>
+        <div class="tcard">
+          <div v-for="m in modeShare" :key="m.mode" class="ptmode">
+            <span class="ptmode-l">{{ m.mode }}</span>
+            <span class="ptmode-bar"><i :style="{ width: m.pct + '%' }" /></span>
+            <span class="ptmode-v">{{ h1(m.hours) }} h <small>· {{ m.games.toLocaleString() }} games · {{ m.pct }}%</small></span>
+          </div>
+        </div>
+
+        <div class="section-h" style="margin-top:20px"><h2>By month</h2><span class="meta">hours</span></div>
+        <div class="tcard">
+          <div class="ptbars months" :style="{ '--n': monthBars.length }">
+            <div v-for="b in monthBars" :key="b.k" class="ptbar" :title="`${b.k}: ${b.hours} h, ${b.games} games`">
+              <i :style="{ height: b.pct + '%' }" /><span :class="{ hid: !ymShown(b.k), yr: ymLabel(b.k).includes(' ') }">{{ ymLabel(b.k) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt2">
+          <div>
+            <div class="section-h" style="margin-top:20px"><h2>By weekday</h2></div>
+            <div class="tcard">
+              <div class="ptbars" :style="{ '--n': 7 }">
+                <div v-for="b in weekdayBars" :key="b.k" class="ptbar" :title="`${WEEKDAYS[b.k]}: ${b.hours} h`">
+                  <i :style="{ height: b.pct + '%' }" /><span>{{ WEEKDAYS[b.k] }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="section-h" style="margin-top:20px"><h2>By hour of day</h2></div>
+            <div class="tcard">
+              <div class="ptbars hours" :style="{ '--n': 24 }">
+                <div v-for="b in hourBars" :key="b.k" class="ptbar" :title="`${b.k}:00: ${b.hours} h`">
+                  <i :style="{ height: b.pct + '%' }" /><span>{{ hourLabel(b.k) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-h" style="margin-top:20px"><h2>Sessions</h2><span class="meta">games less than 45 min apart</span></div>
+        <div class="ptgrid">
+          <div class="tcard"><div class="tc-l">Typical session</div><div class="tc-v">{{ h1(playtime.sessions.median_hours) }}<small> h</small></div><div class="tc-s">{{ playtime.sessions.median_games }} games · {{ playtime.sessions.count.toLocaleString() }} sessions</div></div>
+          <div class="tcard"><div class="tc-l">Longest session</div><div class="tc-v">{{ h1(playtime.sessions.longest.hours) }}<small> h</small></div><div class="tc-s">{{ playtime.sessions.longest.games }} games · {{ fmtDay(playtime.sessions.longest.date) }}</div></div>
+          <div class="tcard"><div class="tc-l">Biggest day</div><div class="tc-v">{{ h1(playtime.best_day.hours) }}<small> h</small></div><div class="tc-s">{{ playtime.best_day.games }} games · {{ fmtDay(playtime.best_day.date) }}</div></div>
+          <div class="tcard"><div class="tc-l">Days in a row</div><div class="tc-v">{{ playtime.streak.best }}</div><div class="tc-s">best streak · {{ playtime.streak.current }} right now</div></div>
+        </div>
+
+        <div v-if="playtime.by_map?.length" class="section-h" style="margin-top:20px"><h2>Maps by hours</h2></div>
+        <div v-if="playtime.by_map?.length" class="ptchips">
+          <span v-for="m in playtime.by_map" :key="m.map" class="ptchip"><b>{{ m.map }}</b> {{ h1(m.hours) }} h <small>{{ m.games.toLocaleString() }} games</small></span>
+        </div>
+      </template>
+    </template>
+
     <!-- COMPARE (period over period) -->
     <template v-else-if="tab === 'compare'">
       <div class="pill-row">
@@ -536,6 +639,41 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .mpill.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
 .trendgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
 .tcard { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+/* Time tab */
+.ptgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.ptgrid .tc-v { font-size: 22px; font-weight: 800; margin: 2px 0; font-variant-numeric: tabular-nums; }
+.ptgrid .tc-v.big { font-size: 28px; }
+.ptgrid .tc-v small { font-size: 13px; font-weight: 600; color: var(--fg-3); }
+.tc-s { font-size: 12px; color: var(--fg-3); line-height: 1.35; }
+.ptmode { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 0; font-size: 13px; }
+.ptmode-l { font-weight: 700; }
+.ptmode-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.ptmode-bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.ptmode-v { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ptmode-v small { color: var(--fg-3); }
+.ptbars { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 3px; height: 150px; align-items: end; }
+.ptbar { display: grid; grid-template-rows: 1fr auto; height: 100%; min-width: 0; }
+.ptbar i { display: block; align-self: end; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 1px; opacity: .9; }
+/* labels sit centred under their bar and may spill over the (unlabelled) neighbours; nothing is clipped */
+.ptbar span { font-size: 10px; color: var(--fg-3); text-align: center; height: 14px; line-height: 14px; white-space: nowrap; justify-self: center; width: max-content; }
+.ptbars.months .ptbar span, .ptbars.hours .ptbar span { font-size: 9px; }
+.ptbar span.hid { visibility: hidden; }
+@media (max-width: 360px) { .ptbars.months .ptbar span:not(.yr) { visibility: hidden; } }   /* the narrowest phones keep the year marks only */
+.pt2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ptchips { display: flex; flex-wrap: wrap; gap: 8px; }
+.ptchip { border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 13px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.ptchip b { color: var(--fg); margin-right: 4px; }
+.ptchip small { color: var(--fg-3); font-size: 11px; margin-left: 6px; }
+@media (max-width: 760px) {
+  .ptgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pt2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 400px) {
+  .ptgrid { gap: 8px; }
+  .ptgrid .tc-v.big { font-size: 24px; }
+  .ptmode { grid-template-columns: 44px minmax(0, 1fr); }
+  .ptmode-v { grid-column: 2; white-space: normal; font-size: 12px; }
+}
 .tc-top { display: flex; justify-content: space-between; align-items: baseline; }
 .tc-l { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
 .tc-d { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }

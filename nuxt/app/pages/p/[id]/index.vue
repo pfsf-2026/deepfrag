@@ -109,6 +109,17 @@ async function loadConfig() {
   } catch { config.value = null } finally { configLoading.value = false }
 }
 onMounted(loadConfig)
+// Time card: hours in matches since 2024 (/api/players/{id}/playtime), days in the viewer's zone.
+const playtime = ref(null)
+async function loadPlaytime() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    const r = await fetch(`/api/players/${encodeURIComponent(id.value)}/playtime?tz=${encodeURIComponent(tz)}`)
+    playtime.value = r.ok ? await r.json() : null
+  } catch { playtime.value = null }
+}
+onMounted(loadPlaytime)
+watch(id, loadPlaytime)
 watch(id, loadConfig)
 
 // Field groups for display + editing. label → config key.
@@ -644,6 +655,27 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
           <Sparkline v-if="trendsSnapshot.spark.length > 1"
                      :values="trendsSnapshot.spark"
                      :height="36" :width="280" stroke="var(--accent)" />
+        </a>
+
+        <a class="nav-card" :href="deepHref('time')">
+          <div class="nc-head">
+            <div>
+              <div class="nc-sub">Played time · since 2024</div>
+              <div class="nc-title">Time</div>
+            </div>
+            <div class="nc-arrow">→</div>
+          </div>
+          <div class="nc-preview" v-if="playtime?.games">
+            <strong>{{ Math.round(playtime.hours).toLocaleString() }}</strong> hours in <strong>{{ playtime.games.toLocaleString() }}</strong> games
+            <span class="muted">· #{{ playtime.rank.pos }} by hours</span>
+          </div>
+          <div class="nc-preview muted" v-else>Hours in matches, per day, by month and weekday</div>
+          <div class="nc-stats" v-if="playtime?.games">
+            <div class="ks"><div class="v">{{ playtime.per_day.toFixed(1) }}</div><div class="l">h / day</div></div>
+            <div class="ks"><div class="v">{{ playtime.per_active_day.toFixed(1) }}</div><div class="l">h / day played</div></div>
+            <div class="ks"><div class="v">{{ playtime.active_days }}</div><div class="l">days with a game</div></div>
+            <div class="ks"><div class="v">{{ playtime.streak.best }}</div><div class="l">best streak</div></div>
+          </div>
         </a>
 
         <NuxtLink class="nav-card" :to="`/p/${encodeURIComponent(id)}/maps`">
