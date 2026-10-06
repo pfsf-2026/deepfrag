@@ -95,7 +95,6 @@ function verdict(d) {
       <div class="stamp">Unlisted</div>
       <h1>Non-Entity</h1>
       <p class="lede">A register of those passed on the road to greatness. Entries are permanent. Appeals are not heard.</p>
-      <p class="sub">Kept by {{ ME.name }}. Every number is from the last {{ DAYS }} days of duels between the two players, read from the end-of-match stats and the demos.</p>
     </header>
 
     <article v-for="(e, i) in ENTRIES" :key="e.id" class="entry">
@@ -179,8 +178,7 @@ function verdict(d) {
 .hero { position: relative; padding: 36px 20px 30px; margin-bottom: 26px; border: 2px solid var(--accent); border-radius: 14px;
         background: radial-gradient(ellipse at 20% 0%, rgba(255,122,26,.18), transparent 55%), var(--panel); overflow: hidden; }
 .hero h1 { margin: 0; font-family: 'Rubik Mono One', 'Big Shoulders Display', Impact, sans-serif; font-size: clamp(38px, 9vw, 84px); line-height: .95; letter-spacing: .02em; color: var(--accent); text-transform: uppercase; }
-.lede { margin: 14px 0 6px; font-family: 'Special Elite', 'Courier New', monospace; font-size: 17px; line-height: 1.45; color: var(--fg); max-width: 60ch; }
-.sub { margin: 0; font-size: 13px; color: var(--fg-3); max-width: 70ch; line-height: 1.5; }
+.lede { margin: 14px 0 0; font-family: 'Special Elite', 'Courier New', monospace; font-size: 17px; line-height: 1.45; color: var(--fg); max-width: 60ch; }
 .stamp, .passed { font-family: 'Special Elite', 'Courier New', monospace; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; border: 2px solid var(--loss); color: var(--loss); border-radius: 6px; padding: 4px 10px; transform: rotate(-6deg); opacity: .9; }
 .stamp { position: absolute; top: 18px; right: 18px; font-size: 12px; }
 
