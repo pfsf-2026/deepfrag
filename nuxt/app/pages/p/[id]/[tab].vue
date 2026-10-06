@@ -91,6 +91,8 @@ const WEAPONS = [
   { name: 'SSG', key: 'ssg_accuracy', max: 0.40, color: '#e0a33c' }, { name: 'SG', key: 'sg_accuracy', max: 0.30, color: '#c9a66b' },
   { name: 'GL', key: 'gl_accuracy', max: 0.30, color: '#4ade80' },
 ]
+// SG accuracy only means something in 4on4; in a duel or 2on2 the shotgun is the spawn weapon.
+const weapons = computed(() => (tab.value === '4on4' ? WEAPONS : WEAPONS.filter(w => w.key !== 'sg_accuracy')))
 function dec(v, n = 1) { return v == null ? '—' : Number(v).toFixed(n) }
 function delta(cur, prv, fmtFn, higherBetter = true) {
   if (cur == null || prv == null || windowKey.value === 'all' || !priorStats.value) return null
@@ -176,6 +178,7 @@ function cmpDelta(cv, pv, higher, pp) {
 }
 const cmpSections = computed(() => {
   const team = cmpMode.value !== '1on1'
+  const four = cmpMode.value === '4on4'   // SG accuracy is a 4on4-only number
   return [
     { h: 'Volume', rows: [
       { l: 'Matches', k: 'matches', f: fmtNum, higher: true }, { l: 'Wins', k: 'wins', f: fmtNum, higher: true },
@@ -190,7 +193,8 @@ const cmpSections = computed(() => {
       ...(team ? [{ l: 'EWEP', k: 'avg_dmg_enemy_weapons', f: NUM, higher: true }, { l: 'Team damage', k: 'avg_dmg_team', f: NUM, higher: false }, { l: 'Team wpn dmg', k: 'avg_dmg_team_weapons', f: NUM, higher: false }] : []) ] },
     { h: 'Weapon accuracy', rows: [
       { l: 'LG %', k: 'lg_accuracy', f: v => fmtPct(v), higher: true, pp: true }, { l: 'RL %', k: 'rl_accuracy', f: v => fmtPct(v), higher: true, pp: true },
-      { l: 'SG %', k: 'sg_accuracy', f: v => fmtPct(v), higher: true, pp: true }, { l: 'SSG %', k: 'ssg_accuracy', f: v => fmtPct(v), higher: true, pp: true } ] },
+      ...(four ? [{ l: 'SG %', k: 'sg_accuracy', f: v => fmtPct(v), higher: true, pp: true }] : []),
+      { l: 'SSG %', k: 'ssg_accuracy', f: v => fmtPct(v), higher: true, pp: true } ] },
     { h: 'Weapon damage / match', rows: [
       { l: 'LG damage', k: 'avg_lg_dmg', f: NUM, higher: true }, { l: 'RL damage', k: 'avg_rl_dmg', f: NUM, higher: true },
       { l: 'RL kills', k: 'avg_rl_kills', f: DEC1, higher: true }, { l: 'LG kills', k: 'avg_lg_kills', f: DEC1, higher: true },
@@ -406,7 +410,7 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
         <div class="section-h" style="margin-top:20px"><h2>Weapon proficiency</h2>
           <span v-if="divSlug" class="meta"><i class="lg-you" />you &nbsp; <i class="lg-avg" />division average</span></div>
         <div class="panel"><div class="donuts">
-          <WeaponDonut v-for="w in WEAPONS" :key="w.name" :name="w.name" :val="modeStats[w.key]" :max="w.max" :div-avg="divAvg(w.key)" :color="w.color" />
+          <WeaponDonut v-for="w in weapons" :key="w.name" :name="w.name" :val="modeStats[w.key]" :max="w.max" :div-avg="divAvg(w.key)" :color="w.color" />
         </div></div>
 
         <div class="section-h" style="margin-top:20px"><h2>Item pickups / match</h2></div>
@@ -526,7 +530,8 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .section-h .meta i.lg-avg { background: var(--fg-2); opacity: 0.7; height: 3px; }
 .item-card { border-top: 3px solid var(--item, var(--border)); }
 .item-card .v { color: var(--item, var(--fg)); }
-.pill-row { display: flex; gap: 4px; margin-bottom: 14px; }
+.pill-row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px; }   /* five pills on the compare tab wrap on phones */
+@media (max-width: 880px) { .mpill { min-height: 36px; padding: 8px 14px; } }
 .mpill { background: var(--panel); border: 1px solid var(--border); color: var(--fg-2); border-radius: 7px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; }
 .mpill.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
 .trendgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }

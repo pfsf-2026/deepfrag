@@ -134,14 +134,14 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
         <table class="stat">
           <thead><tr>
             <th>Eff</th><th>F</th><th>D</th><th>TK</th><th>Gvn</th><th>Tkn</th>
-            <th class="ya">YA</th><th class="ra">RA</th><th class="mh">MH</th><th class="sg">SG</th>
+            <th class="ya">YA</th><th class="ra">RA</th><th class="mh">MH</th>
             <th class="lg">LG</th><th class="rl" title="RL direct hits / map">RLd</th><th class="q">Q</th>
           </tr></thead>
           <tbody><tr>
             <td class="hl">{{ teamStats.eff }}%</td><td>{{ teamStats.frags }}</td><td>{{ teamStats.deaths }}</td>
             <td>{{ teamStats.tk }}</td><td>{{ (teamStats.dmg_given/1000).toFixed(1) }}k</td><td>{{ (teamStats.dmg_taken/1000).toFixed(1) }}k</td>
             <td class="ya">{{ teamStats.ya }}</td><td class="ra">{{ teamStats.ra }}</td><td class="mh">{{ teamStats.mh }}</td>
-            <td class="sg">{{ teamStats.sg }}%</td><td class="lg">{{ teamStats.lg }}%</td><td class="rl">{{ teamStats.rl }}</td><td class="q">{{ teamStats.quad }}</td>
+            <td class="lg">{{ teamStats.lg }}%</td><td class="rl">{{ teamStats.rl }}</td><td class="q">{{ teamStats.quad }}</td>
           </tr></tbody>
         </table>
       </div>
@@ -154,7 +154,7 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
         <table class="stat">
           <thead><tr>
             <th class="lft">Player</th><th>Maps</th><th>Eff</th><th>F</th><th>D</th>
-            <th class="ya">YA</th><th class="ra">RA</th><th class="mh">MH</th><th class="sg">SG</th>
+            <th class="ya">YA</th><th class="ra">RA</th><th class="mh">MH</th>
             <th class="lg">LG</th><th class="rl" title="RL direct hits / map">RLd</th><th class="q">Q</th>
           </tr></thead>
           <tbody>
@@ -162,7 +162,7 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
               <td class="lft"><NuxtLink class="plink" :to="`/p/${p.canonical_id}`">{{ p.name }}</NuxtLink></td>
               <td>{{ p.maps }}</td><td class="hl">{{ p.eff }}%</td><td>{{ p.frags }}</td><td>{{ p.deaths }}</td>
               <td class="ya">{{ p.ya }}</td><td class="ra">{{ p.ra }}</td><td class="mh">{{ p.mh }}</td>
-              <td class="sg">{{ p.sg }}%</td><td class="lg">{{ p.lg }}%</td><td class="rl">{{ p.rl }}</td><td class="q">{{ p.quad }}</td>
+              <td class="lg">{{ p.lg }}%</td><td class="rl">{{ p.rl }}</td><td class="q">{{ p.quad }}</td>
             </tr>
           </tbody>
         </table>
@@ -219,7 +219,13 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
 .opplogo{width:20px;height:20px;border-radius:5px;object-fit:cover}
 .oppname{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .maps{display:flex;gap:5px;flex-wrap:nowrap;flex:1;justify-content:flex-end}
-@media(max-width:600px){.maps{flex-wrap:wrap}}
+/* phones: result · score · opponent · date on one line, the map tags wrapping underneath, so a row never pushes past the edge */
+@media(max-width:600px){
+  .match{flex-wrap:wrap;row-gap:7px}
+  .opp{flex:1 1 auto;max-width:none}
+  .mdate{margin-left:auto}
+  .maps{flex:1 1 100%;flex-wrap:wrap;justify-content:flex-start}
+}
 .mtag{font-size:10.5px;font-family:'JetBrains Mono',monospace;color:var(--fg-2,#c9bca9);background:#0e1420;border:1px solid var(--border,#2a2018);border-radius:5px;padding:1px 6px;white-space:nowrap;flex:none}
 .mtag.mw{border-color:rgba(34,197,94,.3);color:#86efac} .mtag.ml{border-color:rgba(239,68,68,.3);color:#fca5a5}
 .mtag b{font-weight:700}
@@ -242,7 +248,7 @@ table.stat td{padding:10px 8px;text-align:center;font-size:13px;border-bottom:1p
 table.stat tbody tr:last-child td{border-bottom:none}
 table.stat td.hl{color:var(--accent,#ff7a1a);font-weight:700}
 /* color-keyed columns echoing the big4 palette */
-.ya{color:#fbbf24} .ra{color:#f87171} .mh{color:#93c5fd} .sg{color:#a3e635}
+.ya{color:#fbbf24} .ra{color:#f87171} .mh{color:#93c5fd}
 .lg{color:#f2ead9} .rl{color:#f59e0b} .q{color:#c084fc}
-thead .ya,thead .ra,thead .mh,thead .sg,thead .lg,thead .rl,thead .q{opacity:.85}
+thead .ya,thead .ra,thead .mh,thead .lg,thead .rl,thead .q{opacity:.85}
 </style>

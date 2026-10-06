@@ -48,7 +48,8 @@ const COLS = [
   { k: 'suicides', l: '☠' }, { k: 'tk', l: 'TK' },
   { k: 'dmg_given', l: 'Gvn', grp: true, fmt: 'int' }, { k: 'dmg_taken', l: 'Tkn', fmt: 'int' },
   { k: 'ya', l: 'YA', grp: true, cls: 'c-ya' }, { k: 'ra', l: 'RA', cls: 'c-ra' }, { k: 'mh', l: 'MH', cls: 'c-mh' },
-  { k: 'sg', l: 'SG', grp: true, pct: true, cls: 'c-wpn' }, { k: 'lg', l: 'LG', pct: true, cls: 'c-wpn' },
+  // No SG accuracy here: both ladders are 1v1 / 2v2, where the shotgun is a spawn weapon. It only means something in 4on4.
+  { k: 'lg', l: 'LG', grp: true, pct: true, cls: 'c-wpn' },
   { k: 'rl', l: 'RL', pct: true, cls: 'c-wpn' }, { k: 'quad', l: 'Q', grp: true, cls: 'c-q' },
 ]
 // A duel has no team kills and no quad, so the standard table drops those two.

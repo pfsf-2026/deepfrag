@@ -9,6 +9,8 @@ const ENTRIES = [
   { id: 'kingstud', name: 'Kingstud' },
   { id: 'pred', name: 'Pred' },
 ]
+// House rule: a name goes on only once Cronus is above 50% against them over the window.
+// (war checked 2026-10-06: 27-51, so not yet.)
 const DAYS = 90
 
 const isBrowser = typeof window !== 'undefined'
@@ -44,7 +46,7 @@ const STANDARD = [
   { k: 'frags', l: 'Frags / game', d: 1 }, { k: 'deaths', l: 'Deaths / game', d: 1, low: true }, { k: 'eff', l: 'Efficiency', unit: '%' },
   { k: 'dmg_given', l: 'Damage given', d: 0 }, { k: 'dmg_taken', l: 'Damage taken', d: 0, low: true },
   { k: 'ra', l: 'Red armors', d: 1 }, { k: 'ya', l: 'Yellow armors', d: 1 }, { k: 'mh', l: 'Megas', d: 1 },
-  { k: 'lg', l: 'LG accuracy', unit: '%', d: 0 }, { k: 'rl', l: 'RL direct hits', unit: '%', d: 0 }, { k: 'sg', l: 'SG accuracy', unit: '%', d: 0 },
+  { k: 'lg', l: 'LG accuracy', unit: '%', d: 0 }, { k: 'rl', l: 'RL direct hits', unit: '%', d: 0 },   // no SG: a spawn weapon in a duel
 ]
 // advanced (demo) rows: k = field in `advanced`
 const ADVANCED = [
@@ -92,7 +94,7 @@ function verdict(d) {
 <template>
   <div class="ne">
     <header class="hero">
-      <div class="stamp">Unlisted</div>
+      <div class="stamp"><span>Unlisted</span><small>Office of Cronus</small></div>
       <h1>Non-Entity</h1>
       <p class="lede">A register of those passed on the road to greatness. Entries are permanent. Appeals are not heard.</p>
     </header>
@@ -180,7 +182,9 @@ function verdict(d) {
 .hero h1 { margin: 0; font-family: 'Rubik Mono One', 'Big Shoulders Display', Impact, sans-serif; font-size: clamp(38px, 9vw, 84px); line-height: .95; letter-spacing: .02em; color: var(--accent); text-transform: uppercase; }
 .lede { margin: 14px 0 0; font-family: 'Special Elite', 'Courier New', monospace; font-size: 17px; line-height: 1.45; color: var(--fg); max-width: 60ch; }
 .stamp, .passed { font-family: 'Special Elite', 'Courier New', monospace; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; border: 2px solid var(--loss); color: var(--loss); border-radius: 6px; padding: 4px 10px; transform: rotate(-6deg); opacity: .9; }
-.stamp { position: absolute; top: 18px; right: 18px; font-size: 12px; }
+/* two-line stamp: UNLISTED over the office that keeps the register */
+.stamp { position: absolute; top: 10px; right: 14px; display: grid; gap: 1px; padding: 5px 10px; font-size: 11px; line-height: 1.15; text-align: center; }
+.stamp small { font-size: 8.5px; letter-spacing: .1em; }
 
 .entry { margin-bottom: 34px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px 20px 10px; }
 .entry-head { display: flex; align-items: center; gap: 16px; padding-bottom: 14px; border-bottom: 1px dashed var(--border-2); }
@@ -233,6 +237,8 @@ function verdict(d) {
 .g.w .gs { color: var(--win); } .g.l .gs { color: var(--loss); }
 .foot { margin-top: 20px; text-align: center; font-family: 'Special Elite', 'Courier New', monospace; font-size: 13px; color: var(--fg-3); }
 
+/* below ~900px the title's last letters can sit under the stamp, so the hero opens lower */
+@media (max-width: 900px) { .hero { padding-top: 66px; } }
 @media (max-width: 760px) {
   .two { grid-template-columns: 1fr; }
   .cols, .cmp { grid-template-columns: 1fr 104px 1fr; }
@@ -253,7 +259,7 @@ function verdict(d) {
 }
 @media (max-width: 420px) {
   .ne { padding: 16px 16px 60px; }
-  .hero { padding: 28px 16px 22px; }
+  .hero { padding: 66px 16px 22px; }
   .entry { padding: 16px 14px 8px; }
   .entry-head { gap: 10px; }
   .record { gap: 14px; }

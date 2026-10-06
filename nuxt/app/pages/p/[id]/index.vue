@@ -191,7 +191,7 @@ const metricDefs = [
   { label: 'Damage taken', key: 'avg_dmg_taken', fmt: v => fmtNum(Math.round(v || 0)), higherBetter: false },
   { label: 'LG accuracy', key: 'lg_accuracy', fmt: fmtPct, higherBetter: true, pp: true },
   { label: 'RL accuracy', key: 'rl_accuracy', fmt: fmtPct, higherBetter: true, pp: true },
-  { label: 'SG accuracy', key: 'sg_accuracy', fmt: fmtPct, higherBetter: true, pp: true },
+  // no SG accuracy: this grid is 1on1, where the shotgun is a spawn weapon (4on4 keeps it)
   { label: 'SSG accuracy', key: 'ssg_accuracy', fmt: fmtPct, higherBetter: true, pp: true },
   { label: 'LG dmg / m', key: 'avg_lg_dmg', fmt: v => fmtNum(Math.round(v || 0)), higherBetter: true },
   { label: 'RL dmg / m', key: 'avg_rl_dmg', fmt: v => fmtNum(Math.round(v || 0)), higherBetter: true },
@@ -514,14 +514,14 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
               <div v-if="modeDelta('1on1', 'rl_accuracy', { pp: true })" class="d" :class="modeDelta('1on1', 'rl_accuracy', { pp: true }).cls">{{ modeDelta('1on1', 'rl_accuracy', { pp: true }).str }}</div>
             </div>
             <div class="ks">
-              <div class="v">{{ fmtPct(m1on1.sg_accuracy) }}</div>
-              <div class="l">SG</div>
-              <div v-if="modeDelta('1on1', 'sg_accuracy', { pp: true })" class="d" :class="modeDelta('1on1', 'sg_accuracy', { pp: true }).cls">{{ modeDelta('1on1', 'sg_accuracy', { pp: true }).str }}</div>
-            </div>
-            <div class="ks">
               <div class="v">{{ fmtDec(m1on1.avg_ra, 1) }}</div>
               <div class="l">RA/m</div>
               <div v-if="modeDelta('1on1', 'avg_ra')" class="d" :class="modeDelta('1on1', 'avg_ra').cls">{{ modeDelta('1on1', 'avg_ra').str }}</div>
+            </div>
+            <div class="ks">
+              <div class="v">{{ fmtDec(m1on1.avg_mh, 1) }}</div>
+              <div class="l">MH/m</div>
+              <div v-if="modeDelta('1on1', 'avg_mh')" class="d" :class="modeDelta('1on1', 'avg_mh').cls">{{ modeDelta('1on1', 'avg_mh').str }}</div>
             </div>
             <div class="ks">
               <div class="v">{{ fmtNum(Math.round(m1on1.avg_lg_dmg || 0)) }}</div>
