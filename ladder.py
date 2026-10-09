@@ -127,6 +127,8 @@ CREATE TABLE IF NOT EXISTS ladder_matches (
   played_at     TIMESTAMPTZ,
   created_at    TIMESTAMPTZ DEFAULT now()
 );
+-- 2026-10-09: a walkover is a result with no score or maps; records count it on its own, not as a win/loss
+ALTER TABLE ladder_matches ADD COLUMN IF NOT EXISTS walkover BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS ladder_movements (
   id          BIGSERIAL PRIMARY KEY,

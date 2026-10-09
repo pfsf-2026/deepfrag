@@ -4288,13 +4288,17 @@ def ladder_detail(ladder_id: int, response: Response):
         for t in teams:
             t["cooldown_until"] = cd.get(t["id"])
         # Match record (W-L) + game/map record (W-L) per team, from reported matches.
-        cur.execute("SELECT team_a_id, team_b_id, winner_id, maps FROM ladder_matches WHERE ladder_id=%s", (ladder_id,))
+        cur.execute("SELECT team_a_id, team_b_id, winner_id, maps, walkover FROM ladder_matches WHERE ladder_id=%s", (ladder_id,))
         rec = {}
         for r in cur.fetchall():
             a, b = r["team_a_id"], r["team_b_id"]
             for tid in (a, b):
-                rec.setdefault(tid, {"mw": 0, "ml": 0, "gw": 0, "gl": 0})
-            if r["winner_id"]:
+                rec.setdefault(tid, {"mw": 0, "ml": 0, "gw": 0, "gl": 0, "wow": 0, "wol": 0})
+            if r["winner_id"] and r.get("walkover"):
+                # a walkover is neither a win nor a loss in the record; it is counted on its own
+                rec[r["winner_id"]]["wow"] += 1
+                rec[b if r["winner_id"] == a else a]["wol"] += 1
+            elif r["winner_id"]:
                 rec[r["winner_id"]]["mw"] += 1
                 rec[b if r["winner_id"] == a else a]["ml"] += 1
             for mp in (r["maps"] or []):
@@ -4306,8 +4310,9 @@ def ladder_detail(ladder_id: int, response: Response):
                 elif bf > af:
                     rec[b]["gw"] += 1; rec[a]["gl"] += 1
         for t in teams:
-            r = rec.get(t["id"], {"mw": 0, "ml": 0, "gw": 0, "gl": 0})
+            r = rec.get(t["id"], {"mw": 0, "ml": 0, "gw": 0, "gl": 0, "wow": 0, "wol": 0})
             t["match_w"], t["match_l"] = r["mw"], r["ml"]
+            t["wo_w"], t["wo_l"] = r.get("wow", 0), r.get("wol", 0)
             t["game_w"], t["game_l"] = r["gw"], r["gl"]
         # King of the Hill: current rung-1 team + how long they've held it.
         koth = None
@@ -6292,7 +6297,7 @@ def _team_summary(team_id):
         roster = list(t["members"] or [])
 
         # ── match history (this team only), normalised to us/them ──
-        cur.execute("""SELECT m.id, m.team_a_id, m.team_b_id, m.score_a, m.score_b, m.winner_id,
+        cur.execute("""SELECT m.id, m.team_a_id, m.team_b_id, m.score_a, m.score_b, m.winner_id, m.walkover,
                               m.maps, m.played_at, ta.name AS a_name, tb.name AS b_name,
                               (ta.logo IS NOT NULL) AS a_logo, (tb.logo IS NOT NULL) AS b_logo
                        FROM ladder_matches m
@@ -6302,7 +6307,7 @@ def _team_summary(team_id):
                        ORDER BY m.played_at DESC NULLS LAST, m.id DESC""",
                     (ladder_id, team_id, team_id))
         matches = []
-        mw = ml = gw = gl = 0
+        mw = ml = gw = gl = wow = wol = 0
         map_rec = defaultdict(lambda: {"w": 0, "l": 0, "big_w": None, "big_l": None})
         for r in cur.fetchall():
             us_a = (r["team_a_id"] == team_id)
@@ -6312,7 +6317,9 @@ def _team_summary(team_id):
             our_score = (r["score_a"] if us_a else r["score_b"]) or 0
             their_score = (r["score_b"] if us_a else r["score_a"]) or 0
             won = (r["winner_id"] == team_id)
-            if r["winner_id"]:
+            if r["winner_id"] and r.get("walkover"):
+                wow, wol = (wow + 1, wol) if won else (wow, wol + 1)   # walkovers sit outside the W-L record
+            elif r["winner_id"]:
                 mw, ml = (mw + 1, ml) if won else (mw, ml + 1)
             out_maps = []
             for mp in (r["maps"] or []):
@@ -6333,9 +6340,11 @@ def _team_summary(team_id):
             matches.append({
                 "id": r["id"], "opponent": opp_name, "opponent_id": opp_id, "opponent_logo": opp_logo,
                 "our_score": our_score, "their_score": their_score, "won": won, "maps": out_maps,
+                "walkover": bool(r.get("walkover")),
                 "played_at": r["played_at"].isoformat() if r.get("played_at") else None,
             })
         team["match_w"], team["match_l"], team["game_w"], team["game_l"] = mw, ml, gw, gl
+        team["wo_w"], team["wo_l"] = wow, wol
 
         map_stats = []
         for nm, rec in map_rec.items():
@@ -6709,7 +6718,7 @@ def ladder_matches_list(ladder_id: int, response: Response, limit: int = Query(5
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("""SELECT m.id, m.team_a_id, m.team_b_id, m.score_a, m.score_b, m.winner_id,
+        cur.execute("""SELECT m.id, m.team_a_id, m.team_b_id, m.score_a, m.score_b, m.winner_id, m.walkover,
                               m.maps, m.played_at, ta.name AS a_name, tb.name AS b_name,
                               (ta.logo IS NOT NULL) AS a_logo, (tb.logo IS NOT NULL) AS b_logo
                        FROM ladder_matches m
@@ -6778,6 +6787,7 @@ def ladder_match_detail(match_id: int, response: Response):
         "id": m["id"], "a_name": m["a_name"], "b_name": m["b_name"],
         "a_id": m["team_a_id"], "b_id": m["team_b_id"], "a_logo": m["a_logo"], "b_logo": m["b_logo"],
         "score_a": m["score_a"], "score_b": m["score_b"], "winner_id": m["winner_id"],
+        "walkover": bool(m.get("walkover")),
         "played_at": m["played_at"].isoformat() if m.get("played_at") else None,
         "maps": out_maps,
     }
@@ -7266,7 +7276,7 @@ def _team_label(cur, team_id):
     return f"**{name}**" + (f" ({ping})" if ping else "")
 
 
-def _notify_result(cur, challenger_id, challenged_id, winner_id, maps, aw, bw, moves, match_id=None, preview=False):
+def _notify_result(cur, challenger_id, challenged_id, winner_id, maps, aw, bw, moves, match_id=None, preview=False, walkover=False):
     """Post a WINNER-first game report with players grouped + pinged by team.
     aw/bw are challenger/challenged scores; we orient everything to winner/loser."""
     import notify
@@ -7322,7 +7332,7 @@ def _notify_result(cur, challenger_id, challenged_id, winner_id, maps, aw, bw, m
     try:
         notify.result_grouped(names.get(winner_id, f"#{winner_id}"), _team_mentions(cur, winner_id),
                               names.get(loser_id, f"#{loser_id}"), _team_mentions(cur, loser_id),
-                              score=f"{wscore}-{lscore}", maps_line=maps_line, movement=movement, preview=preview)
+                              score=("walkover" if walkover else f"{wscore}-{lscore}"), maps_line=maps_line, movement=movement, preview=preview)
         new_koth = next((tid for tid, r in moves.items() if r == 1), None)
         if new_koth and not preview:
             notify.koth_changed(_team_label(cur, new_koth))
@@ -8014,10 +8024,14 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
                         winner_id: int = Body(..., embed=True),
                         maps: list = Body(default=[], embed=True),
                         score_a: int = Body(default=None, embed=True),
-                        score_b: int = Body(default=None, embed=True)):
+                        score_b: int = Body(default=None, embed=True),
+                        walkover: bool = Body(default=False, embed=True)):
     """Admin records a played challenge: writes the match, applies ladder
     movement (challenger win → climb; challenged win → no movement), and
-    resolves the challenge. hub_game_ids are pulled from the maps payload."""
+    resolves the challenge. hub_game_ids are pulled from the maps payload.
+    walkover=true (2026-10-09): the other side could not or would not play. Same
+    movement as a result, but the match carries no score or maps, counts as a
+    walkover rather than a win/loss in records, and is announced as one."""
     import ladder as _ladder
     _check_ladder_admin(authorization)
     with pg() as conn:
@@ -8032,6 +8046,8 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
             raise HTTPException(409, "challenge already resolved")
         if winner_id not in (ch["challenger_id"], ch["challenged_id"]):
             raise HTTPException(400, "winner must be one of the two teams")
+        if walkover:
+            maps, score_a, score_b = [], None, None
         hub_ids = [m.get("hub_game_id") for m in maps if m.get("hub_game_id")]
         # played_at = when the LAST counted game actually ended (drives the loss
         # cooldown), not when the admin got around to reporting it. Falls back to
@@ -8042,19 +8058,20 @@ def admin_ladder_result(challenge_id: int, authorization: str | None = Header(de
             mr = cur.fetchone()
             played_at = mr["m"] if mr and mr["m"] else None
         cur.execute("""INSERT INTO ladder_matches
-                       (ladder_id, challenge_id, team_a_id, team_b_id, maps, score_a, score_b, winner_id, hub_game_ids, played_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, COALESCE(%s::timestamptz, now())) RETURNING id""",
+                       (ladder_id, challenge_id, team_a_id, team_b_id, maps, score_a, score_b, winner_id, hub_game_ids, played_at, walkover)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, COALESCE(%s::timestamptz, now()), %s) RETURNING id""",
                     (ch["ladder_id"], challenge_id, ch["challenger_id"], ch["challenged_id"],
-                     json.dumps(maps), score_a, score_b, winner_id, json.dumps(hub_ids), played_at))
+                     json.dumps(maps), score_a, score_b, winner_id, json.dumps(hub_ids), played_at, bool(walkover)))
         match_id = cur.fetchone()["id"]
         moves = {}
         if winner_id == ch["challenger_id"]:
             moves = _ladder.apply_win(cur, ch["ladder_id"], ch["challenger_id"], ch["challenged_id"], match_id)
         # challenged win → ranks unchanged (challenger simply failed to climb)
         cur.execute("UPDATE ladder_challenges SET status='played', resolved_at=now() WHERE id=%s", (challenge_id,))
-        _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, score_a, score_b, moves, match_id=match_id)
+        _notify_result(cur, ch["challenger_id"], ch["challenged_id"], winner_id, maps, score_a, score_b, moves, match_id=match_id,
+                       walkover=bool(walkover))
         conn.commit()
-    return {"match_id": match_id, "winner_id": winner_id, "moves": moves}
+    return {"match_id": match_id, "winner_id": winner_id, "moves": moves, "walkover": bool(walkover)}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/reresolve")
@@ -8487,7 +8504,12 @@ def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(d
             raise HTTPException(404, "challenge not found")
         if ch["status"] in ("played", "forfeited"):
             raise HTTPException(409, "challenge already resolved")
-        moves = _ladder.apply_forfeit(cur, ch["ladder_id"], ch["challenged_id"], drop=(ch["rungs_up"] or 1))
+        # the forfeit is a walkover for the challenger: a scoreless match row so records and results show it as W/O
+        cur.execute("""INSERT INTO ladder_matches (ladder_id, challenge_id, team_a_id, team_b_id, maps, winner_id, hub_game_ids, played_at, walkover)
+                       VALUES (%s,%s,%s,%s,'[]'::jsonb,%s,'[]'::jsonb, now(), TRUE) RETURNING id""",
+                    (ch["ladder_id"], challenge_id, ch["challenger_id"], ch["challenged_id"], ch["challenger_id"]))
+        match_id = cur.fetchone()["id"]
+        moves = _ladder.apply_forfeit(cur, ch["ladder_id"], ch["challenged_id"], drop=(ch["rungs_up"] or 1), match_id=match_id)
         cur.execute("UPDATE ladder_challenges SET status='forfeited', resolved_at=now() WHERE id=%s", (challenge_id,))
         chd_lbl = _team_label(cur, ch["challenged_id"])
         # A forfeit can promote the team below into rung 1.
@@ -8533,6 +8555,64 @@ def admin_ladder_challenge_detail(challenge_id: int, authorization: str | None =
         m["at"] = m["at"].isoformat()
     out["movements_since_created"] = moves
     return out
+
+
+@app.post("/api/admin/ladder/match/{match_id}/walkover")
+def admin_ladder_match_walkover(match_id: int, authorization: str | None = Header(default=None)):
+    """Turn a recorded match into a walkover: the result and movement stand, the score
+    and maps go, and the records count it as a walkover instead of a win/loss. For
+    matches that were entered as 2-0 before walkovers existed (Peter, 2026-10-09)."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("""UPDATE ladder_matches SET walkover=TRUE, score_a=NULL, score_b=NULL, maps='[]'::jsonb, hub_game_ids='[]'::jsonb
+                       WHERE id=%s RETURNING id, winner_id, team_a_id, team_b_id""", (match_id,))
+        m = cur.fetchone()
+        if not m:
+            raise HTTPException(404, "match not found")
+        conn.commit()
+    return {"match_id": m["id"], "walkover": True, "winner_id": m["winner_id"]}
+
+
+@app.post("/api/admin/ladder/challenge/{challenge_id}/walkover")
+def admin_ladder_challenge_walkover(challenge_id: int, authorization: str | None = Header(default=None),
+                                    winner_id: int = Body(..., embed=True)):
+    """Record a walkover on a challenge. Open or scheduled: the same as /result with
+    walkover=true (movement applies, no score). Already forfeited without a match row
+    (forfeits before 2026-10-09 wrote none): add the scoreless match so it shows as a
+    walkover, and close the challenge as played."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT * FROM ladder_challenges WHERE id=%s", (challenge_id,))
+        ch = cur.fetchone()
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if winner_id not in (ch["challenger_id"], ch["challenged_id"]):
+            raise HTTPException(400, "winner must be one of the two teams")
+        if ch["status"] in ("open", "scheduled"):
+            pass   # handled by /result below, outside this connection
+        elif ch["status"] == "forfeited":
+            cur.execute("SELECT id FROM ladder_matches WHERE challenge_id=%s", (challenge_id,))
+            if cur.fetchone():
+                raise HTTPException(409, "this forfeit already has its match row")
+            cur.execute("""INSERT INTO ladder_matches (ladder_id, challenge_id, team_a_id, team_b_id, maps, winner_id, hub_game_ids, played_at, walkover)
+                           VALUES (%s,%s,%s,%s,'[]'::jsonb,%s,'[]'::jsonb, COALESCE(%s, now()), TRUE) RETURNING id""",
+                        (ch["ladder_id"], challenge_id, ch["challenger_id"], ch["challenged_id"], winner_id, ch["resolved_at"]))
+            match_id = cur.fetchone()["id"]
+            cur.execute("""UPDATE ladder_movements SET match_id=%s WHERE match_id IS NULL AND team_id IN (%s, %s)
+                           AND at BETWEEN %s - interval '2 seconds' AND %s + interval '2 seconds'""",
+                        (match_id, ch["challenger_id"], ch["challenged_id"], ch["resolved_at"], ch["resolved_at"]))
+            cur.execute("UPDATE ladder_challenges SET status='played' WHERE id=%s", (challenge_id,))
+            conn.commit()
+            return {"match_id": match_id, "winner_id": winner_id, "walkover": True, "was": "forfeited"}
+        else:
+            raise HTTPException(409, "challenge already resolved")
+    return admin_ladder_result(challenge_id, authorization, winner_id=winner_id, maps=[], score_a=None, score_b=None, walkover=True)
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/unforfeit")

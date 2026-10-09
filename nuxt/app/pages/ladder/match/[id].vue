@@ -58,7 +58,7 @@ const pickPct = computed(() => Math.max(probA.value, probB.value))
 const h2h = computed(() => P.value?.h2h || {})
 const meeting = computed(() => (A.value?.matches || []).find(m => m.opponent_id === B.value?.team?.id))
 function topPlayer(s) { return (s?.players || []).slice().sort((x, y) => (y.frags ?? 0) - (x.frags ?? 0))[0] }
-function formOf(s) { return (s?.matches || []).slice(0, 5).map(m => (m.won ? 'W' : 'L')) }
+function formOf(s) { return (s?.matches || []).filter(m => !m.walkover).slice(0, 5).map(m => (m.won ? 'W' : 'L')) }   // walkovers are not form
 const allPlayers = computed(() => {
   const tag = (s, t, id) => (s?.players || []).map(p => ({ ...p, _tag: t, _id: id }))
   return [...tag(A.value, A.value?.team?.tag, A.value?.team?.id), ...tag(B.value, B.value?.team?.tag, B.value?.team?.id)]
@@ -214,7 +214,7 @@ useHead(() => ({ title: A.value ? `${A.value.team.name} vs ${B.value.team.name} 
 
         <div class="card" v-if="meeting">
           <div class="card-h"><h3>The {{ (h2h.maps_a + h2h.maps_b) > 3 ? 'Last' : 'Only' }} Meeting</h3>
-            <span class="brand">{{ meeting.won ? A.team.name : B.team.name }} {{ Math.max(meeting.our_score,meeting.their_score) }}–{{ Math.min(meeting.our_score,meeting.their_score) }}</span></div>
+            <span class="brand">{{ meeting.won ? A.team.name : B.team.name }} <template v-if="meeting.walkover">by walkover</template><template v-else>{{ Math.max(meeting.our_score,meeting.their_score) }}–{{ Math.min(meeting.our_score,meeting.their_score) }}</template></span></div>
           <div class="card-b">
             <div v-for="(mp,i) in meeting.maps" :key="i" class="maprow">
               <span class="mn">{{ mp.map }}</span>

@@ -98,6 +98,23 @@ edits an earlier post.
 - King of the Hill = rung 1; weeks held come from the newest `ladder_movements` row with
   `to_rung = 1`.
 
+## Walkovers (2026-10-09)
+
+A walkover is a result where one side could not or would not play. Peter's rule: it must never read
+as a loss or a 2-0 defeat; it counts simply as a walkover.
+
+- `ladder_matches.walkover` (BOOLEAN) marks the row; score and maps are empty, `hub_game_ids` is `[]`.
+- Movement is the normal result movement (challenger wins by walkover → the two-team swap; challenged
+  wins → ranks unchanged, challenger takes the loss cooldown). The 5-day forfeit (`/forfeit`) still drops
+  the challenged team by the challenge span, and now also writes a walkover match row for the challenger.
+- Records: `match_w` / `match_l` exclude walkovers; `wo_w` / `wo_l` count them (team list, team page). The
+  site shows **W/O** in place of a score (ladder results, Stats tab, team page, match modal) and leaves
+  walkovers out of the form string on the match preview.
+- Recording one: `POST /api/admin/ladder/challenge/{id}/result` with `{"winner_id": N, "walkover": true}`,
+  or `POST /api/admin/ladder/challenge/{id}/walkover` with `{"winner_id": N}` (also closes an old forfeit
+  that has no match row). `POST /api/admin/ladder/match/{id}/walkover` turns a match entered as 2-0 into
+  a walkover after the fact. The Discord post reads "**A** def. **B** — **walkover**".
+
 ## Result matching
 
 `_detect_bo3` (auto-resolve, admin candidate view) and `_try_report_games` (player reports)

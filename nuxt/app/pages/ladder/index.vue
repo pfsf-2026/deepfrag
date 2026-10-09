@@ -460,7 +460,8 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
             <button v-for="m in recentMatches.slice(0, 5)" :key="m.id" class="res" @click="openMatchId = m.id">
               <template v-for="o in [orientMatch(m)]" :key="'o'+m.id">
                 <span class="res-t" :title="o.w.name">{{ teamTag(o.w.id) }}<span v-if="o.wIsChallenger" class="chal" title="Challenger">⚔</span></span>
-                <span class="res-s"><b class="w">{{ o.w.score }}</b>–<b>{{ o.l.score }}</b></span>
+                <span v-if="m.walkover" class="res-s wo" title="Walkover">W/O</span>
+                <span v-else class="res-s"><b class="w">{{ o.w.score }}</b>–<b>{{ o.l.score }}</b></span>
                 <span class="res-t right" :title="o.l.name"><span v-if="!o.wIsChallenger" class="chal" title="Challenger">⚔</span>{{ teamTag(o.l.id) }}</span>
               </template>
             </button>
@@ -763,7 +764,7 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
 .res { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; border-bottom: 1px solid rgba(42,32,24,.4); padding: 7px 4px; cursor: pointer; color: var(--fg); font-family: inherit; font-size: 13px; text-align: left; border-radius: 6px; }
 .res:last-child { border-bottom: 0; } .res:hover { background: var(--panel-2); }
 .res-t { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .res-t.right { text-align: right; }
-.res-s { font-family: 'JetBrains Mono', monospace; font-weight: 800; } .res-s b { color: var(--fg-3); } .res-s b.w { color: var(--accent); }
+.res-s { font-family: 'JetBrains Mono', monospace; font-weight: 800; } .res-s.wo { color: var(--draw, #f59e0b); font-size: 11px; letter-spacing: .04em; } .res-s b { color: var(--fg-3); } .res-s b.w { color: var(--accent); }
 .chal { font-size: 10px; opacity: .5; margin: 0 3px; cursor: help; }
 .kpi { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 5px 0; font-size: 13px; }
 .kpi b { font-family: 'JetBrains Mono', monospace; color: var(--accent-2, #ffb347); }

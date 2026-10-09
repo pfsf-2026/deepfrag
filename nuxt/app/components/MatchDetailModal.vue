@@ -32,7 +32,8 @@ onMounted(async () => {
       <template v-else>
         <div class="md-head">
           <span class="md-team"><img v-if="flip ? detail.b_logo : detail.a_logo" :src="logoUrl(flip ? detail.b_id : detail.a_id)" class="lg" alt=""> {{ flip ? detail.b_name : detail.a_name }}</span>
-          <span class="md-sc"><b class="w">{{ flip ? detail.score_b : detail.score_a }}</b> – <b>{{ flip ? detail.score_a : detail.score_b }}</b></span>
+          <span v-if="detail.walkover" class="md-sc wo" title="Walkover">W/O</span>
+          <span v-else class="md-sc"><b class="w">{{ flip ? detail.score_b : detail.score_a }}</b> – <b>{{ flip ? detail.score_a : detail.score_b }}</b></span>
           <span class="md-team right">{{ flip ? detail.a_name : detail.b_name }} <img v-if="flip ? detail.a_logo : detail.b_logo" :src="logoUrl(flip ? detail.a_id : detail.b_id)" class="lg" alt=""></span>
           <button class="x" @click="emit('close')">✕</button>
         </div>
@@ -84,7 +85,7 @@ onMounted(async () => {
 .md-team { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 16px; flex: 1; }
 .md-team.right { justify-content: flex-end; }
 .lg { width: 26px; height: 26px; border-radius: 6px; object-fit: cover; }
-.md-sc { font-family: 'JetBrains Mono', monospace; font-size: 21px; font-weight: 800; }
+.md-sc { font-family: 'JetBrains Mono', monospace; font-size: 21px; font-weight: 800; } .md-sc.wo { color: var(--draw, #f59e0b); font-size: 16px; letter-spacing: .06em; }
 .md-sc b { color: var(--fg-3); } .md-sc b.w { color: var(--accent); }
 .x { background: none; border: 0; color: var(--fg-3); font-size: 18px; cursor: pointer; }
 .md-maps { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }

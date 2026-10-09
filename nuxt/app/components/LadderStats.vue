@@ -179,7 +179,8 @@ function fmtDate(s) { return s ? new Date(s).toLocaleDateString([], { month: 'sh
             <button v-for="m in matches" :key="m.id" class="rep" @click="openMatchId = m.id">
               <template v-for="o in [oriented(m)]" :key="'o'+m.id">
                 <span class="rt"><img v-if="o.w.logo" :src="logoUrl(o.w.id)" class="lg" alt=""> {{ o.w.name }}<span v-if="o.wIsChallenger" class="chal" title="Challenger">⚔</span></span>
-                <span class="rs"><b class="w">{{ o.w.score }}</b>–<b>{{ o.l.score }}</b></span>
+                <span v-if="m.walkover" class="rs wo" title="Walkover">W/O</span>
+                <span v-else class="rs"><b class="w">{{ o.w.score }}</b>–<b>{{ o.l.score }}</b></span>
                 <span class="rt right"><span v-if="!o.wIsChallenger" class="chal" title="Challenger">⚔</span>{{ o.l.name }} <img v-if="o.l.logo" :src="logoUrl(o.l.id)" class="lg" alt=""></span>
               </template>
               <span class="rd">{{ fmtDate(m.played_at) }}</span>
@@ -257,7 +258,7 @@ table.stats tbody tr:hover { background: var(--panel-2); }
 .rep { display: flex; align-items: center; gap: 9px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 9px 12px; font-size: 13px; cursor: pointer; color: var(--fg); font-family: inherit; text-align: left; }
 .rep:hover { border-color: var(--accent); }
 .rep .rt { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; overflow-wrap: anywhere; } .rep .rt.right { justify-content: flex-end; text-align: right; }
-.rep .rs { font-family: 'JetBrains Mono', monospace; font-weight: 800; } .rep .rs b { color: var(--fg-3); } .rep .rs b.w { color: var(--accent); }
+.rep .rs { font-family: 'JetBrains Mono', monospace; font-weight: 800; } .rep .rs.wo { color: var(--draw, #f59e0b); font-size: 11px; letter-spacing: .04em; } .rep .rs b { color: var(--fg-3); } .rep .rs b.w { color: var(--accent); }
 .rep .rd { color: var(--fg-3); font-size: 11px; width: 44px; text-align: right; }
 .chal { font-size: 10px; opacity: .5; margin: 0 3px; cursor: help; }
 </style>

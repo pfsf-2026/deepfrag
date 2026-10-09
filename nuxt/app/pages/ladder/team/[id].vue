@@ -85,7 +85,7 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
         </div>
       </div>
       <div class="herorec">
-        <div class="rec"><span class="rn">{{ team.match_w }}–{{ team.match_l }}</span><span class="rl">Matches</span></div>
+        <div class="rec"><span class="rn">{{ team.match_w }}–{{ team.match_l }}</span><span class="rl">Matches<template v-if="team.wo_w || team.wo_l"> · {{ team.wo_w || 0 }} W/O</template></span></div>
         <div class="rec"><span class="rn">{{ team.game_w }}–{{ team.game_l }}</span><span class="rl">Maps</span></div>
       </div>
     </section>
@@ -96,8 +96,9 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
       <div v-if="!matches.length" class="empty">No matches reported yet.</div>
       <div v-else class="matchgrid">
         <div v-for="m in matches" :key="m.id" class="match">
-          <span class="wl" :class="m.won ? 'w' : 'l'">{{ m.won ? 'W' : 'L' }}</span>
-          <span class="sc">{{ m.our_score }}<span class="dash">–</span>{{ m.their_score }}</span>
+          <span class="wl" :class="m.walkover ? 'wo' : (m.won ? 'w' : 'l')" :title="m.walkover ? 'Walkover' : ''">{{ m.walkover ? 'W/O' : (m.won ? 'W' : 'L') }}</span>
+          <span v-if="m.walkover" class="sc wo">{{ m.won ? 'walkover for us' : 'walkover' }}</span>
+          <span v-else class="sc">{{ m.our_score }}<span class="dash">–</span>{{ m.their_score }}</span>
           <NuxtLink class="opp" :to="`/ladder/team/${m.opponent_id}`">
             <img v-if="m.opponent_logo" :src="logoUrl(m.opponent_id)" class="opplogo" alt="">
             <span class="oppname">{{ m.opponent }}</span>
@@ -213,6 +214,7 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
 .match{display:flex;align-items:center;gap:12px;background:var(--panel,#14100c);border:1px solid var(--border,#2a2018);border-radius:10px;padding:11px 14px}
 .wl{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;flex:none}
 .wl.w{background:rgba(34,197,94,.15);color:var(--win,#22c55e)} .wl.l{background:rgba(239,68,68,.15);color:var(--loss,#ef4444)}
+.wl.wo{width:auto;padding:0 6px;background:rgba(245,158,11,.15);color:var(--draw,#f59e0b);font-size:10px} .sc.wo{font-size:12px;font-weight:600;color:var(--fg-3,#988977)}
 .sc{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:15px;flex:none}.sc .dash{color:var(--fg-3,#988977);margin:0 2px}
 .opp{display:flex;align-items:center;gap:7px;min-width:0;flex:none;max-width:160px;text-decoration:none;color:var(--fg,#f2ead9)}
 .opp:hover .oppname{color:var(--accent,#ff7a1a)}
