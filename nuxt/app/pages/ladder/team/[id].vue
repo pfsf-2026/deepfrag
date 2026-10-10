@@ -85,7 +85,7 @@ useHead(() => ({ title: team.value ? `${team.value.name} · KOTH Ladder · DeepF
         </div>
       </div>
       <div class="herorec">
-        <div class="rec"><span class="rn">{{ team.match_w }}–{{ team.match_l }}</span><span class="rl">Matches<template v-if="team.wo_w || team.wo_l"> · {{ team.wo_w || 0 }} W/O</template></span></div>
+        <div class="rec"><span class="rn">{{ team.match_w }}–{{ team.match_l }}</span><span class="rl">Matches<template v-if="team.wo_w || team.wo_l"> · W/O {{ team.wo_w || 0 }}–{{ team.wo_l || 0 }}</template></span></div>
         <div class="rec"><span class="rn">{{ team.game_w }}–{{ team.game_l }}</span><span class="rl">Maps</span></div>
       </div>
     </section>

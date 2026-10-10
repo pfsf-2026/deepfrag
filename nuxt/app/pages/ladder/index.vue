@@ -258,7 +258,8 @@ function teamStatus(t) {
   return c.challenged_id === t.id ? `⚔ Challenged by ${other}` : `⚔ Challenging ${other}`
 }
 function teamName(id) { return teams.value.find(t => t.id === id)?.name || `#${id}` }
-function teamTag(id) { const t = teams.value.find(t => t.id === id); return t?.tag || t?.name || `#${id}` }
+// a withdrawn team is not in `teams` any more: fall back to the name the match carries, never "#44"
+function teamTag(id, fallback) { const t = teams.value.find(t => t.id === id); return t?.tag || t?.name || fallback || `#${id}` }
 function teamLabel(id) { const t = teams.value.find(x => x.id === id); return t ? (t.tag || t.name) : `#${id}` }
 const scheduledMatches = computed(() => challenges.value.filter(c => c.agreed_at).sort((a, b) => new Date(a.agreed_at) - new Date(b.agreed_at)))
 const openChallengeCount = computed(() => challenges.value.length)
@@ -459,10 +460,10 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
             </div>
             <button v-for="m in recentMatches.slice(0, 5)" :key="m.id" class="res" @click="openMatchId = m.id">
               <template v-for="o in [orientMatch(m)]" :key="'o'+m.id">
-                <span class="res-t" :title="o.w.name">{{ teamTag(o.w.id) }}<span v-if="o.wIsChallenger" class="chal" title="Challenger">⚔</span></span>
+                <span class="res-t" :title="o.w.name">{{ teamTag(o.w.id, o.w.name) }}<span v-if="o.wIsChallenger" class="chal" title="Challenger">⚔</span></span>
                 <span v-if="m.walkover" class="res-s wo" title="Walkover">W/O</span>
                 <span v-else class="res-s"><b class="w">{{ o.w.score }}</b>–<b>{{ o.l.score }}</b></span>
-                <span class="res-t right" :title="o.l.name"><span v-if="!o.wIsChallenger" class="chal" title="Challenger">⚔</span>{{ teamTag(o.l.id) }}</span>
+                <span class="res-t right" :title="o.l.name"><span v-if="!o.wIsChallenger" class="chal" title="Challenger">⚔</span>{{ teamTag(o.l.id, o.l.name) }}</span>
               </template>
             </button>
           </section>
