@@ -138,6 +138,13 @@ def run(db_path: str, dry_run: bool = False):
         print("\n[dry-run] Would update database. Summary:")
     else:
         print("\nWriting to database…")
+        # The resolve loop above runs for minutes with the connection idle, and Cloud SQL drops
+        # it ("server closed the connection unexpectedly", 2026-10-14): write on a fresh one.
+        try:
+            db.close()
+        except Exception:
+            pass
+        db = dbmod.connect()
         cur = db.cursor()
         # 1. players_canonical
         for cid, display in cid_displays.items():
