@@ -1,7 +1,7 @@
 # Canonical player identity map.
 #
 # Each top-level key is a canonical_id (slug, lowercase, no spaces — used in URLs and joins).
-# `display` is what's shown in the UI. `login` is the hub account login if known.
+# `display` is what's shown in the UI (set it to the slug itself to force plain lowercase). `login` is the hub account login if known.
 # `variants` are exact in-game name strings (after color-code stripping + lowercasing)
 # that should resolve to this canonical_id.
 #

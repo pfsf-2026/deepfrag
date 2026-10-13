@@ -121,12 +121,15 @@ def run(db_path: str, dry_run: bool = False):
             cid_to_login[cid] = login
 
     # Pick display name per canonical:
-    #   1. If aliases.yaml has a `display` for this cid → use it (and isn't just the slug)
+    #   1. If aliases.yaml has a `display` for this cid → use it. An explicit `display` wins even when
+    #      it equals the slug: that is how a name is forced to plain lowercase (evalcat, 2026-10-14).
+    #      The loader defaults `display` to the slug when none is given, so only `display_explicit`
+    #      tells the two apart.
     #   2. Else pick the most-common raw variant
     cid_displays = {}
     for cid in cid_to_variants:
         rec = c.records.get(cid)
-        if rec and rec.display and rec.display != cid:
+        if rec and rec.display and (rec.display_explicit or rec.display != cid):
             cid_displays[cid] = rec.display
         else:
             cid_displays[cid] = best_display_for(cid_to_variants[cid])

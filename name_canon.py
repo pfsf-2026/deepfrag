@@ -249,6 +249,7 @@ class CanonicalRecord:
     login: str = ""
     variants: set = field(default_factory=set)        # normalized names that resolve here
     excludes: set = field(default_factory=set)        # normalized names explicitly NOT this person
+    display_explicit: bool = False                    # aliases.yaml set `display` itself (even if it equals the slug)
 
 
 @dataclass
@@ -300,6 +301,7 @@ class Canonicalizer:
                     login=payload.get("login", "") or "",
                     variants=set(v.lower() for v in payload.get("variants", [])),
                     excludes=set(v.lower() for v in payload.get("excludes", [])),
+                    display_explicit=bool(payload.get("display")),
                 )
                 # Auto-include the canonical_id as a variant
                 rec.variants.add(cid.lower())
