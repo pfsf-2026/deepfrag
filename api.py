@@ -7066,11 +7066,17 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
             if agreed_dt <= datetime.now(timezone.utc):
                 raise HTTPException(400, "the agreed time has to be in the future")
             slots = list(slots or []) + [agreed_dt.isoformat()]
+        # 2026-10-13: only an admin may issue a challenge already scheduled. For a player, "the time we
+        # agreed on" is the opening offer (one slot); the other side confirms it with a pick. A time is
+        # agreed only when the side that did not offer it picks it (bogojoker vs aardappel, 2026-10-09).
+        agreed_offer = agreed_dt is not None and not user.get("is_admin")
+        if agreed_offer:
+            agreed_dt = None
         clean = sorted({str(s) for s in (slots or []) if s and _is_future_slot(s)})[:200]
         if not clean:
             raise HTTPException(400, "post at least one future availability time to issue a challenge")
         evenings = _distinct_evenings(clean)
-        if agreed_dt is not None or evenings >= 2:
+        if agreed_dt is not None or agreed_offer or evenings >= 2:
             window_days = (lad.get("rules") or {}).get("forfeit_days", 7)
         else:
             window_days = (lad.get("rules") or {}).get("short_window_days", 3)
@@ -7495,7 +7501,7 @@ def ladder_challenge_my_picks(challenge_id: int, authorization: str | None = Hea
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
-        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.proposed, c.status, c.picks,
+        cur.execute("""SELECT c.challenger_id, c.challenged_id, c.proposed, c.proposed_by, c.status, c.picks,
                               ca.name AS challenger, cd.name AS challenged, cd.members AS members
                        FROM ladder_challenges c
                        JOIN ladder_teams ca ON ca.id=c.challenger_id
@@ -7511,6 +7517,11 @@ def ladder_challenge_my_picks(challenge_id: int, authorization: str | None = Hea
             raise HTTPException(400, "no times have been proposed yet")
         if not _user_on_team(cur, user, ch["challenged_id"]):
             raise HTTPException(403, "only the challenged team's players pick their times here")
+        # A time is agreed only when the side that did NOT offer it picks it. If the slots on the
+        # table are the challenged team's own counter-offer, picking them here would schedule the
+        # match with no word from the challenger (sn vs x1bot, 2026-10-06): the challenger picks.
+        if ch.get("proposed_by") == ch["challenged_id"]:
+            raise HTTPException(409, f"these are the times you offered — {ch['challenger']} picks one of them, or offers others")
         if not me:
             raise HTTPException(400, "no player identity on your account")
         mine = [s for s in (slots or []) if s in proposed]
@@ -7654,6 +7665,30 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
             mover_id = (ch["challenger_id"] if me and me in (ch["a_members"] or []) else
                         ch["challenged_id"] if me and me in (ch["b_members"] or []) else None)
             mover = ch["a"] if mover_id == ch["challenger_id"] else ch["b"] if mover_id == ch["challenged_id"] else "an admin"
+            if not (user or {}).get("is_admin"):
+                # 2026-10-13: a player cannot set the time alone (x1bot vs sn). The new time goes on the
+                # table as that side's offer, the old agreed time is off, and the other side picks it
+                # (or offers another). Only an admin sets a time directly.
+                other_id = ch["challenged_id"] if mover_id == ch["challenger_id"] else ch["challenger_id"]
+                cur.execute("""UPDATE ladder_challenges
+                               SET agreed_at=NULL, server=%s, status='open', proposed=%s::jsonb, proposed_by=%s, proposed_at=now(),
+                                   reminded_soon=FALSE, reminded_10m=FALSE, reminded_24h=FALSE,
+                                   proposal_log = COALESCE(proposal_log, '[]'::jsonb) || %s::jsonb
+                               WHERE id=%s""",
+                            (new_server, json.dumps([new_dt.isoformat()]), mover_id,
+                             json.dumps([{"at": datetime.now(timezone.utc).isoformat(), "by": mover_id,
+                                          "slots": [new_dt.isoformat()], "agreed": False}]),
+                             challenge_id))
+                mv_lbl = _team_label(cur, mover_id) if mover_id else "an admin"
+                ot_lbl = _team_label(cur, other_id)
+                conn.commit()
+                try:
+                    old = f" {notify.fmt_et(ch['agreed_at'].isoformat())} is off." if was_scheduled and ch.get("agreed_at") else ""
+                    notify.send(content=f"🔄 {mv_lbl} proposes **{notify.fmt_et(new_dt.isoformat())}** — {ot_lbl}, pick it on the ladder or offer another time.{old}")
+                except Exception:
+                    pass
+                return {"challenge_id": challenge_id, "status": "open", "offered": new_dt.isoformat(), "server": new_server,
+                        "note": "offered to the other side; the match is scheduled once they pick it"}
             cur.execute("""UPDATE ladder_challenges
                            SET agreed_at=%s, server=%s, status='scheduled',
                                reminded_soon=FALSE, reminded_10m=FALSE, reminded_24h=FALSE,

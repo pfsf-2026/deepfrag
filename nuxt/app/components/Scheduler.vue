@@ -158,7 +158,7 @@ const agreedIso = computed(() => {
 })
 const agreedLocal = computed(() => agreedIso.value ? new Date(agreedIso.value).toLocaleString('en-US', { timeZone: tz.value, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '')
 async function scheduleNow() {
-  if (!agreedIso.value) { err.value = 'Pick the date and time you both agreed on'; return }
+  if (!agreedIso.value) { err.value = 'Pick the date and time to propose'; return }
   if (new Date(agreedIso.value).getTime() < Date.now()) { err.value = 'That time is already in the past'; return }
   if (!createMode.value) {
     if (c.agreed_at && new Date(c.agreed_at).getTime() === new Date(agreedIso.value).getTime()) { err.value = 'That is the time it is already set for — pick the new one'; return }
@@ -359,11 +359,11 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
       <!-- existing OPEN challenge: lock in a time both sides already agreed on -->
       <div v-if="canAgree && !scheduled" class="agreed-box">
         <template v-if="!agreedMode">
-          <span>Already agreed on a time{{ otherName ? ` with ${otherName}` : '' }}?</span>
-          <button class="btn sm" @click="agreedMode = true">📅 Schedule now</button>
+          <span>Agreed on a time{{ otherName ? ` with ${otherName}` : '' }}?</span>
+          <button class="btn sm" @click="agreedMode = true">📅 Propose that time</button>
         </template>
         <template v-else>
-          <div class="agreed-title">Schedule the match now <span class="muted small">— {{ agreedWho }} already agreed on this time, so it's confirmed right away</span></div>
+          <div class="agreed-title">Propose the time you agreed on <span class="muted small">— {{ otherName || 'the other side' }} confirms it with one click on the ladder; it is scheduled once they do</span></div>
           <div class="agreed-row">
             <label class="fld"><span>Date</span><input type="date" v-model="agreedDate" :min="agreedMinDate" :max="agreedMaxDate"></label>
             <label class="fld"><span>Time (ET)</span>
@@ -377,7 +377,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
           <p v-if="err" class="err agreed-err">{{ err }}</p>
           <div class="agreed-actions">
             <button class="link-btn" @click="agreedMode = false; err = ''">← back to offering times</button>
-            <button class="btn" :disabled="saving || !agreedIso" @click="scheduleNow">{{ saving ? 'Scheduling…' : 'Schedule match · confirmed' }}</button>
+            <button class="btn" :disabled="saving || !agreedIso" @click="scheduleNow">{{ saving ? 'Sending…' : 'Propose this time' }}</button>
           </div>
         </template>
       </div>
@@ -392,11 +392,11 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
         <!-- move it: a new time both sides already agreed on is confirmed on the spot -->
         <div v-if="canAgree" class="agreed-box">
           <template v-if="!agreedMode">
-            <span>Need to move it? Already agreed on a new time{{ otherName ? ` with ${otherName}` : '' }}?</span>
-            <button class="btn sm" @click="agreedMode = true">📅 Set new time</button>
+            <span>Need to move it? Propose a new time{{ otherName ? ` — ${otherName} confirms it` : '' }}.</span>
+            <button class="btn sm" @click="agreedMode = true">📅 Propose new time</button>
           </template>
           <template v-else>
-            <div class="agreed-title">Move the match <span class="muted small">— {{ agreedWho }} already agreed on the new time, so it's confirmed right away</span></div>
+            <div class="agreed-title">Propose a new time <span class="muted small">— the current time comes off and {{ otherName || 'the other side' }} confirms the new one on the ladder</span></div>
             <div class="agreed-row">
               <label class="fld"><span>Date</span><input type="date" v-model="agreedDate" :min="agreedMinDate" :max="agreedMaxDate"></label>
               <label class="fld"><span>Time (ET)</span>
@@ -424,11 +424,11 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
         </p>
         <div v-if="createMode" class="agreed-box">
           <template v-if="!agreedMode">
-            <span>Already agreed on a time with {{ c.challenged }}?</span>
-            <button class="btn sm" @click="agreedMode = true">📅 Schedule now</button>
+            <span>Agreed on a time with {{ c.challenged }}?</span>
+            <button class="btn sm" @click="agreedMode = true">📅 Challenge with that time</button>
           </template>
           <template v-else>
-            <div class="agreed-title">Schedule the match now <span class="muted small">— you and {{ c.challenged }} already agreed on this time</span></div>
+            <div class="agreed-title">Challenge with the time you agreed on <span class="muted small">— {{ c.challenged }} confirms it with one click on the ladder; it is scheduled once they do</span></div>
             <div class="agreed-row">
               <label class="fld"><span>Date</span><input type="date" v-model="agreedDate" :min="agreedMinDate" :max="agreedMaxDate"></label>
               <label class="fld"><span>Time (ET)</span>
@@ -442,7 +442,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
             <p v-if="err" class="err agreed-err">{{ err }}</p>
             <div class="agreed-actions">
               <button class="link-btn" @click="agreedMode = false; err = ''">← offer times instead</button>
-              <button class="btn" :disabled="saving || !agreedIso" @click="scheduleNow">{{ saving ? 'Scheduling…' : 'Issue challenge · scheduled' }}</button>
+              <button class="btn" :disabled="saving || !agreedIso" @click="scheduleNow">{{ saving ? 'Sending…' : 'Issue challenge · propose this time' }}</button>
             </div>
           </template>
         </div>

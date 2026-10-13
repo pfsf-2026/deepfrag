@@ -98,6 +98,23 @@ edits an earlier post.
 - King of the Hill = rung 1; weeks held come from the newest `ladder_movements` row with
   `to_rung = 1`.
 
+## Scheduling rule: a time is agreed only when the other side picks it (2026-10-13)
+
+Two disputes in one week (x1bot vs sn, bogojoker vs aardappel) came from one side being able to set the
+match time alone. Three doors closed:
+
+- `/my-picks`: the challenged side cannot pick from its own counter-offer (`proposed_by` = challenged).
+  Their offer is on the table; the challenger picks one via `/schedule` or counters.
+- `/challenge` with `agreed_at`: for a player it is the opening offer (one slot, status `open`); only an
+  admin issues a challenge already scheduled. Window = `forfeit_days` as before.
+- `/reschedule` with `agreed_at`: for a player it takes the agreed time off and puts the new one on the
+  table as their offer (`status='open'`, `proposed=[t]`, `proposed_by` = mover); the Discord post asks the
+  other side to pick it. Only an admin sets a time directly.
+
+The Scheduler's "already agreed" box now reads "Propose that time" and says the other side confirms it.
+`proposal_log` entries carry `"agreed": false` for these; only `/schedule`, `/my-picks` (challenger's
+offer) and admin reschedules produce an agreed time.
+
 ## Walkovers (2026-10-09)
 
 A walkover is a result where one side could not or would not play. Peter's rule: it must never read
