@@ -280,3 +280,10 @@ cao:
   variants:
     - cao
     - wdcao
+
+# 2026-10-14 (Peter): show as plain lowercase, not the in-game "eValCat" capitals
+evalcat:
+  display: evalcat
+  login: ""
+  variants:
+    - evalcat
