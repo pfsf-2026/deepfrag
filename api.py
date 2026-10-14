@@ -7474,6 +7474,9 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
             raise HTTPException(403, f"it's the other {_unit()}'s turn to pick one of the offered times")
         if slot not in (ch["proposed"] or []):
             raise HTTPException(400, "pick one of the proposed slots")
+        # 2026-10-14 (BD vs gt): an offered time can go by before the other side gets to pick it.
+        if not _is_future_slot(slot):
+            raise HTTPException(400, "that time has already passed — pick a later one of the offered times, or offer new times")
         cur.execute("""UPDATE ladder_challenges
                        SET agreed_at=%s, server=%s, status='scheduled' WHERE id=%s""",
                     (slot, (server or "").strip() or None, challenge_id))
@@ -7524,9 +7527,9 @@ def ladder_challenge_my_picks(challenge_id: int, authorization: str | None = Hea
             raise HTTPException(409, f"these are the times you offered — {ch['challenger']} picks one of them, or offers others")
         if not me:
             raise HTTPException(400, "no player identity on your account")
-        mine = [s for s in (slots or []) if s in proposed]
+        mine = [s for s in (slots or []) if s in proposed and _is_future_slot(s)]
         if not mine:
-            raise HTTPException(400, "pick at least one of the offered slots")
+            raise HTTPException(400, "pick at least one of the offered times that has not passed yet")
         picks = dict(ch["picks"] or {})
         picks[me] = mine
         members = list(ch["members"] or [])
@@ -8648,6 +8651,47 @@ def admin_ladder_challenge_walkover(challenge_id: int, authorization: str | None
         else:
             raise HTTPException(409, "challenge already resolved")
     return admin_ladder_result(challenge_id, authorization, winner_id=winner_id, maps=[], score_a=None, score_b=None, walkover=True)
+
+
+@app.post("/api/admin/ladder/challenge/{challenge_id}/unschedule")
+def admin_ladder_challenge_unschedule(challenge_id: int, authorization: str | None = Header(default=None),
+                                      reason: str | None = Body(default=None, embed=True)):
+    """Admin takes the agreed time off a scheduled match but keeps the offered times that are
+    still ahead, so the same side picks again without the other re-offering. For a match that
+    got scheduled at a time that had already passed (BD vs gt, 2026-10-14). Posts to Discord."""
+    import ladder as _ladder
+    import notify
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT * FROM ladder_challenges WHERE id=%s", (challenge_id,))
+        ch = cur.fetchone()
+        _notify_route(cur, challenge_id=challenge_id)
+        if not ch:
+            raise HTTPException(404, "challenge not found")
+        if ch["status"] != "scheduled":
+            raise HTTPException(409, "only a scheduled match can be unscheduled")
+        keep = [t for t in (ch["proposed"] or []) if _is_future_slot(t)]
+        cur.execute("""UPDATE ladder_challenges
+                       SET agreed_at=NULL, status='open', proposed=%s::jsonb, proposed_by=%s,
+                           reminded_soon=FALSE, reminded_10m=FALSE, reminded_24h=FALSE
+                       WHERE id=%s""", (json.dumps(keep), ch["proposed_by"] if keep else None, challenge_id))
+        picker = _turn_team({"proposed": keep, "proposed_by": ch["proposed_by"], "challenger_id": ch["challenger_id"], "challenged_id": ch["challenged_id"]}) if keep else None
+        cl_lbl = _team_label(cur, ch["challenger_id"])
+        cd_lbl = _team_label(cur, ch["challenged_id"])
+        pk_lbl = _team_label(cur, picker) if picker else None
+        conn.commit()
+    try:
+        was = notify.fmt_et(ch["agreed_at"].isoformat()) if ch.get("agreed_at") else "the agreed time"
+        why = f" ({reason})" if reason else ""
+        if keep and pk_lbl:
+            notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} — {was} is off{why}. {len(keep)} offered time{'s' if len(keep) != 1 else ''} still stand — {pk_lbl}, pick one on the ladder.")
+        else:
+            notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} — {was} is off{why}. No offered times are left — new times needed.")
+    except Exception:
+        pass
+    return {"challenge_id": challenge_id, "status": "open", "offers_kept": keep, "picker": picker}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/unforfeit")

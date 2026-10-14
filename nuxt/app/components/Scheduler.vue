@@ -74,6 +74,9 @@ function etToUtcISO(y, mo, d, h, mi) {
   return new Date(asUTC + (utcMs - etMs)).toISOString()
 }
 const proposedLocal = ref([...(c.proposed || [])])   // updates in-place after save
+// Only offers still ahead can be picked: an offered time can go by before the other side looks (BD vs gt, 2026-10-14).
+const pickable = computed(() => proposedLocal.value.filter(iso => new Date(iso).getTime() > Date.now()))
+const offersExpired = computed(() => proposedLocal.value.length > 0 && pickable.value.length === 0)
 const selected = ref(new Set(c.proposed || []))
 const days = computed(() => {
   const out = []
@@ -324,6 +327,7 @@ function freeTitle(iso) {
 }
 const hasOverlay = computed(() => overlayMeta.value.withAvail > 0)
 async function confirmSlot() {
+  if (!pick.value || new Date(pick.value).getTime() <= Date.now()) { err.value = 'That time has already passed — pick a later one, or suggest different times'; return }
   if (!pick.value) { err.value = 'Pick a time'; return }
   saving.value = true; err.value = ''
   try {
@@ -488,8 +492,10 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
           🕒 Times in <strong>{{ tz }}</strong>.
           <a v-if="tzIsGuess" class="tz-link" @click="showSettings = true">Showing Eastern — set your time zone →</a>
         </div>
+        <p v-if="offersExpired" class="err">All of {{ proposerName }}'s offered times have passed — suggest different times below.</p>
+        <p v-else-if="pickable.length < proposedLocal.length" class="muted small">{{ proposedLocal.length - pickable.length }} of the offered times {{ proposedLocal.length - pickable.length === 1 ? 'has' : 'have' }} already passed and {{ proposedLocal.length - pickable.length === 1 ? 'is' : 'are' }} not shown.</p>
         <div class="picklist">
-          <label v-for="iso in proposedLocal" :key="iso" class="pickrow" :class="{ on: pick === iso }">
+          <label v-for="iso in pickable" :key="iso" class="pickrow" :class="{ on: pick === iso }">
             <input type="radio" :value="iso" v-model="pick">
             <span class="pl-time">{{ fmtLocal(iso) }}</span>
             <span v-if="freeCount(iso)" class="pl-free">
@@ -524,7 +530,7 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
         <p v-if="err" class="err">{{ err }}</p>
         <div class="m-actions">
           <button class="btn ghost" @click="emit('close')">Cancel</button>
-          <button class="btn" :disabled="saving" @click="confirmSlot">{{ saving ? 'Scheduling…' : 'Confirm match' }}</button>
+          <button class="btn" :disabled="saving || offersExpired" @click="confirmSlot">{{ saving ? 'Scheduling…' : 'Confirm match' }}</button>
         </div>
       </template>
 

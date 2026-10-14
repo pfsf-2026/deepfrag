@@ -112,6 +112,11 @@ match time alone. Three doors closed:
   other side to pick it. Only an admin sets a time directly.
 
 The Scheduler's "already agreed" box now reads "Propose that time" and says the other side confirms it.
+
+Offered times that have passed (2026-10-14, BD vs gt picked an 11 PM slot at noon the next day): `/schedule` and
+`/my-picks` refuse a slot that is not in the future, the Scheduler hides past offers and says so when none are
+left, and `POST /api/admin/ladder/challenge/{id}/unschedule` takes a bad agreed time off while keeping the
+offers still ahead so the same side picks again.
 `proposal_log` entries carry `"agreed": false` for these; only `/schedule`, `/my-picks` (challenger's
 offer) and admin reschedules produce an agreed time.
 
