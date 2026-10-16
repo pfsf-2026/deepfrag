@@ -1,0 +1,109 @@
+# Coaching doctrine — what Peter has taught the coach
+
+**Read this before writing any coaching, analysis or strategy text.** It exists because long sessions get
+summarised and the game knowledge Peter taught in passing was the first thing lost (red armor written as
++150 and "footsteps" cited as a cue, both on 2026-10-16). Everything here is a standing rule until Peter
+changes it. When he corrects something, add it to §7 the same day, with the date.
+
+## 1. Game facts (QuakeWorld, KTX, the TB4 maps)
+- Armor: **red +200 (absorbs 80%), yellow +150 (60%), green +100 (30%)**. Mega: **+100 health up to 250**,
+  decays back to 100. A fresh spawn is 100/0. Our `eff` (effective HP) shows a spawn with red as ~300, with
+  yellow ~250. Fight-winning weapons: RL and LG; the shotgun is the spawn weapon ("boomstick").
+- Respawns: armors 20 s after the take; mega 20 s after the holder is back at 100; weapons 30 s; quad 60 s
+  ("quad spawns every 60 s and is never missed on dm3": a 20-minute game has at least 19); pent 5 min.
+- **There are no footstep sounds.** Running is silent. Everything else is audible and passes through walls:
+  jumps and landings, every item and weapon pickup, teleporters, lifts, doors, water, gunfire, pain. Plus
+  the kill feed. Good players rebuild the enemy's position, route and stack from sound.
+- 4on4 pickups are 20-minute games. NA teams talk on voice (mm3); mm2 is rare on the NA side, common in EU.
+- There is no quad in 1on1. There is no +/- in a duel: it is the score.
+- Red armors per map: **schloss 1, dm3 1, dm2 2, e1m2 0** — every item stat must be read per map.
+- LG exists only on dm3 among the TDM maps; RL matters more than LG there; LG ammo is scarce (weight it by
+  cells). RL quality is direct hits AND splash efficiency.
+- Quad rooms and how you reach them (Peter, 2026-09-21):
+  - **dm3**: quad is above the mound; you come in by jumping the gap from either side, from high YA, or
+    through the (pent) window; rocket-jumping up from the mound is rare. "RL side" is meaningless for dm3
+    quad — RL room to quad is low bridge → stairs → high bridge → window, far too long. Quad and the RL/water
+    area are separated by many walls: never count a player in RL/water as "near quad".
+  - **dm2**: no door; people come from everywhere — high RL, the quad path from high RL, rocket-jumping up
+    from big (happens all the time), and the water side from secret, stairs or tele.
+  - **e1m2**: two ways in — the GL side and the stairs from the mid room.
+  - **schloss**: a door at floor level, a drop-down from above, the path from cathedral rocket.
+- "Near quad" = **inside the quad room** (per-map room list in `tools/mvd_features/quad_rooms.json`), not a
+  straight-line radius; a player who died in the room within 10 s of the spawn counts as having been there.
+
+## 2. How fours is actually played (the context the coach must model)
+- Teams **flood** strategic zones under a lock — YA on e1m2, tele or low RL on dm2 — and start many fights as a
+  boomstick on purpose, to flood an area or to support quad, or because they spawned with no choice. Stats
+  like "fights started from behind" and "chained deaths" are meaningless without this context (Peter
+  2026-09-11, 2026-09-22). Coaching those as individual flaws is wrong.
+- Locks are real: "I can't even spawn" is a team state, not a player state. The pool chains ~65% of deaths
+  inside 14 s even when not locked. Coach the difference from survivors in the same state, never the
+  pool-wide number (2026-10-16).
+- Spawn frags are a skill: knowing the spawn points and putting rockets/grenades on them the moment you frag.
+  Waiting to respawn does not change where you land, only how fast you can be killed (2026-09-08). BD:
+  "farming spawns better is a sign of a good player"; DDR alone is not the stat.
+- Quad: attendance is common (80-85% of spawns for everyone); the levers are arriving stacked, arriving with
+  the RL, and **conversion**, not attendance. A naked quad steal is a 30-second deny, not a fight: its value is
+  survival. Prepared takes (RL + 150) are what separate players; BD takes the most quads and uses them like
+  an average player; war and chris use them best (2026-10-06/07). Powerup efficacy (swing from runs) is a
+  first-class stat; pent counts too.
+- Team damage: Omicron hates it; its impact on win probability was checked (2026-09-15) — treat it as real.
+- Ping matters (dusty 12 ms vs yeti 142 in the same game); game scores need a ping adjustment.
+- Map specialists exist (bogojoker on schloss, chris on dm3); ratings should reward playing all four maps.
+
+## 3. How duels are played (what the coach must model)
+- Movement is at least half the game and leads every piece of advice; then timing items, being early,
+  stack before fights, sound, weapons; map geometry last; aim is trained, never assumed
+  (`docs/sage_writer_prompt.md`).
+- Mega timing (within 3 s) predicts the winner better than mega count; efficient timing is the skill. Red
+  share: whoever takes more reds wins 3 in 4; megas 75%.
+- The move Peter wants coached: from "fight first" to methodical stack building (2026-09-08).
+- Good duelists have ~90% certainty of the opponent's stack from sound and fight length; the coach cannot
+  assume a player has it — it has to teach it as a skill and never say "leave at −60" as if the number were on
+  the HUD (2026-10-14 Discord: Bance, infiniti).
+
+## 4. Measurement rules
+- Everything per map. Reds, quads, chained deaths, levels and "work on this" are per map or they are wrong.
+- Quad attendance by room (see §1). Lock state from team stack + RL + red counts, per-map thresholds.
+- Chained death = died within 14 s of spawning; must be read against the team's lock state and floods.
+- Adjusted kills split a frag by damage share (finisher keeps 40%). WAR = wins above replacement, cumulative
+  and per game; expected vs actual +/- given teammates and opponents is what should move a 4on4 rating,
+  compared with the teammates' expected vs actual (2026-09-23).
+- Aliases are folded (george/whodat/igor/datnigga/fok/allufok/tardface = war; anton = sane). No ratings for
+  alias accounts; no 4on4 rating without a duel rating.
+- Forecast duel odds from margins (frag diff, DDR against known opponents), not from mu alone (Yeti bet).
+
+## 5. Coaching rules
+- Framework: **perception** (what the player could know) → **decision** → **execution**. Tag every finding.
+- Coach a *difference*: the player vs survivors in the same state, same map. Never a pool-wide truth.
+- Condition the advice on state (locked / not, cue heard / none, alone / paired, item due) and give the
+  alternative as a place and an action with its number ("the red side lives 53% here, quad side 19%").
+- Real cues only (no footsteps). Numbers only from the data or §1, never from memory.
+- Each map is its own tab and its own game. Plain English, 5th-grade clear, every stat in the glossary with
+  "units" defined. One focus at a time. Levels are public on profiles.
+- Moments over aggregates: 3-5 timestamps per player per night, ranked by win-probability cost, with the hub
+  link, so a player can review 30 seconds instead of a demo. Nexus's analyzer already emits powerup runs,
+  frag streaks and airgibs as Key Moments — use them as the frame.
+- Speak plainly about strong players too: say "takes the most" when the data says volume, "best" only when it
+  says efficiency (2026-10-06).
+
+## 6. Process
+- Read this file before any coaching text. Re-read §1 before quoting any value or timer.
+- A correction from Peter goes into §7 immediately, then into the relevant section.
+- Memory (`~/.claude/projects/-Users-peteryeargin/memory/`) points here; it is not a substitute for this file.
+
+## 7. Corrections log (dated, verbatim where it matters)
+- 2026-06-14 "dont' restart without checking with me first, from now on" (players were on the servers).
+- 2026-08-31 "there is no quad in 1on1. you know that."
+- 2026-09-11 Quad spawns every 60 s and is never missed on dm3 — the pass had missed several.
+- 2026-09-12 "in 4on4, RL is usually more important than LG on dm3 … add LG cell count into your weight."
+- 2026-09-20 Reds per map: schloss 1, dm3 1, dm2 2 — measure per map, coach per map.
+- 2026-09-21 Quad entries per map as in §1; "RL side" is meaningless on dm3.
+- 2026-09-22 "we start lots of fights as a boomstick, to flood certain areas, or to support quad … or we spawn
+  and have no choice" — fights-from-behind training is not a lever without context.
+- 2026-10-05 "remember there is no +/- in duel."
+- 2026-10-06 "Quad and RL rooms are separated by many walls. You keep considering people in RL/water area
+  close to quad" — room rule replaces the radius.
+- 2026-10-16 "RA is +200 armor. You should know this." Red +200, yellow +150, green +100, mega +100.
+- 2026-10-16 (infiniti, confirmed) there are no footstep sounds in QuakeWorld.
+- 2026-10-16 "two-thirds of your deaths inside 14 s" is true of the whole pool; never present it as a flaw.
