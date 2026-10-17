@@ -182,6 +182,8 @@ function runManual() {
       <button class="mbtn" :class="{ on: mode === '4on4' }" role="tab" :aria-selected="mode === '4on4'" @click="setMode('4on4')">4on4</button>
       <button class="mbtn" :class="{ on: mode === '1on1' }" role="tab" :aria-selected="mode === '1on1'" @click="setMode('1on1')">1on1</button>
     </div>
+    <!-- last 10 games with a Game Report per fours game (2026-10-17) -->
+    <CoachRecentGames :cid="props.cid" />
     <CoachFours v-if="mode === '4on4'" :cid="props.cid" />
     <template v-else>
     <!-- movement report: its own endpoint, shown without waiting for "Analyze my game" -->

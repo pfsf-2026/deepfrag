@@ -24,7 +24,7 @@ COPY api.py tiers.py export_rankings.py profile_pg.py stats_pg.py \
      coaching.py coaching_weakness.py coaching_narrate.py coaching_fours.py \
      coaching_fso.py deep_analyze.py ladder.py ladder_preview_narrate.py \
      auth.py notify.py ping_suggest.py connector.py vote.py \
-     duel_adv.py movement.py aliases.yaml ./
+     duel_adv.py movement.py game_report.py spawn_rooms.py aliases.yaml ./
 COPY tests/ ./tests/
 
 ENV PORT=8080

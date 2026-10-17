@@ -10905,3 +10905,201 @@ app.include_router(_connector_router)
 # ── Community polls (standalone vote pages) — see vote.py ─────────────────────
 from vote import router as _vote_router  # noqa: E402
 app.include_router(_vote_router)
+
+
+# ── Game Report (2026-10-17, Peter) ──────────────────────────────────────────
+# A player's last games on the coaching page, each with a "Game Report": the game's
+# key moments for that player (highlights, lowlights, 2-minute blocks), hub deep links
+# at those timestamps, and 2-3 "rewinds" — locked spawns where a better first move or
+# an item on time was available — shown with the team's MM2 in the 20 s before, the
+# answer, and the MM2 line to send. Built from the mvd-api on first request and cached
+# in game_reports (one row per game × player × VERSION). 4on4 only for now.
+import game_report as GRPT
+from pydantic import BaseModel  # noqa: E402
+
+
+def _game_report_ensure(cur):
+    cur.execute("""CREATE TABLE IF NOT EXISTS game_reports (
+        hub_game_id BIGINT NOT NULL, canonical_id TEXT NOT NULL, version INT NOT NULL,
+        mode TEXT, map TEXT, played_at TIMESTAMPTZ, report JSONB NOT NULL,
+        built_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (hub_game_id, canonical_id))""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS game_report_answers (
+        id BIGSERIAL PRIMARY KEY, hub_game_id BIGINT NOT NULL, canonical_id TEXT NOT NULL,
+        rewind_idx INT NOT NULL, answer TEXT NOT NULL, discord_id TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+    cur.execute("CREATE INDEX IF NOT EXISTS gra_key ON game_report_answers (hub_game_id, canonical_id, rewind_idx)")
+
+
+def _resolve_cid(cur, canonical_id: str) -> str:
+    """/coach/player/Schotty and /coach/player/schotty are the same player; a merged id
+    follows the merge (same rule as the fours coach)."""
+    cur.execute("""SELECT canonical_id FROM players_canonical WHERE canonical_id=%s OR LOWER(canonical_id)=LOWER(%s)
+                   ORDER BY (canonical_id=%s) DESC LIMIT 1""", (canonical_id, canonical_id, canonical_id))
+    hit = cur.fetchone()
+    if hit:
+        canonical_id = hit["canonical_id"]
+    return _resolve_merged_canonical(cur, canonical_id)
+
+
+@app.get("/api/players/{canonical_id}/recent-games")
+def api_recent_games(canonical_id: str, response: Response, mode: str = "4on4", limit: int = 10):
+    """The player's last N games in one mode with the team score and W/L (the /full list
+    has no 4on4 outcome), teammates and opponents, and whether a Game Report exists."""
+    mode = mode if mode in ("4on4", "1on1", "2on2") else "4on4"
+    limit = max(1, min(int(limit or 10), 30))
+    response.headers["Cache-Control"] = "public, max-age=300"
+    with pg() as conn:
+        cur = conn.cursor()
+        cid = _resolve_cid(cur, canonical_id)
+        _game_report_ensure(cur)
+        if mode == "1on1":
+            cur.execute("""
+                WITH me AS (
+                    SELECT m.match_id, m.match_date, m.match_mode, m.match_map, m.server_hostname, m.has_bots,
+                           p.player_name, p.player_frags, p.player_deaths
+                    FROM matches m JOIN players p ON p.match_id = m.match_id
+                    WHERE p.canonical_id = %(cid)s AND m.match_mode = '1on1'
+                    ORDER BY m.match_date DESC LIMIT %(lim)s)
+                SELECT me.*, me.player_frags AS my_total,
+                       (SELECT p2.player_frags FROM players p2 WHERE p2.match_id = me.match_id AND p2.canonical_id IS DISTINCT FROM %(cid)s LIMIT 1) AS opp_total,
+                       (SELECT COALESCE(pc.display_name, p2.canonical_id, p2.player_name) FROM players p2
+                          LEFT JOIN players_canonical pc ON pc.canonical_id = p2.canonical_id
+                          WHERE p2.match_id = me.match_id AND p2.canonical_id IS DISTINCT FROM %(cid)s LIMIT 1) AS opp_names,
+                       NULL AS my_names, NULL AS player_team, NULL AS opp_team,
+                       EXISTS (SELECT 1 FROM game_reports g WHERE g.hub_game_id = me.match_id AND g.canonical_id = %(cid)s AND g.version = %(ver)s) AS has_report
+                FROM me ORDER BY me.match_date DESC""", {"cid": cid, "lim": limit, "ver": GRPT.VERSION})
+        else:
+            cur.execute("""
+                WITH me AS (
+                    SELECT m.match_id, m.match_date, m.match_mode, m.match_map, m.server_hostname, m.has_bots,
+                           p.player_team, p.player_name, p.player_frags, p.player_deaths
+                    FROM matches m JOIN players p ON p.match_id = m.match_id
+                    WHERE p.canonical_id = %(cid)s AND m.match_mode = %(mode)s
+                    ORDER BY m.match_date DESC LIMIT %(lim)s),
+                side AS (
+                    SELECT p.match_id, p.player_team, SUM(p.player_frags) AS total, COUNT(*) AS n,
+                           STRING_AGG(COALESCE(pc.display_name, p.canonical_id, p.player_name), ', ' ORDER BY p.player_frags DESC) AS names
+                    FROM players p LEFT JOIN players_canonical pc ON pc.canonical_id = p.canonical_id
+                    WHERE p.match_id IN (SELECT match_id FROM me)
+                    GROUP BY p.match_id, p.player_team)
+                SELECT me.*, mine.total AS my_total, mine.names AS my_names,
+                       theirs.total AS opp_total, theirs.names AS opp_names, theirs.player_team AS opp_team,
+                       EXISTS (SELECT 1 FROM game_reports g WHERE g.hub_game_id = me.match_id AND g.canonical_id = %(cid)s AND g.version = %(ver)s) AS has_report
+                FROM me
+                LEFT JOIN side mine ON mine.match_id = me.match_id AND mine.player_team IS NOT DISTINCT FROM me.player_team
+                LEFT JOIN LATERAL (SELECT * FROM side s WHERE s.match_id = me.match_id AND s.player_team IS DISTINCT FROM me.player_team
+                                   ORDER BY s.total DESC LIMIT 1) theirs ON true
+                ORDER BY me.match_date DESC""", {"cid": cid, "mode": mode, "lim": limit, "ver": GRPT.VERSION})
+        rows = [dict(r) for r in cur.fetchall()]
+    out = []
+    for r in rows:
+        mt, ot = r.get("my_total"), r.get("opp_total")
+        win = None if mt is None or ot is None or mt == ot else (mt > ot)
+        out.append({"hub_game_id": r["match_id"], "date": str(r["match_date"]), "map": r["match_map"], "mode": r["match_mode"],
+                    "server": r.get("server_hostname"), "has_bots": bool(r.get("has_bots")), "team": r.get("player_team"),
+                    "my_score": mt, "opp_score": ot, "win": win, "frags": r.get("player_frags"), "deaths": r.get("player_deaths"),
+                    "teammates": r.get("my_names"), "opponents": r.get("opp_names"), "has_report": bool(r.get("has_report")),
+                    "report_available": r["match_mode"] == "4on4"})
+    return {"canonical_id": cid, "mode": mode, "games": out}
+
+
+@app.get("/api/players/{canonical_id}/games/{game_id}/report")
+def api_game_report(canonical_id: str, game_id: int, response: Response, fresh: str | None = None):
+    """Build (first call, ~20-40 s: the parser reads the demo) or return the cached Game
+    Report for this player in this game. `fresh=<anything>` rebuilds."""
+    response.headers["Cache-Control"] = "public, max-age=600"
+    with pg() as conn:
+        cur = conn.cursor()
+        cid = _resolve_cid(cur, canonical_id)
+        _game_report_ensure(cur)
+        if not fresh:
+            cur.execute("SELECT report, built_at FROM game_reports WHERE hub_game_id=%s AND canonical_id=%s AND version=%s",
+                        (game_id, cid, GRPT.VERSION))
+            row = cur.fetchone()
+            if row:
+                return {"cached": True, "built_at": str(row["built_at"]), **row["report"]}
+        cur.execute("""SELECT m.match_mode, m.match_map, m.match_date, p.player_name, p.player_team
+                       FROM matches m JOIN players p ON p.match_id = m.match_id
+                       WHERE m.match_id = %s AND p.canonical_id = %s LIMIT 1""", (game_id, cid))
+        mrow = cur.fetchone()
+        if not mrow:
+            raise HTTPException(404, "match not found for player")
+        if mrow["match_mode"] != "4on4":
+            raise HTTPException(422, "game reports are 4on4 only for now")
+        cur.execute("SELECT display_name FROM players_canonical WHERE canonical_id=%s", (cid,))
+        pr = cur.fetchone()
+        display = (pr and pr["display_name"]) or cid
+
+    # Demo parsing is slow — everything below runs OUTSIDE the pooled connection (see pg()).
+    def get(path):
+        try:
+            return _mvd_get(path)[0]
+        except Exception:
+            return None
+    ov = GRPT.fetch_overview(game_id, get)
+    if not ov:
+        raise HTTPException(502, "the demo parser could not load this game")
+    key = None
+    want = _enh_norm(mrow["player_name"])
+    for p in ov.get("players") or []:
+        if want and _enh_norm(p.get("name")) == want:
+            key = p["name"]; break
+    key = key or GRPT.resolve_me(ov, [mrow["player_name"], display, cid])
+    if not key:
+        raise HTTPException(422, "player not found in the demo")
+    data = GRPT.fetch_rest(game_id, get, key)
+    report = GRPT.compute(ov, data, key, game_id, mrow["match_map"])
+    if not report:
+        raise HTTPException(422, "demo not analyzable")
+    report["display"] = display; report["canonical_id"] = cid; report["played_at"] = str(mrow["match_date"])
+    try:
+        with pg() as conn:
+            cur = conn.cursor()
+            cur.execute("""INSERT INTO game_reports (hub_game_id, canonical_id, version, mode, map, played_at, report)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s)
+                           ON CONFLICT (hub_game_id, canonical_id) DO UPDATE SET
+                               version=EXCLUDED.version, report=EXCLUDED.report, built_at=now()""",
+                        (game_id, cid, GRPT.VERSION, mrow["match_mode"], mrow["match_map"], mrow["match_date"], json.dumps(report)))
+            conn.commit()
+    except Exception:
+        pass
+    return {"cached": False, **report}
+
+
+class _RewindAnswer(BaseModel):
+    idx: int
+    answer: str
+
+
+@app.post("/api/players/{canonical_id}/games/{game_id}/report/answers")
+def api_game_report_answer(canonical_id: str, game_id: int, body: _RewindAnswer, authorization: str | None = Header(None)):
+    """What the player typed for a rewind. Kept per Discord user when signed in (the page
+    also keeps it in the browser), so the coach can grade answers later."""
+    u = _current_user(authorization, required=False)
+    ans = (body.answer or "").strip()[:2000]
+    if not ans:
+        raise HTTPException(400, "empty answer")
+    with pg() as conn:
+        cur = conn.cursor()
+        cid = _resolve_cid(cur, canonical_id)
+        _game_report_ensure(cur)
+        cur.execute("INSERT INTO game_report_answers (hub_game_id, canonical_id, rewind_idx, answer, discord_id) VALUES (%s,%s,%s,%s,%s)",
+                    (game_id, cid, int(body.idx), ans, (u or {}).get("discord_id") if u else None))
+        conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/players/{canonical_id}/games/{game_id}/report/answers")
+def api_game_report_answers(canonical_id: str, game_id: int, authorization: str | None = Header(None)):
+    u = _current_user(authorization, required=False)
+    if not u:
+        return {"answers": []}
+    with pg() as conn:
+        cur = conn.cursor()
+        cid = _resolve_cid(cur, canonical_id)
+        _game_report_ensure(cur)
+        cur.execute("""SELECT rewind_idx, answer, created_at FROM game_report_answers
+                       WHERE hub_game_id=%s AND canonical_id=%s AND discord_id=%s ORDER BY created_at""",
+                    (game_id, cid, u["discord_id"]))
+        return {"answers": [{"idx": r["rewind_idx"], "answer": r["answer"], "at": str(r["created_at"])} for r in cur.fetchall()]}
