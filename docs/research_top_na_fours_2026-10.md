@@ -5,8 +5,8 @@ schloss 278; NA servers, since 2025-01-01, 8 players), plus 60 games re-read fro
 resolution. TOP = the ten players with ≥80 games ranked by wins above replacement per game (bogojoker, zorak,
 sane, chris, blaze, yeti, Blood Dog, war, dusty, coj). FIELD = the other fourteen with ≥80 games. Every
 TOP-vs-FIELD gap below was re-checked on mixed teams (TOP and FIELD as teammates in the same game) and holds.
-Full reports and scripts: scratchpad `research_fight_entry.md`, `research_death_value.md`,
-`research_perception.md`, `research_spawn_lock.md`, `research_floods.md`.*
+Full reports and scripts: `tools/mvd_features/research_2026_10/` (the five `research_*.md` reports and
+every script and output used here).*
 
 ## The seven findings
 
@@ -93,7 +93,7 @@ spawn area at all):
 | dm3 | RL 58→55% | water 68% (56), bridge.low 66% (118) |
 | dm3 | YA 61→69% | window 41% (85), YA floor 33% (161) |
 | dm3 | RA tunnel 61→67% | hill 39% (192), RA.low 25% (44) |
-| dm3 | lifts top 61→72% | lifts.below 26% (246) |
+| dm3 | lifts 61→72% | lifts.below 26% (246) |
 | dm3 | mega (SNG low) 64→75% | SNG.MH 51% (39), Ring 24% (190) |
 | dm3 | tele 66→75% | Ring 26% (192), RA.rox 24% (29) |
 | dm2 | RA/MH 56→64% | RA.MH/rox 67% (45), low.button 59% (68), big.stairs 46% (50), low.stairs 46% (37) |
@@ -126,7 +126,8 @@ spawn area at all):
 
 Lock here = per-second margin (enemy alive stack − own, +100 per RL) above the map's 85th percentile
 (dm3 386, dm2 400, e1m2 234, schloss 375); it has no RA term, so locked shares differ slightly from the 10 s
-study. Spawn-point coordinates and the script: scratchpad `spawn_points.py`. Lock breaks by item LOCATION
+study. Spawn-point coordinates and the script: `tools/mvd_features/research_2026_10/spawn_points.py`; the timer study is `spawn_item_timing.py` there
+(outcomes by the key items' state — up / in 1–8 s / 9–20 s / 20 s+ — at the spawn second, per spawn point). Lock breaks by item LOCATION
 (share of broken locks where the locked team took it in the last 30 s; 2026-10-17 rerun): dm3 YA 65%, RL 63%,
 RA 33%, hill mega 31%, Pent-side mega 23%, SNG mega 18%, quad 12%; dm2 big YA 76%, back-room RA 62%, tele YA
 50%, low RL 49%, secret RA 47%, high RL 41%, back-room mega 34%, GL mega 25%, quad 13%; e1m2 RL 64%, YA 39%,
@@ -147,9 +148,20 @@ is shotgun). Waiting to respawn changes nothing. So the decision is not "how do 
 this life produce before it ends". Players who go for an item straight off the spawn take one inside 14 s on
 34–40% of locked spawns and deal 45–55 damage per spawn; players who run at the fight first get an item on
 23–34%, deal 33–42, and one locked spawn in four produces nothing. Time to the item is the same for both
-(~7.5 s); the difference is the decision to go. Move to the room the spawn-point table gives you (dm3 RL
-spawn: the water; e1m2 door: the bridge; dm2 RA/MH: the rox), put shotgun damage on whoever you pass, take the
-yellow, and send `need armor weapon @ <loc>`.
+(~7.5 s); the difference is the decision to go.
+
+**Which way you go is an item-timer decision, not a fixed room.** (Peter, 2026-10-17: "if you spawn RL and
+RL time is soon, stay and fight for it; if RL was just taken, leave for LG or YA now.") The one-second games
+agree. dm3 RL spawn, 1,022 spawns: with the RL up at the second you spawn, 75% take it inside 20 s; with it
+coming in 1–8 s, 36% take it and 65% die inside 14 s — that is the fight for it, worth having with the stack
+to win it; with the RL 9–20 s out, 21% take it; with the RL 20 s+ away nobody gets it from that spawn, and
+the players who hang around the room die 76% against 40% for those who leave for the LG (up or coming on
+35% of those spawns) or the YA. Same shape everywhere: dm3 YA spawn with the YA up, 53% take it and 51% die;
+YA 9–20 s out, 12% and 62%. schloss tower-RL spawn with the RL up, 57% take it; RL 1–8 s out, 74% die in the
+fight for it. dm2 RA/MH spawn with the mega up, 51% take it and 48% die; mega 20 s+ away, 59% die. So the
+first move: read the timer of the weapon or armor you spawned next to; up or inside 8 s, stay and take it;
+gone for 15 s or more, leave now for the next item on the clock. Put shotgun damage on whoever you pass, and
+send `need armor weapon @ <loc>`. The Game Report shows this state for every rewind.
 
 **Your team is locked and one of them is farming a room.** Locks break as a stack race, not with a hero frag:
 in the 20 s before a lock broke the locked team had taken a yellow 62% of the time, an RL 50%, a mega 32%, on

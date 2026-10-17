@@ -80,6 +80,8 @@ export default defineNuxtConfig({
     '/coach/p/_fallback': { prerender: true, ssr: false },
     '/coach/player/**': { prerender: false, ssr: false },
     '/coach/player/_fallback': { prerender: true, ssr: false },
+    // public Game Report share links (/r/{gid}/{player}): SPA-only, served by the coach shell via _redirects
+    '/r/**': { prerender: false, ssr: false },
     '/glossary': { prerender: true },
     // per-map quad playbooks (static content + corpus numbers baked into useQuadPlaybook.ts)
     '/coach/quad/**': { prerender: true },

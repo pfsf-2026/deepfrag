@@ -32,7 +32,7 @@ SPAWNS = {
    -16
   ],
   [
-   "lifts top",
+   "lifts",
    513,
    768,
    216
@@ -224,7 +224,7 @@ CHAINED_LOCKED = {
    0.672,
    287
   ],
-  "lifts top": [
+  "lifts": [
    0.719,
    310
   ],
@@ -378,7 +378,7 @@ ROOM_SURVIVAL = {
     44
    ]
   },
-  "lifts top": {
+  "lifts": {
    "lifts.below": [
     0.26,
     246

@@ -31,3 +31,5 @@
 # /200.html (Cloudflare Pages turns a .html rewrite target into a 308 to /200).
 /coach/p/*        /coach/p/_fallback/   200
 /coach/player/*   /coach/player/_fallback/   200
+# public Game Report share links: same SPA shell, the router takes the URL
+/r/*              /coach/player/_fallback/   200

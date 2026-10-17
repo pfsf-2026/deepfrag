@@ -1,0 +1,565 @@
+
+dm2 · NG spawn · quad@Quad  (n=830)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        114         1%       75%     20% |         100% |       68%   (took if stayed   0%, if left   1%)
+  9-20 s       160         3%       74%     21% |         100% |       68%   (took if stayed   3%, if left   3%)
+  20 s+        536         0%       76%     25% |         100% |       68%   (took if stayed   0%, if left   0%)
+
+dm2 · NG spawn · ra@secret  (n=845)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           192         4%       72%     17% |         100% |       66%   (took if stayed   3%, if left   4%)
+  1-8 s        258         7%       77%     21% |         100% |       71%   (took if stayed   4%, if left   7%)
+  9-20 s       395         8%       77%     30% |         100% |       67%   (took if stayed   5%, if left   9%)
+
+dm2 · NG spawn · ya@big  (n=846)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           416        10%       77%     25% |         100% |       69%   (took if stayed  13%, if left   9%)
+  1-8 s        172        10%       74%     22% |         100% |       67%   (took if stayed   8%, if left  10%)
+  9-20 s       258         3%       74%     24% |         100% |       66%   (took if stayed   3%, if left   4%)
+
+dm2 · NG spawn · ya@tele.YA  (n=846)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           148         9%       75%     25% |         100% |       67%   (took if stayed  11%, if left   9%)
+  1-8 s        272        12%       74%     25% |         100% |       65%   (took if stayed   9%, if left  13%)
+  9-20 s       426        10%       77%     23% |         100% |       71%   (took if stayed   3%, if left  12%)
+
+dm2 · RA/MH spawn · mh@RA.MH  (n=901)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            94        51%       48%     19% |         100% |       36%   (took if stayed  22%, if left  58%)
+  1-8 s        128        32%       53%     27% |          94% |       38%   (took if stayed  23%, if left  35%)
+  9-20 s       279        10%       53%     24% |          99% |       38%   (took if stayed   9%, if left  11%)
+  20 s+        400         0%       59%     34% |          97% |       40%   (took if stayed   0%, if left   0%)
+
+dm2 · RA/MH spawn · ra@RA.MH  (n=913)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           156        46%       54%     32% |          96% |       35%   (took if stayed  24%, if left  57%)
+  1-8 s        308        33%       56%     29% |         100% |       37%   (took if stayed   8%, if left  43%)
+  9-20 s       449        18%       56%     28% |          96% |       41%   (took if stayed   9%, if left  21%)
+
+dm2 · RA/MH spawn · rl@low.RL  (n=906)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            35         6%       43%     20% |          86% |       32%   (took if stayed  14%, if left   4%)
+  1-8 s        231        11%       53%     18% |          93% |       44%   (took if stayed   2%, if left  13%)
+  9-20 s       349        19%       57%     31% |          98% |       39%   (took if stayed   7%, if left  24%)
+  20 s+        291         0%       57%     35% |          99% |       34%   (took if stayed   0%, if left   0%)
+
+dm2 · big stairs spawn · mh@GL  (n=925)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           274         4%       64%      3% |         100% |       62%   (took if stayed   0%, if left   4%)
+  1-8 s        137         2%       53%      2% |         100% |       52%   (took if stayed   0%, if left   2%)
+  9-20 s       225         2%       62%      5% |         100% |       60%   (took if stayed   0%, if left   2%)
+  20 s+        289         0%       62%      5% |         100% |       60%   (took if stayed   0%, if left   0%)
+
+dm2 · big stairs spawn · mh@RA.MH  (n=920)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            96         6%       66%      4% |         100% |       64%   (took if stayed   0%, if left   7%)
+  1-8 s        141         6%       53%      3% |         100% |       52%   (took if stayed  25%, if left   5%)
+  9-20 s       218         7%       64%      6% |         100% |       61%   (took if stayed   0%, if left   7%)
+  20 s+        465         0%       60%      3% |         100% |       59%   (took if stayed   0%, if left   0%)
+
+dm2 · big stairs spawn · quad@Quad  (n=915)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        102         0%       66%      4% |         100% |       64%   (took if stayed   0%, if left   0%)
+  9-20 s       176         1%       59%      5% |         100% |       56%   (took if stayed  11%, if left   1%)
+  20 s+        616         0%       61%      4% |         100% |       60%   (took if stayed   0%, if left   0%)
+
+dm2 · big stairs spawn · ra@RA.MH  (n=927)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           160         6%       64%      2% |         100% |       63%   (took if stayed   0%, if left   6%)
+  1-8 s        329         4%       62%      5% |         100% |       61%   (took if stayed   7%, if left   4%)
+  9-20 s       438         9%       59%      4% |         100% |       57%   (took if stayed   5%, if left   9%)
+
+dm2 · big stairs spawn · ra@secret  (n=928)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           186         4%       63%      4% |         100% |       61%   (took if stayed   0%, if left   4%)
+  1-8 s        292         5%       62%      4% |         100% |       60%   (took if stayed   0%, if left   5%)
+  9-20 s       450         5%       59%      4% |         100% |       58%   (took if stayed  11%, if left   5%)
+
+dm2 · big stairs spawn · rl@high.RL  (n=929)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           150         4%       64%      3% |         100% |       63%   (took if stayed   0%, if left   4%)
+  1-8 s        205         3%       59%      3% |         100% |       57%   (took if stayed  14%, if left   3%)
+  9-20 s       330         7%       62%      5% |         100% |       60%   (took if stayed  13%, if left   6%)
+  20 s+        244         0%       60%      5% |         100% |       58%   (took if stayed   0%, if left   0%)
+
+dm2 · big stairs spawn · rl@low.RL  (n=924)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        225         8%       69%      6% |         100% |       67%   (took if stayed   8%, if left   8%)
+  9-20 s       366        15%       58%      5% |         100% |       55%   (took if stayed   6%, if left  16%)
+  20 s+        315         0%       59%      3% |         100% |       58%   (took if stayed   0%, if left   0%)
+
+dm2 · big stairs spawn · ya@big  (n=1858)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           920        32%       58%      4% |         100% |       56%   (took if stayed   8%, if left  33%)
+  1-8 s        360        18%       66%      4% |         100% |       65%   (took if stayed   6%, if left  18%)
+  9-20 s       578         2%       62%      4% |         100% |       61%   (took if stayed   0%, if left   2%)
+
+dm2 · low RL spawn · mh@GL  (n=937)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           253         2%       70%     32% |         100% |       56%   (took if stayed   4%, if left   1%)
+  1-8 s        131         3%       67%     27% |          97% |       56%   (took if stayed   3%, if left   3%)
+  9-20 s       228         4%       70%     35% |          99% |       54%   (took if stayed   3%, if left   4%)
+  20 s+        325         0%       67%     29% |         100% |       54%   (took if stayed   0%, if left   0%)
+
+dm2 · low RL spawn · mh@RA.MH  (n=931)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            95         9%       66%     36% |         100% |       48%   (took if stayed   3%, if left  13%)
+  1-8 s        154        12%       68%     25% |         100% |       58%   (took if stayed   3%, if left  15%)
+  9-20 s       260         9%       73%     33% |         100% |       59%   (took if stayed   9%, if left   9%)
+  20 s+        422         0%       67%     30% |          99% |       53%   (took if stayed   0%, if left   0%)
+
+dm2 · low RL spawn · ra@RA.MH  (n=945)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           162        11%       73%     31% |         100% |       61%   (took if stayed  10%, if left  12%)
+  1-8 s        336        13%       67%     32% |         100% |       51%   (took if stayed   6%, if left  16%)
+  9-20 s       447        12%       69%     30% |          99% |       56%   (took if stayed  10%, if left  12%)
+
+dm2 · low RL spawn · ra@secret  (n=943)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           198        11%       73%     33% |         100% |       60%   (took if stayed   5%, if left  14%)
+  1-8 s        314         8%       67%     32% |          99% |       52%   (took if stayed   1%, if left  11%)
+  9-20 s       431        10%       68%     29% |          99% |       55%   (took if stayed   2%, if left  14%)
+
+dm2 · low RL spawn · rl@low.RL  (n=937)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            41        29%       80%     68% |         100% |       38%   (took if stayed  18%, if left  54%)
+  1-8 s        250        21%       67%     32% |         100% |       52%   (took if stayed  11%, if left  25%)
+  9-20 s       347        16%       69%     26% |         100% |       59%   (took if stayed  13%, if left  16%)
+  20 s+        299         0%       67%     31% |          98% |       53%   (took if stayed   0%, if left   0%)
+
+dm2 · low RL spawn · ya@big  (n=945)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           461         7%       67%     30% |          99% |       53%   (took if stayed  10%, if left   5%)
+  1-8 s        205        10%       72%     35% |         100% |       57%   (took if stayed  15%, if left   7%)
+  9-20 s       279         4%       69%     30% |          99% |       56%   (took if stayed   5%, if left   4%)
+
+dm2 · low button spawn · mh@RA.MH  (n=868)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            81        10%       65%      6% |         100% |       63%   (took if stayed  20%, if left   9%)
+  1-8 s        132        13%       73%      8% |         100% |       70%   (took if stayed  10%, if left  13%)
+  9-20 s       215         9%       62%      6% |         100% |       60%   (took if stayed   0%, if left  10%)
+  20 s+        440         0%       68%      6% |         100% |       66%   (took if stayed   0%, if left   0%)
+
+dm2 · low button spawn · ra@RA.MH  (n=876)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           161        10%       70%      8% |         100% |       67%   (took if stayed   0%, if left  11%)
+  1-8 s        278         9%       66%      6% |         100% |       64%   (took if stayed   6%, if left   9%)
+  9-20 s       436        12%       66%      6% |         100% |       64%   (took if stayed   0%, if left  13%)
+
+dm2 · low button spawn · rl@low.RL  (n=870)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            31        26%       77%      6% |         100% |       76%   (took if stayed   0%, if left  28%)
+  1-8 s        202        21%       66%      7% |         100% |       64%   (took if stayed   0%, if left  23%)
+  9-20 s       343        15%       65%      6% |         100% |       63%   (took if stayed   0%, if left  16%)
+  20 s+        294         0%       68%      6% |         100% |       66%   (took if stayed   0%, if left   0%)
+
+dm2 · quad button spawn · mh@GL  (n=953)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           302         3%       73%     12% |         100% |       69%   (took if stayed   3%, if left   3%)
+  1-8 s        146         3%       70%     11% |         100% |       66%   (took if stayed   6%, if left   2%)
+  9-20 s       212         5%       63%      9% |         100% |       60%   (took if stayed   0%, if left   5%)
+  20 s+        293         0%       74%      9% |         100% |       71%   (took if stayed   0%, if left   0%)
+
+dm2 · quad button spawn · quad@Quad  (n=938)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            32         3%       78%     19% |         100% |       73%   (took if stayed   0%, if left   4%)
+  1-8 s        108         0%       73%      9% |         100% |       70%   (took if stayed   0%, if left   0%)
+  9-20 s       196         2%       74%     10% |         100% |       72%   (took if stayed   5%, if left   2%)
+  20 s+        602         0%       67%     10% |         100% |       64%   (took if stayed   0%, if left   0%)
+
+dm2 · quad button spawn · ra@secret  (n=958)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           196         5%       70%      9% |         100% |       67%   (took if stayed  11%, if left   4%)
+  1-8 s        310         4%       67%      9% |         100% |       64%   (took if stayed   7%, if left   4%)
+  9-20 s       452         9%       72%     11% |         100% |       69%   (took if stayed  10%, if left   8%)
+
+dm2 · quad button spawn · rl@high.RL  (n=952)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           150         6%       69%      9% |         100% |       65%   (took if stayed  14%, if left   5%)
+  1-8 s        223         4%       64%      8% |         100% |       60%   (took if stayed   0%, if left   5%)
+  9-20 s       304         6%       70%      9% |         100% |       67%   (took if stayed   7%, if left   6%)
+  20 s+        275         0%       76%     13% |         100% |       73%   (took if stayed   0%, if left   0%)
+
+dm2 · quad button spawn · ya@big  (n=1921)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           972        18%       68%      9% |         100% |       65%   (took if stayed   7%, if left  20%)
+  1-8 s        388         9%       69%     11% |         100% |       65%   (took if stayed   5%, if left   9%)
+  9-20 s       561         3%       75%     11% |         100% |       72%   (took if stayed   2%, if left   3%)
+
+dm2 · tele YA side spawn · ra@secret  (n=871)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           177         3%       66%     36% |         100% |       47%   (took if stayed   8%, if left   1%)
+  1-8 s        286         2%       67%     36% |         100% |       49%   (took if stayed   4%, if left   1%)
+  9-20 s       408         5%       66%     38% |         100% |       45%   (took if stayed   3%, if left   6%)
+
+dm2 · tele YA side spawn · ya@tele.YA  (n=871)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           156        33%       64%     45% |         100% |       35%   (took if stayed   1%, if left  58%)
+  1-8 s        301        25%       68%     39% |         100% |       48%   (took if stayed   6%, if left  37%)
+  9-20 s       414        12%       66%     33% |         100% |       50%   (took if stayed   7%, if left  14%)
+
+dm2 · tele low spawn · quad@Quad  (n=888)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        135         5%       66%     25% |         100% |       54%   (took if stayed   0%, if left   7%)
+  9-20 s       168         7%       71%     40% |         100% |       51%   (took if stayed   1%, if left  11%)
+  20 s+        558         0%       72%     39% |         100% |       55%   (took if stayed   0%, if left   0%)
+
+dm2 · tele low spawn · ra@secret  (n=902)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           190         2%       64%     31% |         100% |       48%   (took if stayed   7%, if left   0%)
+  1-8 s        292         1%       71%     34% |         100% |       56%   (took if stayed   2%, if left   1%)
+  9-20 s       420         2%       72%     40% |         100% |       54%   (took if stayed   2%, if left   2%)
+
+dm2 · tele low spawn · ya@tele.YA  (n=902)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           184        36%       67%     40% |         100% |       45%   (took if stayed   8%, if left  55%)
+  1-8 s        295        20%       71%     40% |         100% |       51%   (took if stayed   2%, if left  32%)
+  9-20 s       423        11%       72%     31% |         100% |       59%   (took if stayed   6%, if left  13%)
+
+dm2 · water spawn · mh@GL  (n=914)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           279         7%       75%      9% |         100% |       73%   (took if stayed   0%, if left   8%)
+  1-8 s        133         8%       80%     11% |         100% |       77%   (took if stayed  13%, if left   7%)
+  9-20 s       209         3%       76%      7% |         100% |       74%   (took if stayed   0%, if left   4%)
+  20 s+        293         0%       80%     11% |         100% |       77%   (took if stayed   0%, if left   0%)
+
+dm2 · water spawn · quad@Quad  (n=895)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        110         2%       77%      8% |         100% |       75%   (took if stayed   0%, if left   2%)
+  9-20 s       179         7%       79%     10% |         100% |       77%   (took if stayed  17%, if left   6%)
+  20 s+        577         0%       76%     10% |         100% |       74%   (took if stayed   0%, if left   0%)
+
+dm2 · water spawn · ra@secret  (n=918)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           211         3%       79%      6% |         100% |       77%   (took if stayed   0%, if left   4%)
+  1-8 s        314         6%       74%     10% |         100% |       71%   (took if stayed   7%, if left   6%)
+  9-20 s       393         5%       80%     12% |         100% |       78%   (took if stayed   2%, if left   5%)
+
+dm2 · water spawn · ya@big  (n=919)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           460         7%       79%      9% |         100% |       77%   (took if stayed  14%, if left   6%)
+  1-8 s        212         9%       75%      9% |         100% |       72%   (took if stayed  10%, if left   9%)
+  9-20 s       247         5%       78%     11% |         100% |       75%   (took if stayed   4%, if left   5%)
+
+dm2 · water spawn · ya@tele.YA  (n=916)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           172         9%       79%     10% |         100% |       77%   (took if stayed   0%, if left  10%)
+  1-8 s        351        10%       72%      9% |         100% |       69%   (took if stayed   3%, if left  11%)
+  9-20 s       393        11%       82%      9% |         100% |       80%   (took if stayed  14%, if left  11%)
+
+dm3 · RA tunnel spawn · mh@hill  (n=1049)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           106        51%       46%      8% |          56% |       45%   (took if stayed  11%, if left  55%)
+  1-8 s        197        21%       59%     10% |          74% |       57%   (took if stayed   5%, if left  23%)
+  9-20 s       282         7%       63%      8% |          91% |       61%   (took if stayed  13%, if left   6%)
+  20 s+        464         0%       63%     12% |          84% |       60%   (took if stayed   0%, if left   0%)
+
+dm3 · RA tunnel spawn · ra@RA  (n=1059)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           261         3%       59%     13% |          85% |       55%   (took if stayed   0%, if left   3%)
+  1-8 s        317         3%       62%     10% |          78% |       61%   (took if stayed   0%, if left   3%)
+  9-20 s       481         5%       61%      9% |          81% |       59%   (took if stayed   2%, if left   5%)
+
+dm3 · RL spawn · lg@water.LG  (n=1028)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           141        17%       60%     46% |          88% |       37%   (took if stayed   8%, if left  25%)
+  1-8 s        221        21%       58%     36% |          86% |       43%   (took if stayed   5%, if left  30%)
+  9-20 s       353        14%       56%     38% |          86% |       38%   (took if stayed  16%, if left  13%)
+  20 s+        313         0%       57%     35% |          91% |       38%   (took if stayed   0%, if left   0%)
+
+dm3 · RL spawn · mh@Pent  (n=1027)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           495         1%       58%     39% |          88% |       40%   (took if stayed   1%, if left   1%)
+  1-8 s        100         2%       52%     38% |          89% |       29%   (took if stayed   0%, if left   3%)
+  9-20 s       168         1%       58%     40% |          81% |       42%   (took if stayed   0%, if left   1%)
+  20 s+        264         0%       58%     36% |          91% |       40%   (took if stayed   0%, if left   0%)
+
+dm3 · RL spawn · quad@Quad  (n=997)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        147         0%       56%     39% |          83% |       39%   (took if stayed   0%, if left   0%)
+  9-20 s       180         3%       53%     36% |          94% |       30%   (took if stayed   2%, if left   3%)
+  20 s+        655         0%       58%     38% |          87% |       41%   (took if stayed   0%, if left   0%)
+
+dm3 · RL spawn · rl@RL  (n=1022)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            63        75%       56%     27% |          88% |       43%   (took if stayed  59%, if left  80%)
+  1-8 s        257        36%       65%     45% |          96% |       39%   (took if stayed  26%, if left  44%)
+  9-20 s       388        21%       57%     40% |          89% |       36%   (took if stayed   9%, if left  29%)
+  20 s+        314         0%       51%     32% |          76% |       40%   (took if stayed   0%, if left   0%)
+
+dm3 · YA spawn · lg@water.LG  (n=1035)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           158         8%       65%     24% |          82% |       60%   (took if stayed   8%, if left   8%)
+  1-8 s        236         9%       64%     16% |          95% |       58%   (took if stayed   5%, if left  10%)
+  9-20 s       340        17%       60%     13% |          89% |       56%   (took if stayed   9%, if left  18%)
+  20 s+        301         0%       57%     15% |          89% |       52%   (took if stayed   0%, if left   0%)
+
+dm3 · YA spawn · ya@YA.box  (n=1034)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           170        53%       51%     19% |          79% |       45%   (took if stayed  18%, if left  61%)
+  1-8 s        342        23%       63%     19% |          92% |       57%   (took if stayed   6%, if left  27%)
+  9-20 s       522        12%       62%     13% |          89% |       58%   (took if stayed   7%, if left  13%)
+
+dm3 · lifts top spawn · quad@Quad  (n=1010)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        144         6%       69%      8% |          82% |       68%   (took if stayed   0%, if left   6%)
+  9-20 s       205         5%       61%     10% |          67% |       60%   (took if stayed   5%, if left   5%)
+  20 s+        645         0%       59%      8% |          69% |       58%   (took if stayed   0%, if left   0%)
+
+dm3 · mega (SNG low) spawn · mh@SNG.MH  (n=1021)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           412         3%       62%      9% |          89% |       59%   (took if stayed   3%, if left   3%)
+  1-8 s        103         5%       73%     11% |          82% |       72%   (took if stayed   0%, if left   5%)
+  9-20 s       180         3%       60%     14% |          88% |       55%   (took if stayed   0%, if left   3%)
+  20 s+        326         0%       66%     16% |          78% |       63%   (took if stayed   0%, if left   0%)
+
+dm3 · tele spawn · mh@SNG.MH  (n=1031)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           440         2%       65%     10% |          84% |       63%   (took if stayed   2%, if left   2%)
+  1-8 s        107         1%       70%     15% |          81% |       68%   (took if stayed   0%, if left   1%)
+  9-20 s       174         1%       70%      9% |          94% |       67%   (took if stayed   0%, if left   1%)
+  20 s+        310         0%       64%     15% |          85% |       60%   (took if stayed   0%, if left   0%)
+
+e1m2 · GL-quad a spawn · quad@Quad.box  (n=692)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        103        11%       78%     19% |         100% |       72%   (took if stayed   5%, if left  12%)
+  9-20 s       130         4%       73%     14% |         100% |       69%   (took if stayed   0%, if left   4%)
+  20 s+        448         0%       71%     12% |         100% |       67%   (took if stayed   0%, if left   0%)
+
+e1m2 · GL-quad a spawn · ya@YA  (n=708)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            62         3%       71%     13% |         100% |       67%   (took if stayed   0%, if left   4%)
+  1-8 s        275         8%       73%     11% |         100% |       70%   (took if stayed   3%, if left   9%)
+  9-20 s       371        13%       73%     16% |         100% |       68%   (took if stayed   7%, if left  14%)
+
+e1m2 · GL-quad b spawn · quad@Quad.box  (n=693)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        113         8%       85%      7% |         100% |       84%   (took if stayed   0%, if left   9%)
+  9-20 s       122        11%       66%      2% |         100% |       66%   (took if stayed   0%, if left  11%)
+  20 s+        442         0%       70%      9% |         100% |       67%   (took if stayed   0%, if left   0%)
+
+e1m2 · GL-quad b spawn · ya@YA  (n=707)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            63         8%       67%      5% |         100% |       65%   (took if stayed   0%, if left   8%)
+  1-8 s        254        10%       72%      6% |         100% |       70%   (took if stayed   7%, if left  10%)
+  9-20 s       390         7%       73%      9% |         100% |       71%   (took if stayed   3%, if left   8%)
+
+e1m2 · MH low spawn · mh@MH  (n=693)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           110        40%       47%      5% |         100% |       44%   (took if stayed   0%, if left  42%)
+  1-8 s        147        22%       55%     16% |         100% |       46%   (took if stayed   8%, if left  24%)
+  9-20 s       191         6%       63%     15% |         100% |       57%   (took if stayed   7%, if left   6%)
+  20 s+        245         0%       63%     14% |         100% |       57%   (took if stayed   0%, if left   0%)
+
+e1m2 · RL spawn · rl@RL  (n=698)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        169        22%       69%     37% |          98% |       51%   (took if stayed  10%, if left  30%)
+  9-20 s       289        19%       55%     24% |          89% |       44%   (took if stayed  13%, if left  21%)
+  20 s+        220         0%       57%     17% |          81% |       52%   (took if stayed   0%, if left   0%)
+
+e1m2 · YA spawn · ya@YA  (n=694)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            64        33%       55%     25% |         100% |       40%   (took if stayed  19%, if left  38%)
+  1-8 s        257        16%       68%     33% |          99% |       52%   (took if stayed   5%, if left  21%)
+  9-20 s       373        12%       67%     29% |          98% |       54%   (took if stayed   8%, if left  14%)
+
+e1m2 · cross spawn · mh@MH  (n=708)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            94        13%       66%     10% |         100% |       62%   (took if stayed   0%, if left  14%)
+  1-8 s        133         8%       71%     13% |         100% |       66%   (took if stayed   6%, if left   8%)
+  9-20 s       233         5%       70%      9% |         100% |       67%   (took if stayed  10%, if left   4%)
+  20 s+        248         0%       73%     13% |         100% |       69%   (took if stayed   0%, if left   0%)
+
+e1m2 · door spawn · ya@YA  (n=709)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            69         0%       67%      1% |         100% |       66%   (took if stayed   0%, if left   0%)
+  1-8 s        268         3%       62%      2% |         100% |       61%   (took if stayed  20%, if left   3%)
+  9-20 s       372         6%       58%      3% |         100% |       57%   (took if stayed   8%, if left   6%)
+
+e1m2 · quad spawn · quad@Quad.box  (n=687)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        104        12%       75%     50% |         100% |       50%   (took if stayed   4%, if left  21%)
+  9-20 s       128         9%       73%     12% |         100% |       70%   (took if stayed   6%, if left   9%)
+  20 s+        448         0%       71%     14% |         100% |       66%   (took if stayed   0%, if left   0%)
+
+e1m2 · spikes spawn · ya@YA  (n=674)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            64         8%       59%      3% |         100% |       58%   (took if stayed   0%, if left   8%)
+  1-8 s        242        12%       59%      2% |         100% |       58%   (took if stayed  40%, if left  12%)
+  9-20 s       368         8%       64%      2% |         100% |       63%   (took if stayed   0%, if left   9%)
+
+schloss · cathedral SSG spawn · ra@RA  (n=983)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           163         0%       68%      6% |         100% |       66%   (took if stayed   0%, if left   0%)
+  1-8 s        338         3%       72%      3% |         100% |       71%   (took if stayed   0%, if left   3%)
+  9-20 s       482         4%       67%      5% |         100% |       65%   (took if stayed   0%, if left   4%)
+
+schloss · cathedral SSG spawn · rl@cathedral  (n=976)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            64        34%       62%      2% |         100% |       62%   (took if stayed   0%, if left  35%)
+  1-8 s        254        28%       71%      3% |         100% |       70%   (took if stayed  14%, if left  28%)
+  9-20 s       331        19%       68%      3% |         100% |       67%   (took if stayed  11%, if left  19%)
+  20 s+        327         0%       70%      7% |         100% |       67%   (took if stayed   0%, if left   0%)
+
+schloss · cathedral SSG spawn · ya@cathedral.YA  (n=983)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           103        19%       61%      0% |           -  |       61%   (took if stayed   - , if left  19%)
+  1-8 s        349        15%       68%      4% |         100% |       67%   (took if stayed  13%, if left  15%)
+  9-20 s       531        14%       71%      5% |         100% |       69%   (took if stayed   8%, if left  14%)
+
+schloss · cemetery low spawn · mh@yard  (n=951)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           165        11%       63%      8% |         100% |       60%   (took if stayed  23%, if left  10%)
+  1-8 s        155         9%       57%      9% |         100% |       53%   (took if stayed   0%, if left  10%)
+  9-20 s       270         6%       66%      8% |         100% |       63%   (took if stayed   5%, if left   6%)
+  20 s+        361         0%       66%      7% |         100% |       64%   (took if stayed   0%, if left   0%)
+
+schloss · cemetery low spawn · ra@RA  (n=961)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           171        17%       57%      8% |         100% |       54%   (took if stayed   0%, if left  18%)
+  1-8 s        337        14%       62%      9% |         100% |       59%   (took if stayed   3%, if left  15%)
+  9-20 s       453         9%       69%      7% |         100% |       66%   (took if stayed   3%, if left   9%)
+
+schloss · cemetery low spawn · rl@cathedral  (n=956)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            59         7%       64%      7% |         100% |       62%   (took if stayed  25%, if left   5%)
+  1-8 s        239         7%       62%      8% |         100% |       59%   (took if stayed  16%, if left   6%)
+  9-20 s       349         9%       66%      7% |         100% |       63%   (took if stayed  16%, if left   9%)
+  20 s+        309         0%       65%      8% |         100% |       62%   (took if stayed   0%, if left   0%)
+
+schloss · cemetery tele spawn · mh@cemetary  (n=958)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           149        22%       67%      1% |         100% |       67%   (took if stayed   0%, if left  22%)
+  1-8 s        167         8%       65%      3% |         100% |       64%   (took if stayed   0%, if left   9%)
+  9-20 s       279         6%       68%      3% |         100% |       67%   (took if stayed  25%, if left   5%)
+  20 s+        363         0%       72%      2% |         100% |       71%   (took if stayed   0%, if left   0%)
+
+schloss · cemetery tele spawn · ra@RA  (n=969)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           170         5%       68%      2% |         100% |       67%   (took if stayed   0%, if left   5%)
+  1-8 s        331         5%       67%      2% |         100% |       66%   (took if stayed   0%, if left   6%)
+  9-20 s       468         8%       71%      3% |         100% |       70%   (took if stayed   7%, if left   8%)
+
+schloss · quad spawn · mh@yard  (n=908)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           147         5%       67%     13% |         100% |       62%   (took if stayed   0%, if left   5%)
+  1-8 s        152         8%       66%      6% |         100% |       64%   (took if stayed  22%, if left   7%)
+  9-20 s       265         6%       74%     14% |         100% |       69%   (took if stayed   0%, if left   7%)
+  20 s+        344         0%       72%     11% |         100% |       68%   (took if stayed   0%, if left   0%)
+
+schloss · quad spawn · quad@Quad  (n=889)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        111         7%       71%     25% |         100% |       61%   (took if stayed   4%, if left   8%)
+  9-20 s       180         9%       74%      9% |         100% |       71%   (took if stayed  12%, if left   9%)
+  20 s+        590         0%       69%      9% |         100% |       66%   (took if stayed   0%, if left   0%)
+
+schloss · quad spawn · ra@RA  (n=916)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           160         1%       74%     10% |         100% |       71%   (took if stayed   0%, if left   1%)
+  1-8 s        295         1%       66%      8% |         100% |       64%   (took if stayed   4%, if left   1%)
+  9-20 s       461         3%       72%     14% |         100% |       68%   (took if stayed   3%, if left   3%)
+
+schloss · quad spawn · rl@cathedral  (n=911)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            46        30%       65%     13% |         100% |       60%   (took if stayed   0%, if left  35%)
+  1-8 s        231        21%       72%     13% |         100% |       68%   (took if stayed  10%, if left  23%)
+  9-20 s       341        19%       72%     12% |         100% |       68%   (took if stayed  20%, if left  19%)
+  20 s+        293         0%       69%     10% |         100% |       66%   (took if stayed   0%, if left   0%)
+
+schloss · quad high spawn · mh@yard  (n=935)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           149        17%       74%     11% |         100% |       70%   (took if stayed  12%, if left  17%)
+  1-8 s        182        16%       70%     12% |         100% |       66%   (took if stayed   9%, if left  17%)
+  9-20 s       257         6%       73%     12% |         100% |       69%   (took if stayed   6%, if left   6%)
+  20 s+        347         0%       69%     13% |         100% |       64%   (took if stayed   0%, if left   0%)
+
+schloss · quad high spawn · quad@Quad  (n=909)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  1-8 s        146         9%       77%     17% |         100% |       73%   (took if stayed   0%, if left  11%)
+  9-20 s       154         7%       71%     11% |         100% |       67%   (took if stayed  18%, if left   6%)
+  20 s+        599         0%       69%     12% |         100% |       65%   (took if stayed   0%, if left   0%)
+
+schloss · quad high spawn · ra@RA  (n=940)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           159         1%       69%     14% |         100% |       63%   (took if stayed   0%, if left   1%)
+  1-8 s        330         4%       71%     12% |         100% |       67%   (took if stayed   2%, if left   4%)
+  9-20 s       451         5%       72%     12% |         100% |       68%   (took if stayed   2%, if left   5%)
+
+schloss · quad high spawn · rl@cathedral  (n=937)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            50        16%       66%      6% |         100% |       64%   (took if stayed  33%, if left  15%)
+  1-8 s        235        10%       74%     11% |         100% |       70%   (took if stayed  15%, if left  10%)
+  9-20 s       339        14%       71%     15% |         100% |       66%   (took if stayed  12%, if left  14%)
+  20 s+        313         0%       70%     11% |         100% |       66%   (took if stayed   0%, if left   0%)
+
+schloss · quad high spawn · ya@cathedral.YA  (n=939)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           101         8%       72%     12% |         100% |       69%   (took if stayed   8%, if left   8%)
+  1-8 s        335         8%       71%      8% |         100% |       68%   (took if stayed  11%, if left   8%)
+  9-20 s       503        12%       71%     15% |         100% |       66%   (took if stayed   4%, if left  13%)
+
+schloss · quad low spawn · mh@yard  (n=931)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           155        16%       64%      9% |         100% |       60%   (took if stayed   7%, if left  17%)
+  1-8 s        177        16%       68%     14% |         100% |       63%   (took if stayed  21%, if left  15%)
+  9-20 s       245         6%       69%     12% |         100% |       64%   (took if stayed   7%, if left   6%)
+  20 s+        354         0%       66%     11% |         100% |       62%   (took if stayed   0%, if left   0%)
+
+schloss · quad low spawn · rl@tower.RL  (n=935)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            49         0%       67%      8% |         100% |       64%   (took if stayed   0%, if left   0%)
+  1-8 s        226        12%       65%      9% |         100% |       61%   (took if stayed  10%, if left  12%)
+  9-20 s       366        12%       70%     11% |         100% |       66%   (took if stayed  10%, if left  12%)
+  20 s+        294         0%       64%     14% |         100% |       58%   (took if stayed   0%, if left   0%)
+
+schloss · quad low spawn · ya@tower  (n=943)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           161        29%       58%     12% |         100% |       52%   (took if stayed   5%, if left  32%)
+  1-8 s        336        15%       68%     12% |         100% |       63%   (took if stayed  10%, if left  16%)
+  9-20 s       446        10%       69%     11% |         100% |       65%   (took if stayed  14%, if left   9%)
+
+schloss · tower RL spawn · mh@yard  (n=991)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           158         9%       70%     41% |          98% |       49%   (took if stayed   6%, if left  11%)
+  1-8 s        194         9%       63%     28% |         100% |       49%   (took if stayed   7%, if left   9%)
+  9-20 s       288         7%       72%     39% |          98% |       55%   (took if stayed   6%, if left   8%)
+  20 s+        351         0%       70%     36% |          98% |       54%   (took if stayed   0%, if left   0%)
+
+schloss · tower RL spawn · rl@tower.RL  (n=993)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            70        57%       57%     41% |         100% |       27%   (took if stayed  24%, if left  80%)
+  1-8 s        252        24%       74%     44% |         100% |       53%   (took if stayed  18%, if left  29%)
+  9-20 s       365        14%       68%     34% |          96% |       53%   (took if stayed  11%, if left  16%)
+  20 s+        306         0%       69%     31% |          99% |       55%   (took if stayed   0%, if left   0%)
+
+schloss · tower RL spawn · ya@tower  (n=1003)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           162        15%       64%     35% |         100% |       44%   (took if stayed   0%, if left  23%)
+  1-8 s        336        23%       67%     37% |          98% |       48%   (took if stayed   4%, if left  34%)
+  9-20 s       505        15%       72%     36% |          98% |       58%   (took if stayed   7%, if left  19%)
+
+schloss · tower entry spawn · mh@yard  (n=936)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           143        10%       59%      8% |         100% |       56%   (took if stayed   0%, if left  11%)
+  1-8 s        173         9%       72%      8% |         100% |       69%   (took if stayed   0%, if left  10%)
+  9-20 s       274         5%       74%      4% |         100% |       73%   (took if stayed   9%, if left   5%)
+  20 s+        346         0%       70%      5% |         100% |       69%   (took if stayed   0%, if left   0%)
+
+schloss · tower entry spawn · ra@RA  (n=944)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           152         1%       68%      4% |         100% |       67%   (took if stayed   0%, if left   1%)
+  1-8 s        318         4%       69%      5% |         100% |       67%   (took if stayed   0%, if left   5%)
+  9-20 s       474         3%       72%      7% |         100% |       70%   (took if stayed   0%, if left   3%)
+
+schloss · tower entry spawn · rl@tower.RL  (n=939)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up            49        16%       69%      4% |         100% |       68%   (took if stayed   0%, if left  17%)
+  1-8 s        247        11%       74%      6% |         100% |       73%   (took if stayed   0%, if left  12%)
+  9-20 s       349        12%       70%      3% |         100% |       69%   (took if stayed   8%, if left  12%)
+  20 s+        294         0%       67%      8% |         100% |       64%   (took if stayed   0%, if left   0%)
+
+schloss · tower entry spawn · ya@tower  (n=947)
+  item at spawn     n  took<=20s  died<14s  stayed | stayed: died     | left: died
+  up           157        10%       72%      4% |         100% |       71%   (took if stayed  17%, if left   9%)
+  1-8 s        312        13%       67%      6% |         100% |       64%   (took if stayed   5%, if left  13%)
+  9-20 s       478        12%       72%      6% |         100% |       71%   (took if stayed  11%, if left  12%)

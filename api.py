@@ -11103,3 +11103,77 @@ def api_game_report_answers(canonical_id: str, game_id: int, authorization: str 
                        WHERE hub_game_id=%s AND canonical_id=%s AND discord_id=%s ORDER BY created_at""",
                     (game_id, cid, u["discord_id"]))
         return {"answers": [{"idx": r["rewind_idx"], "answer": r["answer"], "at": str(r["created_at"])} for r in cur.fetchall()]}
+
+
+# ── Twitch VOD for a game (2026-10-17, Peter: streamers can jump to a moment with voice comms) ──
+# Needs TWITCH_CLIENT_ID / TWITCH_CLIENT_SECRET in the Cloud Run env (a Twitch app, client
+# credentials flow). Without them the endpoint answers 503 and the page falls back to a
+# manual "VOD URL + stream start time" box.
+_TW = {"token": None, "exp": 0.0}
+
+
+def _twitch_token():
+    cid, sec = os.environ.get("TWITCH_CLIENT_ID"), os.environ.get("TWITCH_CLIENT_SECRET")
+    if not cid or not sec:
+        return None
+    if _TW["token"] and _TW["exp"] > _time.time() + 60:
+        return _TW["token"]
+    import urllib.parse, urllib.request
+    data = urllib.parse.urlencode({"client_id": cid, "client_secret": sec, "grant_type": "client_credentials"}).encode()
+    with urllib.request.urlopen(urllib.request.Request("https://id.twitch.tv/oauth2/token", data=data, method="POST"), timeout=20) as r:
+        j = json.loads(r.read())
+    _TW["token"] = j["access_token"]; _TW["exp"] = _time.time() + int(j.get("expires_in", 3600))
+    return _TW["token"]
+
+
+def _twitch_get(path, params):
+    import urllib.parse, urllib.request
+    req = urllib.request.Request("https://api.twitch.tv/helix/" + path + "?" + urllib.parse.urlencode(params, doseq=True),
+                                 headers={"Client-Id": os.environ["TWITCH_CLIENT_ID"], "Authorization": f"Bearer {_twitch_token()}"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read())
+
+
+def _twitch_duration_s(d):
+    """Helix durations look like '3h2m1s'."""
+    import re
+    m = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", d or "")
+    return (int(m.group(1) or 0) * 3600 + int(m.group(2) or 0) * 60 + int(m.group(3) or 0)) if m else 0
+
+
+@app.get("/api/players/{canonical_id}/games/{game_id}/vod")
+def api_game_vod(canonical_id: str, game_id: int, channel: str = ""):
+    """The Twitch VOD on `channel` that covers this game, and where in it the match starts
+    (offset_s). The page adds ?t= links per moment: offset_s + match seconds."""
+    import re
+    channel = re.sub(r"[^a-z0-9_]", "", (channel or "").lower())[:25]
+    if not channel:
+        raise HTTPException(400, "channel required")
+    if not os.environ.get("TWITCH_CLIENT_ID") or not os.environ.get("TWITCH_CLIENT_SECRET"):
+        raise HTTPException(503, "twitch lookup not configured")
+    with pg() as conn:
+        cur = conn.cursor()
+        cid = _resolve_cid(cur, canonical_id)
+        _game_report_ensure(cur)
+        cur.execute("SELECT report FROM game_reports WHERE hub_game_id=%s AND canonical_id=%s", (game_id, cid))
+        row = cur.fetchone()
+    start = (row["report"] or {}).get("match_start_wall_ms") if row else None
+    if not start:
+        raise HTTPException(404, "open the report first")
+    try:
+        users = _twitch_get("users", {"login": channel}).get("data") or []
+        if not users:
+            raise HTTPException(404, "twitch channel not found")
+        vids = _twitch_get("videos", {"user_id": users[0]["id"], "type": "archive", "first": 50}).get("data") or []
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"twitch: {e}")
+    from datetime import datetime
+    for v in vids:
+        c = datetime.fromisoformat(str(v.get("created_at", "")).replace("Z", "+00:00")).timestamp() * 1000
+        dur = _twitch_duration_s(v.get("duration")) * 1000
+        if c - 60000 <= start <= c + dur + 60000:
+            return {"video_id": v["id"], "url": v["url"], "title": v.get("title"), "created_at": v["created_at"],
+                    "offset_s": max(0, int((start - c) / 1000)), "channel": channel}
+    raise HTTPException(404, "no VOD on that channel covers this game")

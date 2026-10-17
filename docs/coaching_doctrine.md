@@ -31,10 +31,12 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
 - "Near quad" = **inside the quad room** (per-map room list in `tools/mvd_features/quad_rooms.json`), not a
   straight-line radius; a player who died in the room within 10 s of the spawn counts as having been there.
 
-- **Spawn points per map** (clustered from demo positions in 60 TB4 games, 2026-10-17; labels are mine —
-  Peter to confirm the dm3 "mega" and "lifts top" names). A "spawn" in any table means one of these, never an
+- **Spawn points per map** (clustered from demo positions in 60 TB4 games, 2026-10-17; names confirmed by
+  Peter the same day: keep "mega (SNG low)" with the qualifier — there are two SNG spawns on dm3, one facing
+  tele and one facing into the SNG room, and both usually turn and run to tele on the first spawn; "lifts"
+  not "lifts top"). A "spawn" in any table means one of these, never an
   area name from the `.loc` files. dm3 (6): RL (1520,431,-88), YA (1472,-928,-24), tele (-631,-679,-16),
-  mega/SNG low (-880,-232,-16), lifts top (513,768,216), RA tunnel (192,-208,-176). dm2 (9): quad button
+  mega/SNG low (-880,-232,-16), lifts (513,768,216), RA tunnel (192,-208,-176). dm2 (9): quad button
   (1712,-504,24), low RL (2576,-1328,24), big stairs (2048,-1352,136), water (2624,-487,32), RA/MH
   (2704,-2048,128), tele low (2248,-16,-136), low button (2176,-2176,84), tele YA side (2543,-31,-64), NG
   (2560,-192,32). e1m2 (10): start (1496,1328,200), cross (168,-480,320), door (792,-208,320), GL-quad a

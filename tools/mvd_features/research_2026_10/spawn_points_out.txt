@@ -1,0 +1,83 @@
+lock thresholds {'dm3': 386, 'dm2': 400, 'e1m2': 234, 'schloss': 375}
+
+=== dm3: 6264 spawns in 15 games; locked 28% of spawns; chained locked  69% (n=1777) vs free  59% (n=4487)
+  spawn point          n    chained all    chained locked         TOP lk       FIELD lk   item<=14s lk dmg/lk spawn
+  RL                1034   58% (n=1034)       55% (n=294)    56% (n=173)     56% (n=72)    63% (n=294)          156
+  YA                1047   61% (n=1047)       69% (n=308)    72% (n=177)     68% (n=73)    67% (n=308)          123
+  tele              1039   66% (n=1039)       75% (n=277)    74% (n=144)     73% (n=70)    66% (n=277)           94
+  mega (SNG low)    1033   64% (n=1033)       75% (n=301)    76% (n=173)     76% (n=78)    65% (n=301)           76
+  lifts top         1047   61% (n=1047)       72% (n=310)    75% (n=184)     70% (n=73)    67% (n=310)           74
+  RA tunnel         1064   61% (n=1064)       67% (n=287)    73% (n=145)     63% (n=84)    63% (n=287)           94
+  under lock, by spawn point -> first room entered (survival to 14 s; 'stayed' = never left the spawn area), cells with n>=25:
+    RL               water 68% (56) | bridge.low 66% (118) | stayed 12% (120)
+    YA               window 41% (85) | YA 33% (161) | stayed 10% (62)
+    tele             Ring 26% (192) | RA.rox 24% (29) | stayed 14% (49)
+    mega (SNG low)   SNG.MH 51% (39) | Ring 24% (190) | stayed 12% (56)
+    lifts top        lifts.below 26% (246) | stayed 23% (47)
+    RA tunnel        hill 39% (192) | RA.low 25% (44) | stayed 16% (51)
+
+=== dm2: 8203 spawns in 16 games; locked 33% of spawns; chained locked  76% (n=2667) vs free  64% (n=5536)
+  spawn point          n    chained all    chained locked         TOP lk       FIELD lk   item<=14s lk dmg/lk spawn
+  quad button        964    70% (n=964)       75% (n=302)    79% (n=154)     74% (n=98)    60% (n=302)           98
+  low RL             947    69% (n=947)       78% (n=294)    85% (n=143)    66% (n=101)    57% (n=294)           96
+  big stairs         931    61% (n=931)       64% (n=300)    65% (n=153)     59% (n=99)    63% (n=300)          145
+  water              924    78% (n=924)       89% (n=287)    88% (n=139)    90% (n=107)    48% (n=287)           75
+  RA/MH              922    56% (n=922)       64% (n=319)    65% (n=158)    62% (n=111)    64% (n=319)          167
+  tele low           905    70% (n=905)       83% (n=293)    83% (n=149)     86% (n=91)    60% (n=293)          120
+  low button         883    67% (n=883)       74% (n=290)    74% (n=144)     73% (n=83)    64% (n=290)          124
+  tele YA side       876    67% (n=876)       72% (n=301)    76% (n=131)    66% (n=113)    61% (n=301)           98
+  NG                 851    76% (n=851)       85% (n=281)    82% (n=142)     89% (n=85)    67% (n=281)           55
+  under lock, by spawn point -> first room entered (survival to 14 s; 'stayed' = never left the spawn area), cells with n>=25:
+    quad button      big 44% (75) | Quad.button 30% (80) | NG 21% (39) | Quad.low 14% (74) | stayed 0% (33)
+    low RL           low.stairs 36% (87) | low.lift 33% (67) | stayed 0% (108)
+    big stairs       big 38% (281)
+    water            NG 12% (236) | stayed 0% (39)
+    RA/MH            RA.MH/rox 67% (45) | low.button 59% (68) | big.stairs 46% (50) | low.stairs 46% (37) | stayed 3% (117)
+    tele low         tele.YA 33% (143) | stayed 0% (140)
+    low button       low.RL 29% (258) | stayed 0% (26)
+    tele YA side     tele.YA 51% (156) | stayed 0% (137)
+    NG               path 25% (48) | tele.entry 23% (96) | Quad.low 16% (37) | stayed 0% (88)
+
+=== e1m2: 7077 spawns in 14 games; locked 31% of spawns; chained locked  72% (n=2164) vs free  61% (n=4913)
+  spawn point          n    chained all    chained locked         TOP lk       FIELD lk   item<=14s lk dmg/lk spawn
+  start              724    51% (n=724)       48% (n=196)     57% (n=86)     47% (n=85)    76% (n=196)          158
+  cross              723    70% (n=723)       78% (n=237)    81% (n=108)     77% (n=92)    62% (n=237)          147
+  door               713    61% (n=713)       65% (n=216)    59% (n=106)     71% (n=86)    65% (n=216)          146
+  GL-quad a          712    73% (n=712)       86% (n=227)     80% (n=97)     91% (n=95)    69% (n=227)           73
+  GL-quad b          709    72% (n=709)       84% (n=225)    83% (n=102)     83% (n=83)    64% (n=225)           84
+  MH low             708    60% (n=708)       66% (n=226)    68% (n=118)     64% (n=78)    65% (n=226)          107
+  quad               707    72% (n=707)       85% (n=202)    82% (n=102)     90% (n=77)    61% (n=202)           73
+  RL                 706    59% (n=706)       60% (n=228)    58% (n=107)     58% (n=99)    57% (n=228)          149
+  YA                 698    66% (n=698)       78% (n=204)     79% (n=84)     74% (n=94)    66% (n=204)          106
+  spikes             677    62% (n=677)       71% (n=203)     69% (n=95)     73% (n=90)    65% (n=203)          122
+  under lock, by spawn point -> first room entered (survival to 14 s; 'stayed' = never left the spawn area), cells with n>=25:
+    start            start.water 54% (80) | start.stairs 50% (115)
+    cross            MH.entry 38% (53) | Quad.stairs 22% (119) | stayed 0% (37)
+    door             bridge 50% (100) | cross 17% (95)
+    GL-quad a        GL 20% (98) | Quad 13% (84) | stayed 0% (45)
+    GL-quad b        GL 18% (180) | stayed 0% (33)
+    MH low           MH.SNG 49% (55) | MH 34% (29) | MH.entry 33% (93) | stayed 0% (34)
+    quad             Quad.stairs 24% (46) | GL.Quad 19% (95) | stayed 0% (56)
+    RL               water.RL 63% (63) | cross.water 37% (109) | stayed 5% (42)
+    YA               YA.water 51% (41) | GL.stairs 31% (68) | stayed 2% (93)
+    spikes           SSG.spikes 41% (76) | YA.spikes 22% (120)
+
+=== schloss: 7713 spawns in 15 games; locked 31% of spawns; chained locked  77% (n=2426) vs free  65% (n=5287)
+  spawn point          n    chained all    chained locked         TOP lk       FIELD lk   item<=14s lk dmg/lk spawn
+  tower RL          1010   69% (n=1010)       80% (n=333)    81% (n=163)    80% (n=127)    55% (n=333)           99
+  cathedral SSG      987    69% (n=987)       75% (n=320)    73% (n=163)    78% (n=120)    77% (n=320)          125
+  cemetery tele      976    69% (n=976)       73% (n=302)    75% (n=157)    69% (n=107)    69% (n=302)          132
+  cemetery low       969    65% (n=969)       75% (n=296)    77% (n=151)    73% (n=113)    66% (n=296)          111
+  tower entry        952    70% (n=952)       74% (n=308)    76% (n=162)    71% (n=107)    56% (n=308)           84
+  quad low           950    67% (n=950)       76% (n=283)    78% (n=157)     72% (n=93)    74% (n=283)           90
+  quad high          948    71% (n=948)       81% (n=290)    81% (n=145)    81% (n=102)    59% (n=290)           93
+  quad               921    71% (n=921)       81% (n=294)    83% (n=146)    79% (n=109)    75% (n=294)           88
+  under lock, by spawn point -> first room entered (survival to 14 s; 'stayed' = never left the spawn area), cells with n>=25:
+    tower RL         tower 38% (120) | cemetary.tele 28% (50) | tower.entry 20% (25) | stayed 1% (138)
+    cathedral SSG    cathedral 26% (278)
+    cemetery tele    tower.RL 29% (244) | RA.window 21% (39)
+    cemetery low     RA.low 29% (235) | stayed 0% (34)
+    tower entry      tower.RL 32% (139) | Quad.ledge 27% (117) | stayed 0% (25)
+    quad low         tower.entry 35% (136) | yard.tunnel 23% (56) | Quad.ledge 13% (52) | stayed 0% (37)
+    quad high        Quad.ledge 32% (56) | cathedral.YA 23% (108) | Quad 15% (47) | stayed 0% (49)
+    quad             cathedral 23% (199) | Quad.ledge 18% (62) | stayed 0% (33)

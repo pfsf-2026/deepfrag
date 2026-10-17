@@ -1,0 +1,93 @@
+1415 games
+loaded state, player state, takes
+lock thresholds (margin at the 0.85 quantile): {'dm2': 487, 'dm3': 511, 'schloss': 433, 'e1m2': 238}
+
+=== dm3: 167120 spawns in 441 games | margin quartiles -137 / 194 / 494 | locked (M>=511): 24% of spawns
+  chained-death rate: locked 66%  vs  not locked 57%   | spawn-killed (<6 s): 36% vs 26%
+  under lock, survivors (13599) vs chained (26040):
+    waited before respawn ≥3 s: 4% vs 4% | median wait 0.9s vs 0.9s
+    first item inside 14 s — survivors: nothing 54%, rl 9%, ya 9%, lg 8%, mh 7%
+                             chained:   nothing 78%, rl 5%, ya 4%, mh 4%, lg 3%
+    had a teammate in the same area at +10 s: 15% vs 14%
+    RL in hand at +10 s: 5% vs 2%
+    area at +10 s after a locked spawn → share surviving to 14 s (areas with 40+ spawns):
+      water.rox         74%  (n=122)
+      water.GL          70%  (n=135)
+      water.LG          67%  (n=783)
+      SNG               63%  (n=434)
+      SNG.MH            60%  (n=209)
+      water             58%  (n=1853)
+      RA.entry          20%  (n=361)  <- worst
+      Ring              18%  (n=3430)  <- worst
+      SNG.tele          17%  (n=3675)  <- worst
+  flood test — locked team's concentration (how many of its alive players share one area, avg over the lock): spread (bottom third, avg 1.05) → median lock 60 s, unbroken to match end 5%; bunched (top third, avg 1.50) → median lock 60 s, unbroken 4%
+  lock episodes (≥30 s) that ended: 2196 | what happened in the last 30 s before the break: @took ya YA.box 65%, @took rl RL 63%, took mega 58%, 3+ frags in 30 s 55%, @took ra RA 33%, took RA 33%, @took mh hill 31%, @took mh Pent 23%
+
+=== dm2: 192921 spawns in 404 games | margin quartiles -97 / 203 / 508 | locked (M>=487): 27% of spawns
+  chained-death rate: locked 76%  vs  not locked 65%   | spawn-killed (<6 s): 51% vs 38%
+  under lock, survivors (12215) vs chained (38941):
+    waited before respawn ≥3 s: 4% vs 4% | median wait 0.9s vs 0.9s
+    first item inside 14 s — survivors: nothing 41%, ya 30%, ra 15%, rl 6%, mh 5%
+                             chained:   nothing 72%, ya 17%, ra 5%, rl 4%, mh 2%
+    had a teammate in the same area at +10 s: 20% vs 18%
+    RL in hand at +10 s: 6% vs 2%
+    area at +10 s after a locked spawn → share surviving to 14 s (areas with 40+ spawns):
+      GL                64%  (n=123)
+      floating          55%  (n=263)
+      secret            48%  (n=665)
+      Quad.way          43%  (n=343)
+      high.RL           42%  (n=961)
+      tele.YA           41%  (n=982)
+      Quad.low          15%  (n=3056)  <- worst
+      NG                13%  (n=4839)  <- worst
+      water             10%  (n=1995)  <- worst
+  flood test — locked team's concentration (how many of its alive players share one area, avg over the lock): spread (bottom third, avg 1.09) → median lock 50 s, unbroken to match end 5%; bunched (top third, avg 1.61) → median lock 50 s, unbroken 4%
+  lock episodes (≥30 s) that ended: 2471 | what happened in the last 30 s before the break: took RA 85%, @took ya big 76%, @took ra RA.MH 62%, took mega 54%, 3+ frags in 30 s 52%, @took ya tele.YA 50%, @took rl low.RL 49%, @took ra secret 47%
+
+=== e1m2: 143250 spawns in 292 games | margin quartiles -74 / 74 / 223 | locked (M>=238): 23% of spawns
+  chained-death rate: locked 73%  vs  not locked 63%   | spawn-killed (<6 s): 41% vs 30%
+  under lock, survivors (9028) vs chained (23808):
+    waited before respawn ≥3 s: 4% vs 3% | median wait 0.9s vs 0.9s
+    first item inside 14 s — survivors: nothing 58%, ga 12%, sng 9%, ya 7%, rl 6%
+                             chained:   nothing 79%, sng 6%, ga 5%, gl 5%, rl 2%
+    had a teammate in the same area at +10 s: 18% vs 16%
+    RL in hand at +10 s: 4% vs 1%
+    area at +10 s after a locked spawn → share surviving to 14 s (areas with 40+ spawns):
+      YA.tele           59%  (n=133)
+      GA                55%  (n=766)
+      water.RL          55%  (n=593)
+      water.GA          54%  (n=495)
+      water.lift        52%  (n=48)
+      MH.rox            45%  (n=131)
+      YA.spikes         16%  (n=447)  <- worst
+      Quad              14%  (n=2877)  <- worst
+      GL.Quad           11%  (n=2275)  <- worst
+  flood test — locked team's concentration (how many of its alive players share one area, avg over the lock): spread (bottom third, avg 1.09) → median lock 50 s, unbroken to match end 5%; bunched (top third, avg 1.60) → median lock 50 s, unbroken 3%
+  lock episodes (≥30 s) that ended: 1727 | what happened in the last 30 s before the break: 3+ frags in 30 s 73%, @took rl RL 64%, @took ya YA 39%, @took mh MH 32%, took mega 32%, 2+ spawn frags 20%, no clear trigger 16%, @took quad Quad.box 14%
+
+=== schloss: 133987 spawns in 278 games | margin quartiles -112 / 163 / 433 | locked (M>=433): 25% of spawns
+  chained-death rate: locked 75%  vs  not locked 64%   | spawn-killed (<6 s): 44% vs 33%
+  under lock, survivors (8542) vs chained (25070):
+    waited before respawn ≥3 s: 3% vs 3% | median wait 0.9s vs 0.9s
+    first item inside 14 s — survivors: nothing 48%, ya 20%, rl 11%, mh 7%, sng 5%
+                             chained:   nothing 73%, rl 7%, ya 7%, sng 4%, mh 4%
+    had a teammate in the same area at +10 s: 25% vs 21%
+    RL in hand at +10 s: 8% vs 2%
+    area at +10 s after a locked spawn → share surviving to 14 s (areas with 40+ spawns):
+      RA                53%  (n=383)
+      cemetary.Ring     48%  (n=231)
+      cathedral.YA      40%  (n=2021)
+      RA.window         40%  (n=301)
+      tower             37%  (n=1208)
+      yard.tunnel       30%  (n=466)
+      Quad.high         20%  (n=1995)  <- worst
+      Quad              19%  (n=2665)  <- worst
+      cathedral.SSG     18%  (n=1574)  <- worst
+  flood test — locked team's concentration (how many of its alive players share one area, avg over the lock): spread (bottom third, avg 1.17) → median lock 50 s, unbroken to match end 3%; bunched (top third, avg 1.73) → median lock 50 s, unbroken 2%
+  lock episodes (≥30 s) that ended: 1771 | what happened in the last 30 s before the break: 3+ frags in 30 s 64%, @took ya tower 60%, @took ya cathedral.YA 55%, @took rl tower.RL 52%, @took rl cathedral 52%, took mega 50%, @took ra RA 49%, took RA 49%
+
+=== item takes by LOCATION in the 30 s before a lock broke (share of broken episodes) ===
+dm3 episodes=1: ya YA.box 142600%, rl RL 138200%, ra RA 72600%, mh hill 67300%, mh Pent 51300%, mh SNG.MH 40300%, quad Quad 26500%
+dm2 episodes=1: ya big 186800%, ra RA.MH 154200%, ya tele.YA 124100%, rl low.RL 121200%, ra secret 115000%, rl high.RL 100700%, mh RA.MH 84500%, mh GL 62200%, quad Quad 31800%
+e1m2 episodes=1: rl RL 110800%, ya YA 67300%, mh MH 55200%, quad Quad.box 24900%
+schloss episodes=1: ya tower 106400%, ya cathedral.YA 96700%, rl tower.RL 91600%, rl cathedral 91500%, ra RA 86800%, mh yard 57600%, mh cemetary 42400%, quad Quad 36600%
