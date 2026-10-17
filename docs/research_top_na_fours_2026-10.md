@@ -98,11 +98,11 @@ spawn area at all):
 | dm3 | tele 66→75% | Ring 26% (192), RA.rox 24% (29) |
 | dm2 | RA/MH 56→64% | RA.MH/rox 67% (45), low.button 59% (68), big.stairs 46% (50), low.stairs 46% (37) |
 | dm2 | big stairs 61→64% | big 38% (281) |
-| dm2 | tele YA side 67→72% | tele.YA 51% (156) |
+| dm2 | tele/ya 67→72% | tele.YA 51% (156) |
 | dm2 | low button 67→74% | low.RL 29% (258) |
-| dm2 | quad button 70→75% | big 44% (75), Quad.button 30% (80), NG 21% (39), Quad.low 14% (74) |
+| dm2 | quad/big 70→75% | big 44% (75), Quad.button 30% (80), NG 21% (39), Quad.low 14% (74) |
 | dm2 | low RL 69→78% | low.stairs 36% (87), low.lift 33% (67) |
-| dm2 | tele low 70→83% | tele.YA 33% (143) |
+| dm2 | tele button 70→83% | tele.YA 33% (143) |
 | dm2 | NG 76→85% | path 25% (48), tele.entry 23% (96), Quad.low 16% (37) |
 | dm2 | water 78→89% | NG 12% (236) |
 | e1m2 | start 51→48% | start.water 54% (80), start.stairs 50% (115) |
@@ -111,18 +111,18 @@ spawn area at all):
 | e1m2 | MH low 60→66% | MH.SNG 49% (55), MH 34% (29), MH.entry 33% (93) |
 | e1m2 | spikes 62→71% | SSG.spikes 41% (76), YA.spikes 22% (120) |
 | e1m2 | YA 66→78% | YA.water 51% (41), GL.stairs 31% (68) |
-| e1m2 | cross 70→78% | MH.entry 38% (53), Quad.stairs 22% (119) |
-| e1m2 | GL-quad b 72→84% | GL 18% (180) |
-| e1m2 | quad 72→85% | Quad.stairs 24% (46), GL.Quad 19% (95) |
-| e1m2 | GL-quad a 73→86% | GL 20% (98), Quad 13% (84) |
+| e1m2 | crossing 70→78% | MH.entry 38% (53), Quad.stairs 22% (119) |
+| e1m2 | quad/GL 72→84% | GL 18% (180) |
+| e1m2 | quad healthpaks 72→85% | Quad.stairs 24% (46), GL.Quad 19% (95) |
+| e1m2 | GL 73→86% | GL 20% (98), Quad 13% (84) |
 | schloss | cemetery tele 69→73% | tower.RL 29% (244), RA.window 21% (39) |
 | schloss | tower entry 70→74% | tower.RL 32% (139), Quad.ledge 27% (117) |
-| schloss | cathedral SSG 69→75% | cathedral 26% (278) |
-| schloss | cemetery low 65→75% | RA.low 29% (235) |
-| schloss | quad low 67→76% | tower.entry 35% (136), yard.tunnel 23% (56), Quad.ledge 13% (52) |
-| schloss | tower RL 69→80% | tower 38% (120), cemetary.tele 28% (50), tower.entry 20% (25) |
-| schloss | quad 71→81% | cathedral 23% (199), Quad.ledge 18% (62) |
-| schloss | quad high 71→81% | Quad.ledge 32% (56), cathedral.YA 23% (108), Quad 15% (47) |
+| schloss | Cat SSG 69→75% | cathedral 26% (278) |
+| schloss | RA/cemetery 65→75% | RA.low 29% (235) |
+| schloss | mid 67→76% | tower.entry 35% (136), yard.tunnel 23% (56), Quad.ledge 13% (52) |
+| schloss | tower RL 69→80% | tower 38% (120), cemetery.tele 28% (50), tower.entry 20% (25) |
+| schloss | quad/Cat low 71→81% | cathedral 23% (199), Quad.ledge 18% (62) |
+| schloss | quad/Cat high 71→81% | Quad.ledge 32% (56), Cat.YA 23% (108), Quad 15% (47) |
 
 Lock here = per-second margin (enemy alive stack − own, +100 per RL) above the map's 85th percentile
 (dm3 386, dm2 400, e1m2 234, schloss 375); it has no RA term, so locked shares differ slightly from the 10 s

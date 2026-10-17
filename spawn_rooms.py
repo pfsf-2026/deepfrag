@@ -46,7 +46,7 @@ SPAWNS = {
  ],
  "dm2": [
   [
-   "quad button",
+   "quad/big",
    1712,
    -504,
    24
@@ -76,7 +76,7 @@ SPAWNS = {
    128
   ],
   [
-   "tele low",
+   "tele button",
    2248,
    -16,
    -136
@@ -88,7 +88,7 @@ SPAWNS = {
    84
   ],
   [
-   "tele YA side",
+   "tele/ya",
    2543,
    -31,
    -64
@@ -108,7 +108,7 @@ SPAWNS = {
    200
   ],
   [
-   "cross",
+   "crossing",
    168,
    -480,
    320
@@ -120,13 +120,13 @@ SPAWNS = {
    320
   ],
   [
-   "GL-quad a",
+   "GL",
    936,
    -1216,
    432
   ],
   [
-   "GL-quad b",
+   "quad/GL",
    792,
    -992,
    440
@@ -138,7 +138,7 @@ SPAWNS = {
    320
   ],
   [
-   "quad",
+   "quad healthpaks",
    408,
    -752,
    432
@@ -170,7 +170,7 @@ SPAWNS = {
    440
   ],
   [
-   "cathedral SSG",
+   "Cat SSG",
    968,
    -3416,
    408
@@ -182,7 +182,7 @@ SPAWNS = {
    312
   ],
   [
-   "cemetery low",
+   "RA/cemetery",
    696,
    -3184,
    184
@@ -194,19 +194,19 @@ SPAWNS = {
    440
   ],
   [
-   "quad low",
+   "mid",
    -249,
    -2361,
    312
   ],
   [
-   "quad high",
+   "quad/Cat high",
    424,
    -3240,
    600
   ],
   [
-   "quad",
+   "quad/Cat low",
    455,
    -3032,
    440
@@ -242,15 +242,15 @@ CHAINED_LOCKED = {
   ]
  },
  "dm2": {
-  "tele YA side": [
+  "tele/ya": [
    0.724,
    301
   ],
-  "quad button": [
+  "quad/big": [
    0.752,
    302
   ],
-  "tele low": [
+  "tele button": [
    0.829,
    293
   ],
@@ -284,11 +284,11 @@ CHAINED_LOCKED = {
    0.653,
    216
   ],
-  "GL-quad a": [
+  "GL": [
    0.863,
    227
   ],
-  "quad": [
+  "quad healthpaks": [
    0.851,
    202
   ],
@@ -308,11 +308,11 @@ CHAINED_LOCKED = {
    0.714,
    203
   ],
-  "GL-quad b": [
+  "quad/GL": [
    0.84,
    225
   ],
-  "cross": [
+  "crossing": [
    0.776,
    237
   ],
@@ -322,15 +322,15 @@ CHAINED_LOCKED = {
   ]
  },
  "schloss": {
-  "cathedral SSG": [
+  "Cat SSG": [
    0.753,
    320
   ],
-  "cemetery low": [
+  "RA/cemetery": [
    0.75,
    296
   ],
-  "quad low": [
+  "mid": [
    0.763,
    283
   ],
@@ -342,11 +342,11 @@ CHAINED_LOCKED = {
    0.737,
    308
   ],
-  "quad high": [
+  "quad/Cat high": [
    0.807,
    290
   ],
-  "quad": [
+  "quad/Cat low": [
    0.806,
    294
   ],
@@ -416,13 +416,13 @@ ROOM_SURVIVAL = {
   }
  },
  "dm2": {
-  "tele YA side": {
+  "tele/ya": {
    "tele.YA": [
     0.513,
     156
    ]
   },
-  "quad button": {
+  "quad/big": {
    "NG": [
     0.205,
     39
@@ -440,7 +440,7 @@ ROOM_SURVIVAL = {
     80
    ]
   },
-  "tele low": {
+  "tele button": {
    "tele.YA": [
     0.329,
     143
@@ -518,7 +518,7 @@ ROOM_SURVIVAL = {
     95
    ]
   },
-  "GL-quad a": {
+  "GL": {
    "Quad": [
     0.131,
     84
@@ -568,7 +568,7 @@ ROOM_SURVIVAL = {
     76
    ]
   },
-  "quad": {
+  "quad healthpaks": {
    "Quad.stairs": [
     0.239,
     46
@@ -592,13 +592,13 @@ ROOM_SURVIVAL = {
     55
    ]
   },
-  "GL-quad b": {
+  "quad/GL": {
    "GL": [
     0.178,
     180
    ]
   },
-  "cross": {
+  "crossing": {
    "Quad.stairs": [
     0.218,
     119
@@ -610,19 +610,19 @@ ROOM_SURVIVAL = {
   }
  },
  "schloss": {
-  "cathedral SSG": {
+  "Cat SSG": {
    "cathedral": [
     0.263,
     278
    ]
   },
-  "cemetery low": {
+  "RA/cemetery": {
    "RA.low": [
     0.289,
     235
    ]
   },
-  "quad low": {
+  "mid": {
    "tower.entry": [
     0.346,
     136
@@ -660,7 +660,7 @@ ROOM_SURVIVAL = {
     139
    ]
   },
-  "quad": {
+  "quad/Cat low": {
    "cathedral": [
     0.231,
     199
@@ -680,7 +680,7 @@ ROOM_SURVIVAL = {
     39
    ]
   },
-  "quad high": {
+  "quad/Cat high": {
    "cathedral.YA": [
     0.231,
     108
@@ -705,3 +705,8 @@ def spawn_label(mp, x, y, z):
         return 'other'
     best = min(pts, key=lambda s: abs(s[1] - x) + abs(s[2] - y) + abs(s[3] - z))
     return best[0] if abs(best[1] - x) <= 160 and abs(best[2] - y) <= 160 and abs(best[3] - z) <= 96 else 'other'
+
+
+def room_name(loc):
+    """A .loc room name as players say it in coaching text (Peter: 'Cat' for cathedral)."""
+    return (loc or "").replace("cathedral", "Cat").replace("cemetary", "cemetery")

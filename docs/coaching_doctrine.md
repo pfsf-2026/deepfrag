@@ -36,14 +36,18 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   tele and one facing into the SNG room, and both usually turn and run to tele on the first spawn; "lifts"
   not "lifts top"). A "spawn" in any table means one of these, never an
   area name from the `.loc` files. dm3 (6): RL (1520,431,-88), YA (1472,-928,-24), tele (-631,-679,-16),
-  mega/SNG low (-880,-232,-16), lifts (513,768,216), RA tunnel (192,-208,-176). dm2 (9): quad button
-  (1712,-504,24), low RL (2576,-1328,24), big stairs (2048,-1352,136), water (2624,-487,32), RA/MH
-  (2704,-2048,128), tele low (2248,-16,-136), low button (2176,-2176,84), tele YA side (2543,-31,-64), NG
-  (2560,-192,32). e1m2 (10): start (1496,1328,200), cross (168,-480,320), door (792,-208,320), GL-quad a
-  (936,-1216,432), GL-quad b (792,-992,440), MH low (-415,-144,320), quad (408,-752,432), RL (784,808,200), YA
-  (1080,-720,312), spikes (1935,-135,312). schloss (8): tower RL (-240,-2184,440), cathedral SSG
-  (968,-3416,408), cemetery tele (1168,-1984,312), cemetery low (696,-3184,184), tower entry (136,-2471,440),
-  quad low (-249,-2361,312), quad high (424,-3240,600), quad (455,-3032,440).
+  mega/SNG low (-880,-232,-16), lifts (513,768,216), RA tunnel (192,-208,-176). dm2 (9): quad/big (1712,-504,24;
+  .loc quad.low, below the quad), low RL (2576,-1328,24), big stairs (2048,-1352,136), water (2624,-487,32),
+  RA/MH (2704,-2048,128), tele button (2248,-16,-136; the low tele), low button (2176,-2176,84; next to the
+  RA/mega room, stairs down to low RL), tele/ya (2543,-31,-64), NG (2560,-192,32). e1m2 (10): start
+  (1496,1328,200), crossing (168,-480,320), door (792,-208,320), GL (936,-1216,432; .loc gl.quad, the GL
+  side), quad/GL (792,-992,440; .loc gl.quad), MH low (-415,-144,320), quad healthpaks (408,-752,432), RL
+  (784,808,200), YA (1080,-720,312), spikes (1935,-135,312). schloss (8): tower RL (-240,-2184,440), Cat SSG
+  (968,-3416,408), cemetery tele (1168,-1984,312), RA/cemetery (696,-3184,184; .loc cemetery, 505 u from the
+  RA), tower entry (136,-2471,440), mid (-249,-2361,312; .loc quad.low by the yard tunnel, 640 u from pent),
+  quad/Cat high (424,-3240,600; .loc quad.high), quad/Cat low (455,-3032,440; .loc quad, 445 u from the RA,
+  740 u from the quad — Peter to confirm). Names are Peter's (2026-10-17); "Cat" is the word for cathedral
+  in all coaching text.
 - **Location vocabularies differ.** `player_state10s.loc` and the analyzer's `locs` use the `.loc` files
   (`mvd-analytics/loc/data/<map>.loc`: dm3 has water, water.LG, water.GL, water.rox …); the map JSONs
   (`mvd-web/static/maps/<map>.json`) use different names (dm3: bridge.low, hill, RL …). Say which one a
@@ -97,10 +101,10 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
     stacked-on-stacked fight. Flooding quad early matters. What the data says about getting out (1,727 e1m2 locks that
     ended): a rocket launcher is in two breaks of three, the yellow in four of ten, the mega in one of three,
     quad one in seven. No red to race for on this map: the RL is the whole lever, the yellow second.
-  - **schloss**: floods happen at cathedral RL or tower RL, or at quad during quad times. Quad and pent are
+  - **schloss**: floods happen at Cat RL or tower RL, or at quad during quad times. Quad and pent are
     almost always flooded — not because of a lock, to flip control with powerups. Hard to lock; back and forth.
     What the data says about getting out (1,771 schloss locks that ended): a yellow (the tower one in six breaks
-    of ten, the cathedral one in five) and one of the two RLs (tower RL or cathedral RL, each in half the
+    of ten, the cathedral one in five) and one of the two RLs (tower RL or Cat RL, each in half the
     breaks), then the red (half). Those two RL rooms are exactly where Peter says the floods happen; the data
     says that is also where the recovery is built. Caveat for all four: a lock is measured in stack and rockets,
     so a break always shows up as items gained — what these add is which item, in what order, and that frags of
