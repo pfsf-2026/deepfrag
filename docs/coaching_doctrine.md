@@ -71,6 +71,24 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   trained back toward effective MM2. Any in-the-moment coaching ("rewind") should assume no voice, show what
   the team's MM2 would have told the player, and suggest the MM2 line the player should have sent.
 
+- **Per-map control doctrine (Peter, 2026-10-17, his words condensed).** The map section of any coaching text
+  starts from these, and the data is read against them:
+  - **dm3**: rarely flooded. Getting control back when out of control is stealing a quad and killing someone
+    who drops a weapon, or having a weapon and getting the quad over the enemies, then killing 1–2 key enemy
+    weapons and taking RA control back. Three megas: SNG (low, by the SNG/MH), hill (under the ring/quad),
+    Pent side (RL/pent room) — always say which one; "took mega before the break" is any of the three.
+  - **dm2**: a lot easier to lock. The lock positions: (1) one at the bottom of the tele stairs covering the two
+    spawns and the tele to high RL; (2) one running quad and secret; (3) one running the back room red/mega and
+    low RL; (4) one floating where help is needed. Floods when locked: hit tele hard, or get at least one
+    teammate with an RL at low RL and send the rest to flood low RL between quads. Low RL is very hard to hold
+    against a quad coming from path or big — open question for the data.
+  - **e1m2**: the flood is usually the YA room, the only real armor. GA helps but does not stand up to a
+    stacked-on-stacked fight. Flooding quad early matters.
+  - **schloss**: floods happen at cathedral RL or tower RL, or at quad during quad times. Quad and pent are
+    almost always flooded — not because of a lock, to flip control with powerups. Hard to lock; back and forth.
+  - **Plan**: a deep dive per map — taking control, holding control, breaking control, controlling powerups,
+    controlling key areas/items — before more generic lock advice.
+
 ## 3. How duels are played (what the coach must model)
 - Movement is at least half the game and leads every piece of advice; then timing items, being early,
   stack before fights, sound, weapons; map geometry last; aim is trained, never assumed
@@ -131,3 +149,5 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   — a table of "area at the first 10 s tick after a spawn" was labelled as spawn points. It also mixed death
   spots into the "die" column (dead rows carry `loc`). Spawn tables use the real spawn points in §1, and the
   first move is measured as the first room entered from that spawn.
+- 2026-10-17 "we rarely flood 'mega' on dm3. There are also 3 megas, so which are you talking about?" — an item
+  take before a lock break is not a flood, and a mega on dm3 must be named (SNG / hill / Pent side).
