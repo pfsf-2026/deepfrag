@@ -23,13 +23,18 @@ import urllib.parse
 from duel_adv import _eff, _Series
 import spawn_rooms as SR
 
-VERSION = 1
+VERSION = 2
 HUB = "https://hub.quakeworld.nu/games/?gameId={gid}&from={f}&to={t}&track={uid}"
 MAJOR = ("ra", "ya", "ga", "mh", "rl", "lg", "quad", "pent", "ring")
 NEAR = 700            # units: "with" a teammate / "into" enemies
 CHAIN_MS = 14000      # a life shorter than this after a spawn is chained
 EMPTY_DMG = 50        # a life that dealt less than this, no frag, no major item = empty
 STREAM = "pos,h,a,at,sp,d,rl,lg,q"
+
+
+def _clean_mm2(line):
+    """A teamsay line as a person reads it: KTX macros that did not expand (%E, %e, %l …) dropped."""
+    return re.sub(r"\s*%[A-Za-z]\b", "", line or "").strip()
 
 
 def mmss(ms):
@@ -215,6 +220,8 @@ def compute(ov, data, me, gid, mp):
     blocks = []
     for b in range(0, end, 120000):
         e = min(b + 120000, end)
+        if e - b < 10000:
+            continue
         blocks.append(dict(t0=b, t1=e, label=f"{mmss(b)}-{mmss(e)}",
                            frags=sum(1 for f in kills_of.get(me, []) if b <= f["time"] < e and team_of.get(f.get("victim")) not in (None, team)),
                            deaths=sum(1 for f in frags if f.get("victim") == me and b <= f["time"] < e),
@@ -230,6 +237,8 @@ def compute(ov, data, me, gid, mp):
             continue
         d = ev.get("detail") or {}; t0 = int(ev["t"] * 1000); t1 = int((d.get("endTime") or ev["t"]) * 1000)
         if ev["type"] == "powerup" and ev.get("player") == me:
+            if (d.get("duration") or 0) < 5:                 # took it and died: that is the lowlight, not a run
+                continue
             hi.append(dict(t=t0, t1=t1, kind="powerup", text=f"{d.get('powerup')} run: {d.get('frags', 0)} frags in {d.get('duration', 0):.0f} s", hub=hub(t0, t1)))
         elif ev["type"] == "streak" and ev.get("player") == me:
             hi.append(dict(t=t0, t1=t1, kind="streak", text=f"{d.get('length')}-frag streak over {d.get('duration', 0):.0f} s with {d.get('weapon') or 'sg'}", hub=hub(t0, t1)))
@@ -310,10 +319,11 @@ def compute(ov, data, me, gid, mp):
         for m in comms:
             if m.get("player") == me:
                 continue
-            line = m.get("messageClean") or m.get("message") or ""
-            if others and others[-1]["text"] == line:
+            line = _clean_mm2(m.get("messageClean") or m.get("message") or "")
+            if not line or (others and others[-1]["text"] == line):
                 continue
             others.append(dict(t=m["time"], text=line))
+        others = others[-10:]
         score = (1 - (mine[0] if mine else 0.2)) + (0.5 if opts else 0) + (0.3 if best and (not mine or best[1][0] - mine[0] > 0.15) else 0) + (0.2 if l["near_e"] >= 2 else 0)
         cand.append((score, l, room, mine, best, opts[:3], others, mine_say))
     cand.sort(key=lambda c: -c[0])
@@ -345,7 +355,7 @@ def compute(ov, data, me, gid, mp):
         mm2.append(f"need armor weapon @ {locname(li_at(l['s0'] + 50))}")
         rewinds.append(dict(idx=len(rewinds), t=l["s0"], t_end=l["nd"], hub=hub(l["s0"], l["nd"]), spawn=l["spawn"], margin=l["M"],
                             question=f"{mmss(l['s0'])} — you spawned at {l['spawn']} with your team locked (margin {l['M']}). No voice: only what the MM2 below told you. What should you have thought, and where do you go?",
-                            did=did, comms=others, you_sent=[m.get("messageClean") or m.get("message") for m in mine_say],
+                            did=did, comms=others, you_sent=[_clean_mm2(m.get("messageClean") or m.get("message")) for m in mine_say],
                             answer=" ".join(ans), mm2=mm2, options=opts, best_room=best[0] if best else None, your_room=room,
                             your_room_survival=mine[0] if mine else None, best_room_survival=best[1][0] if best else None))
 
