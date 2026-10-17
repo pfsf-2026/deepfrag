@@ -139,6 +139,14 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   damage they did with it; the shotgun damage before dying off a locked spawn. Numbers sit under the story as
   evidence. "TOP vs FIELD" describes who is better; it is never the advice.
 
+- **The first move off a spawn is an item-timer decision (Peter, 2026-10-17).** "If you spawn RL and RL time is
+  soon, stay and fight for it; if RL was just taken, leave for LG or YA now. Don't sit in the RL room 25 s
+  waiting." No table of "best first room" without the item state at that second; every rewind shows what was
+  up, what was coming and when, and who took it. Knowing item times is the core of the coaching.
+- **Voice comes from the stream.** Many NA players stream (Peter: twitch.tv/cronus1976). Moments carry the
+  wall-clock time so the player can find them in the VOD with voice comms; the report links there when the
+  stream is known.
+
 ## 6. Process
 - Read this file before any coaching text. Re-read §1 before quoting any value or timer.
 - A correction from Peter goes into §7 immediately, then into the relevant section.
@@ -168,3 +176,6 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
 - 2026-10-17 "this is not actionable. We need more of a story approach to this rather than 'top players do
   this'. That's crap … make this narrative with data, and not data focused." — §5 rule above; the research
   doc's coaching section and the Game Report wording were rewritten in that voice the same day.
+- 2026-10-17 "if you spawn RL, and you know RL time is soon, you should stay and fight for it … Knowing item
+  times is going to be key" — the first-move paragraph was rewritten as an item-timer decision; rewinds show
+  item state at the spawn second.
