@@ -127,13 +127,17 @@ spawn area at all):
 Lock here = per-second margin (enemy alive stack − own, +100 per RL) above the map's 85th percentile
 (dm3 386, dm2 400, e1m2 234, schloss 375); it has no RA term, so locked shares differ slightly from the 10 s
 study. Spawn-point coordinates and the script: `tools/mvd_features/research_2026_10/spawn_points.py`; the timer study is `spawn_item_timing.py` there
-(outcomes by the key items' state — up / in 1–8 s / 9–20 s / 20 s+ — at the spawn second, per spawn point). Lock breaks by item LOCATION
-(share of broken locks where the locked team took it in the last 30 s; 2026-10-17 rerun): dm3 YA 65%, RL 63%,
-RA 33%, hill mega 31%, Pent-side mega 23%, SNG mega 18%, quad 12%; dm2 big YA 76%, back-room RA 62%, tele YA
-50%, low RL 49%, secret RA 47%, high RL 41%, back-room mega 34%, GL mega 25%, quad 13%; e1m2 RL 64%, YA 39%,
-MH 32%, quad 14%; schloss tower YA 60%, cathedral YA 55%, tower RL 52%, cathedral RL 52%, RA 49%, yard mega
-33%, cemetery mega 24%, quad 21%. An item take is not a flood: this is what the locked team collected, not
-where it went as a group.
+(outcomes by the key items' state — up / in 1–8 s / 9–20 s / 20 s+ — at the spawn second, per spawn point). How a locked team gets out,
+per map (what it had done in the half-minute before the lock ended; 2026-10-17 rerun by item location): on
+dm3, someone took a yellow (two breaks in three) and someone got a rocket launcher (two in three); a red is in
+one break in three and a quad in one in eight, so they come after you are out; the mega that is part of a
+break is the hill one (one in three), not the Pent-side (one in four) or SNG (one in five) one; killing a
+stacked enemy is in one break in eight. On dm2 it is the yellow at big first (three in four), then the
+back-room red (two in three); low RL and the secret red in about half. On e1m2 the RL (two in three), the
+yellow (four in ten), the mega (one in three); no red on the map. On schloss a yellow (tower six in ten,
+cathedral five in ten) and one of the two RLs (each in half), then the red (half). Caveat: a lock is measured
+in stack and rockets, so a break always shows as items gained; what this adds is which item, in what order,
+and that it is not frags of stacked enemies. An item take is not a flood.
 
 ## What to decide, and when
 

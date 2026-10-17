@@ -78,24 +78,33 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   - **dm3**: rarely flooded. Getting control back when out of control is stealing a quad and killing someone
     who drops a weapon, or having a weapon and getting the quad over the enemies, then killing 1–2 key enemy
     weapons and taking RA control back. Three megas: SNG (low, by the SNG/MH), hill (under the ring/quad),
-    Pent side (RL/pent room) — always say which one. Data (2,196 broken dm3 locks, 2026-10-17): in the 30 s
-    before the break the locked team took YA 65%, RL 63%, RA 33%, quad 12%; megas: hill 31%, Pent side 23%,
-    SNG 18%. The break is YA + RL first, then RA; the mega is the hill one more than the others.
+    Pent side (RL/pent room) — always say which one. What the data says about getting out (2,196 dm3 locks that ended): in the
+    half-minute before a locked team got out, it had almost always done two things — someone took a yellow
+    (two breaks in three) and someone got a rocket launcher (two in three). A red is in one break in three and
+    a quad in one in eight: they come after you are already out. Of the three megas the one that is part of a
+    break is the hill mega (one in three), more than the Pent side (one in four) or SNG (one in five). Killing a
+    stacked enemy is in only one break in eight. So on dm3 a lock does not end with a hero frag; it ends with a
+    yellow and a rocket in your team's hands, then the red.
   - **dm2**: a lot easier to lock. The lock positions: (1) one at the bottom of the tele stairs covering the two
     spawns and the tele to high RL; (2) one running quad and secret; (3) one running the back room red/mega and
     low RL; (4) one floating where help is needed. Floods when locked: hit tele hard, or get at least one
     teammate with an RL at low RL and send the rest to flood low RL between quads. Low RL is very hard to hold
-    against a quad coming from path or big — open question for the data. Data (2,471 broken dm2 locks): before
-    the break the locked team took big YA 76%, back-room RA 62%, tele YA 50%, low RL 49%, secret RA 47%, high RL
-    41%, back-room mega 34%, GL mega 25%, quad 13% — big YA then the back-room red is the sequence.
+    against a quad coming from path or big — open question for the data. What the data says about getting out (2,471 dm2
+    locks that ended): the way out is the yellow at big first (three breaks in four have it), then the back-room
+    red (two in three). Low RL and the secret red are in about half, the high RL in four of ten, the megas
+    less, quad one in eight. Sequence: big yellow, then the red behind position (3)'s room.
   - **e1m2**: the flood is usually the YA room, the only real armor. GA helps but does not stand up to a
-    stacked-on-stacked fight. Flooding quad early matters. Data (1,727 broken e1m2 locks): before the break RL
-    64%, YA 39%, MH 32%, quad 14% — the RL is the lever on e1m2, YA second.
+    stacked-on-stacked fight. Flooding quad early matters. What the data says about getting out (1,727 e1m2 locks that
+    ended): a rocket launcher is in two breaks of three, the yellow in four of ten, the mega in one of three,
+    quad one in seven. No red to race for on this map: the RL is the whole lever, the yellow second.
   - **schloss**: floods happen at cathedral RL or tower RL, or at quad during quad times. Quad and pent are
     almost always flooded — not because of a lock, to flip control with powerups. Hard to lock; back and forth.
-    Data (1,771 broken schloss locks): before the break tower YA 60%, cathedral YA 55%, tower RL 52%, cathedral RL
-    52%, RA 49%, yard mega 33%, cemetery mega 24%, quad 21% — the two RL rooms Peter names are exactly where
-    breaks are built.
+    What the data says about getting out (1,771 schloss locks that ended): a yellow (the tower one in six breaks
+    of ten, the cathedral one in five) and one of the two RLs (tower RL or cathedral RL, each in half the
+    breaks), then the red (half). Those two RL rooms are exactly where Peter says the floods happen; the data
+    says that is also where the recovery is built. Caveat for all four: a lock is measured in stack and rockets,
+    so a break always shows up as items gained — what these add is which item, in what order, and that frags of
+    stacked enemies are not how it happens.
   - **Plan**: a deep dive per map — taking control, holding control, breaking control, controlling powerups,
     controlling key areas/items — before more generic lock advice.
 
