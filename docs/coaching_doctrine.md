@@ -31,6 +31,22 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
 - "Near quad" = **inside the quad room** (per-map room list in `tools/mvd_features/quad_rooms.json`), not a
   straight-line radius; a player who died in the room within 10 s of the spawn counts as having been there.
 
+- **Spawn points per map** (clustered from demo positions in 60 TB4 games, 2026-10-17; labels are mine —
+  Peter to confirm the dm3 "mega" and "lifts top" names). A "spawn" in any table means one of these, never an
+  area name from the `.loc` files. dm3 (6): RL (1520,431,-88), YA (1472,-928,-24), tele (-631,-679,-16),
+  mega/SNG low (-880,-232,-16), lifts top (513,768,216), RA tunnel (192,-208,-176). dm2 (9): quad button
+  (1712,-504,24), low RL (2576,-1328,24), big stairs (2048,-1352,136), water (2624,-487,32), RA/MH
+  (2704,-2048,128), tele low (2248,-16,-136), low button (2176,-2176,84), tele YA side (2543,-31,-64), NG
+  (2560,-192,32). e1m2 (10): start (1496,1328,200), cross (168,-480,320), door (792,-208,320), GL-quad a
+  (936,-1216,432), GL-quad b (792,-992,440), MH low (-415,-144,320), quad (408,-752,432), RL (784,808,200), YA
+  (1080,-720,312), spikes (1935,-135,312). schloss (8): tower RL (-240,-2184,440), cathedral SSG
+  (968,-3416,408), cemetery tele (1168,-1984,312), cemetery low (696,-3184,184), tower entry (136,-2471,440),
+  quad low (-249,-2361,312), quad high (424,-3240,600), quad (455,-3032,440).
+- **Location vocabularies differ.** `player_state10s.loc` and the analyzer's `locs` use the `.loc` files
+  (`mvd-analytics/loc/data/<map>.loc`: dm3 has water, water.LG, water.GL, water.rox …); the map JSONs
+  (`mvd-web/static/maps/<map>.json`) use different names (dm3: bridge.low, hill, RL …). Say which one a
+  table uses. `loc` is filled for dead players too (the death spot).
+
 ## 2. How fours is actually played (the context the coach must model)
 - Teams **flood** strategic zones under a lock — YA on e1m2, tele or low RL on dm2 — and start many fights as a
   boomstick on purpose, to flood an area or to support quad, or because they spawned with no choice. Stats
@@ -50,6 +66,10 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
 - Team damage: Omicron hates it; its impact on win probability was checked (2026-09-15) — treat it as real.
 - Ping matters (dusty 12 ms vs yeti 142 in the same game); game scores need a ping adjustment.
 - Map specialists exist (bogojoker on schloss, chris on dm3); ratings should reward playing all four maps.
+
+- **Comms.** NA teams run on voice; EU teams use MM2 (team say) far more and better. Peter wants NA players
+  trained back toward effective MM2. Any in-the-moment coaching ("rewind") should assume no voice, show what
+  the team's MM2 would have told the player, and suggest the MM2 line the player should have sent.
 
 ## 3. How duels are played (what the coach must model)
 - Movement is at least half the game and leads every piece of advice; then timing items, being early,
@@ -107,3 +127,7 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
 - 2026-10-16 "RA is +200 armor. You should know this." Red +200, yellow +150, green +100, mega +100.
 - 2026-10-16 (infiniti, confirmed) there are no footstep sounds in QuakeWorld.
 - 2026-10-16 "two-thirds of your deaths inside 14 s" is true of the whole pool; never present it as a flaw.
+- 2026-10-17 "Those aren't spawns. you know where the spawns are. you don't spawn in water gl, you spawn at RL"
+  — a table of "area at the first 10 s tick after a spawn" was labelled as spawn points. It also mixed death
+  spots into the "die" column (dead rows carry `loc`). Spawn tables use the real spawn points in §1, and the
+  first move is measured as the first room entered from that spawn.

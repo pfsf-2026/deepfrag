@@ -79,15 +79,55 @@ minute for everyone. Off the spawn the top move 100 ms sooner and 7% faster (360
 same directions; survival under a lock depends on the nearest enemy (23% with one inside 350 u, 50% beyond
 1,400 u) and on the first room chosen.
 
-**7. The maps are four different games, and the survival maps are the same for everyone.**
-Survival to 14 s by where you are 10 s after a locked spawn (identical for top and field):
+**7. Which spawn point you get matters, the same for everyone, and the first move from it is coachable.**
+*(Corrected 2026-10-17. The first version of this finding tabulated "areas", which were positions at the
+first 10 s clock tick after a spawn — and death spots for lives that ended before it — not spawn points.)*
+From the 60 one-second games, chained-death rate under a lock by the actual spawn point: dm3 RL 55% vs
+tele/mega 75%; dm2 RA/MH and big stairs 64% vs water 89%, NG 85%, low tele 83%; e1m2 start 48% and RL 60% vs
+the quad-side spawns 84–86%; schloss flat at 73–81%. Top vs field by spawn point is equal within noise. The
+first room a player moves into separates survival 2–4× from the same spawn (among players who got out of the
+spawn area at all):
 
-| map | spawn there and live | spawn there and die | what breaks the lock (last 20–30 s) |
-|---|---|---|---|
-| dm3 | water.rox 74%, water.GL 70%, water.LG 67%, SNG 63%, SNG.MH 60%, window 44% | SNG.tele 17%, Ring 18–25%, RA.entry 20% | frag → mega (58%) / YA / RL; red after |
-| dm2 | GL 64%, floating 55%, secret 48%, tele.YA 41%, big 38% | water 8–10%, NG 12–13%, Quad.low 15% | YA → **red** (85% of breaks) |
-| e1m2 | YA.tele 59%, GA 55%, water.RL 55%, water.GA 54%, start.stairs 52% | GL.Quad 10–16%, Quad 13–14%, YA.spikes 16% | frag → frag (73%); mega; no red lever |
-| schloss | RA 53%, cemetary.Ring 48%, cathedral.YA 40%, RA.window 40%, tower 37% | cathedral.SSG 17–18%, Quad 19%, Quad.high 20%, Quad.ledge 21% | YA/RL → red; mega |
+| map | spawn (chained, all → locked) | first room under lock → survival to 14 s (n) |
+|---|---|---|
+| dm3 | RL 58→55% | water 68% (56), bridge.low 66% (118) |
+| dm3 | YA 61→69% | window 41% (85), YA floor 33% (161) |
+| dm3 | RA tunnel 61→67% | hill 39% (192), RA.low 25% (44) |
+| dm3 | lifts top 61→72% | lifts.below 26% (246) |
+| dm3 | mega (SNG low) 64→75% | SNG.MH 51% (39), Ring 24% (190) |
+| dm3 | tele 66→75% | Ring 26% (192), RA.rox 24% (29) |
+| dm2 | RA/MH 56→64% | RA.MH/rox 67% (45), low.button 59% (68), big.stairs 46% (50), low.stairs 46% (37) |
+| dm2 | big stairs 61→64% | big 38% (281) |
+| dm2 | tele YA side 67→72% | tele.YA 51% (156) |
+| dm2 | low button 67→74% | low.RL 29% (258) |
+| dm2 | quad button 70→75% | big 44% (75), Quad.button 30% (80), NG 21% (39), Quad.low 14% (74) |
+| dm2 | low RL 69→78% | low.stairs 36% (87), low.lift 33% (67) |
+| dm2 | tele low 70→83% | tele.YA 33% (143) |
+| dm2 | NG 76→85% | path 25% (48), tele.entry 23% (96), Quad.low 16% (37) |
+| dm2 | water 78→89% | NG 12% (236) |
+| e1m2 | start 51→48% | start.water 54% (80), start.stairs 50% (115) |
+| e1m2 | RL 59→60% | water.RL 63% (63), cross.water 37% (109) |
+| e1m2 | door 61→65% | bridge 50% (100), cross 17% (95) |
+| e1m2 | MH low 60→66% | MH.SNG 49% (55), MH 34% (29), MH.entry 33% (93) |
+| e1m2 | spikes 62→71% | SSG.spikes 41% (76), YA.spikes 22% (120) |
+| e1m2 | YA 66→78% | YA.water 51% (41), GL.stairs 31% (68) |
+| e1m2 | cross 70→78% | MH.entry 38% (53), Quad.stairs 22% (119) |
+| e1m2 | GL-quad b 72→84% | GL 18% (180) |
+| e1m2 | quad 72→85% | Quad.stairs 24% (46), GL.Quad 19% (95) |
+| e1m2 | GL-quad a 73→86% | GL 20% (98), Quad 13% (84) |
+| schloss | cemetery tele 69→73% | tower.RL 29% (244), RA.window 21% (39) |
+| schloss | tower entry 70→74% | tower.RL 32% (139), Quad.ledge 27% (117) |
+| schloss | cathedral SSG 69→75% | cathedral 26% (278) |
+| schloss | cemetery low 65→75% | RA.low 29% (235) |
+| schloss | quad low 67→76% | tower.entry 35% (136), yard.tunnel 23% (56), Quad.ledge 13% (52) |
+| schloss | tower RL 69→80% | tower 38% (120), cemetary.tele 28% (50), tower.entry 20% (25) |
+| schloss | quad 71→81% | cathedral 23% (199), Quad.ledge 18% (62) |
+| schloss | quad high 71→81% | Quad.ledge 32% (56), cathedral.YA 23% (108), Quad 15% (47) |
+
+Lock here = per-second margin (enemy alive stack − own, +100 per RL) above the map's 85th percentile
+(dm3 386, dm2 400, e1m2 234, schloss 375); it has no RA term, so locked shares differ slightly from the 10 s
+study. Spawn-point coordinates and the script: scratchpad `spawn_points.py`. Lock breaks are unchanged from
+finding 5 (dm3 frag→mega, dm2 YA→RA, e1m2 frag→frag + mega, schloss YA/RL→RA).
 
 ## What this means for coaching
 
@@ -106,7 +146,7 @@ Coach states and routes, not deaths. In order of the evidence:
    yellow he didn't take is."
 5. **Quad is the last ten seconds.** Attendance is equal; the field leaves the room in the last 10 s 54% of
    the time. Stay, with the rocket (in-room-with-RL 60% vs 43%).
-6. **Locks are an item race.** Under a lock, go for the item on the survival map (yellow first), take the
+6. **Locks are an item race.** Under a lock, go for the item (yellow first), take the first move from the spawn-point table, take the
    damage you can, and know the break sequence for the map (dm2: yellow then red). Flood the room the enemy
    holds with three, not a spot on the map; send the stacked player first, the boomsticks second.
 7. **Stop coaching:** chained-death share, "don't die", waiting to respawn, "listen more". None of them
@@ -120,7 +160,8 @@ withdrawn.
 
 ## Caveats and data issues
 - 10 s state samples and coarse areas for everything except the 60-game one-second study; the decisive
-  flood cells hold 16–39 events.
+  flood cells hold 16–39 events. `player_state10s.loc` is filled for dead players too (the death spot), so any
+  "area at the tick" table mixes destinations with death spots — finding 7 was rebuilt on real spawn points.
 - Roster weighting: Blood Dog is 29% of top player-games (yeti + war another 30%); per-player medians agree
   with the pooled numbers but "top" sits closer to BD than to bogojoker.
 - All pickups treated as audible; "first damage" is first hit, not first shot.
