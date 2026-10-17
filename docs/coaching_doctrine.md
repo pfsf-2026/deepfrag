@@ -46,8 +46,8 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   (968,-3416,408), cemetery tele (1168,-1984,312), RA/cemetery (696,-3184,184; .loc cemetery, 505 u from the
   RA), tower entry (136,-2471,440), mid (-249,-2361,312; .loc quad.low by the yard tunnel, 640 u from pent),
   quad/Cat high (424,-3240,600; .loc quad.high), quad/Cat low (455,-3032,440; .loc quad, 445 u from the RA,
-  740 u from the quad — Peter to confirm). Names are Peter's (2026-10-17); "Cat" is the word for cathedral
-  in all coaching text.
+  740 u from the quad). Names are Peter's (2026-10-17; "mid" and "quad/Cat high" confirmed by him the same
+  day); "Cat" is the word for cathedral in all coaching text.
 - **Location vocabularies differ.** `player_state10s.loc` and the analyzer's `locs` use the `.loc` files
   (`mvd-analytics/loc/data/<map>.loc`: dm3 has water, water.LG, water.GL, water.rox …); the map JSONs
   (`mvd-web/static/maps/<map>.json`) use different names (dm3: bridge.low, hill, RL …). Say which one a
