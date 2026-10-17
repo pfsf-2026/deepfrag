@@ -133,6 +133,12 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
 - Speak plainly about strong players too: say "takes the most" when the data says volume, "best" only when it
   says efficiency (2026-10-06).
 
+- **Story, not "top players do X" (Peter, 2026-10-17).** A coaching text is a sequence of situations the player
+  is actually in ("you just spawned and your team is locked", "you heard them take red", "you have 150 and no
+  gun"), the decision available there, and what players who make that decision get next — the item, then the
+  damage they did with it; the shotgun damage before dying off a locked spawn. Numbers sit under the story as
+  evidence. "TOP vs FIELD" describes who is better; it is never the advice.
+
 ## 6. Process
 - Read this file before any coaching text. Re-read §1 before quoting any value or timer.
 - A correction from Peter goes into §7 immediately, then into the relevant section.
@@ -159,3 +165,6 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   first move is measured as the first room entered from that spawn.
 - 2026-10-17 "we rarely flood 'mega' on dm3. There are also 3 megas, so which are you talking about?" — an item
   take before a lock break is not a flood, and a mega on dm3 must be named (SNG / hill / Pent side).
+- 2026-10-17 "this is not actionable. We need more of a story approach to this rather than 'top players do
+  this'. That's crap … make this narrative with data, and not data focused." — §5 rule above; the research
+  doc's coaching section and the Game Report wording were rewritten in that voice the same day.
