@@ -341,10 +341,13 @@ def compute(ov, data, me, gid, mp):
             ans.append(f"From the {l['spawn']} spawn under a lock, players who go to {best[0]} live to 14 s {100 * best[1][0]:.0f}% of the time ({best[1][1]} cases)" + (f"; {room} lives {100 * mine[0]:.0f}%." if mine else "."))
         elif best:
             ans.append(f"{room} is already where players live from off this spawn ({100 * best[1][0]:.0f}%); what was missing was the next step.")
-        for o in opts:
+        for n_, o in enumerate(opts):
             when = "was up" if o["up_at"] <= l["s0"] else f"came up at {mmss(o['up_at'])}"
             who = f"{o['taken_by']} took it at {mmss(o['taken_at'])}" if o["taken_at"] else "nobody took it"
-            ans.append(f"The point of living was the {o['kind'].upper()} at {o['loc']}: it {when}, {o['s']:.0f} s away, and {who}. Get there, take it, then hit first with it.")
+            if n_ == 0:
+                ans.append(f"The point of living was the {o['kind'].upper()} at {o['loc']}: it {when}, {o['s']:.0f} s away, and {who}. Get there, take it, then hit first with it.")
+            else:
+                ans.append(f"Also on time: the {o['kind'].upper()} at {o['loc']} ({when}, {o['s']:.0f} s away; {who}).")
         if not ans:
             ans.append("No better room or item was on time from this spawn. This is a life to trade with: put shotgun damage on the nearest enemy before you die, and report where he is.")
         mm2 = []
