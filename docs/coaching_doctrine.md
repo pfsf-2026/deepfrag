@@ -76,16 +76,24 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   - **dm3**: rarely flooded. Getting control back when out of control is stealing a quad and killing someone
     who drops a weapon, or having a weapon and getting the quad over the enemies, then killing 1–2 key enemy
     weapons and taking RA control back. Three megas: SNG (low, by the SNG/MH), hill (under the ring/quad),
-    Pent side (RL/pent room) — always say which one; "took mega before the break" is any of the three.
+    Pent side (RL/pent room) — always say which one. Data (2,196 broken dm3 locks, 2026-10-17): in the 30 s
+    before the break the locked team took YA 65%, RL 63%, RA 33%, quad 12%; megas: hill 31%, Pent side 23%,
+    SNG 18%. The break is YA + RL first, then RA; the mega is the hill one more than the others.
   - **dm2**: a lot easier to lock. The lock positions: (1) one at the bottom of the tele stairs covering the two
     spawns and the tele to high RL; (2) one running quad and secret; (3) one running the back room red/mega and
     low RL; (4) one floating where help is needed. Floods when locked: hit tele hard, or get at least one
     teammate with an RL at low RL and send the rest to flood low RL between quads. Low RL is very hard to hold
-    against a quad coming from path or big — open question for the data.
+    against a quad coming from path or big — open question for the data. Data (2,471 broken dm2 locks): before
+    the break the locked team took big YA 76%, back-room RA 62%, tele YA 50%, low RL 49%, secret RA 47%, high RL
+    41%, back-room mega 34%, GL mega 25%, quad 13% — big YA then the back-room red is the sequence.
   - **e1m2**: the flood is usually the YA room, the only real armor. GA helps but does not stand up to a
-    stacked-on-stacked fight. Flooding quad early matters.
+    stacked-on-stacked fight. Flooding quad early matters. Data (1,727 broken e1m2 locks): before the break RL
+    64%, YA 39%, MH 32%, quad 14% — the RL is the lever on e1m2, YA second.
   - **schloss**: floods happen at cathedral RL or tower RL, or at quad during quad times. Quad and pent are
     almost always flooded — not because of a lock, to flip control with powerups. Hard to lock; back and forth.
+    Data (1,771 broken schloss locks): before the break tower YA 60%, cathedral YA 55%, tower RL 52%, cathedral RL
+    52%, RA 49%, yard mega 33%, cemetery mega 24%, quad 21% — the two RL rooms Peter names are exactly where
+    breaks are built.
   - **Plan**: a deep dive per map — taking control, holding control, breaking control, controlling powerups,
     controlling key areas/items — before more generic lock advice.
 

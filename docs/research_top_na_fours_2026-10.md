@@ -126,8 +126,13 @@ spawn area at all):
 
 Lock here = per-second margin (enemy alive stack − own, +100 per RL) above the map's 85th percentile
 (dm3 386, dm2 400, e1m2 234, schloss 375); it has no RA term, so locked shares differ slightly from the 10 s
-study. Spawn-point coordinates and the script: scratchpad `spawn_points.py`. Lock breaks are unchanged from
-finding 5 (dm3 frag→mega, dm2 YA→RA, e1m2 frag→frag + mega, schloss YA/RL→RA).
+study. Spawn-point coordinates and the script: scratchpad `spawn_points.py`. Lock breaks by item LOCATION
+(share of broken locks where the locked team took it in the last 30 s; 2026-10-17 rerun): dm3 YA 65%, RL 63%,
+RA 33%, hill mega 31%, Pent-side mega 23%, SNG mega 18%, quad 12%; dm2 big YA 76%, back-room RA 62%, tele YA
+50%, low RL 49%, secret RA 47%, high RL 41%, back-room mega 34%, GL mega 25%, quad 13%; e1m2 RL 64%, YA 39%,
+MH 32%, quad 14%; schloss tower YA 60%, cathedral YA 55%, tower RL 52%, cathedral RL 52%, RA 49%, yard mega
+33%, cemetery mega 24%, quad 21%. An item take is not a flood: this is what the locked team collected, not
+where it went as a group.
 
 ## What this means for coaching
 
