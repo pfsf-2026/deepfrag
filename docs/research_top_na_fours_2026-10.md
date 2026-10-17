@@ -134,34 +134,62 @@ MH 32%, quad 14%; schloss tower YA 60%, cathedral YA 55%, tower RL 52%, cathedra
 33%, cemetery mega 24%, quad 21%. An item take is not a flood: this is what the locked team collected, not
 where it went as a group.
 
-## What this means for coaching
+## What to decide, and when
 
-Coach states and routes, not deaths. In order of the evidence:
+*(Rewritten 2026-10-17 after Peter: "we need more of a story approach … top players do that because they are
+just better … make this narrative with data, and not data focused.")* The findings above compare the best ten
+with the rest; that is the evidence, not the advice. The advice is the decision in each spot and what players
+who make it get next.
 
-1. **A gun before any fight.** The RL is worth ×3.8 on kill odds and ×0.23 on death odds; the top hold it
-   44% of alive time because they die less, not because they wait for it. Every map needs a spawn-to-RL route
-   a player can run blind, and the first metric on a player's card should be "share of alive time armed".
-2. **Armor without a gun is the most expensive habit in the game** (−5.2 pp a death, second only to dying
-   with quad). 1.85 a game in the field vs 1.44, 62–69% without RL/LG, the killer smaller 78% of the time,
-   over in 2.8 s, mostly on dm2. The rule writes itself: stack goes to the gun, never the other way.
-3. **Land first.** 61% vs 50%, everywhere, under every condition. It is seeing him first, position and aim
-   together; it is also the one perception number that moves with skill, so it is the one to track.
-4. **Turn sounds into items, not into fights.** Everyone hears the red; the top take an item within 15 s of
-   an enemy death 37% vs 27% and are late on yellow far less. "Red heard + no RL = not your fight; the
-   yellow he didn't take is."
-5. **Quad is the last ten seconds.** Attendance is equal; the field leaves the room in the last 10 s 54% of
-   the time. Stay, with the rocket (in-room-with-RL 60% vs 43%).
-6. **Locks are an item race.** Under a lock, go for the item (yellow first), take the first move from the spawn-point table, take the
-   damage you can, and know the break sequence for the map (dm2: yellow then red). Flood the room the enemy
-   holds with three, not a spot on the map; send the stacked player first, the boomsticks second.
-7. **Stop coaching:** chained-death share, "don't die", waiting to respawn, "listen more". None of them
-   separates good players from the rest.
+**You just spawned and your team is locked.** Everyone dies here the same: two of three locked spawns end
+inside 14 s whoever you are, and the first 14 s is a shotgun fight for everyone (74–83% of the damage in them
+is shotgun). Waiting to respawn changes nothing. So the decision is not "how do I survive", it is "what does
+this life produce before it ends". Players who go for an item straight off the spawn take one inside 14 s on
+34–40% of locked spawns and deal 45–55 damage per spawn; players who run at the fight first get an item on
+23–34%, deal 33–42, and one locked spawn in four produces nothing. Time to the item is the same for both
+(~7.5 s); the difference is the decision to go. Move to the room the spawn-point table gives you (dm3 RL
+spawn: the water; e1m2 door: the bridge; dm2 RA/MH: the rox), put shotgun damage on whoever you pass, take the
+yellow, and send `need armor weapon @ <loc>`.
 
-## For the player we started with (omicron)
-Starts the fewest fights on his team, holds the RL 30–39% of alive time, and his "alone into two" deaths
-are the pattern — all three are the state problem in finding 3, not the cue problem. His coaching is 1, 3
-and 6 above, in that order; the "two-thirds of deaths inside 14 s" line was the pool's number and is
-withdrawn.
+**Your team is locked and one of them is farming a room.** Locks break as a stack race, not with a hero frag:
+in the 20 s before a lock broke the locked team had taken a yellow 62% of the time, an RL 50%, a mega 32%, on
+dm2 the red 68%, and had killed a stacked enemy 12%. The frag that ends it comes from a spawn-level player,
+12–36 s into a life, in the farmer's own room, with a shotgun half the time — that player is you. Sequence per
+map: dm2 yellow → red; dm3 a frag → the hill mega; e1m2 frags + mega; schloss yellow/RL → red. Go to the room
+he holds with two teammates, not to a spot; the most stacked walks in first (first-in survives 25% under 100
+stack, 76% at 220).
+
+**You just spawned and it is open.** This is the life you build with. Fights opened with a rocket go 67% kill /
+10% die; opened with a shotgun 24% / 46%. The RL multiplies kill odds by 3.8 and divides death odds by 4. First
+decision: the route to a gun you can run blind. Second: the stack. Players who take the stack first and sit
+without a gun 36% of their alive time die stacked-without-a-weapon almost twice a game, the costliest death
+after dying with quad. Stack goes to the gun, never the other way.
+
+**You have 150 and no gun.** Get the gun. Those deaths last 2.8 s, the killer is smaller than you 78% of the
+time, and dm2 is where it happens most.
+
+**You heard them take the red.** Everyone hears it (86% of fights started from behind had the cue, and the
+player who died knew the enemy's stack as often as the one who lived). What decides the fight is what you
+carry: without the RL a solo run at a fresh red dies 70–80% at any level; with it, players attack the fresh
+red-taker more and die less (57% vs 68%). Red heard + no RL = not your fight; the yellow he did not take is.
+Red heard + RL = go now, and hit first: hitting first turns a 51–63% death into 39–49% in every state.
+
+**A fight is starting.** Hit first — 61% vs 50% is the one thing that separates at every level and under every
+condition, and it is seeing him first, position and aim together. Hit first and you decide whether it
+continues. Hit first by him: answer inside 5 s (kill the starter 28%, die 47%) rather than back off (die 58%).
+
+**Quad in ten seconds.** Attendance is equal; the last ten seconds decide. Players who walk out of the room in
+the last 10 s (54% of the time for most of us) hand it over; players who stay, with the rocket, take it.
+
+**You know something your team does not.** NA runs on voice, so the MM2 line is the one nobody sends; on EU it
+is the floor. One line on the spawn (`need armor weapon @ loc`), one when a room is lost (`lost loc 2>`), one
+when an item goes (`enemy took ra`). The player with the RL then knows where the fight is without anyone talking.
+
+**Stop coaching** chained-death share, "don't die", waiting to respawn, "listen more": none separates anyone.
+
+**Omicron, in this frame.** Fewest fight starts on his team, RL 30–39% of alive time, deaths alone into two
+with the shotgun; 28 of 35 behind-starts had the cue and he died in 27, because he arrived without the rocket.
+His decisions: the open-spawn route to the gun, hitting first, and the farmer's room with two others, not alone.
 
 ## Caveats and data issues
 - 10 s state samples and coarse areas for everything except the 60-game one-second study; the decisive

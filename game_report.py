@@ -23,7 +23,7 @@ import urllib.parse
 from duel_adv import _eff, _Series
 import spawn_rooms as SR
 
-VERSION = 2
+VERSION = 3
 HUB = "https://hub.quakeworld.nu/games/?gameId={gid}&from={f}&to={t}&track={uid}"
 MAJOR = ("ra", "ya", "ga", "mh", "rl", "lg", "quad", "pent", "ring")
 NEAR = 700            # units: "with" a teammate / "into" enemies
@@ -249,10 +249,10 @@ def compute(ov, data, me, gid, mp):
     streak_starts = {h["t"] for h in hi if h["kind"] == "streak"}
     for l in sorted(lives, key=lambda l: -(l["kills"] * 100 + l["dealt"]))[:3]:
         if l["kills"] >= 2 and l["s0"] not in streak_starts:
-            hi.append(dict(t=l["s0"], t1=l["nd"], kind="life", text=f"{l['len']:.0f} s life from the {l['spawn']} spawn: {l['kills']} frags, {l['dealt']} damage, took {' '.join(k for _, k, _ in l['items']) or 'nothing'}", hub=hub(l["s0"], l["nd"])))
+            hi.append(dict(t=l["s0"], t1=l["nd"], kind="life", text=f"{l['len']:.0f} s life from the {l['spawn']} spawn: took {' '.join(k for _, k, _ in l['items']) or 'nothing'}, then {l['kills']} frags and {l['dealt']} damage with it", hub=hub(l["s0"], l["nd"])))
     for t, k, l, _ in takes:
         if k in ("ra", "mh", "quad", "pent") and locked_at(t):
-            hi.append(dict(t=t, t1=t, kind="item_locked", text=f"took {k} at {l} while your team was locked (margin {M[t // 1000]:.0f})", hub=hub(t)))
+            hi.append(dict(t=t, t1=t, kind="item_locked", text=f"took the {k} at {l} while your team was locked: the stack race that breaks locks", hub=hub(t)))
     hi.sort(key=lambda h: h["t"])
 
     # ── lowlights
@@ -263,11 +263,11 @@ def compute(ov, data, me, gid, mp):
         k = l["death"] or {}
         tk = team_of.get(k.get("killer")) == team and k.get("killer") != me
         if l["quad_d"]:
-            lo.append(dict(t=l["nd"], kind="quad_death", text=f"died with quad ({l['dealt']} damage dealt in that life)", hub=hub(l["nd"])))
+            lo.append(dict(t=l["nd"], kind="quad_death", text=f"quad died with you after {l['dealt']} damage: the run was spent in one fight instead of on the enemies with guns", hub=hub(l["nd"])))
         elif l["eff_d"] >= 150 and not l["gun_d"]:
-            lo.append(dict(t=l["nd"], kind="stack_no_gun", cost=l["dealt"], text=f"died with {l['h_d']}/{l['a_d']}{l['at_d']} and no RL or LG, {l['len']:.0f} s into the life" + (" (teamkill)" if tk else ""), hub=hub(l["nd"])))
+            lo.append(dict(t=l["nd"], kind="stack_no_gun", cost=l["dealt"], text=f"you met {k.get('killer') or 'them'} with {l['h_d']}/{l['a_d']}{l['at_d']} and no RL or LG, {l['len']:.0f} s into the life: a stack spent without a weapon to use it" + (" (teamkill)" if tk else ""), hub=hub(l["nd"])))
         elif l["near_e"] >= 2 and l["near_m"] == 0 and l["kills"] == 0 and not tk:
-            lo.append(dict(t=l["nd"], kind="alone_into_2", cost=l["dealt"], text=f"alone into {l['near_e']} enemies with no teammate within {NEAR} units; dealt {l['dealt']}", hub=hub(l["nd"])))
+            lo.append(dict(t=l["nd"], kind="alone_into_2", cost=l["dealt"], text=f"you went into {l['near_e']} enemies with no teammate within {NEAR} units and dealt {l['dealt']}: the decision was to fight them rather than wait for a second gun or report them", hub=hub(l["nd"])))
     E = sorted(l["s0"] for l in lives if l["empty"] and l["nd"] < end)
     j = 0
     while j < len(E):
@@ -275,7 +275,7 @@ def compute(ov, data, me, gid, mp):
         while k + 1 < len(E) and E[k + 1] - E[j] <= 90000:
             k += 1
         if k - j + 1 >= 3:
-            lo.append(dict(t=E[j], kind="empty_cluster", text=f"{k - j + 1} empty lives in {(E[k] - E[j]) / 1000:.0f} s (under {EMPTY_DMG} damage, no frag, no item)", hub=hub(E[j], E[k])))
+            lo.append(dict(t=E[j], kind="empty_cluster", text=f"{k - j + 1} lives in {(E[k] - E[j]) / 1000:.0f} s that produced nothing: no damage, no frag, no item. Off those spawns the decision was to run at the fight before taking anything", hub=hub(E[j], E[k])))
         j = k + 1
     # a player who fights all game trips "alone into two" every minute: keep the five costliest per kind
     per_kind = collections.defaultdict(list)
@@ -338,15 +338,15 @@ def compute(ov, data, me, gid, mp):
         did += f", {l['near_e']} enemies within {NEAR} units, {l['near_m']} teammates." if l["near_e"] else ", no enemy within 700 units two seconds before the death."
         ans = []
         if best and best[0] != room:
-            ans.append(f"The first room that survives most from the {l['spawn']} spawn under a lock is {best[0]} ({100 * best[1][0]:.0f}%, {best[1][1]} cases).")
+            ans.append(f"From the {l['spawn']} spawn under a lock, players who go to {best[0]} live to 14 s {100 * best[1][0]:.0f}% of the time ({best[1][1]} cases)" + (f"; {room} lives {100 * mine[0]:.0f}%." if mine else "."))
         elif best:
-            ans.append(f"{room} is already the best first room from this spawn ({100 * best[1][0]:.0f}%); the difference was the timing and the fight, not the direction.")
+            ans.append(f"{room} is already where players live from off this spawn ({100 * best[1][0]:.0f}%); what was missing was the next step.")
         for o in opts:
             when = "was up" if o["up_at"] <= l["s0"] else f"came up at {mmss(o['up_at'])}"
-            who = f"taken by {o['taken_by']} at {mmss(o['taken_at'])}" if o["taken_at"] else "never taken"
-            ans.append(f"{o['kind'].upper()} at {o['loc']} {when}, {o['s']:.0f} s away, {who}.")
+            who = f"{o['taken_by']} took it at {mmss(o['taken_at'])}" if o["taken_at"] else "nobody took it"
+            ans.append(f"The point of living was the {o['kind'].upper()} at {o['loc']}: it {when}, {o['s']:.0f} s away, and {who}. Get there, take it, then hit first with it.")
         if not ans:
-            ans.append("No better room or item was on time from this spawn; this was a spawn to trade from — hit first, then fall back.")
+            ans.append("No better room or item was on time from this spawn. This is a life to trade with: put shotgun damage on the nearest enemy before you die, and report where he is.")
         mm2 = []
         if l["near_e"] >= 2:
             mm2.append(f"lost {room if room != 'stayed' else l['spawn']} {l['near_e']}>")
