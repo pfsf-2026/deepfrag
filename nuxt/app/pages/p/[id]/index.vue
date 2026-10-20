@@ -93,11 +93,20 @@ function goCoach() {
 // ── Config Profile (hardware/settings) ──────────────────────────────────────
 // Seeded from the community config sheet; user-editable. Stored as a free-form
 // key→value bag plus nationality. We render it grouped (mouse/screen/cfg/binds)
-// and offer an inline edit form (admin-gated server-side for now).
+// and offer an inline edit form to the profile's owner or an admin (enforced server-side).
 const config = ref(null)
 const configLoading = ref(true)
 const configEditing = ref(false)
 const configDraft = ref({})
+// Owner-only editing (2026-10-20, Peter): the signed-in Discord user whose linked profile is
+// this player, or a site admin. The API enforces the same rule; this just hides the button.
+const { user: authUser, authHeader, fetchMe, ready: authReady } = useAuth()
+onMounted(() => { if (!authReady.value) fetchMe() })
+const canEditConfig = computed(() => {
+  const u = authUser.value
+  if (!u) return false
+  return !!u.is_admin || String(u.canonical_id || '').toLowerCase() === String(id.value || '').toLowerCase()
+})
 
 async function loadConfig() {
   const url = df.configUrl(id.value)
@@ -169,9 +178,11 @@ async function saveConfig() {
   try {
     const r = await fetch(url, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
       body: JSON.stringify({ config: clean, nationality }),
     })
+    if (r.status === 401) throw new Error('Sign in with Discord to edit your config')
+    if (r.status === 403) throw new Error('You can only edit your own config')
     if (!r.ok) throw new Error(`Save failed (${r.status})`)
     configEditing.value = false
     await loadConfig()
@@ -418,9 +429,10 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
             <h3>⚙️ Config Profile
               <span class="cfg-sub" v-if="config && config.source">· from {{ config.source === 'sheet' ? 'community sheet' : config.source }}</span>
             </h3>
-            <button v-if="!configEditing" class="cfg-edit-btn" @click="startConfigEdit">
+            <button v-if="!configEditing && canEditConfig" class="cfg-edit-btn" @click="startConfigEdit">
               {{ configHasData ? 'Edit' : 'Add config' }}
             </button>
+            <span v-else-if="!configEditing && !authUser" class="cfg-sub">sign in with Discord to edit your own</span>
           </div>
 
           <div v-if="configLoading" class="cfg-empty">Loading config…</div>
@@ -439,7 +451,7 @@ useHead({ title: () => profile.value ? `${profile.value.player} · DeepFrag` : '
           </div>
 
           <div v-else-if="!configEditing && !configHasData" class="cfg-empty">
-            No config on file. <a href="#" @click.prevent="startConfigEdit">Add yours</a> — sens, mouse, binds, screen.
+            No config on file.<template v-if="canEditConfig"> <a href="#" @click.prevent="startConfigEdit">Add yours</a> — sens, mouse, binds, screen.</template>
           </div>
 
           <!-- Edit mode -->

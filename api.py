@@ -3860,8 +3860,8 @@ def deep_analyze_match(
 
 # ── Player configs + map ─────────────────────────────────────────────────────
 # Hardware/config profiles (sens, mouse, binds, geo) seeded from the community
-# sheet, per-user editable (admin-gated for now). Powers the profile "Config
-# Profile" card and the player map.
+# sheet; editable by the profile's owner (Discord-linked) or an admin. Powers the
+# profile "Config Profile" card and the player map.
 
 @app.get("/api/players/{canonical_id}/config")
 def get_player_config(canonical_id: str, response: Response):
@@ -3886,27 +3886,50 @@ def put_player_config(
     nationality: str | None = Body(default=None, embed=True),
     lat: float | None = Body(default=None, embed=True),
     lon: float | None = Body(default=None, embed=True),
+    authorization: str | None = Header(default=None),
 ):
-    """Edit a player's config profile. OPEN for now — anyone can edit any
-    player's config (community-sourced, low-stakes; per-user auth comes with
-    federated login). Marks source='user' so the sheet re-seed won't clobber
-    a hand-edited row."""
+    """Edit a player's config profile. Owner-only since 2026-10-20 (Peter: "we should only be
+    able to edit our own settings" — someone had set his grip to a slur): the signed-in Discord
+    user whose linked profile is this player, a site admin, or the admin key. The previous row
+    is kept in player_config_history so a vandalised value can be put back. Marks
+    source='user' so the sheet re-seed won't clobber a hand-edited row."""
+    expected = os.environ.get("SYNC_SECRET")
+    u = None
+    if expected and authorization == f"Bearer {expected}":
+        who, is_admin = "admin-key", True
+    else:
+        u = _current_user(authorization, required=False)
+        if not u:
+            raise HTTPException(401, "sign in with Discord to edit a config")
+        who, is_admin = (u.get("username") or u.get("discord_id") or "user"), bool(u.get("is_admin"))
     with pg() as conn:
         cur = conn.cursor()
+        cid = _resolve_cid(cur, canonical_id)
+        if not is_admin:
+            mine = (u or {}).get("canonical_id") or ""
+            if not mine or _resolve_cid(cur, mine) != cid:
+                raise HTTPException(403, "you can only edit your own config")
+        cur.execute("""CREATE TABLE IF NOT EXISTS player_config_history (
+            id BIGSERIAL PRIMARY KEY, canonical_id TEXT NOT NULL, config JSONB, nationality TEXT,
+            source TEXT, updated_by TEXT, updated_at TIMESTAMPTZ, replaced_by TEXT,
+            saved_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+        cur.execute("""INSERT INTO player_config_history (canonical_id, config, nationality, source, updated_by, updated_at, replaced_by)
+                       SELECT canonical_id, config, nationality, source, updated_by, updated_at, %s
+                       FROM player_configs WHERE canonical_id = %s""", (who, cid))
         cur.execute("""
             INSERT INTO player_configs
                 (canonical_id, nick, nationality, lat, lon, config, source, updated_by, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, 'user', 'public', now())
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb, 'user', %s, now())
             ON CONFLICT (canonical_id) WHERE canonical_id IS NOT NULL
             DO UPDATE SET
                 nationality = COALESCE(EXCLUDED.nationality, player_configs.nationality),
                 lat = COALESCE(EXCLUDED.lat, player_configs.lat),
                 lon = COALESCE(EXCLUDED.lon, player_configs.lon),
                 config = EXCLUDED.config,
-                source = 'user', updated_by = 'public', updated_at = now()
-        """, (canonical_id, canonical_id, nationality, lat, lon, json.dumps(config)))
+                source = 'user', updated_by = EXCLUDED.updated_by, updated_at = now()
+        """, (cid, cid, nationality, lat, lon, json.dumps(config), who))
         conn.commit()
-    return {"canonical_id": canonical_id, "saved": True}
+    return {"canonical_id": cid, "saved": True, "by": who}
 
 
 @app.post("/api/admin/configs/seed-from-sheet")
