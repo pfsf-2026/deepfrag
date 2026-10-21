@@ -5,6 +5,11 @@
 const route = useRoute()
 const map = computed(() => String(route.params.map || ''))
 const pb = computed(() => quadPlaybook(map.value))
+// Travel times between the map's key rooms (fast / typical seconds from real runs; Peter 2026-10-21):
+// built from the same route table the Game Report uses (docs/map_travel_times.md).
+import travelTimes from '~/composables/travelTimes.json'
+const tt = computed(() => travelTimes[map.value] || null)
+function ttCell(c) { if (!c) return '·'; if (c.fast != null) return `${c.fast} / ${c.typical}`; if (c.est != null) return `~${Math.round(c.est)}`; return '' }
 const others = computed(() => COACH_MAPS.filter(m => m !== map.value))
 const top = computed(() => QUAD_TOP[map.value] || null)
 const topNotes = computed(() => QUAD_TOP_NOTES[map.value] || [])
@@ -93,6 +98,19 @@ useSeoMeta({ title: () => pb.value ? `${pb.value.title} · AI Coach · DeepFrag`
         <ol class="play"><li v-for="(p, i) in pb.play" :key="i">{{ p }}</li></ol>
       </section>
 
+      <section v-if="tt" class="sec">
+        <div class="stitle">Travel times between key rooms <span class="muted small">fast / typical seconds</span></div>
+        <div class="ttwrap">
+          <table class="tt">
+            <thead><tr><th>from \ to</th><th v-for="r in tt.rooms" :key="r">{{ r }}</th></tr></thead>
+            <tbody>
+              <tr v-for="(row, i) in tt.cells" :key="i"><th>{{ tt.rooms[i] }}</th><td v-for="(c, j) in row" :key="j" :class="{ est: c && c.est != null, self: !c }">{{ ttCell(c) }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="dnote">Seconds from entering one room to entering the other, measured from 64 recent NA fours. Fast is the 10th percentile of the runs that actually went that way in one life, with the real stairs, lifts and jumps in it; typical is the median. A <em>~value</em> is an estimate for a pair nobody ran directly. Count your item clock against the fast number and leave on time.</p>
+      </section>
+
       <p class="foot muted small">From {{ pb.data?.contests?.toLocaleString() || '—' }} contested quad spawns on {{ map }} in the demos (a player counts as contesting when within 650 units in the last 10 seconds before the spawn). Spots are the server's own location names for where a player stood 5 seconds before the spawn. <NuxtLink to="/glossary#quad_conversion">Quad conversion, explained →</NuxtLink></p>
       <div class="more"><span class="muted small">Other maps:</span> <NuxtLink v-for="m in others" :key="m" :to="`/coach/quad/${m}`" class="mlink">{{ m }}</NuxtLink></div>
     </template>
@@ -109,6 +127,12 @@ useSeoMeta({ title: () => pb.value ? `${pb.value.title} · AI Coach · DeepFrag`
 h1 { font-size: clamp(28px, 6vw, 40px); font-weight: 900; margin: 0; letter-spacing: -0.01em; line-height: 1.05; }
 .lede { margin: -6px 0 0; font-size: 15px; line-height: 1.6; color: var(--fg-2); max-width: 70ch; }
 .sec { display: flex; flex-direction: column; gap: 10px; }
+.ttwrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.tt { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; min-width: 720px; width: 100%; }
+.tt th, .tt td { padding: 5px 7px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+.tt thead th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-2); }
+.tt tbody th { text-align: left; font-weight: 700; position: sticky; left: 0; background: var(--panel); }
+.tt td.est { color: var(--fg-3); font-style: italic; } .tt td.self { color: var(--fg-3); }
 .stitle { font-weight: 800; font-size: 15px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .muted { color: var(--fg-3); } .small { font-size: 12px; }
 .decide { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }

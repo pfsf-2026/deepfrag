@@ -141,6 +141,12 @@ export const GLOSSARY: GlossEntry[] = [
     move: 'Plan the route before you take it: quad, then straight to where the enemy stacks (their red), then their spawns. Never wait for them to come to you.' },
 
   // ── fighting ───────────────────────────────────────────────────────────────
+  { key: 'travel_time', group: 'fighting', name: 'Travel time (fast / typical)', headline: 'Know how long the run takes',
+    plain: 'Seconds from entering one room to entering another, measured from real games. Fast is the 10th percentile of runs that went that way in one life, with the stairs, lifts and jumps in it; typical is the median.',
+    count: 'From 64 recent NA fours through the demo parser\'s room trails: every time a player entered room A and then room B within 25 s of one life. Pairs with 8+ runs; pairs nobody ran are estimated by chaining typical legs.',
+    good: 'An item up in 5 s that is 8 s away is not yours; one that is 3 s away is yours if you leave now.',
+    move: 'Count the item clock against the fast number for the room you are in, and leave on time. The tables are on each map\'s quad playbook; the Game Report uses the same table for its clocks and perfect-timing lines.',
+    links: [['dm3 travel times', '/coach/quad/dm3'], ['dm2', '/coach/quad/dm2'], ['e1m2', '/coach/quad/e1m2'], ['schloss', '/coach/quad/schloss']] },
   { key: 'dmg_pm', group: 'fighting', name: 'Damage per minute', headline: 'Do more damage',
     plain: 'Damage you dealt per minute of the game. A fresh spawn has 100 health, so 500 a minute is five spawns worth of health every minute.',
     count: 'Total damage given divided by minutes played.',
