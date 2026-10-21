@@ -27,7 +27,9 @@ for gid in gids:
         if e.get('type') == 'death': deaths[e.get('player')].append(e['t'])
     games[mp] += 1
     for p in tr.get('players', []):
-        seq = [(x['s'], x['loc']) for x in p.get('sequence', []) if x.get('loc')]
+        # room labels come from the nearest .loc point, so a player skimming a wall can be labelled with the
+        # room behind it for a few frames: segments under 0.4 s are flicker, not visits
+        seq = [(x['s'], x['loc']) for x in p.get('sequence', []) if x.get('loc') and (x.get('e', 0) - x.get('s', 0)) >= 0.4]
         dd = sorted(deaths.get(p['name'], []))
         for i, (t0, a) in enumerate(seq):
             nd = next((x for x in dd if x > t0), None); seen = {a}
@@ -42,8 +44,8 @@ for mp, pairs in obs.items():
     out[mp] = {}
     for (a, b), v in pairs.items():
         if len(v) < 8: continue
-        v.sort(); out[mp].setdefault(a, {})[b] = [round(v[max(0, int(len(v) * 0.10))], 1), round(v[len(v) // 2], 1), len(v)]
-hdr = ('"""Fast room-to-room travel times per TB4 map (built %s from %s games: %s).\nROUTE_TIMES[map][from_room][to_room] = [10th-percentile seconds, median seconds, runs]: time from entering one\nroom to entering the other within one life (teleporters included, deaths excluded, pairs with 8+ runs). The 10th\npercentile is "done well" (the map\'s real stairs, lifts and jumps are in it); the median is what people take.\nBuilt by tools/mvd_features/research_2026_10/route_times_build.py from the mvd-api loc-trails."""\n'
+        v.sort(); out[mp].setdefault(a, {})[b] = [round(v[max(0, int(len(v) * 0.10))], 1), round(v[len(v) // 2], 1), len(v), round(v[max(0, int(len(v) * 0.25))], 1)]
+hdr = ('"""Fast room-to-room travel times per TB4 map (built %s from %s games: %s).\nROUTE_TIMES[map][from_room][to_room] = [10th-percentile seconds, median seconds, runs, 25th-percentile seconds]: time from entering one\nroom to entering the other within one life (teleporters included, deaths excluded, pairs with 8+ runs). The 10th\npercentile is "done well" (the map\'s real stairs, lifts and jumps are in it); the median is what people take.\nBuilt by tools/mvd_features/research_2026_10/route_times_build.py from the mvd-api loc-trails."""\n'
        % (time.strftime('%Y-%m-%d'), sum(games.values()), dict(games)))
 open(out_path, 'w').write(hdr + 'ROUTE_TIMES = ' + json.dumps(out, separators=(',', ':')) + '\n')
 print('written', out_path, {mp: sum(len(x) for x in out[mp].values()) for mp in out}, flush=True)

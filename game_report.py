@@ -28,7 +28,7 @@ except Exception:                       # table missing: the planner falls back 
     ROUTE_TIMES = {}
 import heapq
 
-VERSION = 17
+VERSION = 18
 # P(killer wins | stack edge at first contact, power-up state): 2,445 Den/LA fours, 1,025,964 enemy frags
 # (tools/mvd_features/fight_table_4on4.json, 2026-09-11). Same table the Advanced Stats pages use.
 FIGHT_TABLE = {"no powerup": [[-200, 0.06], [-70, 0.201], [0, 0.5], [70, 0.799], [200, 0.94]],
@@ -384,12 +384,21 @@ def compute(ov, data, me, gid, mp):
         i = bisect.bisect_right([x[0] for x in seq], t) - 1
         return seq[i][2] if i >= 0 else None
     RT = ROUTE_TIMES.get(mp) or {}
-    def travel(a, b):
-        """Fast seconds from room a to room b (10th percentile over observed runs), via Dijkstra on the pair table."""
+    def travel(a, b, typical=False):
+        """Seconds from room a to room b as players run it. A pair that was actually run (entered a, then b,
+        in one life) uses its own observed time: fast = 10th percentile when 15+ runs, else 25th; typical =
+        median. A pair nobody ran is estimated by the shortest chain of observed legs on TYPICAL times —
+        chaining each leg's fastest-ever time compounds into impossible numbers (e1m2 MH to YA came out at
+        1.4 s that way; the direct runs say 8 s fast, 17 s typical)."""
         if a == b:
             return 0.0
         if not RT or a not in RT:
             return None
+        direct = (RT.get(a) or {}).get(b)
+        if direct:
+            q10, med, n_ = direct[0], direct[1], direct[2]
+            q25 = direct[3] if len(direct) > 3 else med
+            return med if typical else (q10 if n_ >= 15 else q25)
         dist_ = {a: 0.0}; pq = [(0.0, a)]
         while pq:
             d0, u = heapq.heappop(pq)
@@ -397,8 +406,8 @@ def compute(ov, data, me, gid, mp):
                 return d0
             if d0 > dist_.get(u, 1e9):
                 continue
-            for v, (q10, med, n_) in (RT.get(u) or {}).items():
-                nd = d0 + q10
+            for v, leg in (RT.get(u) or {}).items():
+                nd = d0 + leg[1]
                 if nd < dist_.get(v, 1e9):
                     dist_[v] = nd; heapq.heappush(pq, (nd, v))
         return None
