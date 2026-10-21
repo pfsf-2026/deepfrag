@@ -30,6 +30,10 @@ function isCacheable(pathname, request) {
   // Auth/OAuth paths NEVER — the callback returns a one-time token in its
   // redirect; caching it would leak user A's session to user B.
   if (pathname.startsWith('/api/auth')) return false;
+  // Game reports (/api/players/{id}/games/{gid}/report, …/coach, …/vod) and the recent-games list are
+  // per player, rebuilt per report version and answered from Postgres already: a cached copy served a
+  // report two versions old for hours after a deploy (2026-10-21).
+  if (pathname.includes('/games/') || pathname.endsWith('/recent-games')) return false;
   return CACHEABLE_PREFIXES.some(p => pathname.startsWith(p));
 }
 
