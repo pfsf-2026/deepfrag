@@ -23,7 +23,7 @@ import urllib.parse
 from duel_adv import _eff, _Series
 import spawn_rooms as SR
 
-VERSION = 5
+VERSION = 6
 HUB = "https://hub.quakeworld.nu/games/?gameId={gid}&from={f}&to={t}&track={uid}"
 MAJOR = ("ra", "ya", "ga", "mh", "rl", "lg", "quad", "pent", "ring")
 NEAR = 700            # units: "with" a teammate / "into" enemies
@@ -363,30 +363,51 @@ def compute(ov, data, me, gid, mp):
         did += f"; you dealt {l['dealt']} damage"
         did += f" and died {l['len']:.1f} s in to {k.get('killer')} ({k.get('weapon')})" if k else f" and died {l['len']:.1f} s in"
         did += f", {l['near_e']} enemies within {NEAR} units, {l['near_m']} teammates." if l["near_e"] else ", no enemy within 700 units two seconds before the death."
-        ans = []
-        # the timer read first: the weapon by this spawn decides whether to stay or go
+        # The reveal is coaching of the HOW (Peter, 2026-10-21: "you're pushing stats again… rather than the
+        # narrative of how to achieve the stats"): the clock, the read of the MM2, the line to take and how
+        # to play it, the call to make, then what actually happened. Numbers stay in the data fields.
+        clock = []
+        for o in near_items[:4]:
+            if o["state"] == "up":
+                clock.append(f"the {o['kind'].upper()} at {o['loc']} is up, {o['away']:.0f} s away")
+            elif o["state"] == "in" and o["s"] <= 0:
+                clock.append(f"the {o['kind'].upper()} at {o['loc']} is up right now, {o['away']:.0f} s away")
+            elif o["state"] == "in":
+                clock.append(f"the {o['kind'].upper()} at {o['loc']} comes up in {o['s']} s, {o['away']:.0f} s away" + (f" ({o['by']} took the last one)" if o["by"] else ""))
+            elif o["state"] == "taken":
+                clock.append(f"the {o['kind'].upper()} at {o['loc']} went {o['s']} s ago to {o['by'] or 'someone'}")
+        ans = [f"At {mmss(l['s0'])} you spawn at {l['spawn']} with your team locked" + (f": {'; '.join(clock)}." if clock else ".")]
+        lost = [re.sub(r"^\S+:?\s*lost\s+", "", c["text"]).split(" ")[0] for c in others if re.search(r"\blost\b", c["text"].lower())]
+        seen = [c["text"] for c in others if "enemy" in c["text"].lower()]
+        if lost or seen:
+            ans.append("The read from the MM2: " + (f"your team has just lost {', '.join(dict.fromkeys(lost[-3:]))}, so that is where they are coming from" if lost else "") + ("; " if lost and seen else "") + (f"{seen[-1]}" if seen else "") + ".")
+        else:
+            ans.append("The read from the MM2: your team has told you nothing in the last 20 s, so assume the enemy holds the big items and play for the small ones.")
         home = next((o for o in near_items if o["kind"] in ("rl", "lg") and o["away"] <= 4), None)
-        if home:
-            if home["state"] == "up":
-                ans.append(f"The {home['kind'].upper()} at {home['loc']} was up when you spawned: this is a spawn to stay on. Take it, then fight from it.")
-            elif home["state"] == "in" and home["s"] <= 8:
-                ans.append(f"The {home['kind'].upper()} at {home['loc']} was coming in {home['s']} s: stay and fight for it, it is worth the spawn stack.")
-            elif home["state"] in ("in", "taken") and home["s"] >= 15:
-                gone = f"{home['by']} took it {home['s']} s ago" if home["state"] == "taken" and home["by"] else f"it comes back in {home['s']} s"
-                ans.append(f"The {home['kind'].upper()} at {home['loc']} was gone ({gone}): nothing to wait for here. Leave now for the nearest armor or the other weapon.")
-        if best and best[0] != room:
-            ans.append(f"From the {l['spawn']} spawn under a lock, players who go to {best[0]} live to 14 s {100 * best[1][0]:.0f}% of the time ({best[1][1]} cases)" + (f"; {room} lives {100 * mine[0]:.0f}%." if mine else "."))
+        # an item in a room your team has just called lost is a fight, not a pickup, when you have no gun
+        lost_l = [x.lower() for x in lost]
+        hot = [o for o in opts if any(o["loc"].lower().startswith(x.split(".")[0]) for x in lost_l if x)]
+        line = sorted([o for o in opts if o not in hot], key=lambda o: o["s"]) if opts else []
+        if home and home["state"] == "up":
+            ans.append(f"The line: the {home['kind'].upper()} is in this room and up, so this is a spawn to stay on — take it first, then the nearest armor, and fight from the doorway of this room rather than walking out naked.")
+        elif home and home["state"] == "in" and home["s"] <= 8:
+            ans.append(f"The line: the {home['kind'].upper()} is {home['s']} s out, which is a fight worth having — stay, put your back to the wall that covers the entrance, shotgun whoever comes for it, and be on the pad when it spawns.")
+        elif line:
+            steps = [f"the {o['kind'].upper()} at {o['loc']} ({o['s']:.0f} s away, {'already up' if o['up_at'] <= l['s0'] else 'up at ' + mmss(o['up_at'])})" for o in line]
+            ans.append("The line: " + (f"the {home['kind'].upper()} is gone for {home['s']} s, so there is nothing to wait for here — " if home else "") + "go to " + ", then ".join(steps)
+                       + ". Move at spawn speed, shotgun anyone you pass without stopping, and only after the last of those do you look for a fight. Hit first: see the doorway before the enemy sees you, and if someone is standing on the item, fire from the entrance and back off rather than walking onto him.")
         elif best:
-            ans.append(f"{room} is already where players live from off this spawn ({100 * best[1][0]:.0f}%); what was missing was the next step.")
-        for n_, o in enumerate(opts):
-            when = "was up" if o["up_at"] <= l["s0"] else f"came up at {mmss(o['up_at'])}"
-            who = f"{o['taken_by']} took it at {mmss(o['taken_at'])}" if o["taken_at"] else "nobody took it"
-            if n_ == 0:
-                ans.append(f"The point of living was the {o['kind'].upper()} at {o['loc']}: it {when}, {o['s']:.0f} s away, and {who}. Get there, take it, then hit first with it.")
-            else:
-                ans.append(f"Also on time: the {o['kind'].upper()} at {o['loc']} ({when}, {o['s']:.0f} s away; {who}).")
-        if not ans:
-            ans.append("No better room or item was on time from this spawn. This is a life to trade with: put shotgun damage on the nearest enemy before you die, and report where he is.")
+            ans.append(f"The line: nothing is on the clock from this spawn, so head for {best[0]} straight away — it is the way out of this spawn that keeps you alive long enough to find the next item — and put shotgun damage on anyone you pass.")
+        else:
+            ans.append("The line: nothing is on the clock from this spawn. This is a life to trade with: put shotgun damage on the nearest enemy before you die and make sure your team hears where he is.")
+        if hot:
+            ans.append("Not " + " or ".join(f"the {o['kind'].upper()} at {o['loc']}" for o in hot[:2]) + ": your team has just called that room lost, and with a shotgun that is a fight you walk into, not an item you pick up. Leave it until you have a gun or a teammate with one.")
+        if l["near_e"] >= 2:
+            ans.append(f"You met {l['near_e']} of them with no teammate near you: that is the moment to fire once from cover and leave, not to commit.")
+        took = [o for o in line if o["taken_by"] in foes]
+        happened = (f"What happened: " + ("; ".join(f"{o['taken_by']} took the {o['kind'].upper()} at {mmss(o['taken_at'])}" for o in took) + ", and " if took else "")
+                    + f"you died {l['len']:.0f} s in" + (f" to {k.get('killer')} ({k.get('weapon')})" if k else "") + f" having dealt {l['dealt']} damage.")
+        ans.append(happened)
         mm2 = []
         if l["near_e"] >= 2:
             mm2.append(f"lost {room if room != 'stayed' else l['spawn']} {l['near_e']}>")
@@ -417,9 +438,12 @@ def compute(ov, data, me, gid, mp):
             if took_enemy and away <= 12:
                 q = f"{mmss(av - 10000)} — quad spawns in 10 s. You are {away:.0f} s away with {eff10:.0f} effective stack{' and the RL' if rl10 else ' and no RL'}. What do you do?"
                 did = f"You were {away:.0f} s from the quad room at {mmss(av - 10000)} and {by} took it at {mmss(av)}" + (f"; you reached the room {'with' if rl10 else 'without'} the rocket." if away <= 6 else ".")
-                a = ("Players who are in the room at the spawn with the rocket take it; the ones who walk out in the last 10 s hand it over. "
-                     + (f"Ten seconds was enough to be there: move at the 10 s call, not at the spawn." if away <= 10 else "You were too far to make this one: the decision was ten seconds earlier, and the useful one here is to call it and deny the next.")
-                     + (" Without the RL, the room is a trade at best: take the armor on the way or send a teammate with a gun." if not rl10 else ""))
+                a = (f"Quad is {int(away)} s of running away and spawns in 10, so the decision is made now, not at the spawn: "
+                     + ("start moving on this call, take the armor that sits on your path without detouring, and be inside the room with three seconds to spare so you are on the pad as it appears. " if away <= 10
+                        else "you are too far to make this one; the useful decision is to say so and set up for the next: get the yellow or the RL now, so in sixty seconds you are the one in the room with a gun. ")
+                     + ("You have the rocket, so hold the entrance the enemy will use and fire as he comes through, then step onto the pad. " if rl10
+                        else "You have no rocket, so do not walk onto the pad against a gun: shoot from the doorway to make him flinch, let a teammate with a gun take it, or back off to the armor and keep the next one. ")
+                     + f"{by} took it this time.")
                 mm2 = [f"quad in 10 @ {SR.room_name(it.get('loc') or 'quad')}", "need weapon @ quad" if not rl10 else "taking quad"]
                 comms = [m for m in chat if av - 25000 <= m.get("time", -1) <= av]
                 others = []
@@ -438,10 +462,13 @@ def compute(ov, data, me, gid, mp):
                 rewinds.append(dict(idx=0, kind="quad", t=av - 10000, t_end=av + 10000, hub=hub(av - 10000, av + 10000), spawn=None, margin=round(M[s10]) if s10 < nsec else None,
                                     items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)],
                                     question=q, did=f"You took the quad at {mmss(av)} with about {eff10:.0f} stack and died inside 10 s: the run was over before it started.",
-                                    comms=[], you_sent=[], answer="A quad on a spawn stack is a quad for the other team to farm. The ten seconds before it are for the yellow or the mega next to the room, so the run has a body to carry it.",
+                                    comms=[], you_sent=[], answer="A quad on a spawn stack is a quad for the other team to farm. Spend the ten seconds before it on the yellow or the mega beside the room, take the quad with a body to carry it, and open the run on the nearest enemy gun, not on the first spawn you see.",
                                     mm2=["quad in 10, need armor", "taking quad"], options=[], best_room=None, your_room=None, your_room_survival=None, best_room_survival=None, score=0.5))
-    rewinds.sort(key=lambda w: -w.get("score", 0.7))
-    rewinds = sorted(rewinds[:6], key=lambda w: w["t"])
+    # one quad moment per report (the costliest), up to three spawn moments: the same quad lesson three
+    # times is noise (Peter, 2026-10-21)
+    quads = sorted([w for w in rewinds if w["kind"] == "quad"], key=lambda w: -w.get("score", 0))[:1]
+    spawns_ = sorted([w for w in rewinds if w["kind"] == "spawn"], key=lambda w: -w.get("score", 0))[:3]
+    rewinds = sorted(quads + spawns_, key=lambda w: w["t"])
     for i, w in enumerate(rewinds):
         w["idx"] = i; w["wall_ms"] = wall(w["t"])
     for h in hi + lo:

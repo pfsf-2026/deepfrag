@@ -45,16 +45,25 @@ function restoreAnswers() {
   try { const c = JSON.parse(localStorage.getItem(akey()) || '{}'); answers.value = c.answers || {}; revealed.value = c.revealed || {} } catch { /* private mode */ }
 }
 function persist() { try { localStorage.setItem(akey(), JSON.stringify({ answers: answers.value, revealed: revealed.value })) } catch { /* ignore */ } }
+// The coach's read of what you typed (2026-10-21): one model call per submitted answer, only when
+// there is one. Kept in this browser too, so a reload does not re-ask.
+const coachRead = ref({})
+const coachBusy = ref({})
 async function check(w) {
   revealed.value = { ...revealed.value, [w.idx]: true }; persist()
   const a = (answers.value[w.idx] || '').trim()
   if (!a) return
+  coachBusy.value = { ...coachBusy.value, [w.idx]: true }
   try {
-    const r = await fetch(`${base}/api/players/${encodeURIComponent(id.value)}/games/${encodeURIComponent(gid.value)}/report/answers`,
+    const r = await fetch(`${base}/api/players/${encodeURIComponent(id.value)}/games/${encodeURIComponent(gid.value)}/report/coach`,
       { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader() }, body: JSON.stringify({ idx: w.idx, answer: a }) })
     saved.value = { ...saved.value, [w.idx]: r.ok }
-  } catch { saved.value = { ...saved.value, [w.idx]: false } }
+    const d = r.ok ? await r.json() : null
+    coachRead.value = { ...coachRead.value, [w.idx]: d?.feedback || null }
+    try { localStorage.setItem(akey() + ':coach', JSON.stringify(coachRead.value)) } catch { /* ignore */ }
+  } catch { saved.value = { ...saved.value, [w.idx]: false } } finally { coachBusy.value = { ...coachBusy.value, [w.idx]: false } }
 }
+onMounted(() => { try { coachRead.value = JSON.parse(localStorage.getItem(akey() + ':coach') || '{}') } catch { /* ignore */ } })
 function retry(w) { revealed.value = { ...revealed.value, [w.idx]: false }; persist() }
 
 onMounted(() => { load(); restoreTwitch() })
@@ -211,9 +220,15 @@ const KIND = { powerup: 'powerup', streak: 'streak', streak_end: 'ended a streak
             <a v-if="w.hub" :href="w.hub" target="_blank" rel="noopener" class="hub">watch this moment ↗</a>
           </div>
           <div v-if="revealed[w.idx]" class="reveal">
+            <template v-if="(answers[w.idx] || '').trim()">
+              <div class="lbl">The coach's read of your answer</div>
+              <p v-if="coachBusy[w.idx]" class="muted">Reading your answer against the moment…</p>
+              <p v-else-if="coachRead[w.idx]" class="coachread">{{ coachRead[w.idx] }}</p>
+              <p v-else class="muted small">No read this time (the coach model was not reachable). The line below still stands.</p>
+            </template>
             <div class="lbl">What you did</div>
             <p>{{ w.did }}</p>
-            <div class="lbl">Answer</div>
+            <div class="lbl">The line</div>
             <p>{{ w.answer }}</p>
             <div class="lbl">MM2 to send</div>
             <div class="mm2"><code v-for="(m, i) in w.mm2" :key="i">{{ m }}</code></div>
@@ -308,6 +323,7 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .lnk { background: none; border: 0; color: var(--accent); font: inherit; font-weight: 700; cursor: pointer; padding: 8px 0; min-height: 36px; }
 .reveal { border-top: 1px dashed var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .reveal p { margin: 0 0 6px; font-size: 14px; line-height: 1.5; }
+.coachread { white-space: pre-line; border-left: 3px solid var(--accent); padding-left: 12px; }
 .mm2 { display: flex; gap: 6px; flex-wrap: wrap; } .mm2 code, .card code { background: #0d0a07; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
 /* blocks */
 .blocks { display: flex; flex-direction: column; gap: 4px; }

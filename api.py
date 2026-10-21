@@ -11200,3 +11200,77 @@ def api_game_vod(canonical_id: str, game_id: int, channel: str = ""):
             return {"video_id": v["id"], "url": v["url"], "title": v.get("title"), "created_at": v["created_at"],
                     "offset_s": max(0, int((start - c) / 1000)), "channel": channel}
     raise HTTPException(404, "no VOD on that channel covers this game")
+
+
+# ── Rewind answer coaching (2026-10-21, Peter: "when I type something into the box you don't analyze
+# it… coach the narrative of how to achieve the stats, not the stats") ───────────────────────────
+# One model call per submitted answer, only when a player submits one (that is a player trying to
+# improve, so the tokens are earned); cached by (game, player, rewind, answer).
+REWIND_COACH_SYSTEM = """You are a QuakeWorld 4on4 coach reading one moment from a player's own game. The player has typed
+what they think they should have done. Coach the HOW, as a story the player can run next time: where to go
+first and why, what the item clock means, where the enemies are from the team's MM2, what to do with the
+item once taken, where to stand and when to fire, when to leave, and the one MM2 line to send. Never quote
+win rates, percentages, sample sizes or "top players do". Use only the facts given; invent no cues (there are
+no footstep sounds in QuakeWorld; cues are item pickups, weapon fire, jumps, pain, teleporters, doors, the
+kill feed). Game facts: red armor +200 (80% absorb), yellow +150 (60%), green +100 (30%), mega +100 to 250;
+armors respawn in 20 s, weapons 30 s, mega 20 s after the holder is back at 100, quad 60 s, pent 5 min.
+Write to the player as "you", in plain words, 120 to 180 words, three short paragraphs: (1) what your answer
+got right and what it missed, in one or two sentences each; (2) the line to run, step by step, as it happens;
+(3) the call to make. No headings, no lists, no numbers except seconds and item names."""
+
+
+class _RewindGrade(BaseModel):
+    idx: int
+    answer: str
+
+
+@app.post("/api/players/{canonical_id}/games/{game_id}/report/coach")
+def api_rewind_coach(canonical_id: str, game_id: int, body: _RewindGrade, authorization: str | None = Header(None)):
+    """The coach's read of a typed rewind answer. Stores the answer, returns {feedback, source}."""
+    import hashlib
+    import coaching_narrate as CN
+    u = _current_user(authorization, required=False)
+    ans = (body.answer or "").strip()[:2000]
+    if not ans:
+        raise HTTPException(400, "empty answer")
+    h = hashlib.sha1(ans.encode()).hexdigest()[:16]
+    with pg() as conn:
+        cur = conn.cursor()
+        cid = _resolve_cid(cur, canonical_id)
+        _game_report_ensure(cur)
+        cur.execute("ALTER TABLE game_report_answers ADD COLUMN IF NOT EXISTS feedback TEXT")
+        cur.execute("ALTER TABLE game_report_answers ADD COLUMN IF NOT EXISTS answer_hash TEXT")
+        cur.execute("""SELECT feedback FROM game_report_answers WHERE hub_game_id=%s AND canonical_id=%s AND rewind_idx=%s
+                       AND answer_hash=%s AND feedback IS NOT NULL ORDER BY created_at DESC LIMIT 1""", (game_id, cid, int(body.idx), h))
+        row = cur.fetchone()
+        if row:
+            return {"ok": True, "feedback": row["feedback"], "source": "cached"}
+        cur.execute("SELECT report FROM game_reports WHERE hub_game_id=%s AND canonical_id=%s", (game_id, cid))
+        rep = cur.fetchone()
+        cur.execute("INSERT INTO game_report_answers (hub_game_id, canonical_id, rewind_idx, answer, discord_id, answer_hash) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
+                    (game_id, cid, int(body.idx), ans, (u or {}).get("discord_id") if u else None, h))
+        aid = cur.fetchone()["id"]
+        conn.commit()
+    report = (rep or {}).get("report") or {}
+    w = next((x for x in report.get("rewinds") or [] if x.get("idx") == int(body.idx)), None)
+    if not w:
+        raise HTTPException(404, "rewind not found; open the report first")
+    facts = {k: w.get(k) for k in ("kind", "question", "spawn", "margin", "items_at", "comms", "you_sent", "did", "options", "best_room", "your_room")}
+    facts["map"] = report.get("map"); facts["player"] = report.get("display") or report.get("player")
+    facts["teammates"] = report.get("mates"); facts["enemies"] = report.get("foes")
+    facts["what_the_data_suggests"] = w.get("answer")
+    # the model call runs OUTSIDE the pooled connection
+    text = None
+    if CN.ANTHROPIC_KEY:
+        text = CN._post({"model": CN.MODEL, "max_tokens": 600, "system": REWIND_COACH_SYSTEM,
+                         "messages": [{"role": "user", "content": f"Moment (JSON):\n{json.dumps(facts, default=str)}\n\nThe player's answer:\n{ans}\n\nCoach it."}]})
+    if text:
+        try:
+            with pg() as conn:
+                cur = conn.cursor()
+                cur.execute("UPDATE game_report_answers SET feedback=%s WHERE id=%s", (text, aid))
+                conn.commit()
+        except Exception:
+            pass
+        return {"ok": True, "feedback": text, "source": "llm"}
+    return {"ok": True, "feedback": None, "source": "none"}
