@@ -24,11 +24,15 @@ from duel_adv import _eff, _Series
 import spawn_rooms as SR
 try:
     from route_times import ROUTE_TIMES
+    try:
+        from route_times import ROUTE_TIMES_RJ
+    except ImportError:                               # table built before rocket jumps were split out
+        ROUTE_TIMES_RJ = {}
 except Exception:                       # table missing: the planner falls back to straight-line times
-    ROUTE_TIMES = {}
+    ROUTE_TIMES = {}; ROUTE_TIMES_RJ = {}
 import heapq
 
-VERSION = 19
+VERSION = 20
 # P(killer wins | stack edge at first contact, power-up state): 2,445 Den/LA fours, 1,025,964 enemy frags
 # (tools/mvd_features/fight_table_4on4.json, 2026-09-11). Same table the Advanced Stats pages use.
 FIGHT_TABLE = {"no powerup": [[-200, 0.06], [-70, 0.201], [0, 0.5], [70, 0.799], [200, 0.94]],
@@ -399,6 +403,16 @@ def compute(ov, data, me, gid, mp):
         i = bisect.bisect_right([x[0] for x in seq], t) - 1
         return seq[i][2] if i >= 0 else None
     RT = ROUTE_TIMES.get(mp) or {}
+    RTJ = ROUTE_TIMES_RJ.get(mp) or {}
+    def travel_rj(a, b):
+        """Fast seconds between two rooms for runs where the player rocket-jumped (direct pairs only; 5+ runs).
+        Offered in a line only when the player holds rockets and a stack to pay for it."""
+        if a == b:
+            return 0.0
+        v = (RTJ.get(a) or {}).get(b)
+        if not v:
+            return None
+        return v[0] if v[2] >= 15 else (v[3] if len(v) > 3 else v[1])
     def travel(a, b, typical=False):
         """Seconds from room a to room b as players run it. A pair that was actually run (entered a, then b,
         in one life) uses its own observed time: fast = 10th percentile when 15+ runs, else 25th; typical =
@@ -731,7 +745,9 @@ def compute(ov, data, me, gid, mp):
                 guns_ours = len(ready_mates) + (1 if ready_me else 0)
                 outgunned = len(foes_guns) >= 2 and guns_ours < 2
                 gun_txt = (f"the RL with {rk10} rockets" if armed else ("the RL but no rockets, so a shotgun until you find rockets" if rl10 else "no RL"))
-                q = f"{mmss(av - 10000)} — quad spawns in 10 s. You are {away:.0f} s away on {stk10} with {gun_txt}. What do you do?"
+                rj_q = travel_rj(room_q0, qloc) if room_q0 else None
+                rj_txt = (f" ({rj_q:.0f} s with a rocket jump)" if rj_q is not None and armed and not thin and rj_q + 0.5 < away - 1.0 else "")
+                q = f"{mmss(av - 10000)} — quad spawns in 10 s. You are {away:.0f} s away{rj_txt} on {stk10} with {gun_txt}. What do you do?"
                 did = f"You were {away:.0f} s from the quad room at {mmss(av - 10000)} and {by} took it at {mmss(av)}" + (f"; you reached the room {'with' if armed else 'without'} rockets." if away <= 6 else ".")
                 near_q = near_at(here, av - 10000, 4, room=room_q0)
                 packs_q = packs_at(here, av - 10000, room=room_q0)

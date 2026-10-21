@@ -9,7 +9,7 @@ const pb = computed(() => quadPlaybook(map.value))
 // built from the same route table the Game Report uses (docs/map_travel_times.md).
 import travelTimes from '~/composables/travelTimes.json'
 const tt = computed(() => travelTimes[map.value] || null)
-function ttCell(c) { if (!c) return '·'; if (c.fast != null) return `${c.fast} / ${c.typical}`; if (c.est != null) return `~${Math.round(c.est)}`; return '' }
+function ttCell(c) { if (!c) return '·'; if (c.fast != null) return `${c.fast} / ${c.typical}` + (c.rj ? ` · RJ ${c.rj.fast}` : ''); if (c.est != null) return `~${Math.round(c.est)}`; return '' }
 const others = computed(() => COACH_MAPS.filter(m => m !== map.value))
 const top = computed(() => QUAD_TOP[map.value] || null)
 const topNotes = computed(() => QUAD_TOP_NOTES[map.value] || [])
@@ -99,7 +99,7 @@ useSeoMeta({ title: () => pb.value ? `${pb.value.title} · AI Coach · DeepFrag`
       </section>
 
       <section v-if="tt" class="sec">
-        <div class="stitle">Travel times between key rooms <span class="muted small">fast / typical seconds</span></div>
+        <div class="stitle">Travel times between key rooms <span class="muted small">fast / typical seconds without a rocket jump · RJ = fast with one</span></div>
         <div class="ttwrap">
           <table class="tt">
             <thead><tr><th>from \ to</th><th v-for="r in tt.rooms" :key="r">{{ r }}</th></tr></thead>

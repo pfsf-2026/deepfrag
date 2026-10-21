@@ -234,3 +234,11 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   health/armor, applies the 100 floor to the player and to teammates before anyone "takes it", lists the
   numbers in reach (ours / theirs, with rockets), coaches the second entrance, and the coach's read is told
   the same rules.
+- 2026-10-21 "these paths aren't right. you're not taking into account stairs, heights of things. hill MH to quad
+  is straight at 0.9 s, but that's not right unless you can RJ. You can't make stuff up. you have to analyze how
+  one would get there without an RJ, and with an RJ." — the route table mixed rocket jumps into the walks (five
+  of six hill-mega-to-quad runs in one dm3 game had the player's own rocket splash at the transition). The
+  builder now splits every run by whether the player took their own rocket/grenade splash during it, drops
+  label flips across floors (under 1 s, more than 100 units up, no RJ, no lift or tele), and the pages show
+  walks with "RJ" ways beside them. Coaching lines use the walk time; a rocket-jump time is offered only when
+  the player holds rockets and a stack to pay for it.

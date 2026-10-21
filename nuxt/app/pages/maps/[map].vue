@@ -17,7 +17,7 @@ const tt = computed(() => travelTimes[map.value] || null)
 const others = computed(() => MAPS.filter(m => m !== map.value))
 useHead({ title: () => `${map.value} · map overview · DeepFrag` })
 const KIND = { quad: 'Quad', pent: 'Pent', ring: 'Ring', ra: 'Red', ya: 'Yellow', ga: 'Green', mh: 'Mega', rl: 'RL', lg: 'LG', gl: 'GL', sng: 'SNG', ng: 'NG', ssg: 'SSG' }
-function ttCell(c) { if (!c) return '·'; if (c.fast != null) return `${c.fast} / ${c.typical}`; if (c.est != null) return `~${Math.round(c.est)}`; return '' }
+function ttCell(c) { if (!c) return '·'; if (c.fast != null) return `${c.fast} / ${c.typical}` + (c.rj ? ` · RJ ${c.rj.fast}` : ''); if (c.est != null) return `~${Math.round(c.est)}`; return '' }
 const via = w => (w.via && w.via.length ? 'via ' + w.via.join(' → ') : 'straight')
 </script>
 
@@ -54,14 +54,14 @@ const via = w => (w.via && w.via.length ? 'via ' + w.via.join(' → ') : 'straig
       </section>
 
       <section v-if="rt.length" class="sec">
-        <div class="stitle">Key routes <span class="muted small">the ways actually run, fast / typical seconds</span></div>
+        <div class="stitle">Key routes <span class="muted small">the ways actually run, fast / typical seconds · <b class="rj">RJ</b> = the players who ran it this fast rocket-jumped</span></div>
         <div v-for="dest in rt" :key="dest.to" class="dest">
           <div class="dhead">To <b>{{ dest.to_name }}</b></div>
           <div class="tblwrap"><table class="tbl">
             <thead><tr><th>from</th><th>way</th><th>fast</th><th>typical</th><th>runs</th></tr></thead>
             <tbody>
               <template v-for="f in dest.from" :key="f.from">
-                <tr v-for="(w, wi) in f.ways" :key="wi"><td :class="{ muted: wi > 0 }">{{ wi === 0 ? f.from_name : '' }}</td><td class="way">{{ via(w) }}</td><td><b>{{ w.fast }}</b></td><td>{{ w.typical }}</td><td class="muted">{{ w.n }}</td></tr>
+                <tr v-for="(w, wi) in f.ways" :key="wi"><td :class="{ muted: wi > 0 }">{{ wi === 0 ? f.from_name : '' }}</td><td class="way">{{ via(w) }}<span v-if="w.rj" class="rj"> RJ</span></td><td><b>{{ w.fast }}</b></td><td>{{ w.typical }}</td><td class="muted">{{ w.n }}</td></tr>
               </template>
             </tbody>
           </table></div>
@@ -70,7 +70,7 @@ const via = w => (w.via && w.via.length ? 'via ' + w.via.join(' → ') : 'straig
       </section>
 
       <section v-if="tt" class="sec">
-        <div class="stitle">Travel times between key rooms <span class="muted small">fast / typical</span></div>
+        <div class="stitle">Travel times between key rooms <span class="muted small">fast / typical without a rocket jump · RJ = fast with one</span></div>
         <div class="tblwrap"><table class="tbl tt">
           <thead><tr><th>from \ to</th><th v-for="r in tt.rooms" :key="r">{{ r }}</th></tr></thead>
           <tbody><tr v-for="(row, i) in tt.cells" :key="i"><th>{{ tt.rooms[i] }}</th><td v-for="(c, j) in row" :key="j" :class="{ est: c && c.est != null, self: !c }">{{ ttCell(c) }}</td></tr></tbody>
@@ -113,6 +113,7 @@ h1 { font-size: clamp(28px, 6vw, 40px); font-weight: 900; margin: 0; letter-spac
 .tbl td.way { white-space: normal; overflow-wrap: anywhere; color: var(--fg-2); }
 .tbl.tt { min-width: 720px; font-size: 12px; } .tbl.tt th, .tbl.tt td { text-align: right; } .tbl.tt tbody th { text-align: left; position: sticky; left: 0; background: var(--panel); }
 .tbl.tt td.est { color: var(--fg-3); font-style: italic; } .tbl.tt td.self { color: var(--fg-3); }
+.rj { color: var(--accent); font-weight: 700; font-size: 0.85em; letter-spacing: 0.04em; }
 .dest { display: flex; flex-direction: column; gap: 6px; }
 .dhead { font-weight: 700; font-size: 14px; }
 .dnote { margin: 0; font-size: 12px; color: var(--fg-2); line-height: 1.5; }
