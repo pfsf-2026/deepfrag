@@ -23,7 +23,25 @@ import urllib.parse
 from duel_adv import _eff, _Series
 import spawn_rooms as SR
 
-VERSION = 13
+VERSION = 14
+# P(killer wins | stack edge at first contact, power-up state): 2,445 Den/LA fours, 1,025,964 enemy frags
+# (tools/mvd_features/fight_table_4on4.json, 2026-09-11). Same table the Advanced Stats pages use.
+FIGHT_TABLE = {"no powerup": [[-200, 0.06], [-70, 0.201], [0, 0.5], [70, 0.799], [200, 0.94]],
+               "has powerup": [[-200, 0.534], [-70, 0.696], [0, 0.889], [70, 0.955], [200, 0.981]],
+               "vs powerup": [[-200, 0.019], [-70, 0.045], [0, 0.111], [70, 0.304], [200, 0.466]],
+               "both": [[-200, 0.324], [-70, 0.418], [0, 0.5], [70, 0.582], [200, 0.676]]}
+
+
+def pwin(edge, state="no powerup"):
+    pts = FIGHT_TABLE[state]
+    if edge <= pts[0][0]:
+        return pts[0][1]
+    if edge >= pts[-1][0]:
+        return pts[-1][1]
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if x0 <= edge <= x1:
+            return y0 + (y1 - y0) * (edge - x0) / (x1 - x0)
+    return 0.5
 HUB = "https://hub.quakeworld.nu/games/?gameId={gid}&from={f}&to={t}&track={uid}"
 MAJOR = ("ra", "ya", "ga", "mh", "rl", "lg", "quad", "pent", "ring")
 NEAR = 700            # units: "with" a teammate / "into" enemies
@@ -574,35 +592,95 @@ def compute(ov, data, me, gid, mp):
     for b in blocks:
         b["wall_ms"] = wall(b["t0"])
 
-    # ── everyone in this game, the same numbers for all eight, so the player sees where they sat
-    # (Peter, 2026-10-21: "show how I did vs everyone else, similar to our advanced stats tables")
+    # ── everyone in this game on the Advanced Stats numbers (Peter, 2026-10-21: sort by the per-game
+    # impact score, show game score, quads, pents, MM2; not the basic damage columns). The Game Impact
+    # Score here is the same recipe as docs/advanced_metrics.md (30% adjusted kills, 15% damage, 15%
+    # stacked DDR, 15% survival, 20% items, 5% multi-kills; the eight average 1.00) computed from the
+    # 1 s state, so stacks at first contact are to the second rather than the frame. No +/- here: that
+    # needs the win-probability model, which is not in the API.
     all_chat = [m for m in (data.get("chat") or []) if m.get("type") == "teamsay"]
     chat_by = collections.Counter(m.get("player") for m in all_chat)
-    table = []
+    pw_iv = collections.defaultdict(list)
+    for ev in events:
+        if ev.get("type") == "powerup" and ev.get("player") in team_of:
+            dd_ = ev.get("detail") or {}
+            pw_iv[ev["player"]].append((int(ev["t"] * 1000), int((dd_.get("endTime") or ev["t"]) * 1000)))
+    def has_pw(n, t):
+        return any(s_ <= t <= e_ for s_, e_ in pw_iv.get(n, []))
+    def eff_at(n, t):
+        s_ = max(0, min(nsec - 1, t // 1000))
+        return _eff(bval(n, "h", s_, 100), bval(n, "a", s_, 0), bval(n, "at", s_, "") or "")
+    def pw_state(k, v, t):
+        a_, b_ = has_pw(k, t), has_pw(v, t)
+        return "both" if a_ and b_ else ("has powerup" if a_ else ("vs powerup" if b_ else "no powerup"))
+    enemy_dmg = [e for e in dmg if team_of[e["attacker"]] != team_of[e["victim"]]]
+    dmg_by_pair = collections.defaultdict(list)
+    for e in enemy_dmg:
+        dmg_by_pair[frozenset((e["attacker"], e["victim"]))].append(e)
+    dmg_by_victim = collections.defaultdict(list)
+    for e in enemy_dmg:
+        dmg_by_victim[e["victim"]].append(e)
+    R = {n: collections.Counter() for n in team_of}
+    for e in enemy_dmg:
+        a_, v_, t_ = e["attacker"], e["victim"], e["time"]
+        R[a_]["dmg"] += e["damage"]; R[v_]["taken"] += e["damage"]
+        if eff_at(a_, t_ - 30) >= 150:
+            R[a_]["stk_given"] += e["damage"]
+        if eff_at(v_, t_ - 30) >= 150:
+            R[v_]["stk_taken"] += e["damage"]
+    efrags = [f for f in frags if f.get("killer") in team_of and f.get("victim") in team_of and team_of[f["killer"]] != team_of[f["victim"]]]
+    for f in efrags:
+        k_, v_, t_ = f["killer"], f["victim"], f["time"]
+        R[k_]["kills"] += 1
+        chain = [e for e in dmg_by_pair.get(frozenset((k_, v_)), []) if e["time"] <= t_]
+        t0 = t_
+        for e in reversed(chain):
+            if t0 - e["time"] <= 4000:
+                t0 = e["time"]
+            else:
+                break
+        edge = eff_at(k_, t0 - 30) - eff_at(v_, t0 - 30)
+        kp = min(3.0, 0.5 / max(0.02, pwin(edge, pw_state(k_, v_, t0 - 30))))
+        contrib = collections.Counter()
+        for e in dmg_by_victim.get(v_, []):
+            if t_ - 10000 <= e["time"] <= t_ and team_of[e["attacker"]] == team_of[k_]:
+                contrib[e["attacker"]] += e["damage"]
+        tot = sum(contrib.values())
+        if tot <= 0:
+            R[k_]["adj"] += kp
+        else:
+            for a_, dm in contrib.items():
+                R[a_]["adj"] += kp * (0.15 * (a_ == k_) + 0.85 * dm / tot)
+    score_of = {p["name"]: p.get("frags") for p in (ov.get("players") or [])}
+    rows_ = []
     for n in team_of:
-        a_ = (B.get(n) or {}).get("alive") or []
-        alive_n = sum(1 for v in a_ if v)
-        armed_n = sum(1 for s_ in range(len(a_)) if a_[s_] and (bval(n, "rl", s_) or bval(n, "lg", s_)))
-        lives_n = sum(1 for s_ in range(1, len(a_)) if a_[s_] and not a_[s_ - 1]) + (1 if a_ and a_[0] else 0)
-        k_n = sum(1 for f in kills_of.get(n, []) if team_of.get(f.get("victim")) not in (None, team_of[n]))
-        d_n = sum(1 for f in frags if f.get("victim") == n and team_of.get(f.get("killer")) not in (None, team_of[n]))
-        dealt_n = sum(e["damage"] for e in dmg if e["attacker"] == n and team_of[e["victim"]] != team_of[n])
-        taken_n = sum(e["damage"] for e in dmg if e["victim"] == n and team_of[e["attacker"]] != team_of[n])
+        deaths_n = sum(1 for f in frags if f.get("victim") == n)      # every death, from the frag log (1 s buckets miss instant respawns)
+        ks = sorted(f["time"] for f in efrags if f["killer"] == n)
+        multi = sum(1 for i in range(1, len(ks)) if ks[i] - ks[i - 1] <= 8000)
         it_n = collections.Counter(it["kind"] for it in items for ph in (it.get("phases") or []) if ph.get("takenBy") == n)
-        ex_n = sorted([(e["time"], e["attacker"] == n, e["victim"] if e["attacker"] == n else e["attacker"]) for e in dmg
-                       if (e["attacker"] == n and team_of[e["victim"]] != team_of[n]) or (e["victim"] == n and team_of[e["attacker"]] != team_of[n])])
-        first_n = []; last_n = {}
-        for t_, mine_, other_ in ex_n:
-            if t_ - last_n.get(other_, -99999) > 4000:
-                first_n.append(mine_)
-            last_n[other_] = t_
-        quad_n = sum(1 for ev in events if ev.get("type") == "powerup" and ev.get("player") == n and (ev.get("detail") or {}).get("powerup") == "quad")
-        table.append(dict(name=n, team=team_of[n], me=(n == me), frags=k_n, deaths=d_n, dealt=dealt_n, taken=taken_n, net=dealt_n - taken_n,
-                          armed_pct=round(100 * armed_n / max(1, alive_n)), lives=lives_n, ra=it_n.get("ra", 0), ya=it_n.get("ya", 0),
-                          mh=it_n.get("mh", 0), quads=quad_n, first_hit_pct=round(100 * sum(first_n) / len(first_n)) if first_n else None,
+        items_w = it_n.get("ra", 0) * 1.0 + it_n.get("ya", 0) * 0.6 + it_n.get("mh", 0) * 0.8 + it_n.get("quad", 0) * 2.0 + it_n.get("pent", 0) * 2.0
+        r_ = R[n]
+        rows_.append(dict(name=n, team=team_of[n], me=(n == me), score=score_of.get(n), kills=r_["kills"], deaths=deaths_n,
+                          adj=round(r_["adj"], 1), dmg=r_["dmg"], taken=r_["taken"], dmg_pm=round(r_["dmg"] / max(1, end / 60000)),
+                          sddr=round(r_["stk_given"] / max(1, r_["stk_taken"]), 2), multi=multi, items_w=items_w,
+                          ra=it_n.get("ra", 0), ya=it_n.get("ya", 0), mh=it_n.get("mh", 0), quads=it_n.get("quad", 0), pents=it_n.get("pent", 0),
                           mm2=chat_by.get(n, 0)))
-    table.sort(key=lambda r: -r["net"])
-    HIGHER = {"frags": True, "deaths": False, "dealt": True, "taken": False, "net": True, "armed_pct": True, "ra": True, "ya": True, "mh": True, "quads": True, "first_hit_pct": True, "mm2": True}
+    def _norm(key, inv=False):
+        m_ = (sum(x[key] for x in rows_) / len(rows_)) or 1
+        for x in rows_:
+            x["n_" + key] = (m_ / max(0.5, x[key])) if inv else (x[key] / m_)
+    for k_ in ("adj", "dmg", "multi", "items_w", "sddr"):
+        _norm(k_)
+    _norm("deaths", inv=True)
+    for x in rows_:
+        x["impact"] = 0.30 * x["n_adj"] + 0.15 * x["n_dmg"] + 0.15 * x["n_sddr"] + 0.15 * x["n_deaths"] + 0.05 * min(2.0, x["n_multi"]) + 0.20 * x["n_items_w"]
+    m_ = (sum(x["impact"] for x in rows_) / len(rows_)) or 1
+    for x in rows_:
+        x["impact"] = round(x["impact"] / m_, 2)
+        for k_ in [k for k in x if k.startswith("n_")]:
+            x.pop(k_)
+    table = sorted(rows_, key=lambda x: -x["impact"])
+    HIGHER = {"impact": True, "score": True, "adj": True, "dmg_pm": True, "sddr": True, "deaths": False, "quads": True, "pents": True, "ra": True, "mm2": True}
     my_rank = {}
     mine_row = next((r for r in table if r["me"]), None)
     if mine_row:
@@ -616,10 +694,9 @@ def compute(ov, data, me, gid, mp):
         return f"{k}{'th' if 10 <= k % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(k % 10, 'th')}"
     compare = None
     if mine_row and my_rank:
-        n_all = len(table)
-        compare = (f"Of the {n_all} in this game you were {ordn(my_rank.get('net', 0))} in net damage, {ordn(my_rank.get('frags', 0))} in frags and "
-                   f"{ordn(my_rank.get('deaths', 0))} in deaths (fewest first); {ordn(my_rank.get('armed_pct', 0))} for time with a gun, "
-                   f"{ordn(my_rank.get('first_hit_pct', 0))} for hitting first, {ordn(my_rank.get('mm2', 0))} for MM2 lines.")
+        compare = (f"Impact {mine_row['impact']:.2f} (1.00 is the average of the eight): {ordn(my_rank.get('impact', 0))} of {len(table)}. "
+                   f"Score {ordn(my_rank.get('score', 0))}, adjusted kills {ordn(my_rank.get('adj', 0))}, damage per minute {ordn(my_rank.get('dmg_pm', 0))}, "
+                   f"stacked DDR {ordn(my_rank.get('sddr', 0))}, deaths {ordn(my_rank.get('deaths', 0))} (fewest first), MM2 {ordn(my_rank.get('mm2', 0))}.")
 
     # ── MM2
     def cls(m):

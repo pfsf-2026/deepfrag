@@ -193,19 +193,18 @@ const KIND = { powerup: 'powerup', streak: 'streak', streak_end: 'ended a streak
         <p v-if="rep.compare" class="cmp">{{ rep.compare }}</p>
         <div class="tblwrap">
           <table class="cmptbl">
-            <thead><tr><th>Player</th><th>Team</th><th>Frags</th><th>Deaths</th><th>Dmg +</th><th>Dmg −</th><th>Net</th><th>Gun %</th><th>RA</th><th>YA</th><th>MH</th><th>Quads</th><th>1st hit</th><th>MM2</th></tr></thead>
+            <thead><tr><th>Player</th><th>T</th><th>Score</th><th>Impact</th><th>Adj K</th><th>Dmg/min</th><th>sDDR</th><th>Deaths</th><th>Quads</th><th>Pents</th><th v-if="rep.map !== 'e1m2'">RA</th><th>MM2</th></tr></thead>
             <tbody>
               <tr v-for="r in rep.table" :key="r.name" :class="{ me: r.me, mine: r.team === rep.team }">
-                <td class="nm">{{ r.name }}</td><td class="muted">{{ r.team }}</td>
-                <td>{{ r.frags }}</td><td>{{ r.deaths }}</td><td>{{ r.dealt }}</td><td>{{ r.taken }}</td>
-                <td :class="{ pos: r.net > 0, neg: r.net < 0 }">{{ r.net > 0 ? '+' : '' }}{{ r.net }}</td>
-                <td>{{ r.armed_pct }}%</td><td>{{ r.ra }}</td><td>{{ r.ya }}</td><td>{{ r.mh }}</td><td>{{ r.quads }}</td>
-                <td>{{ r.first_hit_pct == null ? '–' : r.first_hit_pct + '%' }}</td><td>{{ r.mm2 }}</td>
+                <td class="nm">{{ r.name }}</td><td class="muted">{{ String(r.team || '').charAt(0).toUpperCase() }}</td>
+                <td>{{ r.score }}</td><td class="imp" :class="{ pos: r.impact >= 1.15, neg: r.impact <= 0.8 }">{{ r.impact.toFixed(2) }}</td>
+                <td>{{ r.adj.toFixed(1) }}</td><td>{{ r.dmg_pm }}</td><td>{{ r.sddr.toFixed(2) }}</td><td>{{ r.deaths }}</td>
+                <td>{{ r.quads }}</td><td>{{ r.pents }}</td><td v-if="rep.map !== 'e1m2'">{{ r.ra }}</td><td>{{ r.mm2 }}</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div class="muted small">Net = damage dealt minus taken, enemies only. Gun % = share of alive time with an RL or LG. 1st hit = share of your fights where you landed the first damage.</div>
+        <div class="muted small">Impact = the Game Impact Score (adjusted kills, damage, stacked DDR, survival, items, multi-kills; the eight average 1.00). Adj K = kills weighted by how hard the fight was. sDDR = damage dealt over damage taken while holding 150+. Same definitions as the Advanced Stats pages; +/- needs the win-probability model and is not computed here.</div>
       </section>
 
       <!-- summary -->
