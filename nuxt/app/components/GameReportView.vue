@@ -124,6 +124,7 @@ function itemState(o) {
   if (o.state === 'up' || (o.state === 'in' && o.s <= 0)) return `${name}: up${who}`
   if (o.state === 'in') return `${name}: in ${o.s} s${who}`
   if (o.state === 'taken') return `${name}: taken ${o.s} s ago${o.by ? ' by ' + o.by : ''}`
+  if (o.state === 'dropped') return `${name}: dropped ${o.s} s ago${o.by ? ' by ' + o.by : ''}`
   return name
 }
 

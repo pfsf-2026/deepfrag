@@ -23,7 +23,7 @@ import urllib.parse
 from duel_adv import _eff, _Series
 import spawn_rooms as SR
 
-VERSION = 10
+VERSION = 11
 HUB = "https://hub.quakeworld.nu/games/?gameId={gid}&from={f}&to={t}&track={uid}"
 MAJOR = ("ra", "ya", "ga", "mh", "rl", "lg", "quad", "pent", "ring")
 NEAR = 700            # units: "with" a teammate / "into" enemies
@@ -86,7 +86,7 @@ def fetch_rest(gid, get, me_key):
     return {"me": get(f"{base}/stream-slice?from=0&to=99999&fields={STREAM}&players={q}"),
             "buckets": get(f"{base}/buckets?windowMs=1000&fields=pos,h,a,at,rl,lg,rk"),
             "frags": get(f"{base}/frags"), "damage": get(f"{base}/damage"), "items": get(f"{base}/items"),
-            "pickups": get(f"{base}/weapon-pickups"), "chat": get(f"{base}/chat?types=teamsay"),
+            "pickups": get(f"{base}/weapon-pickups"), "backpacks": get(f"{base}/backpacks"), "chat": get(f"{base}/chat?types=teamsay"),
             "events": get(f"{base}/events?types=powerup,streak"), "loctable": get(f"{base}/loc-table")}
 
 
@@ -314,6 +314,22 @@ def compute(ov, data, me, gid, mp):
         keep += L
     lo = sorted(keep, key=lambda h: h["t"])
 
+    packs = [b for b in (data.get("backpacks") or []) if isinstance(b, dict) and b.get("weapon") in ("rl", "lg") and b.get("origin")]
+
+    def packs_at(xyz, t, window_ms=45000, reach_s=10):
+        """Dropped RL/LG packs from the last 45 s within reach: rockets on the floor are an item too
+        (Peter, 2026-10-21: on schloss rockets are scarce and the packs matter)."""
+        out = []
+        for b in packs:
+            if not (t - window_ms <= b["time"] <= t):
+                continue
+            o = b["origin"]; tt = dist(xyz, (o[0], o[1], o[2])) / 320 + 0.5
+            if tt <= reach_s:
+                out.append(dict(kind=f"{b['weapon']} pack", loc=SR.room_name(b.get("loc") or ""), label=f"{b['weapon'].upper()} pack at {SR.room_name(b.get('loc') or '')}",
+                                state="dropped", s=round((t - b["time"]) / 1000), by=b.get("player"), away=round(tt, 1), by_enemy=(b.get("player") in foes)))
+        out.sort(key=lambda o: o["away"])
+        return out[:3]
+
     def near_at(xyz, t, n=5):
         """The nearest key items to a position at time t, with their clock."""
         out = []
@@ -401,7 +417,7 @@ def compute(ov, data, me, gid, mp):
             loc_ = SR.room_name(it.get("loc") or "")
             near_items.append(dict(kind=it["kind"], loc=loc_, label=nm(it["kind"], loc_), state=st, s=n_s, by=by, away=round(tt, 1), by_enemy=(by in foes)))
         near_items.sort(key=lambda o: o["away"])
-        near_items = near_items[:6]
+        near_items = near_items[:6] + packs_at(l["spawn_xyz"], l["s0"])
         score = (1 - (mine[0] if mine else 0.2)) + (0.5 if opts else 0) + (0.3 if best and (not mine or best[1][0] - mine[0] > 0.15) else 0) + (0.2 if l["near_e"] >= 2 else 0)
         cand.append((score, l, room, mine, best, opts[:3], others, mine_say, near_items))
     cand.sort(key=lambda c: -c[0])
@@ -489,6 +505,7 @@ def compute(ov, data, me, gid, mp):
                 q = f"{mmss(av - 10000)} — quad spawns in 10 s. You are {away:.0f} s away with {eff10:.0f} effective stack and {gun_txt}. What do you do?"
                 did = f"You were {away:.0f} s from the quad room at {mmss(av - 10000)} and {by} took it at {mmss(av)}" + (f"; you reached the room {'with' if armed else 'without'} rockets." if away <= 6 else ".")
                 near_q = near_at(here, av - 10000, 4)
+                packs_q = packs_at(here, av - 10000)
                 parts = [f"Quad in 10, you are {int(away)} s out. Clock: " + "; ".join(
                     (f"{nm(o['kind'], o['loc'])} up" if o["state"] == "up" or (o["state"] == "in" and o["s"] <= 0) else f"{nm(o['kind'], o['loc'])} in {o['s']} s" if o["state"] == "in" else f"{nm(o['kind'], o['loc'])} gone {o['s']} s")
                     + f" ({o['away']:.0f} s)" for o in near_q if o["kind"] != "quad") + "."]
@@ -498,7 +515,7 @@ def compute(ov, data, me, gid, mp):
                 elif armed and away <= 10:
                     parts.append("Go now" + (f", {nm(path[0]['kind'], path[0]['loc'])} on the way ({path[0]['detour_s']:.0f} s)" if path else "") + ". In the room with 3 s to spare; hold the entrance, fire as he comes, step on.")
                 elif away <= 10:
-                    parts.append("No rockets: the pad is a lost trade. Take " + (f"the {nm(path[0]['kind'], path[0]['loc'])}" if path else "a pack or the yellow") + "; let a teammate with rockets take it, or one shot from the doorway and leave.")
+                    parts.append("No rockets: the pad is a lost trade. Take " + (f"the {packs_q[0]['label']} ({packs_q[0]['away']:.0f} s, dropped {packs_q[0]['s']} s ago)" if packs_q else (f"the {nm(path[0]['kind'], path[0]['loc'])}" if path else "a pack or the yellow")) + "; let a teammate with rockets take it, or one shot from the doorway and leave.")
                 else:
                     parts.append("Too far. Say so; get yellow or rockets and own the next one.")
                 if mates10 and not better:
@@ -517,7 +534,7 @@ def compute(ov, data, me, gid, mp):
                         others.append(dict(t=m["time"], text=line))
                 rewinds.append(dict(idx=0, kind="quad", t=av - 10000, t_end=av + 5000, hub=hub(av - 10000, av + 5000), spawn=None, margin=round(M[s10]) if s10 < nsec else None,
                                     stack=round(eff10), has_rl=rl10, rockets=rk10, mates_at=mates10, on_path=path,
-                                    items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), label=nm("quad", SR.room_name(it.get("loc") or "")), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)] + [o for o in near_q if o["kind"] != "quad"],
+                                    items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), label=nm("quad", SR.room_name(it.get("loc") or "")), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)] + [o for o in near_q if o["kind"] != "quad"] + packs_q,
                                     question=q, did=did, comms=others[-10:], you_sent=[_clean_mm2(m.get("messageClean") or m.get("message")) for m in comms if m.get("player") == me],
                                     answer=a, mm2=mm2, options=[], best_room=None, your_room=None, your_room_survival=None, best_room_survival=None, score=0.6 + (0.3 if away <= 6 else 0)))
             elif took_me and died_soon and eff10 < 100:
