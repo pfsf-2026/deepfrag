@@ -11276,7 +11276,9 @@ def api_rewind_coach(canonical_id: str, game_id: int, body: _RewindGrade, author
     # the model call runs OUTSIDE the pooled connection
     text = None
     if CN.ANTHROPIC_KEY:
-        text = CN._post({"model": CN.MODEL, "max_tokens": 600, "system": REWIND_COACH_SYSTEM,
+        # Claude 5 models think by default and would spend the whole budget on it (seen 2026-10-21 on
+        # Sonnet 5.5: 600 thinking tokens, no text). A short factual read does not need it.
+        text = CN._post({"model": CN.MODEL, "max_tokens": 700, "thinking": {"type": "disabled"}, "system": REWIND_COACH_SYSTEM,
                          "messages": [{"role": "user", "content": f"Moment (JSON):\n{json.dumps(facts, default=str)}\n\nThe player's answer:\n{ans}\n\nCoach it."}]})
     if text:
         try:

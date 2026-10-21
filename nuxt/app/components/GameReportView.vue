@@ -118,11 +118,13 @@ function vodLink(tMs) {
   return `${vod.value.url}?t=${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}m${s % 60}s`
 }
 function itemState(o) {
+  // label comes from the API: just the kind when the map has one of it, 'YA at tower' when several
+  const name = o.label || `${o.kind.toUpperCase()} at ${o.loc}`
   const who = o.by ? ` · last taken by ${o.by}` : ''
-  if (o.state === 'up') return `${o.kind.toUpperCase()} at ${o.loc}: up${who}`
-  if (o.state === 'in') return `${o.kind.toUpperCase()} at ${o.loc}: in ${o.s} s${who}`
-  if (o.state === 'taken') return `${o.kind.toUpperCase()} at ${o.loc}: taken ${o.s} s ago${o.by ? ' by ' + o.by : ''}`
-  return `${o.kind.toUpperCase()} at ${o.loc}`
+  if (o.state === 'up' || (o.state === 'in' && o.s <= 0)) return `${name}: up${who}`
+  if (o.state === 'in') return `${name}: in ${o.s} s${who}`
+  if (o.state === 'taken') return `${name}: taken ${o.s} s ago${o.by ? ' by ' + o.by : ''}`
+  return name
 }
 
 const s = computed(() => rep.value?.summary || {})

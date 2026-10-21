@@ -23,7 +23,7 @@ import urllib.parse
 from duel_adv import _eff, _Series
 import spawn_rooms as SR
 
-VERSION = 9
+VERSION = 10
 HUB = "https://hub.quakeworld.nu/games/?gameId={gid}&from={f}&to={t}&track={uid}"
 MAJOR = ("ra", "ya", "ga", "mh", "rl", "lg", "quad", "pent", "ring")
 NEAR = 700            # units: "with" a teammate / "into" enemies
@@ -46,7 +46,10 @@ def item_state(it, t):
     nxt = next((q for q in ph if q["availableFrom"] > t), None)
     last = next((q for q in reversed(ph) if q.get("takenAt") is not None and q["takenAt"] <= t), None)
     if nxt:
-        return ("in", round((nxt["availableFrom"] - t) / 1000), last.get("takenBy") if last else None)
+        left = round((nxt["availableFrom"] - t) / 1000)
+        if left <= 0:
+            return ("up", 0, None)
+        return ("in", left, last.get("takenBy") if last else None)
     if last:
         return ("taken", round((t - last["takenAt"]) / 1000), last.get("takenBy"))
     return ("unknown", 0, None)
@@ -166,6 +169,11 @@ def compute(ov, data, me, gid, mp):
     DT = [t for t, _ in my_dealt]; TT = [t for t, _ in my_taken]
     span = lambda L, K, a, b: sum(v for _, v in L[bisect.bisect_left(K, a):bisect.bisect_right(K, b)])
     items = data["items"] if isinstance(data["items"], list) else ((data["items"] or {}).get("items") or [])
+    kind_count = collections.Counter(it.get("kind") for it in items)
+    def nm(kind, loc=""):
+        """'QUAD' when the map has one quad; 'YA at tower' when it has several yellows."""
+        k = (kind or "").upper()
+        return k if kind_count.get(kind, 0) <= 1 or not loc else f"{k} at {loc}"
     takes = sorted(((ph["takenAt"], it["kind"], SR.room_name(it.get("loc") or ""), it) for it in items for ph in (it.get("phases") or [])
                     if ph.get("takenBy") == me and ph.get("takenAt") is not None), key=lambda x: x[0])
     pickups = [w for w in (data["pickups"] or []) if w.get("player") == me]
@@ -270,7 +278,7 @@ def compute(ov, data, me, gid, mp):
             hi.append(dict(t=l["s0"], t1=l["nd"], kind="life", text=f"{l['len']:.0f} s life from the {l['spawn']} spawn: took {' '.join(k for _, k, _ in l['items']) or 'nothing'}, then {l['kills']} frags and {l['dealt']} damage with it", hub=hub(l["s0"], l["nd"])))
     for t, k, l, _ in takes:
         if k in ("ra", "mh", "quad", "pent") and locked_at(t):
-            hi.append(dict(t=t, t1=t, kind="item_locked", text=f"took the {k} at {l} while your team was locked: the stack race that breaks locks", hub=hub(t)))
+            hi.append(dict(t=t, t1=t, kind="item_locked", text=f"took the {nm(k, l)} while your team was locked: the stack race that breaks locks", hub=hub(t)))
     hi.sort(key=lambda h: h["t"])
 
     # ── lowlights
@@ -314,7 +322,8 @@ def compute(ov, data, me, gid, mp):
                 continue
             st, n_s, by = item_state(it, t)
             tt = dist(xyz, (it["x"], it["y"], it["z"])) / 320 + 0.5
-            out.append(dict(kind=it["kind"], loc=SR.room_name(it.get("loc") or ""), state=st, s=n_s, by=by, away=round(tt, 1), by_enemy=(by in foes)))
+            loc_ = SR.room_name(it.get("loc") or "")
+            out.append(dict(kind=it["kind"], loc=loc_, label=nm(it["kind"], loc_), state=st, s=n_s, by=by, away=round(tt, 1), by_enemy=(by in foes)))
         out.sort(key=lambda o: o["away"])
         return out[:n]
 
@@ -389,7 +398,8 @@ def compute(ov, data, me, gid, mp):
                 continue
             st, n_s, by = item_state(it, l["s0"])
             tt = dist(l["spawn_xyz"], (it["x"], it["y"], it["z"])) / 320 + 0.5
-            near_items.append(dict(kind=it["kind"], loc=SR.room_name(it.get("loc") or ""), state=st, s=n_s, by=by, away=round(tt, 1), by_enemy=(by in foes)))
+            loc_ = SR.room_name(it.get("loc") or "")
+            near_items.append(dict(kind=it["kind"], loc=loc_, label=nm(it["kind"], loc_), state=st, s=n_s, by=by, away=round(tt, 1), by_enemy=(by in foes)))
         near_items.sort(key=lambda o: o["away"])
         near_items = near_items[:6]
         score = (1 - (mine[0] if mine else 0.2)) + (0.5 if opts else 0) + (0.3 if best and (not mine or best[1][0] - mine[0] > 0.15) else 0) + (0.2 if l["near_e"] >= 2 else 0)
@@ -406,10 +416,10 @@ def compute(ov, data, me, gid, mp):
         # weapons and armors, the MM2 read, the line, what happened. Numbers stay in the data fields.
         def clk(o):
             if o["state"] == "up" or (o["state"] == "in" and o["s"] <= 0):
-                return f"{o['kind'].upper()} at {o['loc']} up ({o['away']:.0f} s away)"
+                return f"{nm(o['kind'], o['loc'])} up ({o['away']:.0f} s away)"
             if o["state"] == "in":
-                return f"{o['kind'].upper()} at {o['loc']} in {o['s']} s ({o['away']:.0f} s away)"
-            return f"{o['kind'].upper()} at {o['loc']} gone {o['s']} s ago to {o['by'] or 'them'}"
+                return f"{nm(o['kind'], o['loc'])} in {o['s']} s ({o['away']:.0f} s away)"
+            return f"{nm(o['kind'], o['loc'])} gone {o['s']} s ago to {o['by'] or 'them'}"
         ans = ["Clock: " + "; ".join(clk(o) for o in near_items[:3]) + "." if near_items else "Clock: nothing near."]
         lost = [re.sub(r"^\S+:?\s*lost\s+", "", c["text"]).split(" ")[0] for c in others if re.search(r"\blost\b", c["text"].lower())]
         seen = [c["text"] for c in others if "enemy" in c["text"].lower()]
@@ -433,17 +443,17 @@ def compute(ov, data, me, gid, mp):
         else:
             ans.append("Line: nothing on the clock. Trade: shotgun damage before you die, and say where he is.")
         if hot:
-            ans.append("Not " + " or ".join(f"the {o['kind'].upper()} at {o['loc']}" for o in hot[:2]) + ": that room was just called lost. With a shotgun it is a fight, not a pickup.")
+            ans.append("Not " + " or ".join(f"the {nm(o['kind'], o['loc'])}" for o in hot[:2]) + ": that room was just called lost. With a shotgun it is a fight, not a pickup.")
         if l["near_e"] >= 2:
             ans.append(f"{l['near_e']} of them, no teammate near: one shot from cover, then leave.")
         took = [o for o in line if o["taken_by"] in foes]
-        ans.append("Happened: " + ("; ".join(f"{o['taken_by']} took the {o['kind'].upper()} at {mmss(o['taken_at'])}" for o in took) + "; " if took else "")
+        ans.append("Happened: " + ("; ".join(f"{o['taken_by']} took the {nm(o['kind'], o['loc'])} at {mmss(o['taken_at'])}" for o in took) + "; " if took else "")
                    + f"you died {l['len']:.0f} s in" + (f" to {k.get('killer')} ({k.get('weapon')})" if k else "") + f", {l['dealt']} damage.")
         mm2 = []
         if l["near_e"] >= 2:
             mm2.append(f"lost {room if room != 'stayed' else l['spawn']} {l['near_e']}>")
         if opts and opts[0]["taken_by"] in foes:
-            mm2.append(f"enemy took {opts[0]['kind']} at {opts[0]['loc']}")
+            mm2.append(f"enemy took {nm(opts[0]['kind'], opts[0]['loc']).lower()}")
         mm2.append(f"need armor weapon @ {locname(li_at(l['s0'] + 50))}")
         rewinds.append(dict(idx=len(rewinds), kind="spawn", t=l["s0"], t_end=l["nd"], hub=hub(l["s0"], l["nd"]), spawn=l["spawn"], margin=l["M"], items_at=near_items,
                             mates_at=mates_at(max(0, min(nsec - 1, l["s0"] // 1000))),
@@ -480,15 +490,15 @@ def compute(ov, data, me, gid, mp):
                 did = f"You were {away:.0f} s from the quad room at {mmss(av - 10000)} and {by} took it at {mmss(av)}" + (f"; you reached the room {'with' if armed else 'without'} rockets." if away <= 6 else ".")
                 near_q = near_at(here, av - 10000, 4)
                 parts = [f"Quad in 10, you are {int(away)} s out. Clock: " + "; ".join(
-                    (f"{o['kind'].upper()} at {o['loc']} up" if o["state"] == "up" or (o["state"] == "in" and o["s"] <= 0) else f"{o['kind'].upper()} at {o['loc']} in {o['s']} s" if o["state"] == "in" else f"{o['kind'].upper()} at {o['loc']} gone {o['s']} s")
+                    (f"{nm(o['kind'], o['loc'])} up" if o["state"] == "up" or (o["state"] == "in" and o["s"] <= 0) else f"{nm(o['kind'], o['loc'])} in {o['s']} s" if o["state"] == "in" else f"{nm(o['kind'], o['loc'])} gone {o['s']} s")
                     + f" ({o['away']:.0f} s)" for o in near_q if o["kind"] != "quad") + "."]
                 if better:
                     b0 = better[0]
                     parts.append(f"{b0['name']} is {b0['away']:.0f} s out with {b0['eff']} and {b0['rockets']} rockets: he takes it. You: cover the other entrance, call what you see. Not the pad" + (" with no rockets" if not armed else "") + ".")
                 elif armed and away <= 10:
-                    parts.append("Go now" + (f", {path[0]['kind'].upper()} at {path[0]['loc']} on the way ({path[0]['detour_s']:.0f} s)" if path else "") + ". In the room with 3 s to spare; hold the entrance, fire as he comes, step on.")
+                    parts.append("Go now" + (f", {nm(path[0]['kind'], path[0]['loc'])} on the way ({path[0]['detour_s']:.0f} s)" if path else "") + ". In the room with 3 s to spare; hold the entrance, fire as he comes, step on.")
                 elif away <= 10:
-                    parts.append("No rockets: the pad is a lost trade. Take " + (f"the {path[0]['kind'].upper()} at {path[0]['loc']}" if path else "a pack or the yellow") + "; let a teammate with rockets take it, or one shot from the doorway and leave.")
+                    parts.append("No rockets: the pad is a lost trade. Take " + (f"the {nm(path[0]['kind'], path[0]['loc'])}" if path else "a pack or the yellow") + "; let a teammate with rockets take it, or one shot from the doorway and leave.")
                 else:
                     parts.append("Too far. Say so; get yellow or rockets and own the next one.")
                 if mates10 and not better:
@@ -507,13 +517,13 @@ def compute(ov, data, me, gid, mp):
                         others.append(dict(t=m["time"], text=line))
                 rewinds.append(dict(idx=0, kind="quad", t=av - 10000, t_end=av + 5000, hub=hub(av - 10000, av + 5000), spawn=None, margin=round(M[s10]) if s10 < nsec else None,
                                     stack=round(eff10), has_rl=rl10, rockets=rk10, mates_at=mates10, on_path=path,
-                                    items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)] + [o for o in near_q if o["kind"] != "quad"],
+                                    items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), label=nm("quad", SR.room_name(it.get("loc") or "")), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)] + [o for o in near_q if o["kind"] != "quad"],
                                     question=q, did=did, comms=others[-10:], you_sent=[_clean_mm2(m.get("messageClean") or m.get("message")) for m in comms if m.get("player") == me],
                                     answer=a, mm2=mm2, options=[], best_room=None, your_room=None, your_room_survival=None, best_room_survival=None, score=0.6 + (0.3 if away <= 6 else 0)))
             elif took_me and died_soon and eff10 < 100:
                 q = f"{mmss(av - 10000)} — quad spawns in 10 s and you are going for it with {eff10:.0f} effective stack. What do you do?"
                 rewinds.append(dict(idx=0, kind="quad", t=av - 10000, t_end=av + 10000, hub=hub(av - 10000, av + 10000), spawn=None, margin=round(M[s10]) if s10 < nsec else None,
-                                    items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)],
+                                    items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), label=nm("quad", SR.room_name(it.get("loc") or "")), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)],
                                     question=q, did=f"You took the quad at {mmss(av)} with about {eff10:.0f} stack and died inside 10 s: the run was over before it started.",
                                     comms=[], you_sent=[], answer="A quad on a spawn stack is a quad for them to farm. Spend the ten seconds on the yellow or mega beside the room, take it with a body, open the run on the nearest enemy gun.",
                                     mm2=["quad in 10, need armor", "taking quad"], options=[], best_room=None, your_room=None, your_room_survival=None, best_room_survival=None, score=0.5))

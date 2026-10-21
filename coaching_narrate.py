@@ -84,7 +84,7 @@ def _llm_narrate(payload: dict) -> str | None:
         return None
     body = {
         "model": MODEL,
-        "max_tokens": 800,
+        "max_tokens": 2000,
         "system": SYSTEM,
         "messages": [{
             "role": "user",
@@ -251,7 +251,8 @@ def narrate_fours(report: dict) -> dict:
     if ANTHROPIC_KEY and (report.get("level") or {}).get("placed"):
         payload = _fours_payload(report)
         lvl = (report.get("level") or {}).get("level") or 3
-        body = {"model": MODEL, "max_tokens": 900, "system": SYSTEM_4ON4,
+        # room for the model's own thinking (Claude 5 thinks by default) plus the text
+        body = {"model": MODEL, "max_tokens": 2000, "system": SYSTEM_4ON4,
                 "messages": [{"role": "user", "content": f"Player level {lvl}. Report JSON:\n{json.dumps(payload, indent=1, default=str)}\n\nWrite the coaching read."}]}
         text = _post(body)
         if not text:
