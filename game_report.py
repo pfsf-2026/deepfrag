@@ -480,7 +480,7 @@ def compute(ov, data, me, gid, mp):
                 did = f"You were {away:.0f} s from the quad room at {mmss(av - 10000)} and {by} took it at {mmss(av)}" + (f"; you reached the room {'with' if armed else 'without'} rockets." if away <= 6 else ".")
                 near_q = near_at(here, av - 10000, 4)
                 parts = [f"Quad in 10, you are {int(away)} s out. Clock: " + "; ".join(
-                    (f"{o['kind'].upper()} at {o['loc']} up" if o["state"] == "up" else f"{o['kind'].upper()} at {o['loc']} in {o['s']} s" if o["state"] == "in" else f"{o['kind'].upper()} at {o['loc']} gone {o['s']} s")
+                    (f"{o['kind'].upper()} at {o['loc']} up" if o["state"] == "up" or (o["state"] == "in" and o["s"] <= 0) else f"{o['kind'].upper()} at {o['loc']} in {o['s']} s" if o["state"] == "in" else f"{o['kind'].upper()} at {o['loc']} gone {o['s']} s")
                     + f" ({o['away']:.0f} s)" for o in near_q if o["kind"] != "quad") + "."]
                 if better:
                     b0 = better[0]
