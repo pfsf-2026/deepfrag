@@ -23,7 +23,7 @@ import urllib.parse
 from duel_adv import _eff, _Series
 import spawn_rooms as SR
 
-VERSION = 14
+VERSION = 15
 # P(killer wins | stack edge at first contact, power-up state): 2,445 Den/LA fours, 1,025,964 enemy frags
 # (tools/mvd_features/fight_table_4on4.json, 2026-09-11). Same table the Advanced Stats pages use.
 FIGHT_TABLE = {"no powerup": [[-200, 0.06], [-70, 0.201], [0, 0.5], [70, 0.799], [200, 0.94]],
@@ -188,10 +188,15 @@ def compute(ov, data, me, gid, mp):
     span = lambda L, K, a, b: sum(v for _, v in L[bisect.bisect_left(K, a):bisect.bisect_right(K, b)])
     items = data["items"] if isinstance(data["items"], list) else ((data["items"] or {}).get("items") or [])
     kind_count = collections.Counter(it.get("kind") for it in items)
+    def loc_disp(kind, loc):
+        """A room name without the item's own token repeated: 'SNG.MH' for the mega is 'SNG', 'YA.box' is 'box'."""
+        parts = [x for x in (loc or "").split(".") if x and x.lower() != (kind or "").lower()]
+        return ".".join(parts) if parts else (loc or "")
+
     def nm(kind, loc=""):
         """'QUAD' when the map has one quad; 'YA at tower' when it has several yellows."""
         k = (kind or "").upper()
-        return k if kind_count.get(kind, 0) <= 1 or not loc else f"{k} at {loc}"
+        return k if kind_count.get(kind, 0) <= 1 or not loc else f"{k} at {loc_disp(kind, loc)}"
     takes = sorted(((ph["takenAt"], it["kind"], SR.room_name(it.get("loc") or ""), it) for it in items for ph in (it.get("phases") or [])
                     if ph.get("takenBy") == me and ph.get("takenAt") is not None), key=lambda x: x[0])
     pickups = [w for w in (data["pickups"] or []) if w.get("player") == me]
@@ -373,7 +378,7 @@ def compute(ov, data, me, gid, mp):
             st, n_s, by = item_state(it, t)
             tt = dist(xyz, (it["x"], it["y"], it["z"])) / 320 + 0.5
             loc_ = SR.room_name(it.get("loc") or "")
-            out.append(dict(kind=it["kind"], loc=loc_, label=nm(it["kind"], loc_), state=st, s=n_s, by=by, away=round(tt, 1), by_enemy=(by in foes)))
+            out.append(dict(kind=it["kind"], loc=loc_, label=nm(it["kind"], loc_), state=st, s=n_s, by=(by if it["kind"] == "quad" else None), away=round(tt, 1), by_enemy=(by in foes)))
         out.sort(key=lambda o: o["away"])
         return out[:n]
 
@@ -449,7 +454,7 @@ def compute(ov, data, me, gid, mp):
             st, n_s, by = item_state(it, l["s0"])
             tt = dist(l["spawn_xyz"], (it["x"], it["y"], it["z"])) / 320 + 0.5
             loc_ = SR.room_name(it.get("loc") or "")
-            near_items.append(dict(kind=it["kind"], loc=loc_, label=nm(it["kind"], loc_), state=st, s=n_s, by=by, away=round(tt, 1), by_enemy=(by in foes)))
+            near_items.append(dict(kind=it["kind"], loc=loc_, label=nm(it["kind"], loc_), state=st, s=n_s, by=(by if it["kind"] == "quad" else None), away=round(tt, 1), by_enemy=(by in foes)))
         near_items.sort(key=lambda o: o["away"])
         near_items = near_items[:6] + packs_at(l["spawn_xyz"], l["s0"])
         score = (1 - (mine[0] if mine else 0.2)) + (0.5 if opts else 0) + (0.3 if best and (not mine or best[1][0] - mine[0] > 0.15) else 0) + (0.2 if l["near_e"] >= 2 else 0)
@@ -469,7 +474,7 @@ def compute(ov, data, me, gid, mp):
                 return f"{nm(o['kind'], o['loc'])} up ({o['away']:.0f} s away)"
             if o["state"] == "in":
                 return f"{nm(o['kind'], o['loc'])} in {o['s']} s ({o['away']:.0f} s away)"
-            return f"{nm(o['kind'], o['loc'])} gone {o['s']} s ago to {o['by'] or 'them'}"
+            return f"{nm(o['kind'], o['loc'])} gone {o['s']} s ago" + (f" to {o['by']}" if o.get("by") and o["kind"] == "quad" else "")
         ans = ["Clock: " + "; ".join(clk(o) for o in near_items[:3]) + "." if near_items else "Clock: nothing near."]
         lost = [re.sub(r"^\S+:?\s*lost\s+", "", c["text"]).split(" ")[0] for c in others if re.search(r"\blost\b", c["text"].lower())]
         seen = [c["text"] for c in others if "enemy" in c["text"].lower()]
