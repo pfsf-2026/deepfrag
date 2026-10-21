@@ -11220,6 +11220,13 @@ win rates, percentages, sample sizes or "top players do". Use only the facts giv
 no footstep sounds in QuakeWorld; cues are item pickups, weapon fire, jumps, pain, teleporters, doors, the
 kill feed). Game facts: red armor +200 (80% absorb), yellow +150 (60%), green +100 (30%), mega +100 to 250;
 armors respawn in 20 s, weapons 30 s, mega 20 s after the holder is back at 100, quad 60 s, pent 5 min.
+The facts carry the player's stack, whether they hold the RL and how many rockets (an RL with no rockets is a
+shotgun), each teammate's stack, gun, rockets and distance (mates_at), and which armors are genuinely on the
+path (on_path). Trust what the player says about their own ammo or state over the data when the data is
+silent. Never call an item "on the way" unless it is in on_path or options. If a teammate is better placed
+to take the item (closer, with rockets and stack), the player's job is the second entrance, the next item,
+or the call, not the pad. On schloss rockets are scarce: packs sit in the trench, at the tower tele exit and
+at the top of the Cat SSG stairs.
 Write to the player as "you", in plain words, 120 to 180 words, three short paragraphs: (1) what your answer
 got right and what it missed, in one or two sentences each; (2) the line to run, step by step, as it happens;
 (3) the call to make. No headings, no lists, no numbers except seconds and item names."""
@@ -11261,7 +11268,7 @@ def api_rewind_coach(canonical_id: str, game_id: int, body: _RewindGrade, author
     w = next((x for x in report.get("rewinds") or [] if x.get("idx") == int(body.idx)), None)
     if not w:
         raise HTTPException(404, "rewind not found; open the report first")
-    facts = {k: w.get(k) for k in ("kind", "question", "spawn", "margin", "items_at", "comms", "you_sent", "did", "options", "best_room", "your_room")}
+    facts = {k: w.get(k) for k in ("kind", "question", "spawn", "margin", "stack", "has_rl", "rockets", "mates_at", "on_path", "items_at", "comms", "you_sent", "did", "options", "best_room", "your_room")}
     facts["map"] = report.get("map"); facts["player"] = report.get("display") or report.get("player")
     facts["teammates"] = report.get("mates"); facts["enemies"] = report.get("foes")
     facts["what_the_data_suggests"] = w.get("answer")
