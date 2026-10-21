@@ -47,6 +47,10 @@ def _post(body: dict) -> str | None:
             print(f"[coaching_narrate] refusal: {data.get('stop_details')}", file=sys.stderr, flush=True)
             return None
         text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+        if not text:
+            print(f"[coaching_narrate] empty text from {body.get('model')}: stop_reason={data.get('stop_reason')} "
+                  f"blocks={[b.get('type') for b in data.get('content', [])]} usage={data.get('usage')} "
+                  f"raw={json.dumps(data)[:600]}", file=sys.stderr, flush=True)
         return text or None
     except urllib.error.HTTPError as e:
         try:
