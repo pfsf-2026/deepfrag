@@ -209,19 +209,9 @@ const KIND = { powerup: 'powerup', streak: 'streak', streak_end: 'ended a streak
         <div class="muted small">Impact = the Game Impact Score (adjusted kills, damage, stacked DDR, survival, items, multi-kills; the eight average 1.00). Adj K = kills weighted by how hard the fight was. sDDR = damage dealt over damage taken while holding 150+. Same definitions as the Advanced Stats pages; +/- needs the win-probability model and is not computed here.</div>
       </section>
 
-      <!-- summary -->
+      <!-- your levers that the table does not carry (the chip grid was noise, Peter 2026-10-21) -->
       <section class="sec">
-        <div class="chips">
-          <div class="chip"><b>{{ s.frags }}</b><span>frags</span></div>
-          <div class="chip"><b>{{ s.deaths }}</b><span>deaths</span></div>
-          <div class="chip"><b>{{ s.armed_pct }}%</b><span>of alive time with RL or LG</span></div>
-          <div class="chip"><b>{{ s.empty_lives }}</b><span>empty lives (under 50 dmg, no frag, no item)</span></div>
-          <div class="chip"><b>{{ s.locked_spawns }}</b><span>spawns while locked · {{ s.chained_locked }} died inside 14 s</span></div>
-          <div class="chip" v-if="s.first_damage_pct != null"><b>{{ s.first_damage_pct }}%</b><span>of fights you hit first ({{ s.fights }})</span></div>
-          <div class="chip"><b>{{ s.stack_no_gun_deaths }}</b><span>deaths stacked without a gun</span></div>
-          <div class="chip"><b>{{ rep.mm2?.sent }}</b><span>MM2 lines sent · team {{ rep.mm2?.team_total }}</span></div>
-        </div>
-        <div class="muted small">Locked = your team's margin (enemy stack minus yours, plus 100 per RL) above the map's 85th percentile ({{ rep.lock_threshold }}); your team was locked {{ rep.locked_pct }}% of the game.</div>
+        <div class="muted small">Your lives: {{ s.armed_pct }}% of alive time with a gun · {{ s.empty_lives }} empty lives (under 50 damage, no frag, no item) · {{ s.locked_spawns }} spawns while locked, {{ s.chained_locked }} of them dead inside 14 s<template v-if="s.first_damage_pct != null"> · hit first in {{ s.first_damage_pct }}% of {{ s.fights }} fights</template> · {{ s.stack_no_gun_deaths }} deaths stacked without a gun. Locked means your team's stack and rockets were more than {{ rep.lock_threshold }} behind; that was {{ rep.locked_pct }}% of this game.</div>
       </section>
 
       <!-- rewinds -->
