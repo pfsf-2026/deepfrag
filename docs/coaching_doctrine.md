@@ -173,6 +173,12 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   by Peter, and every coaching text (reveals, the coach's read, levers, narration) speaks from the chain's
   lower rungs. A number is never the lesson; it is where the chain starts.
 
+- **Precise, not verbose (Peter, 2026-10-21).** A moment's coaching is a few lines: the clock of the nearest
+  weapons and armors, the MM2 read, the line, what happened. The coach's read of a typed answer is two short
+  paragraphs. Every moment states rockets in hand and each teammate's stack, gun, rockets and distance, and
+  the line defers to a better-placed teammate. A game report opens with how the player compared to the
+  other seven on the same numbers the stats tables use.
+
 ## 6. Process
 - Read this file before any coaching text. Re-read §1 before quoting any value or timer.
 - A correction from Peter goes into §7 immediately, then into the relevant section.
