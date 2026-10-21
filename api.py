@@ -5753,7 +5753,8 @@ def coaching_fours_levels(response: Response):
 
 
 @app.get("/api/players/{canonical_id}/coaching/fours")
-def coaching_fours_report(canonical_id: str, response: Response, narrate: bool = Query(True)):
+def coaching_fours_report(canonical_id: str, response: Response, narrate: bool = Query(True),
+                          renarrate: bool = Query(False), authorization: str | None = Header(default=None)):
     """The 4on4 coach: level + gates, ranked levers for that level, the single
     focus prescription (kept open for 10 games, then graded), last games with the
     two metrics that explain each, and a narration. Persists the day's run to
@@ -5790,6 +5791,11 @@ def coaching_fours_report(canonical_id: str, response: Response, narrate: bool =
         same_focus = prev_run and (((prev_run.get("levers") or {}).get("focus") or {}).get("lever") == ((report.get("focus") or {}).get("lever")))
         reusable = (same_day and same_focus and prev_run.get("narration") and prev_run.get("narration_source") == "llm"
                     and prev_run.get("matches_analyzed") == report["level"]["games"])
+        # renarrate=1 with the admin key forces a new read (to check a prompt change); players get
+        # the new voice on their next day or next night of games without spending a call per view.
+        _sec = os.environ.get("SYNC_SECRET")
+        if renarrate and _sec and authorization == f"Bearer {_sec}":
+            reusable = False
         if not narrate:
             report["narration"] = None
         elif reusable:
