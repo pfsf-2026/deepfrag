@@ -162,6 +162,14 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   wall-clock time so the player can find them in the VOD with voice comms; the report links there when the
   stream is known.
 
+- **The Why chain (Peter, 2026-10-21).** Every finding is coached from the bottom of a chain of whys: the
+  measured difference → the behaviour that produces it → the decision behind the behaviour → the skill or
+  knowledge behind the decision → what to train (aim and movement on POVs and dmm4 duels, sound recognition,
+  timing items closely and arriving early, the spawn-to-gun-to-stack routes, reading MM2 and the kill feed,
+  when to leave a fight, the MM2 habit). The chains are written in `docs/coaching_why_chains.md`, verified
+  by Peter, and every coaching text (reveals, the coach's read, levers, narration) speaks from the chain's
+  lower rungs. A number is never the lesson; it is where the chain starts.
+
 ## 6. Process
 - Read this file before any coaching text. Re-read §1 before quoting any value or timer.
 - A correction from Peter goes into §7 immediately, then into the relevant section.
