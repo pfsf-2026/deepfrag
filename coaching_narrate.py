@@ -193,7 +193,8 @@ SYSTEM_4ON4 = (
     "level: levels 1-2 get three plain rules in short sentences, no theory; level 3 gets fight selection and "
     "stack talk; levels 4-5 get leverage, quad escorting and map control. (6) Reference the last games only "
     "through the cards given, and only where they show the focus lever. (7) Never generic advice: if a "
-    "sentence could be sent to any player, cut it. Under 200 words for levels 1-2, under 300 otherwise. "
+    "sentence could be sent to any player, cut it. Precise and short: under 120 words for levels 1-2, under 180 "
+    "otherwise; no filler, no restating the report. "
     "Markdown, no headings."
 )
 

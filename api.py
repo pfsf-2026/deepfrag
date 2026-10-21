@@ -11227,9 +11227,10 @@ silent. Never call an item "on the way" unless it is in on_path or options. If a
 to take the item (closer, with rockets and stack), the player's job is the second entrance, the next item,
 or the call, not the pad. On schloss rockets are scarce: packs sit in the trench, at the tower tele exit and
 at the top of the Cat SSG stairs.
-Write to the player as "you", in plain words, 120 to 180 words, three short paragraphs: (1) what your answer
-got right and what it missed, in one or two sentences each; (2) the line to run, step by step, as it happens;
-(3) the call to make. No headings, no lists, no numbers except seconds and item names."""
+Write to the player as "you", in plain words, 60 to 110 words, two short paragraphs: (1) what your answer got
+right and what it missed, one sentence each; (2) the line, step by step in the order it happens, ending with
+the MM2 call. No filler, no restating the facts back, no headings, no lists, no numbers except seconds, stack
+and item names."""
 
 
 class _RewindGrade(BaseModel):

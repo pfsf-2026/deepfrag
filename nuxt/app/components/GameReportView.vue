@@ -180,6 +180,27 @@ const KIND = { powerup: 'powerup', streak: 'streak', streak_end: 'ended a streak
         </details>
       </header>
 
+      <!-- how you compared: the same numbers for all eight (2026-10-21, Peter) -->
+      <section v-if="rep.table?.length" class="sec">
+        <div class="sectitle">📊 How you compared in this game</div>
+        <p v-if="rep.compare" class="cmp">{{ rep.compare }}</p>
+        <div class="tblwrap">
+          <table class="cmptbl">
+            <thead><tr><th>Player</th><th>Team</th><th>Frags</th><th>Deaths</th><th>Dmg +</th><th>Dmg −</th><th>Net</th><th>Gun %</th><th>RA</th><th>YA</th><th>MH</th><th>Quads</th><th>1st hit</th><th>MM2</th></tr></thead>
+            <tbody>
+              <tr v-for="r in rep.table" :key="r.name" :class="{ me: r.me, mine: r.team === rep.team }">
+                <td class="nm">{{ r.name }}</td><td class="muted">{{ r.team }}</td>
+                <td>{{ r.frags }}</td><td>{{ r.deaths }}</td><td>{{ r.dealt }}</td><td>{{ r.taken }}</td>
+                <td :class="{ pos: r.net > 0, neg: r.net < 0 }">{{ r.net > 0 ? '+' : '' }}{{ r.net }}</td>
+                <td>{{ r.armed_pct }}%</td><td>{{ r.ra }}</td><td>{{ r.ya }}</td><td>{{ r.mh }}</td><td>{{ r.quads }}</td>
+                <td>{{ r.first_hit_pct == null ? '–' : r.first_hit_pct + '%' }}</td><td>{{ r.mm2 }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="muted small">Net = damage dealt minus taken, enemies only. Gun % = share of alive time with an RL or LG. 1st hit = share of your fights where you landed the first damage.</div>
+      </section>
+
       <!-- summary -->
       <section class="sec">
         <div class="chips">
@@ -324,6 +345,16 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .reveal { border-top: 1px dashed var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .reveal p { margin: 0 0 6px; font-size: 14px; line-height: 1.5; }
 .coachread { white-space: pre-line; border-left: 3px solid var(--accent); padding-left: 12px; }
+.cmp { margin: 0; font-size: 14px; line-height: 1.5; }
+.tblwrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.cmptbl { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.cmptbl th, .cmptbl td { padding: 7px 9px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.cmptbl th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-2); font-weight: 700; }
+.cmptbl th:first-child, .cmptbl td:first-child, .cmptbl th:nth-child(2), .cmptbl td:nth-child(2) { text-align: left; }
+.cmptbl td.nm { font-weight: 700; }
+.cmptbl tr.mine td { background: rgba(255, 122, 26, 0.04); }
+.cmptbl tr.me td { background: rgba(255, 122, 26, 0.14); }
+.cmptbl td.pos { color: #34d67a; } .cmptbl td.neg { color: #ff5d6c; }
 .mm2 { display: flex; gap: 6px; flex-wrap: wrap; } .mm2 code, .card code { background: #0d0a07; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
 /* blocks */
 .blocks { display: flex; flex-direction: column; gap: 4px; }
