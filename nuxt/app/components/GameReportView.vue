@@ -82,6 +82,8 @@ async function share() {
 }
 
 // wall clock per moment (demo start + offset + match time) so a streamer can find it in the VOD
+// team names are short in rpickup (blue / red / br): show them whole, two letters only when long
+function teamTag(t) { const x = String(t || ''); return x.length <= 4 ? x : x.slice(0, 2).toUpperCase() }
 function fmtWall(ms) { return ms ? new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' }) : '' }
 
 // Twitch VOD: auto (API, when the Twitch app is configured) or manual (VOD url + stream start time)
@@ -193,10 +195,10 @@ const KIND = { powerup: 'powerup', streak: 'streak', streak_end: 'ended a streak
         <p v-if="rep.compare" class="cmp">{{ rep.compare }}</p>
         <div class="tblwrap">
           <table class="cmptbl">
-            <thead><tr><th>Player</th><th>T</th><th>Score</th><th>Impact</th><th>Adj K</th><th>Dmg/min</th><th>sDDR</th><th>Deaths</th><th>Quads</th><th>Pents</th><th v-if="rep.map !== 'e1m2'">RA</th><th>MM2</th></tr></thead>
+            <thead><tr><th>Player</th><th>Team</th><th>Score</th><th>Impact</th><th>Adj K</th><th>Dmg/min</th><th>sDDR</th><th>Deaths</th><th>Quads</th><th>Pents</th><th v-if="rep.map !== 'e1m2'">RA</th><th>MM2</th></tr></thead>
             <tbody>
               <tr v-for="r in rep.table" :key="r.name" :class="{ me: r.me, mine: r.team === rep.team }">
-                <td class="nm">{{ r.name }}</td><td class="muted">{{ String(r.team || '').charAt(0).toUpperCase() }}</td>
+                <td class="nm">{{ r.name }}</td><td class="muted tm">{{ teamTag(r.team) }}</td>
                 <td>{{ r.score }}</td><td class="imp" :class="{ pos: r.impact >= 1.15, neg: r.impact <= 0.8 }">{{ r.impact.toFixed(2) }}</td>
                 <td>{{ r.adj.toFixed(1) }}</td><td>{{ r.dmg_pm }}</td><td>{{ r.sddr.toFixed(2) }}</td><td>{{ r.deaths }}</td>
                 <td>{{ r.quads }}</td><td>{{ r.pents }}</td><td v-if="rep.map !== 'e1m2'">{{ r.ra }}</td><td>{{ r.mm2 }}</td>
@@ -257,6 +259,10 @@ const KIND = { powerup: 'powerup', streak: 'streak', streak_end: 'ended a streak
             <p>{{ w.did }}</p>
             <div class="lbl">The line</div>
             <p>{{ w.answer }}</p>
+            <template v-if="w.perfect">
+              <div class="lbl">With perfect timing</div>
+              <p>{{ w.perfect }}</p>
+            </template>
             <div class="lbl">MM2 to send</div>
             <div class="mm2"><code v-for="(m, i) in w.mm2" :key="i">{{ m }}</code></div>
             <div v-if="saved[w.idx] === false" class="muted small">Your answer is kept in this browser; sign in to keep it on your profile.</div>
@@ -358,8 +364,10 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .cmptbl th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-2); font-weight: 700; }
 .cmptbl th:first-child, .cmptbl td:first-child, .cmptbl th:nth-child(2), .cmptbl td:nth-child(2) { text-align: left; }
 .cmptbl td.nm { font-weight: 700; }
-.cmptbl tr.mine td { background: rgba(255, 122, 26, 0.04); }
-.cmptbl tr.me td { background: rgba(255, 122, 26, 0.14); }
+.cmptbl tr.mine td { background: rgba(56, 189, 248, 0.06); }
+.cmptbl tr:not(.mine) td { background: rgba(255, 93, 108, 0.05); }
+.cmptbl tr.me td { background: rgba(255, 122, 26, 0.16); }
+.cmptbl td.tm { font-weight: 700; }
 .cmptbl td.pos { color: #34d67a; } .cmptbl td.neg { color: #ff5d6c; }
 .mm2 { display: flex; gap: 6px; flex-wrap: wrap; } .mm2 code, .card code { background: #0d0a07; border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
 /* blocks */
