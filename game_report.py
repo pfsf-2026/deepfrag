@@ -23,7 +23,7 @@ import urllib.parse
 from duel_adv import _eff, _Series
 import spawn_rooms as SR
 
-VERSION = 11
+VERSION = 12
 HUB = "https://hub.quakeworld.nu/games/?gameId={gid}&from={f}&to={t}&track={uid}"
 MAJOR = ("ra", "ya", "ga", "mh", "rl", "lg", "quad", "pent", "ring")
 NEAR = 700            # units: "with" a teammate / "into" enemies
@@ -450,7 +450,7 @@ def compute(ov, data, me, gid, mp):
         if home and home["state"] == "up":
             ans.append(f"Line: stay. The {home['kind'].upper()} is up here. Take it, then the nearest armor; fight from this doorway.")
         elif home and home["state"] == "in" and home["s"] <= 8:
-            ans.append(f"Line: stay for the {home['kind'].upper()} ({home['s']} s). Back to the wall that covers the entrance, shotgun whoever comes, be on the pad.")
+            ans.append(f"Line: stay for the {home['kind'].upper()} ({home['s']} s). Back to the wall that covers the entrance, shotgun whoever comes, be on the quad.")
         elif line:
             steps = [f"{o['kind'].upper()} ({o['s']:.0f} s" + ("" if o["up_at"] <= l["s0"] else f", up {mmss(o['up_at'])}") + ")" for o in line]
             ans.append("Line: " + (f"the {home['kind'].upper()} is {home['s']} s out, nothing to wait for. " if home else "") + "go " + " → ".join(steps) + ". Shotgun anyone you pass, no stopping; fight only after the last one.")
@@ -511,11 +511,11 @@ def compute(ov, data, me, gid, mp):
                     + f" ({o['away']:.0f} s)" for o in near_q if o["kind"] != "quad") + "."]
                 if better:
                     b0 = better[0]
-                    parts.append(f"{b0['name']} is {b0['away']:.0f} s out with {b0['eff']} and {b0['rockets']} rockets: he takes it. You: cover the other entrance, call what you see. Not the pad" + (" with no rockets" if not armed else "") + ".")
+                    parts.append(f"{b0['name']} is {b0['away']:.0f} s out with {b0['eff']} and {b0['rockets']} rockets: he takes it. You: cover the other entrance, call what you see. Not the quad" + (" with no rockets" if not armed else "") + ".")
                 elif armed and away <= 10:
-                    parts.append("Go now" + (f", {nm(path[0]['kind'], path[0]['loc'])} on the way ({path[0]['detour_s']:.0f} s)" if path else "") + ". In the room with 3 s to spare; hold the entrance, fire as he comes, step on.")
+                    parts.append("Go now" + (f", {nm(path[0]['kind'], path[0]['loc'])} on the way ({path[0]['detour_s']:.0f} s)" if path else "") + ". In the room with 3 s to spare; hold the entrance, fire as he comes, then take it.")
                 elif away <= 10:
-                    parts.append("No rockets: the pad is a lost trade. Take " + (f"the {packs_q[0]['label']} ({packs_q[0]['away']:.0f} s, dropped {packs_q[0]['s']} s ago)" if packs_q else (f"the {nm(path[0]['kind'], path[0]['loc'])}" if path else "a pack or the yellow")) + "; let a teammate with rockets take it, or one shot from the doorway and leave.")
+                    parts.append("No rockets: taking the quad is a lost trade. Take " + (f"the {packs_q[0]['label']} ({packs_q[0]['away']:.0f} s, dropped {packs_q[0]['s']} s ago)" if packs_q else (f"the {nm(path[0]['kind'], path[0]['loc'])}" if path else "a pack or the yellow")) + "; let a teammate with rockets take it, or one shot from the doorway and leave.")
                 else:
                     parts.append("Too far. Say so; get yellow or rockets and own the next one.")
                 if mates10 and not better:

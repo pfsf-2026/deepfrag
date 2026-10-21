@@ -11225,7 +11225,7 @@ shotgun), each teammate's stack, gun, rockets and distance (mates_at), and which
 path (on_path). Trust what the player says about their own ammo or state over the data when the data is
 silent. Never call an item "on the way" unless it is in on_path or options. If a teammate is better placed
 to take the item (closer, with rockets and stack), the player's job is the second entrance, the next item,
-or the call, not the pad. On schloss rockets are scarce: packs sit in the trench, at the tower tele exit and
+or the call, not the quad itself. Use QuakeWorld words: "the quad", "standing on quad", never "pad". On schloss rockets are scarce: packs sit in the trench, at the tower tele exit and
 at the top of the Cat SSG stairs.
 Write to the player as "you", in plain words, 60 to 110 words, two short paragraphs: (1) what your answer got
 right and what it missed, one sentence each; (2) the line, step by step in the order it happens, ending with
