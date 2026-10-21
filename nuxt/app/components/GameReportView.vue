@@ -224,6 +224,11 @@ const KIND = { powerup: 'powerup', streak: 'streak', streak_end: 'ended a streak
             <div class="lbl">At that second</div>
             <div class="chipsrow"><span v-for="(o, i) in w.items_at" :key="i" class="ichip" :class="{ up: o.state === 'up', soon: o.state === 'in' && o.s <= 8 }">{{ itemState(o) }} · {{ o.away }} s away</span></div>
           </div>
+          <div v-if="w.numbers" class="comms">
+            <div class="lbl">In reach of the quad <span class="muted">(health/armor, rockets)</span></div>
+            <div class="small"><b>Yours:</b> {{ w.numbers.ours?.length ? w.numbers.ours.join(' · ') : 'nobody' }}</div>
+            <div class="small"><b>Theirs:</b> {{ w.numbers.theirs?.length ? w.numbers.theirs.join(' · ') : 'nobody seen' }}</div>
+          </div>
           <div class="comms">
             <div class="lbl">Your team's MM2 just before</div>
             <ul v-if="w.comms?.length"><li v-for="(c, i) in w.comms" :key="i"><span class="t">{{ mmss(c.t) }}</span><span class="m">{{ c.text }}</span></li></ul>

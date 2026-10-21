@@ -11220,9 +11220,16 @@ win rates, percentages, sample sizes or "top players do". Use only the facts giv
 no footstep sounds in QuakeWorld; cues are item pickups, weapon fire, jumps, pain, teleporters, doors, the
 kill feed). Game facts: red armor +200 (80% absorb), yellow +150 (60%), green +100 (30%), mega +100 to 250;
 armors respawn in 20 s, weapons 30 s, mega 20 s after the holder is back at 100, quad 60 s, pent 5 min.
-The facts carry the player's stack, whether they hold the RL and how many rockets (an RL with no rockets is a
-shotgun), each teammate's stack, gun, rockets and distance (mates_at), and which armors are genuinely on the
-path (on_path). Trust what the player says about their own ammo or state over the data when the data is
+The facts carry the player's stack as health/armor (stack_hp, e.g. 42/0 or 100/150y; "stack" is the same as
+one effective number), whether they hold the RL and how many rockets (an RL with no rockets is a shotgun),
+each teammate's health/armor (stk), gun, rockets and seconds to the item (mates_at), the enemies inside reach
+of it (foes_at), the numbers for it (numbers: ours, theirs, who is ready, enemy guns), and which armors are
+genuinely on the path (on_path). Read stacks as health/armor, never as one number. The stack floor (quad_min,
+100 effective): with the RL and under it a player does not walk to the quad, they restack first and protect
+the launcher; a teammate under it is restacking, not "taking it". Numbers take quads: one launcher does not
+take and hold a quad against two launchers from two entrances, so go in together or do not go, and the second
+gun owns the other entrance. Being in the room early is how you set up: say where to stand and which
+entrance faces the enemies. Trust what the player says about their own ammo or state over the data when the data is
 silent. Never call an item "on the way" unless it is in on_path or options. If a teammate is better placed
 to take the item (closer, with rockets and stack), the player's job is the second entrance, the next item,
 or the call, not the quad itself. "perfect" / "perfect_line" is the computed best pickup line to the next
@@ -11273,7 +11280,7 @@ def api_rewind_coach(canonical_id: str, game_id: int, body: _RewindGrade, author
     w = next((x for x in report.get("rewinds") or [] if x.get("idx") == int(body.idx)), None)
     if not w:
         raise HTTPException(404, "rewind not found; open the report first")
-    facts = {k: w.get(k) for k in ("kind", "question", "spawn", "margin", "stack", "has_rl", "rockets", "mates_at", "on_path", "items_at", "comms", "you_sent", "did", "options", "best_room", "your_room", "perfect", "perfect_line", "next_powerup")}
+    facts = {k: w.get(k) for k in ("kind", "question", "spawn", "margin", "stack", "stack_hp", "has_rl", "rockets", "mates_at", "foes_at", "numbers", "quad_min", "on_path", "items_at", "comms", "you_sent", "did", "options", "best_room", "your_room", "perfect", "perfect_line", "next_powerup")}
     facts["map"] = report.get("map"); facts["player"] = report.get("display") or report.get("player")
     facts["teammates"] = report.get("mates"); facts["enemies"] = report.get("foes")
     facts["what_the_data_suggests"] = w.get("answer")

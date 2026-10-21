@@ -74,3 +74,18 @@ open.
 - Precomputing is deliberately off (Peter: only after someone clicks).
 - Grading the typed answers; they are only stored.
 - Airgibs (not exposed by the parser over HTTP).
+
+## v19 (2026-10-21): stacks as health/armor, the 100 floor, numbers on quad
+
+- Every stack is read as health/armor the way the team overlay shows it (`42/0`, `100/150y`), never one
+  number (`stk()` in game_report.py; `stack_hp` on each rewind, `stk` on every teammate/enemy entry).
+- `QUAD_MIN_STACK = 100`: with the RL and under 100 effective the line is "restack first, keep the launcher",
+  and a teammate under it is not "taking it". `mates_at()` now also runs for enemies (`foes_at`), uses the
+  route table for seconds to the item, and drops anyone dying that second (negative health).
+- `numbers` on the quad rewind: who is in reach of the room (ours / theirs, with health/armor and rockets),
+  who is ready (RL + rockets + 100), the enemy launchers. The decision branches on it: go together (one on
+  each entrance), alone against two launchers = hold your entrance and call a second gun, thin = restack,
+  no rockets = rockets first and the second entrance.
+- When this quad is not ours, "perfect timing" is the line to the next quad (70 s horizon); a step may hold
+  a room up to 15 s for its spawn and names the enemy there.
+- The coach's read (`REWIND_COACH_SYSTEM`) gets `stack_hp`, `foes_at`, `numbers`, `quad_min` and the rules.

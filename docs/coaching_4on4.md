@@ -162,6 +162,33 @@ window counts. Exact counts from 100-ms demo positions are the standard (`quad_e
 `player_quad_exact`, 400 u kept as a second column); the 10-s proxy is the fallback for games not yet
 re-extracted. The proxy undercounted by ~25% (dm2/e1m2 zones too small) before calibration.
 
+**Correction (Peter, 2026-10-05): the radius alone is wrong. "At quad" means in the quad ROOM.**
+The quad is walled off from the rooms around it, and a 650 u straight line reaches through those walls:
+on dm3 it sweeps in the RL room and the water, on dm2 high RL / big / water / secret, on schloss the
+cathedral. Players and kills there were being counted as "at quad". Measured on four LA games
+(2026-10-04): the radius-only rule put 2.7-3.1 players per team at every spawn; the room rule puts
+1.8-2.1 there, and per-player attendance drops 17-43%.
+
+The rule is now: in a quad room (`tools/mvd_features/quad_rooms.json`, the server's named locations
+per map) AND inside 650 u, in the 10 s before the spawn up to the spawn, alive; or killed in a quad
+room in that window. Room lists were checked against real travel time in demos: from a listed room
+players get onto the quad in about 2 s or less at their quickest; from the rooms left out it takes
+3 s to never (dm3 window 3.0 s, hill 8 s, RL 19 s, water never; dm2 high.RL 2.4 s, big 3.0 s).
+
+| map | counts as at quad | inside 650 u but NOT at quad |
+|---|---|---|
+| dm3 | Quad, window.Quad | window, hill, lifts, lifts.below, Pent, Ring, RL, water*, bridge.* |
+| dm2 | Quad, Quad.high, Quad.way, Quad.low, Quad.button | high.RL, big, big.stairs, water, secret, NG, path.lift, tele.high, low.RL, GL, floating |
+| e1m2 | Quad, Quad.box, GL.Quad | Quad.stairs, GL |
+| schloss | Quad, Quad.high, Quad.ledge, Quad.low | cathedral, cathedral.YA, yard, tower |
+
+`tools/mvd_features/quad_night.py` (per-game quad report) uses the room rule. **Still on the old
+radius rule and overcounting attendance:** `quad_exact_pass.py` / `player_quad_exact` (the coach's
+`quad_contests_pg` and `quad_conversion` levers), `quad_approach_pass.py`, `quad_track_pass.py`, and the
+`quad_zones.json` proxy (its zones were calibrated to match the radius, water included). They need a
+re-run with `quad_rooms.json` once Peter has confirmed the room lists; conversion will rise for
+everyone because the denominator shrinks.
+
 ## The coach in the app (2026-09-21 layout)
 
 Peter's guidance: promote the coach to the top line of the site, stop cramming every map onto one

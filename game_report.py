@@ -28,7 +28,7 @@ except Exception:                       # table missing: the planner falls back 
     ROUTE_TIMES = {}
 import heapq
 
-VERSION = 18
+VERSION = 19
 # P(killer wins | stack edge at first contact, power-up state): 2,445 Den/LA fours, 1,025,964 enemy frags
 # (tools/mvd_features/fight_table_4on4.json, 2026-09-11). Same table the Advanced Stats pages use.
 FIGHT_TABLE = {"no powerup": [[-200, 0.06], [-70, 0.201], [0, 0.5], [70, 0.799], [200, 0.94]],
@@ -76,6 +76,21 @@ def item_state(it, t):
     if last:
         return ("taken", round((t - last["takenAt"]) / 1000), last.get("takenBy"))
     return ("unknown", 0, None)
+
+
+def stk(h, a, at):
+    """A stack the way players read it on the team overlay: health/armor with the armor colour, e.g. 42/0 or
+    100/150y. Never one number (Peter, 2026-10-21: "read out armor and health, not just total stack")."""
+    h = int(h or 0); a = int(a or 0)
+    return f"{h}/{a}{(at or '')[:1]}" if a > 0 else f"{h}/0"
+
+
+# With the RL and under this effective stack you restack and protect the launcher instead of walking to the
+# quad (Peter, 2026-10-21: "rarely go to quad if you have an RL and less than 100 stack minimum on e1m2 as
+# it's a grinder there. Probably similar for most maps"). The same floor decides whether a teammate on a thin
+# stack is "taking it": he is not, he is restacking.
+QUAD_MIN_STACK = 100
+MAX_WAIT_S = 5         # a perfect line may stand in the room up to this long for a spawn: that is timing an item
 
 
 def mmss(ms):
@@ -430,7 +445,7 @@ def compute(ov, data, me, gid, mp):
         if kind == "mh":
             return min(250, h + 100), a, at
         return h, a, at
-    def perfect_line(t0, my_room, h, a, at, has_gun, horizon_ms):
+    def perfect_line(t0, my_room, h, a, at, has_gun, horizon_ms, strict=True, max_wait_s=MAX_WAIT_S):
         """Best sequence of up to three pickups from my_room inside the horizon: max effective HP (a gun counts
         as +60), items up by arrival, each arrival checked against enemies in that room at that second."""
         cands = []
@@ -463,8 +478,13 @@ def compute(ov, data, me, gid, mp):
                 if arrive > t0 + horizon_ms:
                     continue
                 st, n_s, by = item_state(it, arrive)
+                wait = 0
                 if st == "in" and n_s > 1:
-                    continue                      # not up when you get there
+                    if n_s > max_wait_s:
+                        continue                  # not up when you get there
+                    wait = n_s; arrive += n_s * 1000        # timing it: in the room a few seconds early
+                    if arrive > t0 + horizon_ms:
+                        continue
                 if st == "taken":
                     continue
                 # someone else got there first in the real game: by an enemy = contested, by a teammate = gone
@@ -475,12 +495,14 @@ def compute(ov, data, me, gid, mp):
                 # a perfect line does not walk a shotgun into a stronger enemy's room: skip that pickup
                 sec_ = max(0, min(nsec - 1, arrive // 1000))
                 my_eff_now = _eff(h_, a_, at_ or "")
-                if any(bval(f, "rl", sec_) or _eff(bval(f, "h", sec_, 100), bval(f, "a", sec_, 0), bval(f, "at", sec_, "") or "") >= my_eff_now for f in foes_here) and not gun:
+                if strict and not gun and any(bval(f, "rl", sec_) or _eff(bval(f, "h", sec_, 100), bval(f, "a", sec_, 0), bval(f, "at", sec_, "") or "") >= my_eff_now for f in foes_here):
                     continue
                 h2, a2, at2 = apply_item(h_, a_, at_, k)
                 gun2 = gun or k in ("rl", "lg", "rockets")
-                step = dict(kind=k, label=nm(k, disp_room), room=disp_room, at_ms=arrive, s=round((arrive - t0) / 1000, 1),
-                            contested=[dict(name=f, eff=round(_eff(bval(f, "h", arrive // 1000, 100), bval(f, "a", arrive // 1000, 0), bval(f, "at", arrive // 1000, "") or "")), rl=bool(bval(f, "rl", arrive // 1000))) for f in foes_here])
+                step = dict(kind=k, label=nm(k, disp_room), room=disp_room, at_ms=arrive, s=round((arrive - t0) / 1000, 1), wait=wait,
+                            contested=[dict(name=f, eff=round(_eff(bval(f, "h", arrive // 1000, 100), bval(f, "a", arrive // 1000, 0), bval(f, "at", arrive // 1000, "") or "")),
+                                            stk=stk(bval(f, "h", arrive // 1000, 100), bval(f, "a", arrive // 1000, 0), bval(f, "at", arrive // 1000, "") or ""),
+                                            rl=bool(bval(f, "rl", arrive // 1000))) for f in foes_here])
                 search(seq + [step], raw_room, arrive, h2, a2, at2, gun2, used | {id(it)})
         search([], my_room, t0, h, a, at, has_gun, set())
         return best
@@ -508,15 +530,20 @@ def compute(ov, data, me, gid, mp):
         out.sort(key=lambda o: o["away"])
         return out[:n]
 
-    def mates_at(s, target=None):
-        """Each live teammate at second s: stack, gun, rockets, and seconds from `target` (or from me)."""
+    def mates_at(s, target=None, target_loc=None, who=None):
+        """Each live teammate (or enemy, with who=foes) at second s: health/armor, gun, rockets, and seconds
+        to `target` as players run it (route table from their room when it knows the pair)."""
         out = []
         ref = target if target is not None else bxyz(me, s)
-        for m in mates:
-            if not bval(m, "alive", s):
+        for m in (who if who is not None else mates):
+            h_, a_, at_ = bval(m, "h", s, 100), bval(m, "a", s, 0), bval(m, "at", s, "") or ""
+            if not bval(m, "alive", s) or h_ <= 0:           # dying this second: not a body in the count
                 continue
-            out.append(dict(name=m, eff=round(_eff(bval(m, "h", s, 100), bval(m, "a", s, 0), bval(m, "at", s, "") or "")),
-                            rl=bool(bval(m, "rl", s)), rockets=int(bval(m, "rk", s, 0) or 0), away=round(dist(bxyz(m, s), ref) / 320, 1)))
+            xyz = bxyz(m, s); rm = room_at(m, s * 1000)
+            away = secs_to(rm, xyz, target_loc, ref) if (target_loc and rm) else dist(xyz, ref) / 320
+            out.append(dict(name=m, h=int(h_), a=int(a_), at=at_, stk=stk(h_, a_, at_), eff=round(_eff(h_, a_, at_)),
+                            rl=bool(bval(m, "rl", s)), rockets=int(bval(m, "rk", s, 0) or 0), away=round(away, 1),
+                            room=SR.room_name(rm) if rm else None, in_room=bool(rm and target_loc and rm == target_loc)))
         return sorted(out, key=lambda x: x["away"])
 
     def on_path(from_xyz, to_xyz, t):
@@ -650,9 +677,8 @@ def compute(ov, data, me, gid, mp):
         perfect = None
         if pl and pl["seq"]:
             tgt = travel(pl["room"], npu[3].get("loc") or "") if npu else None
-            steps = " → ".join(f"{st_['label']} ({st_['s']:.0f} s" + (f", {st_['contested'][0]['name']} there with {st_['contested'][0]['eff']}" + (" and the RL" if st_['contested'][0]['rl'] else "") + ")" if st_['contested'] else ")") for st_ in pl["seq"])
-            end_eff = round(_eff(pl["h"], pl["a"], pl["at"] or ""))
-            perfect = (f"Perfect timing from this spawn: {steps}; you are {pl['h']}/{pl['a']}{pl['at']} ({end_eff} effective)"
+            steps = " → ".join(f"{st_['label']} ({st_['s']:.0f} s" + (f", {st_['contested'][0]['name']} there on {st_['contested'][0]['stk']}" + (" with the RL" if st_['contested'][0]['rl'] else "") + ")" if st_['contested'] else ")") for st_ in pl["seq"])
+            perfect = (f"Perfect timing from this spawn: {steps}; you are on {stk(pl['h'], pl['a'], pl['at'])}"
                        + (f" and armed" if pl["gun"] else " and still a shotgun")
                        + (f", then {travel(pl['room'], npu[3].get('loc') or ''):.0f} s to the {npu[1]} room against its spawn at {mmss(npu[0])}" + (" — on time." if tgt is not None and pl["t"] + tgt * 1000 <= npu[0] - 1000 else " — late; take the stack and hold the entrance instead.") if npu and tgt is not None else "."))
             contested_any = [st_ for st_ in pl["seq"] if st_["contested"]]
@@ -687,12 +713,25 @@ def compute(ov, data, me, gid, mp):
             took_me = by == me; took_enemy = by in foes
             died_soon = took_me and any(av <= x <= av + 10000 for x in dd)
             if took_enemy and away <= 12:
-                mates10 = mates_at(s10, qxyz)
+                qloc = it.get("loc") or ""
+                mates10 = mates_at(s10, qxyz, qloc)
+                foes10 = mates_at(s10, qxyz, qloc, who=foes)
                 path = on_path(here, qxyz, av - 10000)
-                # who on your team is actually placed to take it: a gun with rockets and stack, inside reach
-                better = [m for m in mates10 if m["away"] <= 10 and m["rl"] and m["rockets"] > 0 and (m["eff"] >= eff10 + 40 or not armed)]
+                h10, a10, at10 = bval(me, "h", s10, 100), bval(me, "a", s10, 0), bval(me, "at", s10, "") or ""
+                stk10 = stk(h10, a10, at10)
+                thin = eff10 < QUAD_MIN_STACK
+                # numbers on quad (Peter, 2026-10-21): who can be in the room by the spawn with a launcher,
+                # rockets and a real stack. One gun does not take and hold a quad against two launchers
+                # from two entrances; a teammate on a spawn stack is restacking, not "taking it".
+                ready_mates = [m for m in mates10 if m["away"] <= 10 and m["rl"] and m["rockets"] > 0 and m["eff"] >= QUAD_MIN_STACK]
+                ready_me = armed and not thin and away <= 10
+                foes_near = [f for f in foes10 if f["away"] <= 10]
+                foes_guns = [f for f in foes_near if f["rl"]]
+                taker = ready_mates[0] if ready_mates else None
+                guns_ours = len(ready_mates) + (1 if ready_me else 0)
+                outgunned = len(foes_guns) >= 2 and guns_ours < 2
                 gun_txt = (f"the RL with {rk10} rockets" if armed else ("the RL but no rockets, so a shotgun until you find rockets" if rl10 else "no RL"))
-                q = f"{mmss(av - 10000)} — quad spawns in 10 s. You are {away:.0f} s away with {eff10:.0f} effective stack and {gun_txt}. What do you do?"
+                q = f"{mmss(av - 10000)} — quad spawns in 10 s. You are {away:.0f} s away on {stk10} with {gun_txt}. What do you do?"
                 did = f"You were {away:.0f} s from the quad room at {mmss(av - 10000)} and {by} took it at {mmss(av)}" + (f"; you reached the room {'with' if armed else 'without'} rockets." if away <= 6 else ".")
                 near_q = near_at(here, av - 10000, 4, room=room_q0)
                 packs_q = packs_at(here, av - 10000, room=room_q0)
@@ -704,33 +743,82 @@ def compute(ov, data, me, gid, mp):
                     if plq and plq["seq"]:
                         steps_q = " → ".join(f"{st_['label']} ({st_['s']:.0f} s" + (f", {st_['contested'][0]['name']} there" if st_['contested'] else "") + ")" for st_ in plq["seq"])
                         perfect_q = (f"Perfect timing: {steps_q}, then {tq:.0f} s to the quad room" if tq is not None else f"Perfect timing: {steps_q}") + \
-                                    (f" — in the room with {max(0, (av - plq['t']) / 1000 - (tq or 0)):.0f} s to spare at {round(_eff(plq['h'], plq['a'], plq['at'] or ''))} effective." if tq is not None else ".")
+                                    (f" — in the room with {max(0, (av - plq['t']) / 1000 - (tq or 0)):.0f} s to spare on {stk(plq['h'], plq['a'], plq['at'])}: that spare time is how you set up on the entrance they come from." if tq is not None else ".")
                     elif tq is not None:
                         perfect_q = f"Perfect timing: nothing worth a detour on the way; {tq:.0f} s straight to the quad room leaves {max(0, 10 - tq):.0f} s to spare."
                     foes_q = [f for f in foes if room_at(f, av - 2000) == (it.get("loc") or "") and bval(f, "alive", max(0, min(nsec - 1, (av - 2000) // 1000)))]
                     if perfect_q and foes_q:
-                        f0 = foes_q[0]; e0 = round(_eff(bval(f0, "h", (av - 2000) // 1000, 100), bval(f0, "a", (av - 2000) // 1000, 0), bval(f0, "at", (av - 2000) // 1000, "") or ""))
-                        perfect_q += f" {f0} is in the quad room 2 s before it spawns with {e0}" + (" and the RL" if bval(f0, "rl", (av - 2000) // 1000) else "") + ": that is the fight for it."
+                        f0 = foes_q[0]; e0 = stk(bval(f0, "h", (av - 2000) // 1000, 100), bval(f0, "a", (av - 2000) // 1000, 0), bval(f0, "at", (av - 2000) // 1000, "") or "")
+                        perfect_q += f" {f0} is in the quad room 2 s before it spawns on {e0}" + (" with the RL" if bval(f0, "rl", (av - 2000) // 1000) else "") + ": that is the fight for it."
                 ammo_chips = ammo_at(here, av - 10000, "rockets", room=room_q0) if (rl10 and rk10 <= 0) else []
-                parts = [f"Quad in 10, you are {int(away)} s out. Clock: " + "; ".join(
+                parts = [f"Quad in 10, you are {away:.0f} s out. Clock: " + "; ".join(
                     (f"{nm(o['kind'], o['loc'])} up" if o["state"] == "up" or (o["state"] == "in" and o["s"] <= 0) else f"{nm(o['kind'], o['loc'])} in {o['s']} s" if o["state"] == "in" else f"{nm(o['kind'], o['loc'])} gone {o['s']} s")
                     + f" ({o['away']:.0f} s)" for o in near_q if o["kind"] != "quad") + "."]
-                if better:
-                    b0 = better[0]
-                    parts.append(f"{b0['name']} is {b0['away']:.0f} s out with {b0['eff']} and {b0['rockets']} rockets: he takes it. You: cover the other entrance, call what you see. Not the quad" + (" with no rockets" if not armed else "") + ".")
-                elif armed and away <= 10:
-                    parts.append("Go now" + (f", {nm(path[0]['kind'], path[0]['loc'])} on the way ({path[0]['detour_s']:.0f} s)" if path else "") + ". In the room with 3 s to spare; hold the entrance, fire as he comes, then take it.")
-                elif away <= 10:
+                # the numbers, as players read them: name (where, health/armor, rockets)
+                def who(p):
+                    where = "in the room" if p["in_room"] else f"{p['away']:.0f} s out"
+                    return f"{p['name']} ({where}, {p['stk']}" + (f", {p['rockets']} rockets" if p["rl"] and p["rockets"] > 0 else ", RL but no rockets" if p["rl"] else ", no RL") + ")"
+                me_txt = f"you ({away:.0f} s out, {stk10}" + (f", {rk10} rockets)" if armed else (", no rockets)" if rl10 else ", no RL)"))
+                ours = ([me_txt] if away <= 10 else []) + [who(m) for m in mates10 if m["away"] <= 10][:3]
+                theirs = [who(f) for f in foes_near][:3]
+                parts.append("In reach — yours: " + (", ".join(ours) if ours else "nobody") + "; theirs: " + (", ".join(theirs) if theirs else "nobody seen") + ".")
+                spare = max(0, 10 - away)
+                restack = [o for o in near_q if o["kind"] in ("ra", "ya", "ga", "mh") and (o["state"] == "up" or (o["state"] == "in" and o["s"] <= o["away"] + 2))]
+                restack_txt = (f"{nm(restack[0]['kind'], restack[0]['loc'])} ({restack[0]['away']:.0f} s" + (", up" if restack[0]["state"] == "up" or restack[0]["s"] <= 0 else f", in {restack[0]['s']} s") + ")"
+                               if restack else "nothing on the clock near you, so pull back toward your team and keep the launcher")
+                entrance = (f"the entrance {foes_guns[0]['name']} comes through" if foes_guns else "the entrance they come from")
+                def taker_txt(job, job_nobody):
+                    if taker:
+                        t_ = f"{taker['name']} takes it: {taker['away']:.0f} s out on {taker['stk']} with {taker['rockets']} rockets"
+                        if outgunned:
+                            t_ += f", but alone against {foes_guns[0]['name']} and {foes_guns[1]['name']} he holds his entrance and waits for a second gun"
+                        return t_ + f". You: {job}."
+                    return ("Nobody on your team is on " + str(QUAD_MIN_STACK) + "+ with rockets inside reach" + (f" ({', '.join(m['name'] + ' ' + m['stk'] for m in mates10[:3])})" if mates10 else "")
+                            + ": this quad is not yours. Say so, " + job_nobody + ", and be in the room early for the next one.")
+                skip_this = (not armed or thin) and not taker and away <= 10 and my_room_q
+                if skip_this:
+                    # the line that matters is the one to the NEXT quad: restack, find a launcher, be there early
+                    plq2 = perfect_line(av - 10000, my_room_q, h10, a10, at10, armed, 70000)
+                    if not (plq2 and plq2["seq"]):
+                        # nothing up on arrival, or a stronger enemy in every room: allow holding a room for
+                        # its spawn (being there early is the point) and show who is there
+                        plq2 = perfect_line(av - 10000, my_room_q, h10, a10, at10, armed, 70000, strict=False, max_wait_s=15)
+                    if not (plq2 and plq2["seq"]):
+                        perfect_q = f"Perfect timing: nothing near you comes up before this quad. The line is to the next one at {mmss(av + 60000)}: restack and find a launcher on the way, and be in the room early."
+                    tq2 = travel(plq2["room"] if plq2 else my_room_q, qloc)
+                    if plq2 and plq2["seq"] and tq2 is not None:
+                        steps2 = " → ".join(f"{st_['label']} ({st_['s']:.0f} s" + (f", hold the room {st_['wait']} s for it" if st_.get('wait') else "") + (f", {st_['contested'][0]['name']} there" if st_['contested'] else "") + ")" for st_ in plq2["seq"])
+                        spare2 = max(0, (av + 60000 - plq2["t"]) / 1000 - tq2)
+                        arrive_txt = (f"in with {spare2:.0f} s to spare" if spare2 <= 15 else f"leave {plq2['room']} at {mmss(av + 60000 - int((tq2 + 10) * 1000))} to be in with 10 s to spare")
+                        perfect_q = (f"Perfect timing to the next quad at {mmss(av + 60000)}: {steps2}, then {tq2:.0f} s to the quad room — {arrive_txt} on {stk(plq2['h'], plq2['a'], plq2['at'])}"
+                                     + (" and armed: that spare time is how you set up on the entrance they come from." if plq2["gun"] else ", still without a launcher: hold the entrance for a teammate who has one."))
+                if not armed and away <= 10:
                     ammo_q = ammo_at(here, av - 10000, "rockets", room=room_q0)
-                    parts.append("No rockets: taking the quad is a lost trade. Take " + (f"the {packs_q[0]['label']} ({packs_q[0]['away']:.0f} s, dropped {packs_q[0]['s']} s ago)" if packs_q else (f"the rockets at {ammo_q[0]['loc']} ({ammo_q[0]['away']:.0f} s)" if ammo_q else (f"the {nm(path[0]['kind'], path[0]['loc'])}" if path else "rockets or the yellow"))) + "; let a teammate with rockets take it, or one shot from the doorway and leave.")
+                    parts.append("No rockets: taking the quad is a lost trade. Take " + (f"the {packs_q[0]['label']} ({packs_q[0]['away']:.0f} s, dropped {packs_q[0]['s']} s ago)" if packs_q else (f"the rockets at {ammo_q[0]['loc']} ({ammo_q[0]['away']:.0f} s)" if ammo_q else (f"the {nm(path[0]['kind'], path[0]['loc'])}" if path else "rockets or the yellow"))) + " first.")
+                    parts.append(taker_txt("the other entrance once you have rockets, and the call", "get rockets and a stack"))
+                elif thin and armed and away <= 10:
+                    parts.append(f"On {stk10} with the RL you do not walk to the quad: that is their frag and their launcher. Restack first: {restack_txt}; then hold the gun with your team.")
+                    parts.append(taker_txt("restack, then the other entrance", "restack and keep the launcher"))
+                elif ready_me and taker:
+                    lead = taker["away"] < away
+                    parts.append(f"Go together with {taker['name']}: two launchers, one on each entrance, in the room with {spare:.0f} s to spare to set up. "
+                                 + (f"{taker['name']} is closer and stands on it; you hold {entrance} and fire as the first one steps in." if lead
+                                    else f"You are closer: stand on it; {taker['name']} holds {entrance}."))
+                elif ready_me and outgunned:
+                    parts.append(f"Alone against {foes_guns[0]['name']} and {foes_guns[1]['name']} you cannot take and hold it. Do not walk in alone: hold the entrance on your side, call "
+                                 + (f"{mates10[0]['name']} ({mates10[0]['away']:.0f} s out, {mates10[0]['stk']})" if mates10 else "a second gun") + " in, and go in together. If nobody comes, one rocket at whoever stands on it and leave with your stack.")
+                elif ready_me:
+                    parts.append("Go now" + (f", {nm(path[0]['kind'], path[0]['loc'])} on the way ({path[0]['detour_s']:.0f} s)" if path else "")
+                                 + f". In the room with {spare:.0f} s to spare: that is the time to set up. Stand where you see {entrance}" + (f" ({foes_guns[0]['name']} is {foes_guns[0]['away']:.0f} s out)" if foes_guns else "") + ", fire as he steps in, then take it.")
+                elif taker:
+                    parts.append(taker_txt("the other entrance and the call" if away <= 10 else "the next item and the call", "get stack and rockets"))
                 else:
-                    parts.append("Too far. Say so; get yellow or rockets and own the next one.")
-                if mates10 and not better:
-                    near_m = mates10[0]
-                    parts.append(f"Nearest teammate {near_m['name']}: {near_m['away']:.0f} s out, {near_m['eff']} stack, " + (f"{near_m['rockets']} rockets" if near_m['rl'] else "no RL") + ".")
+                    parts.append("Too far" + (f", and nobody on the team is placed for it on {QUAD_MIN_STACK}+" if mates10 else "") + ". Say so; get stack and rockets and own the next one.")
                 parts.append(f"{by} took it.")
                 a = " ".join(parts)
-                mm2 = [f"quad in 10 @ {SR.room_name(it.get('loc') or 'quad')}", ("taking quad" if armed and not better else ("covering quad" if better else "need rockets @ quad"))]
+                mm2 = [f"quad in 10 @ {SR.room_name(it.get('loc') or 'quad')}",
+                       (f"quad w/ {taker['name']}" if ready_me and taker else "need stack, skip quad" if thin and armed and away <= 10 else "need rockets @ quad" if not armed and away <= 10
+                        else "quad alone vs 2, need help" if ready_me and outgunned else "taking quad" if ready_me else f"{taker['name']} quad, I cover" if taker else "quad is theirs, restacking")]
                 comms = [m for m in chat if av - 25000 <= m.get("time", -1) <= av]
                 others = []
                 for m in comms:
@@ -740,16 +828,18 @@ def compute(ov, data, me, gid, mp):
                     if line and not (others and others[-1]["text"] == line):
                         others.append(dict(t=m["time"], text=line))
                 rewinds.append(dict(idx=0, kind="quad", t=av - 10000, t_end=av + 5000, hub=hub(av - 10000, av + 5000), spawn=None, margin=round(M[s10]) if s10 < nsec else None,
-                                    stack=round(eff10), has_rl=rl10, rockets=rk10, mates_at=mates10, on_path=path, perfect=perfect_q, perfect_line=(plq["seq"] if plq else None), next_powerup=dict(kind="quad", at=av),
+                                    stack=round(eff10), stack_hp=stk10, has_rl=rl10, rockets=rk10, mates_at=mates10, foes_at=foes_near, on_path=path, perfect=perfect_q, perfect_line=(plq["seq"] if plq else None), next_powerup=dict(kind="quad", at=av),
+                                    numbers=dict(ours=ours, theirs=theirs, ready=[m["name"] for m in ready_mates] + (["you"] if ready_me else []), enemy_guns=[f["name"] for f in foes_guns]), quad_min=QUAD_MIN_STACK,
                                     items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), label=nm("quad", SR.room_name(it.get("loc") or "")), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)] + [o for o in near_q if o["kind"] != "quad"] + ammo_chips + packs_q,
                                     question=q, did=did, comms=others[-10:], you_sent=[_clean_mm2(m.get("messageClean") or m.get("message")) for m in comms if m.get("player") == me],
                                     answer=a, mm2=mm2, options=[], best_room=None, your_room=None, your_room_survival=None, best_room_survival=None, score=0.6 + (0.3 if away <= 6 else 0)))
-            elif took_me and died_soon and eff10 < 100:
-                q = f"{mmss(av - 10000)} — quad spawns in 10 s and you are going for it with {eff10:.0f} effective stack. What do you do?"
+            elif took_me and died_soon and eff10 < QUAD_MIN_STACK:
+                stk10 = stk(bval(me, "h", s10, 100), bval(me, "a", s10, 0), bval(me, "at", s10, "") or "")
+                q = f"{mmss(av - 10000)} — quad spawns in 10 s and you are going for it on {stk10}. What do you do?"
                 rewinds.append(dict(idx=0, kind="quad", t=av - 10000, t_end=av + 10000, hub=hub(av - 10000, av + 10000), spawn=None, margin=round(M[s10]) if s10 < nsec else None,
                                     items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), label=nm("quad", SR.room_name(it.get("loc") or "")), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)],
-                                    question=q, did=f"You took the quad at {mmss(av)} with about {eff10:.0f} stack and died inside 10 s: the run was over before it started.",
-                                    comms=[], you_sent=[], answer="A quad on a spawn stack is a quad for them to farm. Spend the ten seconds on the yellow or mega beside the room, take it with a body, open the run on the nearest enemy gun.",
+                                    question=q, did=f"You took the quad at {mmss(av)} on {stk10} and died inside 10 s: the run was over before it started.", stack_hp=stk10, quad_min=QUAD_MIN_STACK,
+                                    comms=[], you_sent=[], answer=f"A quad on a spawn stack is a quad for them to farm. Under {QUAD_MIN_STACK} you spend the ten seconds on the yellow or mega beside the room, go in with a teammate, and open the run on the nearest enemy gun.",
                                     mm2=["quad in 10, need armor", "taking quad"], options=[], best_room=None, your_room=None, your_room_survival=None, best_room_survival=None, score=0.5))
     # one quad moment per report (the costliest), up to three spawn moments: the same quad lesson three
     # times is noise (Peter, 2026-10-21)

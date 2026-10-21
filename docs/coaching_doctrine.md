@@ -76,6 +76,13 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   survival. Prepared takes (RL + 150) are what separate players; BD takes the most quads and uses them like
   an average player; war and chris use them best (2026-10-06/07). Powerup efficacy (swing from runs) is a
   first-class stat; pent counts too.
+- **Stack floor and numbers at the quad (Peter, 2026-10-21).** Read a stack as health/armor (42/0, 100/150y),
+  never as one number. With the RL and under 100 effective you do not walk to the quad: e1m2 is a grinder and
+  the other maps are not far off. Restack first and protect the launcher. A teammate on a thin stack is
+  restacking, not "taking it" (BD on 42 is not getting to the quad any time soon). Numbers take quads: one
+  launcher does not take and hold a quad against two launchers from two entrances, so go together or do not
+  go, and the second gun owns the other entrance. Being in the room early is how you set up: stand on the
+  entrance they come from and fire as the first one steps in.
 - Team damage: Omicron hates it; its impact on win probability was checked (2026-09-15) — treat it as real.
 - Ping matters (dusty 12 ms vs yeti 142 in the same game); game scores need a ping adjustment.
 - Map specialists exist (bogojoker on schloss, chris on dm3); ratings should reward playing all four maps.
@@ -221,3 +228,9 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   stacked teammate with rockets was already placed for the quad. Rules above; rockets, teammates' states
   and on-path armors are now in every rewind, and the coach's read is told to trust the player's stated
   ammo and never to call an item "on the way" unless it is.
+- 2026-10-21 "read out armor and health, and not just total stack … BD clearly not getting to quad with 42 …
+  rarely go to quad if you have an RL and less than 100 stack minimum on e1m2 … you want numbers on quad …
+  getting to quad early helps you set up" — §2 bullet above. Game Report v19 reads every stack as
+  health/armor, applies the 100 floor to the player and to teammates before anyone "takes it", lists the
+  numbers in reach (ours / theirs, with rockets), coaches the second entrance, and the coach's read is told
+  the same rules.
