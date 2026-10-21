@@ -23,7 +23,7 @@ import urllib.parse
 from duel_adv import _eff, _Series
 import spawn_rooms as SR
 
-VERSION = 6
+VERSION = 7
 HUB = "https://hub.quakeworld.nu/games/?gameId={gid}&from={f}&to={t}&track={uid}"
 MAJOR = ("ra", "ya", "ga", "mh", "rl", "lg", "quad", "pent", "ring")
 NEAR = 700            # units: "with" a teammate / "into" enemies
@@ -358,8 +358,6 @@ def compute(ov, data, me, gid, mp):
     for score, l, room, mine, best, opts, others, mine_say, near_items in sorted(cand[:3], key=lambda c: c[1]["s0"]):
         k = l["death"] or {}
         did = f"You went {('to ' + room) if room != 'stayed' else 'nowhere (killed in the spawn area)'}"
-        if mine:
-            did += f" — from the {l['spawn']} spawn under a lock that first move survives {100 * mine[0]:.0f}% of the time ({mine[1]} cases)"
         did += f"; you dealt {l['dealt']} damage"
         did += f" and died {l['len']:.1f} s in to {k.get('killer')} ({k.get('weapon')})" if k else f" and died {l['len']:.1f} s in"
         did += f", {l['near_e']} enemies within {NEAR} units, {l['near_m']} teammates." if l["near_e"] else ", no enemy within 700 units two seconds before the death."
