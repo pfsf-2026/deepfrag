@@ -11225,7 +11225,9 @@ shotgun), each teammate's stack, gun, rockets and distance (mates_at), and which
 path (on_path). Trust what the player says about their own ammo or state over the data when the data is
 silent. Never call an item "on the way" unless it is in on_path or options. If a teammate is better placed
 to take the item (closer, with rockets and stack), the player's job is the second entrance, the next item,
-or the call, not the quad itself. Use QuakeWorld words: "the quad", "standing on quad", never "pad". A "pack" or
+or the call, not the quad itself. "perfect" / "perfect_line" is the computed best pickup line to the next
+powerup on real room-to-room times with enemies' rooms at each arrival: build the line you coach on it, and
+say when a pickup on it is a fight because an enemy is in that room. Use QuakeWorld words: "the quad", "standing on quad", never "pad". A "pack" or
 "backpack" is only what a dead player drops; ammo pickups are "rockets", "cells", "nails" or "ammo", never
 "packs". On schloss rockets are scarce: rocket ammo sits in the trench, at the tower tele exit and at the top
 of the Cat SSG stairs.
@@ -11271,7 +11273,7 @@ def api_rewind_coach(canonical_id: str, game_id: int, body: _RewindGrade, author
     w = next((x for x in report.get("rewinds") or [] if x.get("idx") == int(body.idx)), None)
     if not w:
         raise HTTPException(404, "rewind not found; open the report first")
-    facts = {k: w.get(k) for k in ("kind", "question", "spawn", "margin", "stack", "has_rl", "rockets", "mates_at", "on_path", "items_at", "comms", "you_sent", "did", "options", "best_room", "your_room")}
+    facts = {k: w.get(k) for k in ("kind", "question", "spawn", "margin", "stack", "has_rl", "rockets", "mates_at", "on_path", "items_at", "comms", "you_sent", "did", "options", "best_room", "your_room", "perfect", "perfect_line", "next_powerup")}
     facts["map"] = report.get("map"); facts["player"] = report.get("display") or report.get("player")
     facts["teammates"] = report.get("mates"); facts["enemies"] = report.get("foes")
     facts["what_the_data_suggests"] = w.get("answer")

@@ -339,7 +339,9 @@ h1 { font-size: clamp(22px, 5vw, 30px); font-weight: 900; margin: 0; letter-spac
 .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-2); font-weight: 700; }
 .comms ul { list-style: none; margin: 4px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .comms li { display: flex; gap: 8px; min-width: 0; } .comms .t { color: var(--fg-2); flex: 0 0 auto; } .comms .m { overflow-wrap: anywhere; }
-textarea { width: 100%; box-sizing: border-box; background: #0d0a07; color: inherit; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 14px; resize: vertical; min-height: 72px; }
+textarea { width: 100%; box-sizing: border-box; background: #0d0a07; color: #7ef0a0; font-weight: 600; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 15px; resize: vertical; min-height: 72px; }
+textarea::placeholder { color: var(--fg-3); font-weight: 400; }
+textarea:disabled { opacity: 1; color: #7ef0a0; }
 textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .btns { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .btn { background: var(--accent); color: #140b03; border: 0; border-radius: 999px; padding: 10px 16px; font-weight: 800; font-size: 14px; cursor: pointer; min-height: 40px; }

@@ -22,8 +22,13 @@ import urllib.parse
 
 from duel_adv import _eff, _Series
 import spawn_rooms as SR
+try:
+    from route_times import ROUTE_TIMES
+except Exception:                       # table missing: the planner falls back to straight-line times
+    ROUTE_TIMES = {}
+import heapq
 
-VERSION = 15
+VERSION = 17
 # P(killer wins | stack edge at first contact, power-up state): 2,445 Den/LA fours, 1,025,964 enemy frags
 # (tools/mvd_features/fight_table_4on4.json, 2026-09-11). Same table the Advanced Stats pages use.
 FIGHT_TABLE = {"no powerup": [[-200, 0.06], [-70, 0.201], [0, 0.5], [70, 0.799], [200, 0.94]],
@@ -105,7 +110,8 @@ def fetch_rest(gid, get, me_key):
             "buckets": get(f"{base}/buckets?windowMs=1000&fields=pos,h,a,at,rl,lg,rk"),
             "frags": get(f"{base}/frags"), "damage": get(f"{base}/damage"), "items": get(f"{base}/items"),
             "pickups": get(f"{base}/weapon-pickups"), "backpacks": get(f"{base}/backpacks"), "chat": get(f"{base}/chat?types=teamsay"),
-            "events": get(f"{base}/events?types=powerup,streak"), "loctable": get(f"{base}/loc-table")}
+            "events": get(f"{base}/events?types=powerup,streak"), "loctable": get(f"{base}/loc-table"),
+            "trails": get(f"{base}/loc-trails")}
 
 
 # ── compute ──────────────────────────────────────────────────────────────────
@@ -339,14 +345,14 @@ def compute(ov, data, me, gid, mp):
 
     packs = [b for b in (data.get("backpacks") or []) if isinstance(b, dict) and b.get("weapon") in ("rl", "lg") and b.get("origin")]
 
-    def packs_at(xyz, t, window_ms=45000, reach_s=10):
+    def packs_at(xyz, t, window_ms=45000, reach_s=10, room=None):
         """Dropped RL/LG packs from the last 45 s within reach: rockets on the floor are an item too
         (Peter, 2026-10-21: on schloss rockets are scarce and the packs matter)."""
         out = []
         for b in packs:
             if not (t - window_ms <= b["time"] <= t):
                 continue
-            o = b["origin"]; tt = dist(xyz, (o[0], o[1], o[2])) / 320 + 0.5
+            o = b["origin"]; tt = secs_to(room, xyz, b.get("loc") or "", (o[0], o[1], o[2]))
             if tt <= reach_s:
                 out.append(dict(kind=f"{b['weapon']} backpack", loc=SR.room_name(b.get("loc") or ""), label=f"{b['weapon'].upper()} backpack at {SR.room_name(b.get('loc') or '')}",
                                 state="dropped", s=round((t - b["time"]) / 1000), by=b.get("player"), away=round(tt, 1), by_enemy=(b.get("player") in foes)))
@@ -355,28 +361,139 @@ def compute(ov, data, me, gid, mp):
 
     AMMO_WORD = {"rockets": "rockets", "cells": "cells", "nails": "nails", "shells": "shells"}
 
-    def ammo_at(xyz, t, kind, n=2):
+    def ammo_at(xyz, t, kind, n=2, room=None):
         """Nearest ammo boxes of one kind (rockets / cells / nails) that are up or about to be."""
         out = []
         for it in items:
             if it.get("kind") != kind:
                 continue
             st, n_s, by = item_state(it, t)
-            tt = dist(xyz, (it["x"], it["y"], it["z"])) / 320 + 0.5
+            tt = secs_to(room, xyz, it.get("loc") or "", (it["x"], it["y"], it["z"]))
             if st == "up" or (st == "in" and n_s <= tt + 2):
                 loc_ = SR.room_name(it.get("loc") or "")
                 out.append(dict(kind=kind, loc=loc_, label=f"{AMMO_WORD.get(kind, kind)} at {loc_}", state=st, s=n_s, by=None, away=round(tt, 1), by_enemy=False))
         out.sort(key=lambda o: o["away"])
         return out[:n]
 
-    def near_at(xyz, t, n=5):
-        """The nearest key items to a position at time t, with their clock."""
+    # ── the perfect line (Peter, 2026-10-21): with perfect timing, what gets the most stack before the next
+    # quad or pent, on fast room-to-room times from real games (route_times), with enemies' rooms checked
+    trails = {p["name"]: [(int(x["s"] * 1000), int(x["e"] * 1000), x["loc"]) for x in (p.get("sequence") or [])]
+              for p in ((data.get("trails") or {}).get("players") or []) if p.get("name") in team_of}
+    def room_at(n, t):
+        seq = trails.get(n) or []
+        i = bisect.bisect_right([x[0] for x in seq], t) - 1
+        return seq[i][2] if i >= 0 else None
+    RT = ROUTE_TIMES.get(mp) or {}
+    def travel(a, b):
+        """Fast seconds from room a to room b (10th percentile over observed runs), via Dijkstra on the pair table."""
+        if a == b:
+            return 0.0
+        if not RT or a not in RT:
+            return None
+        dist_ = {a: 0.0}; pq = [(0.0, a)]
+        while pq:
+            d0, u = heapq.heappop(pq)
+            if u == b:
+                return d0
+            if d0 > dist_.get(u, 1e9):
+                continue
+            for v, (q10, med, n_) in (RT.get(u) or {}).items():
+                nd = d0 + q10
+                if nd < dist_.get(v, 1e9):
+                    dist_[v] = nd; heapq.heappush(pq, (nd, v))
+        return None
+    def secs_to(from_room, from_xyz, raw_loc, xyz):
+        """Seconds to an item as players actually run it: the route table from the current room (fast
+        time) when it knows the pair, else straight line at 320 u/s. Straight line ignores walls — on
+        e1m2 it put the YA 4 s from the MH (Peter, 2026-10-21)."""
+        tt = travel(from_room, raw_loc) if from_room and raw_loc else None
+        if tt is None:
+            return dist(from_xyz, xyz) / 320 + 0.5
+        return tt + 0.5
+    ARMOR = {"ra": (200, 0.8), "ya": (150, 0.6), "ga": (100, 0.3)}
+    def apply_item(h, a, at, kind):
+        if kind in ARMOR:
+            amt, ratio = ARMOR[kind]
+            cur = _eff(h, a, at or "")
+            if _eff(h, amt, kind) > cur:
+                return h, amt, kind
+            return h, a, at
+        if kind == "mh":
+            return min(250, h + 100), a, at
+        return h, a, at
+    def perfect_line(t0, my_room, h, a, at, has_gun, horizon_ms):
+        """Best sequence of up to three pickups from my_room inside the horizon: max effective HP (a gun counts
+        as +60), items up by arrival, each arrival checked against enemies in that room at that second."""
+        cands = []
+        for it in items:
+            k = it.get("kind")
+            if k not in ("ra", "ya", "ga", "mh", "rl", "lg", "rockets"):
+                continue
+            room = SR.room_name(it.get("loc") or "")
+            raw_room = it.get("loc") or ""
+            tt = travel(my_room, raw_room)
+            if tt is None:
+                continue
+            cands.append((it, raw_room, room, k))
+        best = None
+        def eff_of(h_, a_, at_, gun): return _eff(h_, a_, at_ or "") + (60 if gun else 0)
+        def search(seq, room, t, h_, a_, at_, gun, used):
+            nonlocal best
+            score = eff_of(h_, a_, at_, gun)
+            if best is None or score > best["score"] or (score == best["score"] and t < best["t"]):
+                best = dict(score=score, t=t, seq=list(seq), h=h_, a=a_, at=at_, gun=gun, room=room)
+            if len(seq) >= 3:
+                return
+            for it, raw_room, disp_room, k in cands:
+                if id(it) in used:
+                    continue
+                tt = travel(room, raw_room)
+                if tt is None:
+                    continue
+                arrive = t + int(tt * 1000) + 500
+                if arrive > t0 + horizon_ms:
+                    continue
+                st, n_s, by = item_state(it, arrive)
+                if st == "in" and n_s > 1:
+                    continue                      # not up when you get there
+                if st == "taken":
+                    continue
+                # someone else got there first in the real game: by an enemy = contested, by a teammate = gone
+                ph = next((q for q in (it.get("phases") or []) if q.get("availableFrom") is not None and q["availableFrom"] <= arrive and q.get("takenAt") and q["takenAt"] < arrive), None)
+                if ph and ph.get("takenBy") in mates:
+                    continue
+                foes_here = [f for f in foes if room_at(f, arrive) == raw_room and bval(f, "alive", max(0, min(nsec - 1, arrive // 1000)))]
+                # a perfect line does not walk a shotgun into a stronger enemy's room: skip that pickup
+                sec_ = max(0, min(nsec - 1, arrive // 1000))
+                my_eff_now = _eff(h_, a_, at_ or "")
+                if any(bval(f, "rl", sec_) or _eff(bval(f, "h", sec_, 100), bval(f, "a", sec_, 0), bval(f, "at", sec_, "") or "") >= my_eff_now for f in foes_here) and not gun:
+                    continue
+                h2, a2, at2 = apply_item(h_, a_, at_, k)
+                gun2 = gun or k in ("rl", "lg", "rockets")
+                step = dict(kind=k, label=nm(k, disp_room), room=disp_room, at_ms=arrive, s=round((arrive - t0) / 1000, 1),
+                            contested=[dict(name=f, eff=round(_eff(bval(f, "h", arrive // 1000, 100), bval(f, "a", arrive // 1000, 0), bval(f, "at", arrive // 1000, "") or "")), rl=bool(bval(f, "rl", arrive // 1000))) for f in foes_here])
+                search(seq + [step], raw_room, arrive, h2, a2, at2, gun2, used | {id(it)})
+        search([], my_room, t0, h, a, at, has_gun, set())
+        return best
+    def next_powerup(t):
+        best = None
+        for it in items:
+            if it.get("kind") not in ("quad", "pent"):
+                continue
+            for ph in it.get("phases") or []:
+                av = ph.get("availableFrom")
+                if av is not None and av > t and (best is None or av < best[0]):
+                    best = (av, it.get("kind"), it.get("loc") or "", it)
+        return best
+
+    def near_at(xyz, t, n=5, room=None):
+        """The nearest key items to a position at time t, with their clock; distances by real paths."""
         out = []
         for it in items:
             if it.get("kind") not in ("rl", "lg", "ra", "ya", "mh", "quad"):
                 continue
             st, n_s, by = item_state(it, t)
-            tt = dist(xyz, (it["x"], it["y"], it["z"])) / 320 + 0.5
+            tt = secs_to(room, xyz, it.get("loc") or "", (it["x"], it["y"], it["z"]))
             loc_ = SR.room_name(it.get("loc") or "")
             out.append(dict(kind=it["kind"], loc=loc_, label=nm(it["kind"], loc_), state=st, s=n_s, by=(by if it["kind"] == "quad" else None), away=round(tt, 1), by_enemy=(by in foes)))
         out.sort(key=lambda o: o["away"])
@@ -401,7 +518,13 @@ def compute(ov, data, me, gid, mp):
             if it.get("kind") not in ("ra", "ya", "ga", "mh"):
                 continue
             ixyz = (it["x"], it["y"], it["z"])
-            detour = (dist(from_xyz, ixyz) + dist(ixyz, to_xyz) - base_d) / 320
+            fr_room = room_at(me, t); to_room = next((q.get("loc") for q in items if (q["x"], q["y"], q["z"]) == tuple(to_xyz)), None)
+            t_direct = travel(fr_room, to_room) if fr_room and to_room else None
+            t_via = (travel(fr_room, it.get("loc") or "") , travel(it.get("loc") or "", to_room)) if fr_room and to_room else (None, None)
+            if t_direct is not None and None not in t_via:
+                detour = t_via[0] + t_via[1] - t_direct
+            else:
+                detour = (dist(from_xyz, ixyz) + dist(ixyz, to_xyz) - base_d) / 320
             if detour > 1.5:
                 continue
             st, n_s, by = item_state(it, t)
@@ -430,7 +553,7 @@ def compute(ov, data, me, gid, mp):
                 av, tk2, by = ph.get("availableFrom"), ph.get("takenAt"), ph.get("takenBy")
                 if av is None or av > l["s0"] + 12000 or (tk2 is not None and tk2 < l["s0"]) or by in mates:
                     continue
-                tt = dist(l["spawn_xyz"], (it["x"], it["y"], it["z"])) / 320 + 0.5
+                tt = secs_to(room_at(me, l["s0"] + 200), l["spawn_xyz"], it.get("loc") or "", (it["x"], it["y"], it["z"]))
                 arrive = l["s0"] + tt * 1000
                 if tt <= 12 and arrive >= av - 1500 and (tk2 is None or arrive <= tk2 + 1000):
                     opts.append(dict(kind=it["kind"], loc=SR.room_name(it.get("loc") or ""), s=round(tt, 1), up_at=av, taken_at=tk2, taken_by=by))
@@ -448,15 +571,16 @@ def compute(ov, data, me, gid, mp):
         others = others[-10:]
         # what was up, coming, or just gone at the second you spawned (nearest key items first)
         near_items = []
+        spawn_room = room_at(me, l["s0"] + 200)
         for it in items:
             if it.get("kind") not in ("rl", "lg", "ra", "ya", "mh", "quad"):
                 continue
             st, n_s, by = item_state(it, l["s0"])
-            tt = dist(l["spawn_xyz"], (it["x"], it["y"], it["z"])) / 320 + 0.5
+            tt = secs_to(spawn_room, l["spawn_xyz"], it.get("loc") or "", (it["x"], it["y"], it["z"]))
             loc_ = SR.room_name(it.get("loc") or "")
             near_items.append(dict(kind=it["kind"], loc=loc_, label=nm(it["kind"], loc_), state=st, s=n_s, by=(by if it["kind"] == "quad" else None), away=round(tt, 1), by_enemy=(by in foes)))
         near_items.sort(key=lambda o: o["away"])
-        near_items = near_items[:6] + packs_at(l["spawn_xyz"], l["s0"])
+        near_items = near_items[:6] + packs_at(l["spawn_xyz"], l["s0"], room=spawn_room)
         score = (1 - (mine[0] if mine else 0.2)) + (0.5 if opts else 0) + (0.3 if best and (not mine or best[1][0] - mine[0] > 0.15) else 0) + (0.2 if l["near_e"] >= 2 else 0)
         cand.append((score, l, room, mine, best, opts[:3], others, mine_say, near_items))
     cand.sort(key=lambda c: -c[0])
@@ -510,7 +634,24 @@ def compute(ov, data, me, gid, mp):
         if opts and opts[0]["taken_by"] in foes:
             mm2.append(f"enemy took {nm(opts[0]['kind'], opts[0]['loc']).lower()}")
         mm2.append(f"need armor weapon @ {locname(li_at(l['s0'] + 50))}")
+        # perfect timing from this spawn to the next quad/pent (or the next 30 s if none is close)
+        npu = next_powerup(l["s0"]); my_room0 = room_at(me, l["s0"] + 200)
+        horizon = min(45000, npu[0] - l["s0"]) if npu and npu[0] - l["s0"] <= 45000 else 30000
+        pl = perfect_line(l["s0"], my_room0, 100, 0, "", False, horizon) if my_room0 else None
+        perfect = None
+        if pl and pl["seq"]:
+            tgt = travel(pl["room"], npu[3].get("loc") or "") if npu else None
+            steps = " → ".join(f"{st_['label']} ({st_['s']:.0f} s" + (f", {st_['contested'][0]['name']} there with {st_['contested'][0]['eff']}" + (" and the RL" if st_['contested'][0]['rl'] else "") + ")" if st_['contested'] else ")") for st_ in pl["seq"])
+            end_eff = round(_eff(pl["h"], pl["a"], pl["at"] or ""))
+            perfect = (f"Perfect timing from this spawn: {steps}; you are {pl['h']}/{pl['a']}{pl['at']} ({end_eff} effective)"
+                       + (f" and armed" if pl["gun"] else " and still a shotgun")
+                       + (f", then {travel(pl['room'], npu[3].get('loc') or ''):.0f} s to the {npu[1]} room against its spawn at {mmss(npu[0])}" + (" — on time." if tgt is not None and pl["t"] + tgt * 1000 <= npu[0] - 1000 else " — late; take the stack and hold the entrance instead.") if npu and tgt is not None else "."))
+            contested_any = [st_ for st_ in pl["seq"] if st_["contested"]]
+            if contested_any:
+                c0 = contested_any[0]
+                perfect += f" The catch: {c0['contested'][0]['name']} is in the {c0['room']} room when you arrive, so that pickup is a fight; the line only works if you hit him first or he has left."
         rewinds.append(dict(idx=len(rewinds), kind="spawn", t=l["s0"], t_end=l["nd"], hub=hub(l["s0"], l["nd"]), spawn=l["spawn"], margin=l["M"], items_at=near_items,
+                            perfect=perfect, perfect_line=(pl["seq"] if pl else None), next_powerup=(dict(kind=npu[1], at=npu[0]) if npu else None),
                             mates_at=mates_at(max(0, min(nsec - 1, l["s0"] // 1000))),
                             question=f"{mmss(l['s0'])} — you spawned at {l['spawn']} with your team locked (margin {l['M']}). No voice: only what the MM2 below told you. What should you have thought, and where do you go?",
                             did=did, comms=others, you_sent=[_clean_mm2(m.get("messageClean") or m.get("message")) for m in mine_say],
@@ -529,7 +670,8 @@ def compute(ov, data, me, gid, mp):
             if not bval(me, "alive", s10):
                 continue
             qxyz = (it["x"], it["y"], it["z"])
-            here = bxyz(me, s10); away = dist(here, qxyz) / 320
+            here = bxyz(me, s10); room_q0 = room_at(me, av - 10000)
+            away = secs_to(room_q0, here, it.get("loc") or "", qxyz) - 0.5
             eff10 = _eff(bval(me, "h", s10, 100), bval(me, "a", s10, 0), bval(me, "at", s10, "") or ""); rl10 = bool(bval(me, "rl", s10))
             rk10 = int(RK.at(av - 10000) or 0)
             armed = rl10 and rk10 > 0
@@ -543,9 +685,24 @@ def compute(ov, data, me, gid, mp):
                 gun_txt = (f"the RL with {rk10} rockets" if armed else ("the RL but no rockets, so a shotgun until you find rockets" if rl10 else "no RL"))
                 q = f"{mmss(av - 10000)} — quad spawns in 10 s. You are {away:.0f} s away with {eff10:.0f} effective stack and {gun_txt}. What do you do?"
                 did = f"You were {away:.0f} s from the quad room at {mmss(av - 10000)} and {by} took it at {mmss(av)}" + (f"; you reached the room {'with' if armed else 'without'} rockets." if away <= 6 else ".")
-                near_q = near_at(here, av - 10000, 4)
-                packs_q = packs_at(here, av - 10000)
-                ammo_chips = ammo_at(here, av - 10000, "rockets") if (rl10 and rk10 <= 0) else []
+                near_q = near_at(here, av - 10000, 4, room=room_q0)
+                packs_q = packs_at(here, av - 10000, room=room_q0)
+                my_room_q = room_at(me, av - 10000)
+                plq = perfect_line(av - 10000, my_room_q, bval(me, "h", s10, 100), bval(me, "a", s10, 0), bval(me, "at", s10, "") or "", armed, 10000) if my_room_q else None
+                perfect_q = None
+                if my_room_q:
+                    tq = travel(plq["room"] if plq else my_room_q, it.get("loc") or "")
+                    if plq and plq["seq"]:
+                        steps_q = " → ".join(f"{st_['label']} ({st_['s']:.0f} s" + (f", {st_['contested'][0]['name']} there" if st_['contested'] else "") + ")" for st_ in plq["seq"])
+                        perfect_q = (f"Perfect timing: {steps_q}, then {tq:.0f} s to the quad room" if tq is not None else f"Perfect timing: {steps_q}") + \
+                                    (f" — in the room with {max(0, (av - plq['t']) / 1000 - (tq or 0)):.0f} s to spare at {round(_eff(plq['h'], plq['a'], plq['at'] or ''))} effective." if tq is not None else ".")
+                    elif tq is not None:
+                        perfect_q = f"Perfect timing: nothing worth a detour on the way; {tq:.0f} s straight to the quad room leaves {max(0, 10 - tq):.0f} s to spare."
+                    foes_q = [f for f in foes if room_at(f, av - 2000) == (it.get("loc") or "") and bval(f, "alive", max(0, min(nsec - 1, (av - 2000) // 1000)))]
+                    if perfect_q and foes_q:
+                        f0 = foes_q[0]; e0 = round(_eff(bval(f0, "h", (av - 2000) // 1000, 100), bval(f0, "a", (av - 2000) // 1000, 0), bval(f0, "at", (av - 2000) // 1000, "") or ""))
+                        perfect_q += f" {f0} is in the quad room 2 s before it spawns with {e0}" + (" and the RL" if bval(f0, "rl", (av - 2000) // 1000) else "") + ": that is the fight for it."
+                ammo_chips = ammo_at(here, av - 10000, "rockets", room=room_q0) if (rl10 and rk10 <= 0) else []
                 parts = [f"Quad in 10, you are {int(away)} s out. Clock: " + "; ".join(
                     (f"{nm(o['kind'], o['loc'])} up" if o["state"] == "up" or (o["state"] == "in" and o["s"] <= 0) else f"{nm(o['kind'], o['loc'])} in {o['s']} s" if o["state"] == "in" else f"{nm(o['kind'], o['loc'])} gone {o['s']} s")
                     + f" ({o['away']:.0f} s)" for o in near_q if o["kind"] != "quad") + "."]
@@ -555,7 +712,7 @@ def compute(ov, data, me, gid, mp):
                 elif armed and away <= 10:
                     parts.append("Go now" + (f", {nm(path[0]['kind'], path[0]['loc'])} on the way ({path[0]['detour_s']:.0f} s)" if path else "") + ". In the room with 3 s to spare; hold the entrance, fire as he comes, then take it.")
                 elif away <= 10:
-                    ammo_q = ammo_at(here, av - 10000, "rockets")
+                    ammo_q = ammo_at(here, av - 10000, "rockets", room=room_q0)
                     parts.append("No rockets: taking the quad is a lost trade. Take " + (f"the {packs_q[0]['label']} ({packs_q[0]['away']:.0f} s, dropped {packs_q[0]['s']} s ago)" if packs_q else (f"the rockets at {ammo_q[0]['loc']} ({ammo_q[0]['away']:.0f} s)" if ammo_q else (f"the {nm(path[0]['kind'], path[0]['loc'])}" if path else "rockets or the yellow"))) + "; let a teammate with rockets take it, or one shot from the doorway and leave.")
                 else:
                     parts.append("Too far. Say so; get yellow or rockets and own the next one.")
@@ -574,7 +731,7 @@ def compute(ov, data, me, gid, mp):
                     if line and not (others and others[-1]["text"] == line):
                         others.append(dict(t=m["time"], text=line))
                 rewinds.append(dict(idx=0, kind="quad", t=av - 10000, t_end=av + 5000, hub=hub(av - 10000, av + 5000), spawn=None, margin=round(M[s10]) if s10 < nsec else None,
-                                    stack=round(eff10), has_rl=rl10, rockets=rk10, mates_at=mates10, on_path=path,
+                                    stack=round(eff10), has_rl=rl10, rockets=rk10, mates_at=mates10, on_path=path, perfect=perfect_q, perfect_line=(plq["seq"] if plq else None), next_powerup=dict(kind="quad", at=av),
                                     items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), label=nm("quad", SR.room_name(it.get("loc") or "")), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)] + [o for o in near_q if o["kind"] != "quad"] + ammo_chips + packs_q,
                                     question=q, did=did, comms=others[-10:], you_sent=[_clean_mm2(m.get("messageClean") or m.get("message")) for m in comms if m.get("player") == me],
                                     answer=a, mm2=mm2, options=[], best_room=None, your_room=None, your_room_survival=None, best_room_survival=None, score=0.6 + (0.3 if away <= 6 else 0)))
