@@ -26,7 +26,7 @@ useSeoMeta({ title: () => pb.value ? `${pb.value.title} · AI Coach · DeepFrag`
 
 <template>
   <div class="page">
-    <div class="crumbs"><NuxtLink to="/coach" class="back">← AI Coach</NuxtLink><span class="sep">·</span><span class="muted">quad playbooks:</span><NuxtLink v-for="m in COACH_MAPS" :key="m" :to="`/coach/quad/${m}`" class="mlink" :class="{ on: m === map }">{{ m }}</NuxtLink></div>
+    <div class="crumbs"><NuxtLink to="/coach" class="back">← AI Coach</NuxtLink><span class="sep">·</span><span class="muted">quad playbooks:</span><NuxtLink v-for="m in COACH_MAPS" :key="m" :to="`/coach/quad/${m}`" class="mlink" :class="{ on: m === map }">{{ m }}</NuxtLink><span class="sep">·</span><NuxtLink :to="`/maps/${map}`" class="back">map overview →</NuxtLink></div>
     <div v-if="!pb" class="empty">No quad playbook for "{{ map }}". Pick a map above.</div>
     <template v-else>
       <h1>{{ pb.title }}</h1>

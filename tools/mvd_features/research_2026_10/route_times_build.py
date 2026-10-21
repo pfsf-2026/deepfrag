@@ -13,6 +13,7 @@ def get(p):
     with urllib.request.urlopen(B + p, timeout=170) as r: return json.loads(r.read())
 out_path, gids = sys.argv[1], [int(x) for x in sys.argv[2:]]
 obs = collections.defaultdict(lambda: collections.defaultdict(list)); games = collections.Counter()
+routes = collections.defaultdict(lambda: collections.defaultdict(lambda: collections.defaultdict(list)))
 LONG = {'The Abandoned Base': 'dm3', 'Claustrophobopolis': 'dm2', 'Castle of the Damned': 'e1m2', 'schloss': 'schloss', 'dm3': 'dm3', 'dm2': 'dm2', 'e1m2': 'e1m2'}
 for gid in gids:
     try:
@@ -38,6 +39,11 @@ for gid in gids:
                 if t1 - t0 > 25 or (nd is not None and t1 > nd): break
                 if b in seen: continue
                 seen.add(b); obs[mp][(a, b)].append(t1 - t0)
+                # the way taken: the rooms passed between a and b (consecutive repeats collapsed)
+                via = []
+                for _, r_ in seq[i + 1:j]:
+                    if not via or via[-1] != r_: via.append(r_)
+                routes[mp][(a, b)][tuple(via)].append(t1 - t0)
     print(gid, mp, f'{time.time()-t:.0f}s', flush=True)
 out = {}
 for mp, pairs in obs.items():
@@ -47,5 +53,19 @@ for mp, pairs in obs.items():
         v.sort(); out[mp].setdefault(a, {})[b] = [round(v[max(0, int(len(v) * 0.10))], 1), round(v[len(v) // 2], 1), len(v), round(v[max(0, int(len(v) * 0.25))], 1)]
 hdr = ('"""Fast room-to-room travel times per TB4 map (built %s from %s games: %s).\nROUTE_TIMES[map][from_room][to_room] = [10th-percentile seconds, median seconds, runs, 25th-percentile seconds]: time from entering one\nroom to entering the other within one life (teleporters included, deaths excluded, pairs with 8+ runs). The 10th\npercentile is "done well" (the map\'s real stairs, lifts and jumps are in it); the median is what people take.\nBuilt by tools/mvd_features/research_2026_10/route_times_build.py from the mvd-api loc-trails."""\n'
        % (time.strftime('%Y-%m-%d'), sum(games.values()), dict(games)))
-open(out_path, 'w').write(hdr + 'ROUTE_TIMES = ' + json.dumps(out, separators=(',', ':')) + '\n')
+# ROUTES: for each pair, the distinct ways taken (5+ runs each), top 4 by use, with their own fast/typical
+rt = {}
+for mp, pairs in routes.items():
+    rt[mp] = {}
+    for (a, b), ways in pairs.items():
+        ws = []
+        for via, v in ways.items():
+            if len(v) < 5: continue
+            v.sort(); ws.append(dict(via=list(via), fast=round(v[max(0, int(len(v) * 0.10))] if len(v) >= 15 else v[max(0, int(len(v) * 0.25))], 1), typical=round(v[len(v) // 2], 1), n=len(v)))
+        if ws:
+            ws.sort(key=lambda w: -w['n']); rt[mp].setdefault(a, {})[b] = ws[:4]
+open(out_path, 'w').write(hdr + 'ROUTE_TIMES = ' + json.dumps(out, separators=(',', ':')) + '\n'
+                          + '# ROUTES[map][from][to] = the ways actually taken between the two rooms (5+ runs each), most used first:\n'
+                          + '# {via: rooms passed between them, fast, typical, n}.\n'
+                          + 'ROUTES = ' + json.dumps(rt, separators=(',', ':')) + '\n')
 print('written', out_path, {mp: sum(len(x) for x in out[mp].values()) for mp in out}, flush=True)

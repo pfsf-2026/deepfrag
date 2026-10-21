@@ -64,6 +64,7 @@ useSeoMeta({ title: 'AI Coach · DeepFrag', description: 'Your 4on4 coach: a lev
       <h2>Taking quad, map by map</h2>
       <p class="note">The ways into the quad, which one converts, with what stack and how early, from every fours demo on the servers.</p>
       <div class="qgrid"><NuxtLink v-for="m in COACH_MAPS" :key="m" :to="`/coach/quad/${m}`" class="qcard"><b>Quad on {{ m }}</b><span>the ways in · what decides it · how to play it →</span></NuxtLink></div>
+      <div class="qgrid"><NuxtLink v-for="m in COACH_MAPS" :key="m" :to="`/maps/${m}`" class="qcard"><b>{{ m }} overview</b><span>items and spawns on the map · routes and travel times · taking, holding, breaking control →</span></NuxtLink></div>
     </section>
 
     <section class="how">

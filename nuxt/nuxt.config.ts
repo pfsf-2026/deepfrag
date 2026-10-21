@@ -85,6 +85,9 @@ export default defineNuxtConfig({
     '/glossary': { prerender: true },
     // per-map quad playbooks (static content + corpus numbers baked into useQuadPlaybook.ts)
     '/coach/quad/**': { prerender: true },
+    // map overviews: static pages built from mapOverview.json / mapRoutes.json / travelTimes.json
+    '/maps': { prerender: true },
+    '/maps/**': { prerender: true },
     '/servers': { prerender: true },
     '/stats': { prerender: true },
     '/h2h': { prerender: true },
@@ -98,7 +101,7 @@ export default defineNuxtConfig({
       '/api': { target: 'https://deepfrag-api-751658372467.us-central1.run.app/api', changeOrigin: true }
     },
     prerender: {
-      routes: [...loadPrerenderRoutes(), '/coach/p/_fallback', '/coach/player/_fallback', '/coach/quad/dm3', '/coach/quad/dm2', '/coach/quad/e1m2', '/coach/quad/schloss'],
+      routes: [...loadPrerenderRoutes(), '/coach/p/_fallback', '/coach/player/_fallback', '/coach/quad/dm3', '/coach/quad/dm2', '/coach/quad/e1m2', '/coach/quad/schloss', '/maps', '/maps/dm3', '/maps/dm2', '/maps/e1m2', '/maps/schloss'],
       // crawlLinks would otherwise follow NuxtLinks to /p/[id]/maps and
       // re-prerender them, defeating the point of dropping them above.
       crawlLinks: false
