@@ -450,7 +450,7 @@ def compute(ov, data, me, gid, mp):
         if home and home["state"] == "up":
             ans.append(f"Line: stay. The {home['kind'].upper()} is up here. Take it, then the nearest armor; fight from this doorway.")
         elif home and home["state"] == "in" and home["s"] <= 8:
-            ans.append(f"Line: stay for the {home['kind'].upper()} ({home['s']} s). Back to the wall that covers the entrance, shotgun whoever comes, be on the quad.")
+            ans.append(f"Line: stay for the {home['kind'].upper()} ({home['s']} s). Back to the wall that covers the entrance, shotgun whoever comes, be standing on it when it spawns.")
         elif line:
             steps = [f"{o['kind'].upper()} ({o['s']:.0f} s" + ("" if o["up_at"] <= l["s0"] else f", up {mmss(o['up_at'])}") + ")" for o in line]
             ans.append("Line: " + (f"the {home['kind'].upper()} is {home['s']} s out, nothing to wait for. " if home else "") + "go " + " → ".join(steps) + ". Shotgun anyone you pass, no stopping; fight only after the last one.")
