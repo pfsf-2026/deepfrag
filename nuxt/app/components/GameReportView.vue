@@ -24,7 +24,11 @@ async function load(fresh = false) {
   loading.value = true; err.value = ''; step.value = 0
   clearInterval(timer); timer = setInterval(() => { if (step.value < STEPS.length - 1) step.value++ }, 7000)
   try {
-    const u = `${base}/api/players/${encodeURIComponent(id.value)}/games/${encodeURIComponent(gid.value)}/report` + (fresh ? `?fresh=${Date.now()}` : '')
+    // b= is the site build id: the edge caches report JSON for two hours, and a new site build usually
+    // means a new report shape, so each deploy gets its own cache key instead of serving a stale report.
+    let buildId = ''
+    try { buildId = String(useRuntimeConfig().app?.buildId || '') } catch { /* older runtime */ }
+    const u = `${base}/api/players/${encodeURIComponent(id.value)}/games/${encodeURIComponent(gid.value)}/report?b=${encodeURIComponent(buildId)}` + (fresh ? `&fresh=${Date.now()}` : '')
     const r = await fetch(u)
     if (!r.ok) {
       let d = ''
