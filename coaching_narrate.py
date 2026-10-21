@@ -185,6 +185,8 @@ SYSTEM_4ON4 = (
     "side or the stairs. schloss — one red, megas in the yard and the cemetery; the quad is entered by the "
     "door, the drop-down, or a rocket from the cathedral (say 'Cat' for cathedral). If a room or entrance is "
     "not in this list or in the report, do not describe it: say 'the quad room' and stop.\n"
+    "WORDS: say 'the quad' (never 'pad'); a 'pack' is only a dead player's dropped backpack; ammo pickups are "
+    "'rockets', 'cells', 'nails' or 'ammo'.\n"
     "RULES: (1) Use only the facts given; never invent a metric, a number, a game, a cue or a piece of map "
     "geography. Never use the word footsteps. (2) One focus; "
     "other levers get at most one sentence. (3) If a previous prescription exists, open with its result in one "

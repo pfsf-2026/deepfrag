@@ -49,10 +49,12 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   740 u from the quad). Names are Peter's (2026-10-17; "mid" and "quad/Cat high" confirmed by him the same
   day); "Cat" is the word for cathedral in all coaching text.
 - **Rockets are ammo, the launcher is not a weapon without them.** Any state that says "has the RL" must say
-  how many rockets; an RL with none is a shotgun. On schloss rockets are scarce: the packs are in the
+  how many rockets; an RL with none is a shotgun. On schloss rockets are scarce: the rocket ammo is in the
   trench, at the tower tele exit and at the top of the Cat SSG stairs (Peter, 2026-10-21).
 - **Words players use (Peter, 2026-10-21: "what is the pad?").** Say "the quad" or "standing on quad when it
-  spawns", "the red", "the yellow", "the mega", "Cat"; never "pad" (not a QuakeWorld word).
+  spawns", "the red", "the yellow", "the mega", "Cat"; never "pad" (not a QuakeWorld word). A "pack" or
+  "backpack" is only what a dead player drops; ammo pickups are "rockets", "cells", "nails" (or "ammo"),
+  never "packs" (Peter, 2026-10-21).
 - **Location vocabularies differ.** `player_state10s.loc` and the analyzer's `locs` use the `.loc` files
   (`mvd-analytics/loc/data/<map>.loc`: dm3 has water, water.LG, water.GL, water.rox …); the map JSONs
   (`mvd-web/static/maps/<map>.json`) use different names (dm3: bridge.low, hill, RL …). Say which one a

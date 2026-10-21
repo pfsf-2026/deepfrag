@@ -23,7 +23,7 @@ import urllib.parse
 from duel_adv import _eff, _Series
 import spawn_rooms as SR
 
-VERSION = 12
+VERSION = 13
 HUB = "https://hub.quakeworld.nu/games/?gameId={gid}&from={f}&to={t}&track={uid}"
 MAJOR = ("ra", "ya", "ga", "mh", "rl", "lg", "quad", "pent", "ring")
 NEAR = 700            # units: "with" a teammate / "into" enemies
@@ -325,10 +325,26 @@ def compute(ov, data, me, gid, mp):
                 continue
             o = b["origin"]; tt = dist(xyz, (o[0], o[1], o[2])) / 320 + 0.5
             if tt <= reach_s:
-                out.append(dict(kind=f"{b['weapon']} pack", loc=SR.room_name(b.get("loc") or ""), label=f"{b['weapon'].upper()} pack at {SR.room_name(b.get('loc') or '')}",
+                out.append(dict(kind=f"{b['weapon']} backpack", loc=SR.room_name(b.get("loc") or ""), label=f"{b['weapon'].upper()} backpack at {SR.room_name(b.get('loc') or '')}",
                                 state="dropped", s=round((t - b["time"]) / 1000), by=b.get("player"), away=round(tt, 1), by_enemy=(b.get("player") in foes)))
         out.sort(key=lambda o: o["away"])
         return out[:3]
+
+    AMMO_WORD = {"rockets": "rockets", "cells": "cells", "nails": "nails", "shells": "shells"}
+
+    def ammo_at(xyz, t, kind, n=2):
+        """Nearest ammo boxes of one kind (rockets / cells / nails) that are up or about to be."""
+        out = []
+        for it in items:
+            if it.get("kind") != kind:
+                continue
+            st, n_s, by = item_state(it, t)
+            tt = dist(xyz, (it["x"], it["y"], it["z"])) / 320 + 0.5
+            if st == "up" or (st == "in" and n_s <= tt + 2):
+                loc_ = SR.room_name(it.get("loc") or "")
+                out.append(dict(kind=kind, loc=loc_, label=f"{AMMO_WORD.get(kind, kind)} at {loc_}", state=st, s=n_s, by=None, away=round(tt, 1), by_enemy=False))
+        out.sort(key=lambda o: o["away"])
+        return out[:n]
 
     def near_at(xyz, t, n=5):
         """The nearest key items to a position at time t, with their clock."""
@@ -501,11 +517,12 @@ def compute(ov, data, me, gid, mp):
                 path = on_path(here, qxyz, av - 10000)
                 # who on your team is actually placed to take it: a gun with rockets and stack, inside reach
                 better = [m for m in mates10 if m["away"] <= 10 and m["rl"] and m["rockets"] > 0 and (m["eff"] >= eff10 + 40 or not armed)]
-                gun_txt = (f"the RL with {rk10} rockets" if armed else ("the RL but no rockets, so a shotgun until you find a pack" if rl10 else "no RL"))
+                gun_txt = (f"the RL with {rk10} rockets" if armed else ("the RL but no rockets, so a shotgun until you find rockets" if rl10 else "no RL"))
                 q = f"{mmss(av - 10000)} — quad spawns in 10 s. You are {away:.0f} s away with {eff10:.0f} effective stack and {gun_txt}. What do you do?"
                 did = f"You were {away:.0f} s from the quad room at {mmss(av - 10000)} and {by} took it at {mmss(av)}" + (f"; you reached the room {'with' if armed else 'without'} rockets." if away <= 6 else ".")
                 near_q = near_at(here, av - 10000, 4)
                 packs_q = packs_at(here, av - 10000)
+                ammo_chips = ammo_at(here, av - 10000, "rockets") if (rl10 and rk10 <= 0) else []
                 parts = [f"Quad in 10, you are {int(away)} s out. Clock: " + "; ".join(
                     (f"{nm(o['kind'], o['loc'])} up" if o["state"] == "up" or (o["state"] == "in" and o["s"] <= 0) else f"{nm(o['kind'], o['loc'])} in {o['s']} s" if o["state"] == "in" else f"{nm(o['kind'], o['loc'])} gone {o['s']} s")
                     + f" ({o['away']:.0f} s)" for o in near_q if o["kind"] != "quad") + "."]
@@ -515,7 +532,8 @@ def compute(ov, data, me, gid, mp):
                 elif armed and away <= 10:
                     parts.append("Go now" + (f", {nm(path[0]['kind'], path[0]['loc'])} on the way ({path[0]['detour_s']:.0f} s)" if path else "") + ". In the room with 3 s to spare; hold the entrance, fire as he comes, then take it.")
                 elif away <= 10:
-                    parts.append("No rockets: taking the quad is a lost trade. Take " + (f"the {packs_q[0]['label']} ({packs_q[0]['away']:.0f} s, dropped {packs_q[0]['s']} s ago)" if packs_q else (f"the {nm(path[0]['kind'], path[0]['loc'])}" if path else "a pack or the yellow")) + "; let a teammate with rockets take it, or one shot from the doorway and leave.")
+                    ammo_q = ammo_at(here, av - 10000, "rockets")
+                    parts.append("No rockets: taking the quad is a lost trade. Take " + (f"the {packs_q[0]['label']} ({packs_q[0]['away']:.0f} s, dropped {packs_q[0]['s']} s ago)" if packs_q else (f"the rockets at {ammo_q[0]['loc']} ({ammo_q[0]['away']:.0f} s)" if ammo_q else (f"the {nm(path[0]['kind'], path[0]['loc'])}" if path else "rockets or the yellow"))) + "; let a teammate with rockets take it, or one shot from the doorway and leave.")
                 else:
                     parts.append("Too far. Say so; get yellow or rockets and own the next one.")
                 if mates10 and not better:
@@ -534,7 +552,7 @@ def compute(ov, data, me, gid, mp):
                         others.append(dict(t=m["time"], text=line))
                 rewinds.append(dict(idx=0, kind="quad", t=av - 10000, t_end=av + 5000, hub=hub(av - 10000, av + 5000), spawn=None, margin=round(M[s10]) if s10 < nsec else None,
                                     stack=round(eff10), has_rl=rl10, rockets=rk10, mates_at=mates10, on_path=path,
-                                    items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), label=nm("quad", SR.room_name(it.get("loc") or "")), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)] + [o for o in near_q if o["kind"] != "quad"] + packs_q,
+                                    items_at=[dict(kind="quad", loc=SR.room_name(it.get("loc") or ""), label=nm("quad", SR.room_name(it.get("loc") or "")), state="in", s=10, by=None, away=round(away, 1), by_enemy=False)] + [o for o in near_q if o["kind"] != "quad"] + ammo_chips + packs_q,
                                     question=q, did=did, comms=others[-10:], you_sent=[_clean_mm2(m.get("messageClean") or m.get("message")) for m in comms if m.get("player") == me],
                                     answer=a, mm2=mm2, options=[], best_room=None, your_room=None, your_room_survival=None, best_room_survival=None, score=0.6 + (0.3 if away <= 6 else 0)))
             elif took_me and died_soon and eff10 < 100:
