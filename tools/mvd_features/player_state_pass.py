@@ -2,7 +2,8 @@
 plus per-player per-game shot stats: rockets/cells/shells/nails fired, RL direct hits, RL direct vs splash damage, rockets that did any damage."""
 import json, sqlite3, subprocess, sys, os, time, bisect, collections, urllib.request, gzip, shutil, tempfile, math
 from multiprocessing import Pool
-ANALYZER=os.path.abspath('../qw-analyze'); DB='/Users/peteryeargin/Projects/qw-stats/data/mvd_features.sqlite'
+from demo_fetch import fetch_mvd
+ANALYZER = os.environ.get('QW_ANALYZE') or os.path.abspath('../qw-analyze'); DB = os.environ.get('MVD_FEATURES_DB', '/Users/peteryeargin/Projects/qw-stats/data/mvd_features.sqlite')
 RATIO={'ra':0.8,'ya':0.6,'ga':0.3,'':0.0}
 def eff(h,a,at):
     r=RATIO.get(at,0)
@@ -21,9 +22,7 @@ def decs(series,step):
 def process(g):
     gid=g['id']; sha=g['demo_sha256']; tmp=tempfile.mkdtemp(prefix='mvd_')
     try:
-        url=f"https://d.quake.world/{sha[:3]}/{sha}.mvd.gz"; gz=os.path.join(tmp,'d.mvd.gz'); mvd=os.path.join(tmp,'d.mvd')
-        with urllib.request.urlopen(url,timeout=60) as r, open(gz,'wb') as f: shutil.copyfileobj(r,f)
-        with gzip.open(gz,'rb') as fi, open(mvd,'wb') as fo: shutil.copyfileobj(fi,fo)
+        mvd = fetch_mvd(sha, tmp)
         out=subprocess.run([ANALYZER,'-view','full','-include','positions',mvd],capture_output=True,timeout=120)
         d=json.loads(out.stdout); END=d['streams']['global']['matchEnd']
         team={p['name']:p['team'] for p in d['match']['players']}

@@ -60,3 +60,4 @@ Thumbs.db
 work/
 data/*.sqlite
 .venv-mvd/
+tools/cloud_pass/qw-analyze

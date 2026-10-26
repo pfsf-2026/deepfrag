@@ -1,0 +1,7 @@
+# Only what the demo-pass image needs (build context is tools/).
+*
+!cloud_pass/
+!cloud_pass/**
+!mvd_features/
+!mvd_features/*.py
+!mvd_features/*.json

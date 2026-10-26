@@ -3,7 +3,8 @@ Tables: games, players, events (dmg+frag with both players' state), state10s (te
 samples for the win-probability model), player_game (derived per-player stats), errors."""
 import json, sqlite3, subprocess, sys, os, time, math, bisect, collections, urllib.request, gzip, shutil, tempfile
 from multiprocessing import Pool
-ANALYZER=os.path.abspath('../qw-analyze'); DB='features.sqlite'
+from demo_fetch import fetch_mvd
+ANALYZER=os.environ.get('QW_ANALYZE') or os.path.abspath('../qw-analyze'); DB=os.environ.get('MVD_FEATURES_DB','features.sqlite')
 ALLOWED=("The-Den","la.quake.world","Mom's Basement","ny.quake.world")
 RATIO={'ra':0.8,'ya':0.6,'ga':0.3,'':0.0}
 def eff(h,a,at):
@@ -19,15 +20,8 @@ def in_iv(ivs,t): return any(s<=t<=e for s,e in ivs)
 def process(g):
     gid=g['id']; sha=g['demo_sha256']; tmp=tempfile.mkdtemp(prefix='mvd_')
     try:
-        url=f"https://d.quake.world/{sha[:3]}/{sha}.mvd.gz"; gz=os.path.join(tmp,'d.mvd.gz'); mvd=os.path.join(tmp,'d.mvd')
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(url,timeout=60) as r, open(gz,'wb') as f: shutil.copyfileobj(r,f)
-                break
-            except Exception as e:
-                if attempt==2: return {'id':gid,'error':f'download: {e}'}
-                time.sleep(2)
-        with gzip.open(gz,'rb') as fi, open(mvd,'wb') as fo: shutil.copyfileobj(fi,fo)
+        try: mvd=fetch_mvd(sha,tmp)
+        except Exception as e: return {'id':gid,'error':f'download: {e}'}
         out=subprocess.run([ANALYZER,'-view','full','-include','positions',mvd],capture_output=True,timeout=120)
         if not out.stdout.strip(): return {'id':gid,'error':f'analyzer: {out.stderr[-200:]!r}'}
         d=json.loads(out.stdout)

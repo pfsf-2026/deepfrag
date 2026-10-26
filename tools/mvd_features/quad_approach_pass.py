@@ -12,7 +12,8 @@ Resumable (quad_approach_done). Usage: quad_approach_pass.py [workers] [limit]  
 """
 import json, sqlite3, subprocess, os, sys, time, math, bisect, urllib.request, gzip, shutil, tempfile
 from multiprocessing import Pool
-ANALYZER = os.path.abspath('../qw-analyze'); DB = '/Users/peteryeargin/Projects/qw-stats/data/mvd_features.sqlite'
+from demo_fetch import fetch_mvd
+ANALYZER = os.environ.get('QW_ANALYZE') or os.path.abspath('../qw-analyze'); DB = os.environ.get('MVD_FEATURES_DB', '/Users/peteryeargin/Projects/qw-stats/data/mvd_features.sqlite')
 MANIFEST = os.path.abspath('manifest_all.json')
 R, WIN = 650.0, 10000
 SOAK = {'ra': 0.8, 'ya': 0.6, 'ga': 0.3}
@@ -27,9 +28,7 @@ def step(series):
 def process(g):
     gid = g['id']; sha = g['demo_sha256']; tmp = tempfile.mkdtemp(prefix='qa_')
     try:
-        url = f"https://d.quake.world/{sha[:3]}/{sha}.mvd.gz"; gz = os.path.join(tmp, 'd.mvd.gz'); mvd = os.path.join(tmp, 'd.mvd')
-        with urllib.request.urlopen(url, timeout=60) as r, open(gz, 'wb') as f: shutil.copyfileobj(r, f)
-        with gzip.open(gz, 'rb') as fi, open(mvd, 'wb') as fo: shutil.copyfileobj(fi, fo)
+        mvd = fetch_mvd(sha, tmp)
         out = subprocess.run([ANALYZER, '-view', 'full', '-include', 'positions', mvd], capture_output=True, timeout=240)
         d = json.loads(out.stdout); END = d['streams']['global']['matchEnd']
         items = [(it['kind'], it.get('x'), it.get('y'), it.get('z')) for it in d['items']['items'] if it.get('x') is not None]
