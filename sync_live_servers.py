@@ -27,7 +27,7 @@ Schema additions (idempotent):
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -35,6 +35,17 @@ import db as dbmod
 from geolocate_servers import MANUAL_LOCATIONS, MANUAL_LOCATIONS_BY_IP
 
 HUB_URL = "https://hubapi.quakeworld.nu/v2/servers"
+HUB_TIMEOUT = (4, 10)        # connect, read (s). A dead hub must not hold the per-minute poll for 30 s.
+BACKOFF_MAX_MIN = 30         # after n failures in a row, skip runs for min(2^n, 30) minutes
+STALE_AFTER = timedelta(minutes=10)  # hub unreachable this long -> nothing is shown as live
+
+BACKOFF_DDL = """
+CREATE TABLE IF NOT EXISTS live_sync_backoff (
+  id INT PRIMARY KEY, failures INT NOT NULL DEFAULT 0, next_try TIMESTAMPTZ,
+  last_ok TIMESTAMPTZ, last_error TEXT
+);
+INSERT INTO live_sync_backoff (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+"""
 
 # Hub returns geo.region as natural-language strings; map to our compact codes.
 HUB_REGION_MAP = {
@@ -184,14 +195,36 @@ def extract_row(s: dict, now: str) -> dict:
 
 
 def main():
-    print("Fetching hub live-server list…")
-    r = requests.get(HUB_URL, timeout=30, headers={"User-Agent": "DeepFrag/0.1"})
-    r.raise_for_status()
-    live = r.json()
-    print(f"  {len(live)} live servers reported")
-
     db = dbmod.connect()
     cur = db.cursor()
+    cur.execute(BACKOFF_DDL)
+    db.commit()
+    cur.execute("SELECT failures, next_try, last_ok FROM live_sync_backoff WHERE id = 1")
+    b = cur.fetchone()
+    now_dt = datetime.now(timezone.utc)
+    if b["next_try"] and now_dt < b["next_try"]:
+        print(f"Hub down ({b['failures']} failures in a row); next try {b['next_try'].astimezone(timezone.utc):%H:%M} UTC. Skipping.")
+        return
+
+    print("Fetching hub live-server list…")
+    try:
+        r = requests.get(HUB_URL, timeout=HUB_TIMEOUT, headers={"User-Agent": "DeepFrag/0.1"})
+        r.raise_for_status()
+        live = r.json()
+    except (requests.RequestException, ValueError) as e:
+        fails = b["failures"] + 1
+        wait = min(2 ** fails, BACKOFF_MAX_MIN)
+        cur.execute("UPDATE live_sync_backoff SET failures = %s, next_try = %s, last_error = %s WHERE id = 1",
+                    (fails, now_dt + timedelta(minutes=wait), str(e)[:300]))
+        if not b["last_ok"] or now_dt - b["last_ok"] > STALE_AFTER:
+            cur.execute("UPDATE servers SET is_live = FALSE WHERE is_live")
+            print(f"  hub unreachable for over {STALE_AFTER}; {cur.rowcount} servers no longer shown as live")
+        db.commit()
+        print(f"Hub unreachable ({type(e).__name__}); {fails} failures in a row, next try in {wait} min")
+        sys.exit(1)
+    cur.execute("UPDATE live_sync_backoff SET failures = 0, next_try = NULL, last_ok = %s, last_error = NULL WHERE id = 1",
+                (now_dt,))
+    print(f"  {len(live)} live servers reported")
 
     print("Ensuring schema…")
     cur.execute(SCHEMA_MIGRATION)
