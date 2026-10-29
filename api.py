@@ -10978,11 +10978,14 @@ def _resolve_cid(cur, canonical_id: str) -> str:
 
 
 @app.get("/api/players/{canonical_id}/recent-games")
-def api_recent_games(canonical_id: str, response: Response, mode: str = "4on4", limit: int = 10):
+def api_recent_games(canonical_id: str, response: Response, mode: str = "4on4", limit: int = 10, offset: int = 0):
     """The player's last N games in one mode with the team score and W/L (the /full list
-    has no 4on4 outcome), teammates and opponents, and whether a Game Report exists."""
+    has no 4on4 outcome), teammates and opponents, and whether a Game Report exists.
+    `offset` pages back (the full games table); a game with a current report carries a
+    short `report_summary` (the compare line and the player's row of the all-eight table)."""
     mode = mode if mode in ("4on4", "1on1", "2on2") else "4on4"
-    limit = max(1, min(int(limit or 10), 30))
+    limit = max(1, min(int(limit or 10), 100))
+    offset = max(0, int(offset or 0))
     response.headers["Cache-Control"] = "public, max-age=300"
     with pg() as conn:
         cur = conn.cursor()
@@ -10995,15 +10998,18 @@ def api_recent_games(canonical_id: str, response: Response, mode: str = "4on4", 
                            p.player_name, p.player_frags, p.player_deaths
                     FROM matches m JOIN players p ON p.match_id = m.match_id
                     WHERE p.canonical_id = %(cid)s AND m.match_mode = '1on1'
-                    ORDER BY m.match_date DESC LIMIT %(lim)s)
+                    ORDER BY m.match_date DESC LIMIT %(lim)s OFFSET %(off)s)
                 SELECT me.*, me.player_frags AS my_total,
                        (SELECT p2.player_frags FROM players p2 WHERE p2.match_id = me.match_id AND p2.canonical_id IS DISTINCT FROM %(cid)s LIMIT 1) AS opp_total,
                        (SELECT COALESCE(pc.display_name, p2.canonical_id, p2.player_name) FROM players p2
                           LEFT JOIN players_canonical pc ON pc.canonical_id = p2.canonical_id
                           WHERE p2.match_id = me.match_id AND p2.canonical_id IS DISTINCT FROM %(cid)s LIMIT 1) AS opp_names,
                        NULL AS my_names, NULL AS player_team, NULL AS opp_team,
-                       EXISTS (SELECT 1 FROM game_reports g WHERE g.hub_game_id = me.match_id AND g.canonical_id = %(cid)s AND g.version = %(ver)s) AS has_report
-                FROM me ORDER BY me.match_date DESC""", {"cid": cid, "lim": limit, "ver": GRPT.VERSION})
+                       (SELECT jsonb_build_object('compare', g.report->'compare', 'me', (SELECT t FROM jsonb_array_elements(g.report->'table') WITH ORDINALITY x(t, i) WHERE (t->>'me')::boolean LIMIT 1),
+                                                   'rank', (SELECT i FROM jsonb_array_elements(g.report->'table') WITH ORDINALITY x(t, i) WHERE (t->>'me')::boolean LIMIT 1),
+                                                   'of', jsonb_array_length(COALESCE(g.report->'table', '[]'::jsonb)))
+                        FROM game_reports g WHERE g.hub_game_id = me.match_id AND g.canonical_id = %(cid)s AND g.version = %(ver)s) AS rsum
+                FROM me ORDER BY me.match_date DESC""", {"cid": cid, "lim": limit, "off": offset, "ver": GRPT.VERSION})
         else:
             cur.execute("""
                 WITH me AS (
@@ -11011,7 +11017,7 @@ def api_recent_games(canonical_id: str, response: Response, mode: str = "4on4", 
                            p.player_team, p.player_name, p.player_frags, p.player_deaths
                     FROM matches m JOIN players p ON p.match_id = m.match_id
                     WHERE p.canonical_id = %(cid)s AND m.match_mode = %(mode)s
-                    ORDER BY m.match_date DESC LIMIT %(lim)s),
+                    ORDER BY m.match_date DESC LIMIT %(lim)s OFFSET %(off)s),
                 side AS (
                     SELECT p.match_id, p.player_team, SUM(p.player_frags) AS total, COUNT(*) AS n,
                            STRING_AGG(COALESCE(pc.display_name, p.canonical_id, p.player_name), ', ' ORDER BY p.player_frags DESC) AS names
@@ -11020,12 +11026,15 @@ def api_recent_games(canonical_id: str, response: Response, mode: str = "4on4", 
                     GROUP BY p.match_id, p.player_team)
                 SELECT me.*, mine.total AS my_total, mine.names AS my_names,
                        theirs.total AS opp_total, theirs.names AS opp_names, theirs.player_team AS opp_team,
-                       EXISTS (SELECT 1 FROM game_reports g WHERE g.hub_game_id = me.match_id AND g.canonical_id = %(cid)s AND g.version = %(ver)s) AS has_report
+                       (SELECT jsonb_build_object('compare', g.report->'compare', 'me', (SELECT t FROM jsonb_array_elements(g.report->'table') WITH ORDINALITY x(t, i) WHERE (t->>'me')::boolean LIMIT 1),
+                                                   'rank', (SELECT i FROM jsonb_array_elements(g.report->'table') WITH ORDINALITY x(t, i) WHERE (t->>'me')::boolean LIMIT 1),
+                                                   'of', jsonb_array_length(COALESCE(g.report->'table', '[]'::jsonb)))
+                        FROM game_reports g WHERE g.hub_game_id = me.match_id AND g.canonical_id = %(cid)s AND g.version = %(ver)s) AS rsum
                 FROM me
                 LEFT JOIN side mine ON mine.match_id = me.match_id AND mine.player_team IS NOT DISTINCT FROM me.player_team
                 LEFT JOIN LATERAL (SELECT * FROM side s WHERE s.match_id = me.match_id AND s.player_team IS DISTINCT FROM me.player_team
                                    ORDER BY s.total DESC LIMIT 1) theirs ON true
-                ORDER BY me.match_date DESC""", {"cid": cid, "mode": mode, "lim": limit, "ver": GRPT.VERSION})
+                ORDER BY me.match_date DESC""", {"cid": cid, "mode": mode, "lim": limit, "off": offset, "ver": GRPT.VERSION})
         rows = [dict(r) for r in cur.fetchall()]
     out = []
     for r in rows:
@@ -11034,9 +11043,20 @@ def api_recent_games(canonical_id: str, response: Response, mode: str = "4on4", 
         out.append({"hub_game_id": r["match_id"], "date": str(r["match_date"]), "map": r["match_map"], "mode": r["match_mode"],
                     "server": r.get("server_hostname"), "has_bots": bool(r.get("has_bots")), "team": r.get("player_team"),
                     "my_score": mt, "opp_score": ot, "win": win, "frags": r.get("player_frags"), "deaths": r.get("player_deaths"),
-                    "teammates": r.get("my_names"), "opponents": r.get("opp_names"), "has_report": bool(r.get("has_report")),
-                    "report_available": r["match_mode"] == "4on4"})
-    return {"canonical_id": cid, "mode": mode, "games": out}
+                    "teammates": r.get("my_names"), "opponents": r.get("opp_names"), "has_report": r.get("rsum") is not None,
+                    "report_summary": _report_summary(r.get("rsum")), "report_available": r["match_mode"] == "4on4"})
+    return {"canonical_id": cid, "mode": mode, "offset": offset, "games": out}
+
+
+def _report_summary(rs):
+    """The games-table line for a game with a current report: the compare sentence, the
+    player's impact rank of the eight and the numbers of their row."""
+    if not rs:
+        return None
+    me = rs.get("me") or {}
+    keep = ("impact", "adj", "dmg_pm", "sddr", "deaths", "quads", "pents", "ra", "mm2")
+    return {"compare": rs.get("compare"), "rank": rs.get("rank"), "of": rs.get("of"),
+            **{k: me.get(k) for k in keep if k in me}}
 
 
 @app.get("/api/players/{canonical_id}/games/{game_id}/report")

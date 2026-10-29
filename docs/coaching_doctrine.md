@@ -48,6 +48,16 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   quad/Cat high (424,-3240,600; .loc quad.high), quad/Cat low (455,-3032,440; .loc quad, 445 u from the RA,
   740 u from the quad). Names are Peter's (2026-10-17; "mid" and "quad/Cat high" confirmed by him the same
   day); "Cat" is the word for cathedral in all coaching text.
+- **Rocket damage and the rocket jump (Peter, 2026-10-27).** A rocket does at most **110** to someone else; to
+  yourself the damage is **halved, at most 55** per rocket (armor takes its share as usual). An RJ needs the RL
+  and at least one rocket, and costs stack. A player without the RL and rockets cannot RJ, whatever the
+  straight-line distance.
+- **55 is the ceiling, not the cost of an RJ (Peter, 2026-10-28).** A well-executed RJ takes less: jump first,
+  and the higher you are when the rocket lands, the less damage you take; shoot at an angle, or shoot stairs
+  descending below you, for "just enough" boost to reach the target. The RJ to the red on aerowalk costs
+  **22-28** done perfectly. So the cost of an RJ is measured per route from the demos (the self-damage players
+  actually took on that RJ), never assumed as 55, and the self-damage on an RJ is itself a skill to coach:
+  the player's cost on a route vs the best players' cost on the same route.
 - **Rockets are ammo, the launcher is not a weapon without them.** Any state that says "has the RL" must say
   how many rockets; an RL with none is a shotgun. On schloss rockets are scarce: the rocket ammo is in the
   trench, at the tower tele exit and at the top of the Cat SSG stairs (Peter, 2026-10-21).
@@ -162,6 +172,12 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
 - Speak plainly about strong players too: say "takes the most" when the data says volume, "best" only when it
   says efficiency (2026-10-06).
 
+- **Reachability first (Peter, 2026-10-27).** Never call a player out for not being somewhere they could not
+  get to in time. Every "should have been at X" is checked against the route table (`route_times.py`): the walk
+  time from where they stood, and the RJ time only when they held the RL with rockets and a stack to pay for it
+  (§1). Hill mega sits right under the dm3 quad, but without an RL it is a walk, not 1 s. Pathing is part of
+  every coaching line, not a separate page.
+
 - **Story, not "top players do X" (Peter, 2026-10-17).** A coaching text is a sequence of situations the player
   is actually in ("you just spawned and your team is locked", "you heard them take red", "you have 150 and no
   gun"), the decision available there, and what players who make that decision get next — the item, then the
@@ -242,3 +258,12 @@ changes it. When he corrects something, add it to §7 the same day, with the dat
   label flips across floors (under 1 s, more than 100 units up, no RJ, no lift or tele), and the pages show
   walks with "RJ" ways beside them. Coaching lines use the walk time; a rocket-jump time is offered only when
   the player holds rockets and a stack to pay for it.
+- 2026-10-27 "Pathing on the maps needs to be very integrated into everything you do and coach, because if you
+  can't get there, you can't call someone out for not being there. Example being a player on hill mega, who is
+  right next to quad, but has no RL to RJ up. Remember that self damage on rockets is halved, so you cant do
+  more than 55 damage to yourself (110 max to others per rocket)." — §1 rocket-damage fact and the §5
+  reachability rule above.
+- 2026-10-28 "RJs when executed properly, take less than 55 health, you can jump first and the higher in the air
+  you are, the lower the damage you take … RJ over stairs that are descending below you … on RJs to RA in
+  aerowalk for example, you can get 22-28 damage only if executed perfectly" — §1 bullet above; RJ cost is
+  measured per route, RJ self-damage is an execution stat.

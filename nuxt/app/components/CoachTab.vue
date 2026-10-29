@@ -5,6 +5,7 @@
 // 4on4/1on1 dropdown. The 1on1 overview keeps the demo-parsing flow below: coach
 // read, focus cards, training journal, per-match Deep Analyze (coaching/report +
 // coaching/history + deep-analyze endpoints), gated behind "Analyze my game".
+// Both overviews have the last 10 games (CoachRecentGames) in a right-hand column.
 const props = defineProps({ cid: { type: String, required: true } })
 const route = useRoute()
 const router = useRouter()
@@ -182,8 +183,10 @@ function runManual() {
       <button class="mbtn" :class="{ on: mode === '4on4' }" role="tab" :aria-selected="mode === '4on4'" @click="setMode('4on4')">4on4</button>
       <button class="mbtn" :class="{ on: mode === '1on1' }" role="tab" :aria-selected="mode === '1on1'" @click="setMode('1on1')">1on1</button>
     </div>
-    <!-- last 10 games with a Game Report per fours game (2026-10-17) -->
-    <CoachRecentGames :cid="props.cid" />
+    <!-- 2026-10-28 (Peter): the level overview front and center, the last 10 games in a narrow
+         right-hand column beside it (stacked under it on a phone) -->
+    <div class="ovgrid">
+    <div class="ovmain">
     <CoachFours v-if="mode === '4on4'" :cid="props.cid" />
     <template v-else>
     <!-- movement report: its own endpoint, shown without waiting for "Analyze my game" -->
@@ -302,12 +305,23 @@ function runManual() {
       </section>
     </template>
     </template>
+    </div>
+    <aside class="ovside">
+      <CoachRecentGames :cid="props.cid" :mode="mode" />
+    </aside>
+    </div>
     </template>
   </div>
 </template>
 
 <style scoped>
 .coach { --b: var(--border, #1f2a3a); --p2: var(--panel-2, #131c30); }
+.ovgrid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 22px; align-items: start; }
+.ovmain { min-width: 0; }
+.ovside { min-width: 0; }
+@media (max-width: 900px) {
+  .ovgrid { grid-template-columns: minmax(0, 1fr); }
+}
 .manualrow { display: flex; gap: 8px; margin-bottom: 10px; }
 .manual-input { flex: 1; background: var(--p2); border: 1px solid var(--b); color: var(--fg); border-radius: 7px; padding: 8px 12px; font-size: 13px; }
 .manual-input:focus { outline: none; border-color: var(--accent); }
