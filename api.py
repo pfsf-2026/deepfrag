@@ -8579,13 +8579,19 @@ def admin_ladder_forfeit(challenge_id: int, authorization: str | None = Header(d
         moves = _ladder.apply_forfeit(cur, ch["ladder_id"], ch["challenged_id"], drop=(ch["rungs_up"] or 1), match_id=match_id)
         cur.execute("UPDATE ladder_challenges SET status='forfeited', resolved_at=now() WHERE id=%s", (challenge_id,))
         chd_lbl = _team_label(cur, ch["challenged_id"])
+        chr_lbl = _team_label(cur, ch["challenger_id"])
+        climber = next((tid for tid in moves if tid != ch["challenged_id"]), None)
+        cur.execute("SELECT id, name FROM ladder_teams WHERE id = ANY(%s)", ([ch["challenged_id"], climber or 0],))
+        names = {r["id"]: r["name"] for r in cur.fetchall()}
         # A forfeit can promote the team below into rung 1.
         new_koth = next((tid for tid, r in moves.items() if r == 1 and tid != ch["challenged_id"]), None)
         koth_lbl = _team_label(cur, new_koth) if new_koth else None
         conn.commit()
     try:
         import notify
-        notify.forfeit_posted(chd_lbl)
+        notify.forfeit_posted(chd_lbl, chr_lbl, drop=(ch["rungs_up"] or 1),
+                              challenged_name=names.get(ch["challenged_id"]), challenged_rung=moves.get(ch["challenged_id"]),
+                              climber_name=names.get(climber), climber_rung=moves.get(climber))
         if koth_lbl:
             notify.koth_changed(koth_lbl)
     except Exception:

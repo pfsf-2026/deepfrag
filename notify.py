@@ -307,10 +307,21 @@ def result_grouped(winner: str, winner_ping: str, loser: str, loser_ping: str,
     return send(content=content, embed=_embed("🏆 Game result", "\n".join(desc), COLOR_WIN))
 
 
-def forfeit_posted(challenged: str, challenger: str | None = None):
-    """challenged/challenger are LABELS. Challenged drops; challenger takes it."""
-    tail = f" — {challenger} takes the position." if challenger else " and drops a rung."
-    return send(content=f"⏳ {challenged} didn't play in time{tail}")
+def forfeit_posted(challenged: str, challenger: str | None = None, drop: int = 1,
+                   challenged_name: str | None = None, challenged_rung: int | None = None,
+                   climber_name: str | None = None, climber_rung: int | None = None):
+    """challenged/challenger are LABELS (they ping); the *_name args are plain names for the
+    second mention. The challenged side drops `drop` rungs and the climber, normally the
+    challenger, takes the vacated rung. 2026-10-29: the message used to say "drops a rung"
+    for every forfeit and never named the challenger."""
+    if not challenger:
+        return send(content=f"⏳ {challenged} didn't play in time and drops a rung.")
+    rungs = "a rung" if drop == 1 else f"{drop} rungs"
+    who = challenged_name or "They"
+    moves = f" {who} drops {rungs}" + (f" to #{challenged_rung}" if challenged_rung else "")
+    if climber_name and climber_rung:
+        moves += f", {climber_name} moves up to #{climber_rung}"
+    return send(content=f"⏳ {challenged} didn't play {challenger} in time: a walkover, and{moves}.")
 
 
 def challenge_withdrawn(challenger: str, challenged: str, mention: str | None = None):
