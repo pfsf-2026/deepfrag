@@ -7867,7 +7867,7 @@ def admin_ladder_candidate_games(challenge_id: int, authorization: str | None = 
         b_roster = list(ch["b_members"] or [])
         if not a_roster or not b_roster:
             return {"challenge_id": challenge_id, "candidates": [], "note": "rosters not fully linked yet"}
-        det = _detect_bo3(cur, a_roster, b_roster, ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"), challenge_id=ch["id"], ladder_id=ch.get("ladder_id"))
+        det = _detect_bo3(cur, a_roster, b_roster, ch.get("agreed_at"), ch.get("deadline"), ch.get("created_at"), challenge_id=challenge_id, ladder_id=ch.get("ladder_id"))
     return {"challenge_id": challenge_id, "a_name": ch["a_name"], "b_name": ch["b_name"],
             "challenger_id": ch["challenger_id"], "challenged_id": ch["challenged_id"],
             "candidates": det["candidates"],
