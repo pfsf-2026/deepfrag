@@ -330,6 +330,12 @@ def challenge_withdrawn(challenger: str, challenged: str, mention: str | None = 
     return send(content=f"↩️ {challenger} withdrew the challenge vs {challenged}.")
 
 
+def challenge_cancelled(challenger: str, challenged: str):
+    """An admin cancelled the challenge: nobody moves, both are free. LABELS, challenger first."""
+    return send(content=f"🚫 The challenge {challenger} vs {challenged} was cancelled. No rungs change; "
+                        f"both {unit(plural=True)} are free to challenge again.")
+
+
 def match_reminder(a_name: str, a_ping: str, b_name: str, b_ping: str,
                    when: str | None, server: str | None = None, kind: str = "1h",
                    mention: str | None = None):

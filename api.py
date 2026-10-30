@@ -8466,12 +8466,22 @@ def admin_ladder_cancel(challenge_id: int, authorization: str | None = Header(de
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
+        _notify_route(cur, challenge_id=challenge_id)   # the post goes to this ladder's channel
         cur.execute("UPDATE ladder_challenges SET status='cancelled', resolved_at=now() "
-                    "WHERE id=%s AND status IN ('open','scheduled') RETURNING id", (challenge_id,))
+                    "WHERE id=%s AND status IN ('open','scheduled') RETURNING id, challenger_id, challenged_id", (challenge_id,))
         row = cur.fetchone()
+        if row:
+            cl_lbl = _team_label(cur, row["challenger_id"])
+            cd_lbl = _team_label(cur, row["challenged_id"])
         conn.commit()
     if not row:
         raise HTTPException(404, "no open challenge with that id")
+    # 2026-10-30 (Peter): cancels were silent, so the two sides never heard they were free
+    try:
+        import notify
+        notify.challenge_cancelled(cl_lbl, cd_lbl)
+    except Exception:
+        pass
     return {"challenge_id": challenge_id, "status": "cancelled"}
 
 
