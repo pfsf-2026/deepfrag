@@ -93,6 +93,7 @@ type Kill struct {
 	Killer string `json:"killer"`
 	Victim string `json:"victim"`
 	Weapon string `json:"weapon"`
+	Take   string `json:"take,omitempty"` // an item take instead of a kill: Killer took Take
 	Edge   *int   `json:"edge,omitempty"` // the killer's edge at first contact, when it was a fight
 }
 
@@ -124,13 +125,17 @@ type State struct {
 	startMs int32
 	started bool
 	ended   bool
-	info    map[string]string
-	mapFile string
-	players map[int]*Player
-	items   map[int]*Item
-	feed    []Kill
-	lastHit map[int]hit
-	fights  map[[2]int]*fight // keyed by (lower slot, higher slot)
+	// joined mid-match (a qtv stream): the start is estimated from the serverinfo
+	// "N min left" until the minute ticks over, which pins it to the second
+	approxStart bool
+	minLeft     int
+	info        map[string]string
+	mapFile     string
+	players     map[int]*Player
+	items       map[int]*Item
+	feed        []Kill
+	lastHit     map[int]hit
+	fights      map[[2]int]*fight // keyed by (lower slot, higher slot)
 }
 
 func New() *State {
@@ -142,6 +147,8 @@ func New() *State {
 		fights:  map[[2]int]*fight{},
 	}
 }
+
+var feedTakes = map[string]bool{"ra": true, "ya": true, "mh": true, "quad": true, "pent": true, "ring": true}
 
 var trackedItems = map[string]bool{
 	"ra": true, "ya": true, "ga": true, "mh": true, "quad": true, "pent": true, "ring": true,
@@ -168,13 +175,28 @@ func (s *State) clock(ms int32) int32 {
 func (s *State) Apply(ev events.Event) {
 	switch e := ev.(type) {
 	case *events.StuffTextEvent:
+		s.nowMs = max(s.nowMs, e.TimeMs)
 		if rest, ok := strings.CutPrefix(e.Command, "fullserverinfo "); ok {
 			parseInfo(strings.Trim(strings.TrimSpace(rest), `"`), s.info)
+			s.status(s.info["status"], e.TimeMs)
+		}
+		// the parser raises MatchStartEvent once per stream; a qtv stream carries many matches
+		if strings.HasPrefix(e.Command, "//ktx matchstart") {
+			s.start(e.TimeMs)
 		}
 	case *events.ServerInfoEvent:
 		s.info[e.Key] = e.Value
 		s.nowMs = max(s.nowMs, e.TimeMs)
+		if e.Key == "status" {
+			s.status(e.Value, e.TimeMs)
+		}
 	case *events.ServerDataEvent:
+		// a new map on a live stream: a new match
+		if s.nowMs > 0 && (s.started || len(s.players) > 0) {
+			info := s.info
+			*s = *New()
+			s.info = info
+		}
 		if e.Data != nil && e.Data.MapFile != "" {
 			s.mapFile = e.Data.MapFile
 		}
@@ -191,17 +213,7 @@ func (s *State) Apply(ev events.Event) {
 		p.Colors = [2]int{e.Player.TopColor, e.Player.BottomColor}
 		p.spectator = e.Player.Spectator
 	case *events.MatchStartEvent:
-		if !s.started {
-			s.started, s.startMs = true, e.TimeMs
-			// warmup frags and takes do not count
-			for _, p := range s.players {
-				*p = Player{Slot: p.Slot, Name: p.Name, Team: p.Team, Colors: p.Colors, Takes: map[string]int{},
-					Health: p.Health, Armor: p.Armor, ArmorType: p.ArmorType, Alive: p.Alive, items: p.items,
-					RL: p.RL, LG: p.LG, Rockets: p.Rockets, Cells: p.Cells, spectator: p.spectator}
-			}
-			s.feed = nil
-			s.fights = map[[2]int]*fight{}
-		}
+		s.start(e.TimeMs)
 	case *events.IntermissionEvent:
 		if s.started {
 			s.ended = true
@@ -242,6 +254,9 @@ func (s *State) Apply(ev events.Event) {
 		}
 		if s.started && !s.ended {
 			p.Takes[it.Kind]++
+			if feedTakes[it.Kind] {
+				s.feed = append(s.feed, Kill{AtMs: it.TakenAtMs, Killer: p.Name, Take: it.Kind})
+			}
 		}
 	case *events.DamageEvent:
 		s.damage(e)
@@ -251,6 +266,49 @@ func (s *State) Apply(ev events.Event) {
 	if t, ok := ev.(interface{ EventTimeMs() int32 }); ok {
 		s.nowMs = max(s.nowMs, t.EventTimeMs())
 	}
+}
+
+// start: the match went live at ms (warmup frags, takes and fights do not count)
+func (s *State) start(ms int32) {
+	if s.started && !s.approxStart {
+		return
+	}
+	s.startMs, s.approxStart = ms, false
+	if s.started {
+		return
+	}
+	s.started = true
+	for _, p := range s.players {
+		*p = Player{Slot: p.Slot, Name: p.Name, Team: p.Team, Colors: p.Colors, Takes: map[string]int{},
+			Health: p.Health, Armor: p.Armor, ArmorType: p.ArmorType, Alive: p.Alive, items: p.items,
+			RL: p.RL, LG: p.LG, Rockets: p.Rockets, Cells: p.Cells, spectator: p.spectator, Eff: p.Eff}
+	}
+	s.feed = nil
+	s.fights = map[[2]int]*fight{}
+}
+
+// status: the serverinfo "status" key, "N min left" while a match runs. joining a stream
+// mid-match it is the only clock there is
+func (s *State) status(value string, ms int32) {
+	if !strings.HasSuffix(value, " min left") {
+		return
+	}
+	n, ok := atoi(strings.TrimSuffix(value, " min left"))
+	if !ok {
+		return
+	}
+	tl, _ := atoi(s.info["timelimit"])
+	switch {
+	case !s.started:
+		// somewhere inside minute (tl - n); take its middle
+		s.started, s.approxStart = true, true
+		s.startMs = ms - int32(tl-n)*60_000 - 30_000
+	case s.approxStart && n < s.minLeft:
+		// the minute ticked over: exactly tl - n minutes played
+		s.startMs = ms - int32(tl-n)*60_000
+		s.approxStart = false
+	}
+	s.minLeft = n
 }
 
 func (s *State) stat(e *events.StatUpdateEvent) {

@@ -4,6 +4,7 @@
 //	deepfrag-live replay [-speed 1] <demo.mvd[.gz]>   a finished demo at match speed (testing)
 //	deepfrag-live tail   <demo.mvd>                   a demo mvdsv is still recording
 //	deepfrag-live watch  <ktx/demos dir>              every demo being recorded there (see watch.go)
+//	deepfrag-live serve  -                            GET /timeline/{sha256}: a hub demo, state per second
 //
 // replay and tail serve GET /state (JSON) and GET /events (server-sent events, one
 // snapshot a second) on -listen.
@@ -58,6 +59,10 @@ func main() {
 		check(run(ctx, f, st, nil, 0))
 		out, _ := json.MarshalIndent(st.Snapshot(), "", "  ")
 		fmt.Println(string(out))
+	case "qtvprobe":
+		check(runQTVProbe(ctx, path, 30*time.Second))
+	case "serve":
+		runServe(ctx, *listen)
 	case "watch":
 		runWatch(ctx, path, *listen, *idle)
 	case "replay", "tail":
