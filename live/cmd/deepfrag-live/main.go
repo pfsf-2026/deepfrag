@@ -3,6 +3,7 @@
 //	deepfrag-live dump   <demo.mvd[.gz]>             whole demo, print the final state
 //	deepfrag-live replay [-speed 1] <demo.mvd[.gz]>   a finished demo at match speed (testing)
 //	deepfrag-live tail   <demo.mvd>                   a demo mvdsv is still recording
+//	deepfrag-live watch  <ktx/demos dir>              every demo being recorded there (see watch.go)
 //
 // replay and tail serve GET /state (JSON) and GET /events (server-sent events, one
 // snapshot a second) on -listen.
@@ -57,6 +58,8 @@ func main() {
 		check(run(ctx, f, st, nil, 0))
 		out, _ := json.MarshalIndent(st.Snapshot(), "", "  ")
 		fmt.Println(string(out))
+	case "watch":
+		runWatch(ctx, path, *listen, *idle)
 	case "replay", "tail":
 		var r io.Reader
 		if cmd == "replay" {
@@ -86,7 +89,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: deepfrag-live dump|replay|tail [-listen :8090] [-speed 1] <demo.mvd[.gz]>")
+	fmt.Fprintln(os.Stderr, "usage: deepfrag-live dump|replay|tail|watch [-listen :8090] [-speed 1] [-idle 90s] <demo.mvd[.gz] | demos dir>")
 	os.Exit(2)
 }
 
@@ -180,15 +183,25 @@ func (h *hub) publish(_ match.Status, final bool) {
 
 func serve(addr string, h *hub) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /state", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /state", h.serveState)
+	mux.HandleFunc("GET /events", h.serveEvents)
+	log.Printf("serving /state and /events on %s", addr)
+	log.Fatal(http.ListenAndServe(addr, mux))
+}
+
+func (h *hub) serveState(w http.ResponseWriter, r *http.Request) {
+	{
 		h.mu.Lock()
 		data, _ := json.Marshal(h.last)
 		h.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Write(data)
-	})
-	mux.HandleFunc("GET /events", func(w http.ResponseWriter, r *http.Request) {
+	}
+}
+
+func (h *hub) serveEvents(w http.ResponseWriter, r *http.Request) {
+	{
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -223,9 +236,7 @@ func serve(addr string, h *hub) {
 				flusher.Flush()
 			}
 		}
-	})
-	log.Printf("serving /state and /events on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	}
 }
 
 var _ events.Source = (*mvdsource.Source)(nil)

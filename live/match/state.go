@@ -120,17 +120,17 @@ type fight struct {
 }
 
 type State struct {
-	nowMs     int32
-	startMs   int32
-	started   bool
-	ended     bool
-	info      map[string]string
-	mapFile   string
-	players   map[int]*Player
-	items     map[int]*Item
-	feed      []Kill
-	lastHit   map[int]hit
-	fights    map[[2]int]*fight // keyed by (lower slot, higher slot)
+	nowMs   int32
+	startMs int32
+	started bool
+	ended   bool
+	info    map[string]string
+	mapFile string
+	players map[int]*Player
+	items   map[int]*Item
+	feed    []Kill
+	lastHit map[int]hit
+	fights  map[[2]int]*fight // keyed by (lower slot, higher slot)
 }
 
 func New() *State {

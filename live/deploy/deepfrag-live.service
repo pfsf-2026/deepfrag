@@ -1,0 +1,20 @@
+# deepfrag-live on a game box: follows the demos mvdsv records and serves the live match
+# state. Reads ktx/demos only; never touches nquakesv. Listens on localhost until a public
+# route is chosen.
+[Unit]
+Description=DeepFrag live match state
+After=network.target
+
+[Service]
+User=qw
+Group=qw
+ExecStart=/opt/deepfrag-live/deepfrag-live watch -listen 127.0.0.1:28600 /opt/qw/nquakesv/ktx/demos
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
