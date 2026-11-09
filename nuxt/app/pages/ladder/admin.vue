@@ -517,6 +517,9 @@ useHead({ title: 'KOTH Admin · DeepFrag' })
             </div>
           </section>
         </template>
+
+        <!-- Server join log: renders only for the owner (the API 403s everyone else) -->
+        <PlayerJoinLog />
       </template>
     </ClientOnly>
 

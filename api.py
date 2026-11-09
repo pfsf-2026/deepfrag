@@ -10952,6 +10952,11 @@ from vote import router as _vote_router  # noqa: E402
 app.include_router(_vote_router)
 
 
+# ── Server join log (owner only: IPs and nicks of everyone joining our servers) — see player_log.py
+from player_log import router as _player_log_router  # noqa: E402
+app.include_router(_player_log_router)
+
+
 # ── Game Report (2026-10-17, Peter) ──────────────────────────────────────────
 # A player's last games on the coaching page, each with a "Game Report": the game's
 # key moments for that player (highlights, lowlights, 2-minute blocks), hub deep links
