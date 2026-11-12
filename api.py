@@ -1221,7 +1221,7 @@ def _ladder_tick_inner(cur):
     # team unconditionally was wrong (2026-07-15 cucked/SD confusion). Forfeit
     # is admin-decided since 2026-06-24, so say "risk", not "auto-forfeit".
     cur.execute("""SELECT c.id, c.ladder_id, c.challenger_id, c.challenged_id, c.deadline, c.proposed,
-                          ca.name AS a, cd.name AS b
+                          c.proposed_by, ca.name AS a, cd.name AS b
                    FROM ladder_challenges c
                    JOIN ladder_teams ca ON ca.id=c.challenger_id
                    JOIN ladder_teams cd ON cd.id=c.challenged_id
@@ -1233,10 +1233,18 @@ def _ladder_tick_inner(cur):
             dl = r["deadline"].astimezone(timezone.utc) if r["deadline"] else None
             left = f"<t:{int(dl.timestamp())}:R>" if dl else "soon"
             cl, cd = _team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"])
-            if not (r["proposed"] or []):
+            offered = r["proposed"] or []
+            # The side that did NOT post the offer on the table is the one to pick
+            # (2026-11-11: this always named the challenged side, even for its own offer).
+            by_cl = r.get("proposed_by") != r["challenged_id"]
+            poster, picker = (cl, cd) if by_cl else (cd, cl)
+            if not offered:
                 msg = f"⏳ {cl} vs {cd}: no times posted yet — either {notify.unit()} can post them. Deadline {left}."
+            elif not any(_is_future_slot(s) for s in offered):
+                msg = (f"⏳ {cl} vs {cd}: every time {notify._name(poster)} offered has passed — "
+                       f"{notify._name(picker)}, post new times. Deadline {left}.")
             else:
-                msg = (f"⏳ {cd}: pick one of {notify._name(cl)}'s offered times — deadline {left}, "
+                msg = (f"⏳ {picker}: pick one of {notify._name(poster)}'s offered times — deadline {left}, "
                        f"or risk a forfeit.")
             notify.send(content=msg)
         except Exception:
@@ -7098,7 +7106,8 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
         # 2026-10-13: only an admin may issue a challenge already scheduled. For a player, "the time we
         # agreed on" is the opening offer (one slot); the other side confirms it with a pick. A time is
         # agreed only when the side that did not offer it picks it (bogojoker vs aardappel, 2026-10-09).
-        agreed_offer = agreed_dt is not None and not user.get("is_admin")
+        plays_in_it = bool(cid) and (cid in members or cid in (chd_t.get("members") or []))
+        agreed_offer = agreed_dt is not None and (plays_in_it or not user.get("is_admin"))
         if agreed_offer:
             agreed_dt = None
         clean = sorted({str(s) for s in (slots or []) if s and _is_future_slot(s)})[:200]
@@ -7266,6 +7275,30 @@ def _user_on_team(cur, user, team_id):
     return bool(row and cid in (row["members"] or []))
 
 
+def _player_side(cur, user, ch):
+    """The challenge side (challenger_id or challenged_id) the user PLAYS on, else None."""
+    cid = (user or {}).get("canonical_id")
+    if not cid:
+        return None
+    cur.execute("SELECT id, members FROM ladder_teams WHERE id = ANY(%s)",
+                ([ch["challenger_id"], ch["challenged_id"]],))
+    for r in cur.fetchall():
+        if cid in (r["members"] or []):
+            return r["id"]
+    return None
+
+
+def _acts_for(cur, user, team_id, ch):
+    """May this user act as `team_id` in challenge `ch`? A player in the match acts only as
+    their own side, admin or not (2026-11-11: an admin playing the match posted times in
+    the opponent's turn, under the opponent's name). The admin override is for admins
+    who are not playing in it."""
+    side = _player_side(cur, user, ch)
+    if side is not None:
+        return side == team_id
+    return bool((user or {}).get("is_admin"))
+
+
 def _mentions(cur, *team_ids):
     """Build a Discord @-mention string for the linked players on the given
     team(s). Members are canonical_ids → users.discord_id. Empty if none linked."""
@@ -7422,26 +7455,31 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
             # actual team (real membership beats the admin flag, so an admin who
             # plays on one of the teams posts as their own team; pure-admin
             # fallback: challenger, the pre-2026-07-15 behavior).
-            cid = user.get("canonical_id")
-            cur.execute("SELECT id, members FROM ladder_teams WHERE id = ANY(%s)",
-                        ([ch["challenger_id"], ch["challenged_id"]],))
-            membership = {r["id"]: cid in (r["members"] or []) for r in cur.fetchall()} if cid else {}
-            if membership.get(ch["challenger_id"]):
+            turn = _player_side(cur, user, ch)
+            if turn is None:
+                if not user.get("is_admin"):
+                    raise HTTPException(403, "only the two players in this match may suggest times" if _duel() else "only players on one of the two teams may suggest times")
                 turn = ch["challenger_id"]
-            elif membership.get(ch["challenged_id"]):
-                turn = ch["challenged_id"]
-            elif user.get("is_admin"):
-                turn = ch["challenger_id"]
-            else:
-                raise HTTPException(403, "only the two players in this match may suggest times" if _duel() else "only players on one of the two teams may suggest times")
-        elif not _user_on_team(cur, user, turn):
+        elif not _acts_for(cur, user, turn, ch):
             raise HTTPException(403, "it's not your turn to suggest times" if _duel() else "it's not your team's turn to suggest times")
-        clean = sorted(clean)   # chronological in the Discord message + pick list
+        # Only future times, once each, in order (chronological in the Discord message + pick
+        # list). 2026-11-11 (Cronus vs BLooD): the scheduler re-sent the old offer's slots,
+        # three days past, and they went out to Discord as "new times".
+        clean = sorted({t for t in clean if _is_future_slot(t)})
+        if not clean:
+            raise HTTPException(400, "all those times are already in the past — pick times still ahead")
         if ch.get("deadline"):   # the match must be played inside the window (2026-09-28 rule)
             dl = ch["deadline"]
-            clean = [t for t in clean if datetime.fromisoformat(t.replace("Z", "+00:00")) <= dl]
-            if not clean:
-                raise HTTPException(400, f"all those times fall after this challenge's play-by deadline ({dl.astimezone(timezone.utc).strftime('%b %d %H:%M')} UTC)")
+            late = [t for t in clean if datetime.fromisoformat(t.replace("Z", "+00:00")) > dl]
+            if late:
+                # Refuse rather than quietly drop them: a dropped time the poster thinks they
+                # offered is how BLooD's Friday 11pm vanished (2026-11-11).
+                import notify
+                raise HTTPException(400, f"{len(late)} of those times {'is' if len(late) == 1 else 'are'} after this "
+                                         f"challenge's play-by deadline ({notify.fmt_et(dl.isoformat())}) — pick earlier times, "
+                                         "or ask an admin for an extension")
+        if ch.get("proposed") and clean == sorted(ch["proposed"]):
+            raise HTTPException(400, "those are the times already offered to you — pick one of them instead")
         cur.execute("""UPDATE ladder_challenges
                        SET proposed=%s, proposed_by=%s, proposed_at=now(),
                            proposal_log = COALESCE(proposal_log, '[]'::jsonb) || %s::jsonb
@@ -7497,9 +7535,12 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
         # the turn team — just needs ONE player to pick one slot and the match
         # is scheduled immediately (no per-player overlap). In the normal flow
         # the challenger offers and the challenged team is the turn team, so the
-        # onus lands on the challenged team as intended. Admin always allowed.
+        # onus lands on the challenged team as intended. An admin not playing in it may
+        # always pick; one who is playing picks only in their own turn (never their own offer).
         turn = _turn_team(ch)
-        if not (user.get("is_admin") or (turn is not None and _user_on_team(cur, user, turn))):
+        side = _player_side(cur, user, ch)
+        allowed = (side == turn) if side is not None else bool(user.get("is_admin"))
+        if not (turn is not None and allowed):
             raise HTTPException(403, f"it's the other {_unit()}'s turn to pick one of the offered times")
         if slot not in (ch["proposed"] or []):
             raise HTTPException(400, "pick one of the proposed slots")
@@ -7547,7 +7588,7 @@ def ladder_challenge_my_picks(challenge_id: int, authorization: str | None = Hea
         proposed = ch["proposed"] or []
         if not proposed:
             raise HTTPException(400, "no times have been proposed yet")
-        if not _user_on_team(cur, user, ch["challenged_id"]):
+        if not _acts_for(cur, user, ch["challenged_id"], ch):
             raise HTTPException(403, "only the challenged team's players pick their times here")
         # A time is agreed only when the side that did NOT offer it picks it. If the slots on the
         # table are the challenged team's own counter-offer, picking them here would schedule the
@@ -7620,8 +7661,8 @@ def ladder_challenge_withdraw(challenge_id: int, authorization: str | None = Hea
                                      "ask an admin to cancel it")
         # Only the challenger's roster (or an admin) may withdraw. The challenged
         # team is never allowed to — they can only play it or let it expire.
-        if not _user_on_team(cur, user, ch["challenger_id"]):
-            if _user_on_team(cur, user, ch["challenged_id"]):
+        if not _acts_for(cur, user, ch["challenger_id"], ch):
+            if _player_side(cur, user, ch) == ch["challenged_id"]:
                 raise HTTPException(403, f"only the challenging {_unit()} can withdraw a challenge")
             raise HTTPException(403, "only the challenger can withdraw this" if _duel() else "you must be on the challenging team to withdraw this")
         cur.execute("""UPDATE ladder_challenges SET status='cancelled', resolved_at=now()
@@ -7697,10 +7738,11 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
             mover_id = (ch["challenger_id"] if me and me in (ch["a_members"] or []) else
                         ch["challenged_id"] if me and me in (ch["b_members"] or []) else None)
             mover = ch["a"] if mover_id == ch["challenger_id"] else ch["b"] if mover_id == ch["challenged_id"] else "an admin"
-            if not (user or {}).get("is_admin"):
+            if mover_id is not None or not (user or {}).get("is_admin"):
                 # 2026-10-13: a player cannot set the time alone (x1bot vs sn). The new time goes on the
                 # table as that side's offer, the old agreed time is off, and the other side picks it
-                # (or offers another). Only an admin sets a time directly.
+                # (or offers another). Only an admin who is not playing in it sets a time directly
+                # (2026-11-11: being an admin doesn't let a player skip the other side's pick).
                 other_id = ch["challenged_id"] if mover_id == ch["challenger_id"] else ch["challenger_id"]
                 cur.execute("""UPDATE ladder_challenges
                                SET agreed_at=NULL, server=%s, status='open', proposed=%s::jsonb, proposed_by=%s, proposed_at=now(),

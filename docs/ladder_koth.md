@@ -111,6 +111,13 @@ match time alone. Three doors closed:
   table as their offer (`status='open'`, `proposed=[t]`, `proposed_by` = mover); the Discord post asks the
   other side to pick it. Only an admin sets a time directly.
 
+2026-11-11 (Cronus vs BLooD): "admin" in these rules means an admin who is **not playing** in the match.
+An admin who plays acts only as their own side (`_acts_for` / `_player_side` in `api.py`, `isMyTurn` in
+`Scheduler.vue`). Offers (`/availability`) keep only future times, refuse any time after the play-by
+deadline (it used to drop them without a word), and refuse re-posting the offer you were given. The
+scheduler grid starts empty (it used to pre-tick the offer on the table, so a counter re-sent those
+slots, past ones included) and greys out times after the deadline. Tests: `tests/test_ladder_scheduling.py`.
+
 The Scheduler's "already agreed" box now reads "Propose that time" and says the other side confirms it.
 
 Offered times that have passed (2026-10-14, BD vs gt picked an 11 PM slot at noon the next day): `/schedule` and

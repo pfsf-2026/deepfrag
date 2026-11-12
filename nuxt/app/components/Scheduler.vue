@@ -1,6 +1,6 @@
 <script setup>
 // Doodle-style match scheduler for one challenge.
-//  - Challenger: check every slot your team can play over the next 7 days → save.
+//  - Challenger: check every slot your team can play inside the ladder's window → save.
 //  - Challenged: pick one of the proposed slots + confirm the server → scheduled.
 // Slots are stored as UTC ISO strings; each side sees them in their LOCAL time.
 const props = defineProps({
@@ -49,8 +49,12 @@ const turnTeamId = computed(() => {
 })
 const onEitherTeam = computed(() =>
   props.userTeamId === c.challenger_id || props.userTeamId === c.challenged_id)
-const isMyTurn = computed(() => isAdmin.value ||
-  (turnTeamId.value === null ? onEitherTeam.value : props.userTeamId === turnTeamId.value))
+// A player in the match acts only in their own turn, admin or not (2026-11-11: an admin
+// playing the match could post in the opponent's turn). The admin override is for admins
+// who are not playing in it — the API enforces the same.
+const isMyTurn = computed(() => onEitherTeam.value
+  ? (turnTeamId.value === null || props.userTeamId === turnTeamId.value)
+  : isAdmin.value)
 const proposerName = computed(() => proposedByLocal.value ? teamName(proposedByLocal.value) : c.challenger)
 
 // ── availability grid — ET-anchored prime time (NA ladder) ─────────────────
@@ -77,13 +81,22 @@ const proposedLocal = ref([...(c.proposed || [])])   // updates in-place after s
 // Only offers still ahead can be picked: an offered time can go by before the other side looks (BD vs gt, 2026-10-14).
 const pickable = computed(() => proposedLocal.value.filter(iso => new Date(iso).getTime() > Date.now()))
 const offersExpired = computed(() => proposedLocal.value.length > 0 && pickable.value.length === 0)
-const selected = ref(new Set(c.proposed || []))
+// Starts empty: the grid is for NEW times. It used to start with the offer already on the
+// table, so a counter-offer silently re-sent those slots — including past ones, which are
+// greyed out and could not be unticked (Cronus vs BLooD, 2026-11-11).
+const selected = ref(new Set())
+// Existing challenge: its deadline. Issuing one: the API sets it to now + the ladder's window.
+const deadlineMs = props.challenge?.deadline ? new Date(props.challenge.deadline).getTime()
+  : (props.createTarget ? Date.now() + (Number(props.createTarget.windowDays) || 7) * 86400e3 : null)
+// Only times still ahead and inside the play-by window can be offered.
+const offerable = (iso) => { const t = new Date(iso).getTime(); return t > Date.now() && (deadlineMs == null || t <= deadlineMs) }
+const toSend = computed(() => [...selected.value].filter(offerable))
 const days = computed(() => {
   const out = []
   // "today" in ET
   const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: ET }))
   // Horizon: the challenge's remaining window (deadline) or, when creating, the ladder's window; never past 7 days.
-  const dl = props.challenge?.deadline ? new Date(props.challenge.deadline).getTime() : null
+  const dl = deadlineMs
   const horizon = dl ? Math.max(1, Math.ceil((dl - Date.now()) / 86400000)) : (Number(props.createTarget?.windowDays) || 7)
   for (let off = 0; off < Math.min(7, horizon); off++) {
     const base = new Date(nowET); base.setDate(nowET.getDate() + off)
@@ -94,7 +107,8 @@ const days = computed(() => {
       const iso = etToUtcISO(y, mo, dd, h, mi)
       // Anchored to ET, labelled in the viewer's zone. Compact: "7pm" / "7:30pm".
       const label = new Date(iso).toLocaleTimeString('en-US', { timeZone: tz.value, hour: 'numeric', minute: '2-digit' }).replace(':00', '').replace(' ', '').toLowerCase()
-      return { iso, label, past: new Date(iso).getTime() < Date.now() }
+      const t = new Date(iso).getTime()
+      return { iso, label, past: t < Date.now(), late: deadlineMs != null && t > deadlineMs }
     })
     // Row date = that evening's first (7pm ET) slot, in the viewer's zone.
     out.push({ label: new Date(slots[0].iso).toLocaleDateString('en-US', { timeZone: tz.value, weekday: 'short', month: 'short', day: 'numeric' }), slots })
@@ -109,7 +123,7 @@ const err = ref('')
 // prior evening) — mirrors the backend's window rule.
 const selectedDays = computed(() => {
   const days = new Set()
-  for (const iso of selected.value) {
+  for (const iso of toSend.value) {
     days.add(new Date(new Date(iso).getTime() - 6 * 3600e3)
       .toLocaleDateString('en-US', { timeZone: 'America/New_York' }))
   }
@@ -194,7 +208,8 @@ async function clearAndRepick() {
   } catch (e) { err.value = e?.data?.detail || e?.message || 'Could not reschedule' } finally { saving.value = false }
 }
 async function saveAvailability() {
-  if (selected.value.size === 0) { err.value = 'Pick at least one slot'; return }
+  const slots = toSend.value   // a slot can pass while the grid is open
+  if (slots.length === 0) { err.value = selected.value.size ? 'Those times have passed — pick later ones' : 'Pick at least one slot'; return }
   saving.value = true; err.value = ''
   try {
     if (createMode.value) {
@@ -203,20 +218,21 @@ async function saveAvailability() {
         body: {
           challenger_id: props.createTarget.challengerId,
           challenged_id: props.createTarget.challengedId,
-          slots: [...selected.value]
+          slots
         }
       })
       emit('done')            // board reload shows the new challenge
       return
     }
     await $fetch(`${base}/api/ladder/challenge/${c.id}/availability`, {
-      method: 'POST', headers: authHeader(), body: { slots: [...selected.value] }
+      method: 'POST', headers: authHeader(), body: { slots }
     })
     // Advance in-place instead of closing. The proposer is whoever's turn it
     // was — for the opening proposal (turn=null, either team) it's MY team,
     // falling back to challenger for a pure admin.
     const justBy = turnTeamId.value ?? (onEitherTeam.value ? props.userTeamId : c.challenger_id)
-    proposedLocal.value = [...selected.value]
+    proposedLocal.value = [...slots].sort()
+    selected.value = new Set()
     proposedByLocal.value = justBy
     countering.value = false
     pick.value = ''
@@ -463,20 +479,22 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
               <div class="day-lbl">{{ day.label }}</div>
               <div class="slots">
                 <button v-for="s in day.slots" :key="s.iso" class="slot"
-                        :class="{ on: selected.has(s.iso), past: s.past }" :disabled="s.past"
-                        :title="freeTitle(s.iso)" @click="toggle(s.iso)">{{ s.label }}<span
+                        :class="{ on: selected.has(s.iso), past: s.past || s.late }" :disabled="s.past || s.late"
+                        :title="s.late ? 'After the play-by deadline' : freeTitle(s.iso)" @click="toggle(s.iso)">{{ s.label }}<span
                         v-if="freeCount(s.iso)" class="fdot" :class="{ allfree: freeCount(s.iso) === overlayMeta.withAvail }">{{ freeCount(s.iso) }}</span></button>
               </div>
             </div>
           </div>
         </div>
         <p v-if="err" class="err">{{ err }}</p>
-        <p v-if="selected.size && selectedDays < 2" class="legend">
-          ⚠️ Times on <strong>one day only</strong> — the challenge gets a short <strong>3-day</strong> window and expires with <strong>no ladder movement</strong> if unplayed. Add a second day for the full 7-day window.
+        <p v-if="deadlineMs" class="muted small">Play by <strong>{{ fmtLocal(new Date(deadlineMs).toISOString()) }}</strong> — later times are greyed out. Need longer? Ask an admin for an extension.</p>
+        <p v-if="toSend.length && selectedDays < 2" class="legend">
+          <template v-if="createMode">⚠️ Times on <strong>one day only</strong> — the challenge gets a short <strong>{{ createTarget?.shortDays || 3 }}-day</strong> window and expires with <strong>no ladder movement</strong> if unplayed. Add a second day for the full {{ createTarget?.windowDays || 7 }}-day window.</template>
+          <template v-else>⚠️ Times on <strong>one day only</strong> — if the match isn't played by the deadline, a one-day offer means the challenge expires with <strong>no ladder movement</strong>.</template>
         </p>
         <div class="m-actions">
           <button class="btn ghost" @click="emit('close')">Cancel</button>
-          <button class="btn" :disabled="saving" @click="saveAvailability">{{ saving ? 'Saving…' : (createMode ? `Issue challenge · ${selected.size} slot${selected.size === 1 ? '' : 's'}` : `Save ${selected.size} slot${selected.size === 1 ? '' : 's'}`) }}</button>
+          <button class="btn" :disabled="saving || !toSend.length" @click="saveAvailability">{{ saving ? 'Saving…' : (createMode ? `Issue challenge · ${toSend.length} slot${toSend.length === 1 ? '' : 's'}` : `Save ${toSend.length} slot${toSend.length === 1 ? '' : 's'}`) }}</button>
         </div>
         </template>
       </template>

@@ -99,7 +99,7 @@ function doChallenge(t) {
     challengerId: myTeam.value.id,
     challengedId: t.id,
     challenger: myTeam.value.name,
-    challenged: t.name, windowDays: windowDays.value }
+    challenged: t.name, windowDays: windowDays.value, shortDays: shortDays.value }
 }
 async function onChallengeCreated() { createTarget.value = null; await load() }
 // "Report match" — self-service for a played bo3 that didn't record.
