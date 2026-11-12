@@ -51,6 +51,10 @@ sane:
     # Evidence: sane silent under own name 07-05..07-28 exactly spanning the run;
     # elite NA fingerprint LG .373 / DDR 1.86 ≈ sane .348/1.70; mu 2297 ≈ sane.
     - messi
+    # 2026-11-12 (Peter): "i am cronus coach and sharticus are both sane"; 2 + 1 blowouts vs cronus
+    # 2026-11-09..11. Merged via the admin merge endpoint (canon_merges) the same day.
+    - i am cronus coach
+    - iamsharticus
 
 grl:
   display: grl
@@ -99,6 +103,7 @@ chris:
     - chris_back
     - chri$       # 2026-08-31 fingerprint: 6 blowout wins vs cronus over two nights
                   #   2024-09-03..05 (all aerowalk), LG 39.2% ≈ chris career 38.6%; chris-morph
+    - non-entitity  # 2026-11-12 (Peter): "the non-entity one is chris" (11-65 vs cronus on aerowalk)
 
 war:
   display: war

@@ -3323,6 +3323,7 @@ def player_profile_full(
                    me.server_hostname, me.player_frags, me.player_deaths,
                    me.lg_acc, me.rl_acc,
                    opp.opponent_name, opp.opponent_frags,
+                   rh.delta AS rating_delta, rh.mu_after AS rating_after,
                    CASE
                        WHEN me.match_mode = '1on1' AND opp.opponent_frags IS NOT NULL THEN
                            CASE
@@ -3333,6 +3334,9 @@ def player_profile_full(
                        ELSE NULL  -- 2on2/4on4 outcome needs team join, skip for now
                    END AS outcome
             FROM me LEFT JOIN opp ON opp.match_id = me.match_id
+            -- The overall mode rating's move for this game (map='' row; unrated games have none).
+            LEFT JOIN rating_history rh ON rh.canonical_id = %(cid)s AND rh.mode = me.match_mode
+                                       AND rh.map = '' AND rh.match_id = me.match_id
             ORDER BY me.match_date DESC
         """, {"cid": canonical_id})
         recent_matches = [dict(r) for r in cur.fetchall()]

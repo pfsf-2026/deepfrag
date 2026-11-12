@@ -393,7 +393,7 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
         <table class="rtab">
           <thead><tr>
             <th>When</th><th>Mode</th><th>DMM</th><th>Map</th><th>Server</th><th>Result</th>
-            <th>Opp</th><th class="num">F</th><th class="num">Opp F</th><th class="num">LG%</th><th class="num">RL%</th>
+            <th>Opp</th><th class="num">F</th><th class="num">Opp F</th><th class="num">LG%</th><th class="num">RL%</th><th class="num" title="Change in your rating for this mode after the game">Rating</th>
           </tr></thead>
           <tbody>
             <tr v-for="(m, i) in recent" :key="i">
@@ -408,8 +408,12 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
               <td class="num">{{ m.opponent_frags ?? '—' }}</td>
               <td class="num">{{ fmtPct(m.lg_acc) }}</td>
               <td class="num">{{ fmtPct(m.rl_acc) }}</td>
+              <td class="num" :title="m.rating_after != null ? 'Rating after: ' + Math.round(m.rating_after) : 'Not rated'">
+                <span v-if="m.rating_delta != null" :class="m.rating_delta >= 0 ? 'rd-up' : 'rd-down'">{{ m.rating_delta >= 0 ? '+' : '−' }}{{ Math.abs(m.rating_delta).toFixed(1) }}</span>
+                <span v-else class="muted">—</span>
+              </td>
             </tr>
-            <tr v-if="!recent.length"><td colspan="11" class="muted" style="text-align:center;padding:20px">No recent matches.</td></tr>
+            <tr v-if="!recent.length"><td colspan="12" class="muted" style="text-align:center;padding:20px">No recent matches.</td></tr>
           </tbody>
         </table>
       </div>
@@ -614,6 +618,8 @@ useHead({ title: () => `${id.value} · ${tab.value} · DeepFrag` })
 .result-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
 .result-pill.win { background: rgba(255,122,26,0.16); color: #ffb347; }
 .result-pill.loss { background: rgba(255,93,108,0.16); color: #ff5d6c; }
+.rd-up { color: #4ade80; }
+.rd-down { color: #ff5d6c; }
 .result-pill.draw { background: rgba(245,158,11,0.16); color: #f59e0b; }
 .placeholder { padding: 50px; text-align: center; color: var(--fg-3); }
 .grid5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
