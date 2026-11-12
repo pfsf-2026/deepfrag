@@ -3873,8 +3873,9 @@ def deep_analyze_match(
 
 @app.get("/api/players/{canonical_id}/config")
 def get_player_config(canonical_id: str, response: Response):
-    """A player's config profile (sens/mouse/binds/geo). Public read."""
-    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=3600"
+    """A player's config profile (sens/mouse/binds/geo). Public read. No stale-while-revalidate:
+    an edit must show up within a minute, not after an hour of stale copies."""
+    response.headers["Cache-Control"] = "public, max-age=60"
     with pg() as conn:
         cur = conn.cursor()
         cur.execute("""

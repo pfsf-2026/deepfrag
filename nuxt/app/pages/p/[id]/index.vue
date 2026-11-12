@@ -108,16 +108,17 @@ const canEditConfig = computed(() => {
   return !!u.is_admin || String(u.canonical_id || '').toLowerCase() === String(id.value || '').toLowerCase()
 })
 
-async function loadConfig() {
+async function loadConfig(fresh = false) {
   const url = df.configUrl(id.value)
   if (!url) { config.value = null; configLoading.value = false; return }
   configLoading.value = true
   try {
-    const r = await fetch(url)
+    // After a save, skip the browser/edge cache (the GET is cacheable) or the old value comes back.
+    const r = fresh ? await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' }) : await fetch(url)
     config.value = r.ok ? await r.json() : null
   } catch { config.value = null } finally { configLoading.value = false }
 }
-onMounted(loadConfig)
+onMounted(() => loadConfig())
 // Time card: hours in matches since 2024 (/api/players/{id}/playtime), days in the viewer's zone.
 const playtime = ref(null)
 async function loadPlaytime() {
@@ -129,7 +130,7 @@ async function loadPlaytime() {
 }
 onMounted(loadPlaytime)
 watch(id, loadPlaytime)
-watch(id, loadConfig)
+watch(id, () => loadConfig())
 
 // Field groups for display + editing. label → config key.
 const configGroups = [
@@ -185,7 +186,8 @@ async function saveConfig() {
     if (r.status === 403) throw new Error('You can only edit your own config')
     if (!r.ok) throw new Error(`Save failed (${r.status})`)
     configEditing.value = false
-    await loadConfig()
+    if (config.value) config.value = { ...config.value, config: clean, nationality: nationality || config.value.nationality }
+    await loadConfig(true)
   } catch (e) { configSaveErr.value = String(e.message || e) } finally { configSaving.value = false }
 }
 
