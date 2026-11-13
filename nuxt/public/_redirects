@@ -33,3 +33,7 @@
 /coach/player/*   /coach/player/_fallback/   200
 # public Game Report share links: same SPA shell, the router takes the URL
 /r/*              /coach/player/_fallback/   200
+# Cockpit (/cockpit, /cockpit/{id}) and the player-card overlay: SPA shells, the router takes the URL.
+/cockpit          /cockpit/_fallback/          200
+/cockpit/*        /cockpit/_fallback/          200
+/overlay/player/* /overlay/player/_fallback/   200

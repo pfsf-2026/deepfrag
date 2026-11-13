@@ -1,7 +1,6 @@
 <script setup>
 // Stream overlay: one player's card (Peter, 2026-11-13 — casting from the office PC).
 // Transparent page for an OBS browser source; ?mode=1on1|2on2|4on4 (default 1on1).
-definePageMeta({ ssr: false })
 useHead({ title: 'Player card · DeepFrag' })
 
 const route = useRoute()

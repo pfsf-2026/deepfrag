@@ -4,7 +4,6 @@
 // our servers (tap to connect), open ladder challenges and the KovaaK's prep block.
 // No live opponent info here: this page is meant to stay up while the owner plays.
 // /cockpit → the signed-in player; /cockpit/{id} → anyone.
-definePageMeta({ ssr: false })
 useHead({ title: 'Cockpit · DeepFrag' })
 
 const route = useRoute()

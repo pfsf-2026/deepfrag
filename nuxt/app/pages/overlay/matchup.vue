@@ -2,7 +2,6 @@
 // Stream overlay: matchup bar for two players (Peter, 2026-11-13 — casting from the office PC).
 // /overlay/matchup?a=cronus&b=sane&mode=1on1. Transparent page for an OBS browser source.
 // The win chance is /api/h2h's overall prediction (rating + head-to-head blend).
-definePageMeta({ ssr: false })
 useHead({ title: 'Matchup · DeepFrag' })
 
 const route = useRoute()

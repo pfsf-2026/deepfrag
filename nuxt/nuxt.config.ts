@@ -82,6 +82,12 @@ export default defineNuxtConfig({
     '/coach/player/_fallback': { prerender: true, ssr: false },
     // public Game Report share links (/r/{gid}/{player}): SPA-only, served by the coach shell via _redirects
     '/r/**': { prerender: false, ssr: false },
+    // Cockpit (second screen) and OBS overlays: SPA-only, served by prerendered shells via _redirects.
+    '/cockpit/**': { prerender: false, ssr: false },
+    '/cockpit/_fallback': { prerender: true, ssr: false },
+    '/overlay/**': { prerender: false, ssr: false },
+    '/overlay/player/_fallback': { prerender: true, ssr: false },
+    '/overlay/matchup': { prerender: true, ssr: false },
     '/glossary': { prerender: true },
     // per-map quad playbooks (static content + corpus numbers baked into useQuadPlaybook.ts)
     '/coach/quad/**': { prerender: true },
