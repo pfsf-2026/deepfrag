@@ -79,6 +79,9 @@ ALTER TABLE servers ADD COLUMN IF NOT EXISTS last_seen_live     TEXT;
 -- JSON array of clients on this port right now: [{name, frags, team, ping, is_bot}, ...]
 -- Powers the per-port expansion on /servers when a multi-port host is opened.
 ALTER TABLE servers ADD COLUMN IF NOT EXISTS current_players_json TEXT;
+-- sv_antilag as the server reports it ('0'/'1'/'2', NULL when not published). Shown in the
+-- /servers copy-address list so players can pick antilag 1 or 2 ports (Peter, 2026-11-13).
+ALTER TABLE servers ADD COLUMN IF NOT EXISTS antilag TEXT;
 CREATE INDEX IF NOT EXISTS idx_servers_is_live ON servers(is_live);
 CREATE INDEX IF NOT EXISTS idx_servers_last_seen_live ON servers(last_seen_live);
 """
@@ -191,6 +194,7 @@ def extract_row(s: dict, now: str) -> dict:
         "last_seen_live":   now,
         "resolved_at":      now,
         "players_json":     players_json,
+        "antilag":          settings.get("sv_antilag"),
     }
 
 
@@ -246,13 +250,13 @@ def main():
                 live_address, mvdsv_version, admin, qtv_stream_url, gamedir,
                 current_map, current_mode, current_players, current_specs,
                 max_clients, fraglimit, timelimit, teamplay, deathmatch,
-                qtv_viewer_count, last_seen_live, is_live, current_players_json
+                qtv_viewer_count, last_seen_live, is_live, current_players_json, antilag
             ) VALUES (
                 %(hostname)s, %(ip)s, %(country)s, %(region)s, %(city)s, %(lat)s, %(lon)s, %(resolved_at)s,
                 %(live_address)s, %(mvdsv_version)s, %(admin)s, %(qtv_stream_url)s, %(gamedir)s,
                 %(current_map)s, %(current_mode)s, %(current_players)s, %(current_specs)s,
                 %(max_clients)s, %(fraglimit)s, %(timelimit)s, %(teamplay)s, %(deathmatch)s,
-                %(qtv_viewer_count)s, %(last_seen_live)s, TRUE, %(players_json)s
+                %(qtv_viewer_count)s, %(last_seen_live)s, TRUE, %(players_json)s, %(antilag)s
             )
             ON CONFLICT (hostname) DO UPDATE SET
               ip = COALESCE(EXCLUDED.ip, servers.ip),
@@ -279,7 +283,8 @@ def main():
               last_seen_live = EXCLUDED.last_seen_live,
               is_live = TRUE,
               resolve_error = NULL,
-              current_players_json = EXCLUDED.current_players_json
+              current_players_json = EXCLUDED.current_players_json,
+              antilag = EXCLUDED.antilag
         """, row)
         if cur.statusmessage and cur.statusmessage.startswith("INSERT 0 1"):
             inserts += 1

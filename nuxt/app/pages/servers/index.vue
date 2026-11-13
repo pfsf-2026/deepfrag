@@ -71,6 +71,32 @@ async function ensureDetail(hostname) {
   }
 }
 
+// Copy-address popup (Peter, 2026-11-13): every port on the box, click one to copy it.
+// Grouped by IP server-side, so dm6.uk's separately-named ports all show up together.
+const copyFor = ref(null)           // hostname whose popup is open
+const addrCache = ref({})           // hostname → [{address, name, mode, map, antilag, ...}]
+const copied = ref('')              // address just copied, for the ✓ flash
+async function openCopy(hostname) {
+  copyFor.value = copyFor.value === hostname ? null : hostname
+  if (!copyFor.value || addrCache.value[hostname]) return
+  try {
+    const r = await fetch(`/api/servers/${encodeURIComponent(hostname)}/addresses`)
+    addrCache.value[hostname] = r.ok ? (await r.json()).ports || [] : []
+  } catch { addrCache.value[hostname] = [] }
+}
+async function copyAddr(address) {
+  try { await navigator.clipboard.writeText(address) } catch {
+    const t = document.createElement('textarea'); t.value = address; document.body.appendChild(t)
+    t.select(); document.execCommand('copy'); t.remove()
+  }
+  copied.value = address
+  setTimeout(() => { if (copied.value === address) copied.value = '' }, 1500)
+}
+function closeCopy(e) { if (!e.target.closest?.('.copy-wrap')) copyFor.value = null }
+onMounted(() => document.addEventListener('click', closeCopy))
+onBeforeUnmount(() => document.removeEventListener('click', closeCopy))
+const alLabel = a => a === '1' ? 'AL1' : a === '2' ? 'AL2' : a === '0' ? 'AL off' : ''
+
 function toggleOpen(hostname) {
   openServer.value = openServer.value === hostname ? null : hostname
   if (openServer.value) ensureDetail(openServer.value)
@@ -173,6 +199,22 @@ useHead({ title: 'Servers · DeepFrag' })
                       <span v-if="s.is_live" class="live-pulse" title="Server is online right now">●</span>
                       {{ s.hostname }}
                       <span v-if="s.port_count > 1" class="port-count" :title="`Ports: ${s.ports}`">{{ s.port_count }} ports</span>
+                      <span class="copy-wrap" @click.stop>
+                        <button class="copy-btn" title="Copy a server address" @click="openCopy(s.hostname)">⧉ Copy</button>
+                        <div v-if="copyFor === s.hostname" class="copy-pop">
+                          <div class="copy-head">Click a server to copy its address</div>
+                          <div v-if="!addrCache[s.hostname]" class="copy-empty">Loading…</div>
+                          <div v-else-if="!addrCache[s.hostname].length" class="copy-empty">No address known for this server.</div>
+                          <button v-for="a in addrCache[s.hostname]" :key="a.address" class="copy-row"
+                                  :class="{ off: !a.is_live, done: copied === a.address }" @click="copyAddr(a.address)">
+                            <span class="cr-addr mono">{{ copied === a.address ? '✓ copied' : a.address }}</span>
+                            <span class="cr-name">{{ a.name }}</span>
+                            <span v-if="alLabel(a.antilag)" class="cr-al" :class="'al' + a.antilag">{{ alLabel(a.antilag) }}</span>
+                            <span class="cr-mode mono">{{ a.is_live ? (a.mode || '') : 'offline' }}</span>
+                            <span class="cr-pl mono">{{ a.is_live && a.max_clients ? `${a.players || 0}/${a.max_clients}` : '' }}</span>
+                          </button>
+                        </div>
+                      </span>
                     </div>
                     <div class="server-meta">{{ s.city || '—' }}{{ s.country ? ', ' + s.country : '' }}</div>
                   </div>
@@ -221,6 +263,7 @@ useHead({ title: 'Servers · DeepFrag' })
                             <div class="port-id">
                               <span v-if="p.is_live" class="port-live-dot">●</span>
                               <span class="port-num mono">:{{ p.port }}</span>
+                              <button v-if="p.live_address" class="port-copy" :title="`Copy ${p.live_address}`" @click.stop="copyAddr(p.live_address)">{{ copied === p.live_address ? '✓' : '⧉' }}</button>
                               <span v-if="p.current_mode" class="port-mode mono">{{ p.current_mode }}</span>
                               <span v-if="p.current_map" class="port-map">{{ p.current_map }}</span>
                             </div>
@@ -331,7 +374,7 @@ useHead({ title: 'Servers · DeepFrag' })
 .pill-group button.active { background: var(--accent); color: var(--bg); }
 .count { color: var(--fg-3); font-size: 12px; margin-left: auto; }
 
-.table-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.table-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; } /* no overflow:hidden — it would clip the copy popup */
 table { width: 100%; border-collapse: collapse; }
 thead th { text-align: left; font-size: 10px; font-weight: 600; color: var(--fg-3); letter-spacing: 1px; text-transform: uppercase; padding: 10px 14px; border-bottom: 1px solid var(--border); }
 thead th.num { text-align: right; }
@@ -478,6 +521,31 @@ tr.detail-row td { padding: 0; background: var(--panel-2); }
 .mode-detail { display: flex; flex-direction: column; gap: 8px; }
 .md-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .md-row .md-val { margin-left: auto; font-family: 'JetBrains Mono', monospace; color: var(--fg-2); }
+
+/* Copy-address popup */
+.copy-wrap { position: relative; display: inline-block; }
+.copy-btn { background: var(--panel-3); border: 1px solid var(--border); color: var(--fg-2); font: inherit; font-size: 10px; font-weight: 700;
+            padding: 1px 7px; border-radius: 4px; cursor: pointer; letter-spacing: 0.04em; }
+.copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+.copy-pop { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 440px; max-width: min(560px, 90vw); max-height: 360px; overflow-y: auto;
+            background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.45); padding: 6px; cursor: default; }
+.copy-head { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-3); padding: 4px 8px 6px; font-weight: 700; }
+.copy-empty { font-size: 12px; color: var(--fg-3); padding: 8px; font-weight: 400; }
+.copy-row { display: grid; grid-template-columns: 170px 1fr auto 62px 40px; gap: 8px; align-items: center; width: 100%; text-align: left;
+            background: transparent; border: 0; border-radius: 5px; padding: 6px 8px; color: var(--fg); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.copy-row:hover { background: var(--panel-2); }
+.copy-row.off { opacity: 0.5; }
+.copy-row.done .cr-addr { color: var(--win); }
+.copy-row .cr-addr { color: var(--accent); font-weight: 700; }
+.copy-row .cr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
+.copy-row .cr-mode, .copy-row .cr-pl { color: var(--fg-3); font-size: 11px; text-align: right; }
+.cr-al { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 3px; background: var(--panel-3); color: var(--fg-2); letter-spacing: .04em; }
+.cr-al.al1 { background: rgba(34,197,94,.15); color: var(--win); }
+.cr-al.al2 { background: rgba(255,122,26,.15); color: var(--accent); }
+.mono { font-family: 'JetBrains Mono', monospace; }
+.port-copy { background: transparent; border: 1px solid var(--border); color: var(--fg-3); border-radius: 3px; font-size: 10px; padding: 0 5px; cursor: pointer; line-height: 16px; }
+.port-copy:hover { color: var(--accent); border-color: var(--accent); }
+@media (max-width: 700px) { .copy-pop { min-width: 300px; } .copy-row { grid-template-columns: 1fr auto auto; } .copy-row .cr-name, .copy-row .cr-pl { display: none; } }
 
 .placeholder { padding: 60px; text-align: center; color: var(--fg-3); }
 </style>

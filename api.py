@@ -2020,6 +2020,47 @@ def servers_list(response: Response, region: str = Query("", description="EU/NA/
         return {"count": cur.rowcount, "servers": [dict(r) for r in cur.fetchall()]}
 
 
+@app.get("/api/servers/{host_root:path}/addresses")
+def server_addresses(response: Response, host_root: str):
+    """Every port on the machine(s) behind this server row, for the copy-address popup on
+    /servers (Peter, 2026-11-13). Grouped by IP rather than hostname, because hosts like
+    dm6.uk give each port its own name ("dm6.uk #1 antilag", "#2", ...) and the FFA port
+    on the same box has a different name again."""
+    import name_canon
+    response.headers["Cache-Control"] = "public, max-age=60"
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT split_part(live_address, ':', 1) AS ip FROM servers
+            WHERE split_part(hostname, ':', 1) = %s AND live_address LIKE '%%:%%'
+        """, (host_root,))
+        ips = [r["ip"] for r in cur.fetchall() if r["ip"]]
+        if not ips:
+            return {"hostname": host_root, "ports": []}
+        # to_jsonb(...)->>'antilag' so this works before the sync has added the column.
+        cur.execute("""
+            SELECT DISTINCT ON (s.live_address)
+                   s.hostname, s.live_address, s.is_live, s.current_map, s.current_mode,
+                   s.current_players, s.max_clients, s.last_seen_live,
+                   to_jsonb(s) ->> 'antilag' AS antilag
+            FROM servers s
+            WHERE split_part(s.live_address, ':', 1) = ANY(%s)
+            ORDER BY s.live_address, s.is_live DESC NULLS LAST, s.last_seen_live DESC NULLS LAST
+        """, (ips,))
+        rows = [dict(r) for r in cur.fetchall()]
+
+    def port_of(r):
+        p = r["live_address"].rsplit(":", 1)[-1]
+        return int(p) if p.isdigit() else 0
+    rows.sort(key=lambda r: (not r["is_live"], r["live_address"].rsplit(":", 1)[0], port_of(r)))
+    return {"hostname": host_root, "ports": [{
+        "address": r["live_address"], "port": port_of(r), "name": name_canon.clean_for_display(r["hostname"] or ""),
+        "is_live": bool(r["is_live"]), "map": r["current_map"], "mode": r["current_mode"],
+        "players": r["current_players"], "max_clients": r["max_clients"],
+        "antilag": r["antilag"], "last_seen_live": r["last_seen_live"],
+    } for r in rows]}
+
+
 @app.get("/api/servers/{host_root:path}/detail")
 def server_detail(response: Response, host_root: str):
     """Per-server deep-dive: stats + activity heatmap + top players by matches + by rating.
