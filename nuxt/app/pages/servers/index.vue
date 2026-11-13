@@ -40,13 +40,21 @@ onMounted(() => {
 onBeforeUnmount(() => { if (refreshInterval) clearInterval(refreshInterval) })
 watch([regionFilter, showInactive], loadServers)
 
+// "Ireland" should find ie.qwsrv.com — country is stored as the ISO code (IE).
+let regionNames = null
+function countryName(cc) {
+  if (!cc || cc.length !== 2) return ''
+  try { regionNames ||= new Intl.DisplayNames(['en'], { type: 'region' }); return regionNames.of(cc.toUpperCase()) || '' } catch { return '' }
+}
+
 const filtered = computed(() => {
   const f = filter.value.trim().toLowerCase()
   let list = servers.value
   if (f) {
     list = list.filter(s => (s.hostname || '').toLowerCase().includes(f)
                          || (s.city || '').toLowerCase().includes(f)
-                         || (s.country || '').toLowerCase().includes(f))
+                         || (s.country || '').toLowerCase().includes(f)
+                         || countryName(s.country).toLowerCase().includes(f))
   }
   // Sort
   const sort = sortKey.value
@@ -216,7 +224,7 @@ useHead({ title: 'Servers · DeepFrag' })
                         </div>
                       </span>
                     </div>
-                    <div class="server-meta">{{ s.city || '—' }}{{ s.country ? ', ' + s.country : '' }}</div>
+                    <div class="server-meta">{{ s.city || '—' }}{{ s.country ? ', ' + (countryName(s.country) || s.country) : '' }}</div>
                   </div>
                 </div>
               </td>
