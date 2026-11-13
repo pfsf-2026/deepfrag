@@ -11004,6 +11004,11 @@ from player_log import router as _player_log_router  # noqa: E402
 app.include_router(_player_log_router)
 
 
+# ── Live fleet status for the cockpit page and the Stream Deck plugin — see cockpit.py
+from cockpit import router as _cockpit_router  # noqa: E402
+app.include_router(_cockpit_router)
+
+
 # ── Game Report (2026-10-17, Peter) ──────────────────────────────────────────
 # A player's last games on the coaching page, each with a "Game Report": the game's
 # key moments for that player (highlights, lowlights, 2-minute blocks), hub deep links

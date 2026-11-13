@@ -1,5 +1,11 @@
 <script setup>
 const { user, loggedIn, ready, fetchMe, login, logout } = useAuth()
+// Cockpit and stream-overlay pages are full-screen panels: no top bar, no floating button;
+// overlays also get a transparent page so OBS can key them over the game.
+const route = useRoute()
+const bare = computed(() => /^\/(cockpit|overlay)(\/|$)/.test(route.path))
+const overlay = computed(() => /^\/overlay(\/|$)/.test(route.path))
+useHead({ htmlAttrs: { class: computed(() => overlay.value ? 'dark overlay-page' : 'dark') } })
 
 // Canonical home is app.deepfrag.gg (2026-08-30 cutover). pages.dev stays the
 // origin and keeps serving as a fallback, but visitors get moved to the brand
@@ -54,7 +60,7 @@ useSeoMeta({
 
 <template>
   <UApp>
-    <header class="topbar">
+    <header v-if="!bare" class="topbar">
       <a href="https://deepfrag.gg" class="brand" title="DeepFrag home">
         <img src="/favicon.svg" alt="" class="brand-mark">
         <span class="brand-word">Deep<em>Frag</em></span>
@@ -103,7 +109,7 @@ useSeoMeta({
     </ClientOnly>
 
     <!-- Report a problem — global, subtle floating button -->
-    <button class="report-fab" title="Report a problem" @click="showSupport = true">
+    <button v-if="!bare" class="report-fab" title="Report a problem" @click="showSupport = true">
       <span class="q">?</span><span class="lbl">Report a problem</span>
     </button>
     <ClientOnly>
@@ -131,6 +137,7 @@ useSeoMeta({
   --draw: #f59e0b;
 }
 html, body, #__nuxt { background: var(--bg); color: var(--fg); margin: 0; }
+html.overlay-page, html.overlay-page body, html.overlay-page #__nuxt { background: transparent; }
 body {
   font-family: 'Inter', -apple-system, system-ui, sans-serif;
   font-size: 14px; line-height: 1.55;
