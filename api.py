@@ -4879,6 +4879,36 @@ def admin_ladder_team_remove(team_id: int, authorization: str | None = Header(de
     return {"removed": team_id, "name": name, "was_rung": rung, "cancelled_challenges": cancelled}
 
 
+@app.post("/api/admin/ladder/team/{team_id}/restore")
+def admin_ladder_team_restore(team_id: int, authorization: str | None = Header(default=None),
+                              quiet: bool = Body(default=False, embed=True)):
+    """Put a removed (withdrawn) or retired (archived) team back on the ladder at the
+    bottom rung, same row so its history comes with it (Peter, 2026-11-14: blaze).
+    It can challenge straight away like any new entrant. Ladder-admin."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        cur.execute("SELECT id, ladder_id, name, status FROM ladder_teams WHERE id=%s", (team_id,))
+        t = cur.fetchone()
+        _notify_route(cur, team_id=team_id)
+        if not t:
+            raise HTTPException(404, "team not found")
+        if t["status"] not in ("withdrawn", "archived"):
+            raise HTTPException(409, f"team is {t['status']}, not removed or retired")
+        cur.execute("UPDATE ladder_teams SET status='active', active=TRUE WHERE id=%s", (team_id,))
+        rung = _ladder.place_new_team(cur, t["ladder_id"], team_id)
+        conn.commit()
+    if not quiet:
+        try:
+            import notify
+            notify.send(content=f"↩️ **{t['name']}** is back on the KOTH ladder at rung {rung}.")
+        except Exception:
+            pass
+    return {"team_id": team_id, "name": t["name"], "status": "active", "rung": rung}
+
+
 @app.get("/api/ladder/team/{team_id}")
 def ladder_team_get(team_id: int):
     """Single team (enriched members + tag + has_logo + status). Public — used to
