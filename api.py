@@ -8816,6 +8816,40 @@ def admin_ladder_challenge_walkover(challenge_id: int, authorization: str | None
     return admin_ladder_result(challenge_id, authorization, winner_id=winner_id, maps=[], score_a=None, score_b=None, walkover=True)
 
 
+@app.post("/api/admin/ladder/{ladder_id}/walkover")
+def admin_ladder_direct_walkover(ladder_id: int, authorization: str | None = Header(default=None),
+                                 challenger_id: int = Body(..., embed=True),
+                                 challenged_id: int = Body(..., embed=True)):
+    """Walkover with no challenge on file: the defender conceded in chat (Peter,
+    2026-11-15: Bread waved blaze through). Writes the challenge as already agreed,
+    without the challenge announcement, then records the walkover for the challenger
+    through /result, which applies the climb and posts the result. Ladder-admin."""
+    import ladder as _ladder
+    _check_ladder_admin(authorization)
+    with pg() as conn:
+        cur = conn.cursor()
+        _ladder.ensure_schema(cur)
+        chr_t, chd_t = _team_row(cur, ladder_id, challenger_id), _team_row(cur, ladder_id, challenged_id)
+        if not chr_t or not chd_t or chr_t["rung"] is None or chd_t["rung"] is None:
+            raise HTTPException(404, "both must be placed on this ladder")
+        gap = chr_t["rung"] - chd_t["rung"]
+        if gap < 1:
+            raise HTTPException(409, "the challenger must be below the defender")
+        cur.execute("""SELECT 1 FROM ladder_challenges WHERE ladder_id=%s AND status IN ('open','scheduled')
+                       AND (challenger_id IN (%s,%s) OR challenged_id IN (%s,%s))""",
+                    (ladder_id, challenger_id, challenged_id, challenger_id, challenged_id))
+        if cur.fetchone():
+            raise HTTPException(409, "one of them already has an open challenge")
+        now = datetime.now(timezone.utc)
+        cur.execute("""INSERT INTO ladder_challenges (ladder_id, challenger_id, challenged_id, rungs_up, deadline,
+                                                      proposed, proposed_by, proposed_at, proposal_log, status, agreed_at)
+                       VALUES (%s,%s,%s,%s,%s,'[]'::jsonb,%s, now(), '[]'::jsonb, 'scheduled', %s) RETURNING id""",
+                    (ladder_id, challenger_id, challenged_id, gap, now, challenger_id, now))
+        chid = cur.fetchone()["id"]
+        conn.commit()
+    return admin_ladder_result(chid, authorization, winner_id=challenger_id, maps=[], score_a=None, score_b=None, walkover=True)
+
+
 @app.post("/api/admin/ladder/challenge/{challenge_id}/unschedule")
 def admin_ladder_challenge_unschedule(challenge_id: int, authorization: str | None = Header(default=None),
                                       reason: str | None = Body(default=None, embed=True)):
