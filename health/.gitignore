@@ -1,0 +1,12 @@
+# local secrets and data
+.env
+.env.*
+!.env.example
+data/
+api/data/
+# python
+__pycache__/
+.venv/
+.pytest_cache/
+# the parent repo ignores CLAUDE.md globally; this project's is meant to be committed
+!CLAUDE.md
