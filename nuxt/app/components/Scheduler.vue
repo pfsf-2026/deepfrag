@@ -57,11 +57,11 @@ const isMyTurn = computed(() => onEitherTeam.value
   : isAdmin.value)
 const proposerName = computed(() => proposedByLocal.value ? teamName(proposedByLocal.value) : c.challenger)
 
-// ── availability grid — ET-anchored prime time (NA ladder) ─────────────────
-// 7pm → 2am ET, hourly. The 12/1/2am slots belong to the SAME evening (they roll
-// to the next ET calendar day). Slots stored as UTC ISO; labelled in ET.
-const HOURS_ET = [19, 20, 21, 22, 23, 0, 1, 2]
-// 30-min granularity: each prime hour split into :00 and :30 (16 slots/evening).
+// ── availability grid — ET-anchored, all 24 hours (Peter, 2026-11-16: any time) ─
+// A day row runs 7am → 6:30am ET, so the after-midnight slots stay with the evening
+// before (they roll to the next ET calendar day). Stored as UTC ISO; labelled in the viewer's zone.
+const HOURS_ET = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6]
+// 30-min granularity: each hour split into :00 and :30 (48 slots a day).
 const SLOTS_ET = HOURS_ET.flatMap((h) => [h, h + 0.5])
 const ET = 'America/New_York'
 // UTC instant for wall-clock h:00 ET on (y, mo, d), DST-correct AND independent
@@ -103,19 +103,92 @@ const days = computed(() => {
     const y = base.getFullYear(), mo = base.getMonth(), d = base.getDate()
     const slots = SLOTS_ET.map((hf) => {
       const h = Math.floor(hf), mi = (hf - h) * 60
-      const dd = h < 7 ? d + 1 : d   // 12/1/2am ET roll to next ET day
+      const dd = h < 7 ? d + 1 : d   // midnight–6:30am ET roll to next ET day
       const iso = etToUtcISO(y, mo, dd, h, mi)
       // Anchored to ET, labelled in the viewer's zone. Compact: "7pm" / "7:30pm".
       const label = new Date(iso).toLocaleTimeString('en-US', { timeZone: tz.value, hour: 'numeric', minute: '2-digit' }).replace(':00', '').replace(' ', '').toLowerCase()
       const t = new Date(iso).getTime()
       return { iso, label, past: t < Date.now(), late: deadlineMs != null && t > deadlineMs }
     })
-    // Row date = that evening's first (7pm ET) slot, in the viewer's zone.
+    // Row date = the day's first (7am ET) slot, in the viewer's zone.
     out.push({ label: new Date(slots[0].iso).toLocaleDateString('en-US', { timeZone: tz.value, weekday: 'short', month: 'short', day: 'numeric' }), slots })
   }
   return out
 })
 function toggle(iso) { selected.value.has(iso) ? selected.value.delete(iso) : selected.value.add(iso); selected.value = new Set(selected.value) }
+
+// ── 24h picker UX (2026-11-16): 48 slots a day is too many to tick one by one, so
+// one day shows at a time (tabs), slots are grouped by time of day in the viewer's
+// zone, and a press-and-drag (or swipe) paints a whole range.
+const activeDay = ref(0)
+watchEffect(() => {   // if the open day has no times left (late tonight), move to the next that does
+  const open = (d) => d && d.slots.some(s => !s.past && !s.late)
+  if (!open(days.value[activeDay.value])) activeDay.value = Math.max(0, days.value.findIndex(open))
+})
+const dayCount = (d) => d.slots.filter(s => selected.value.has(s.iso) && offerable(s.iso)).length
+function localHour(iso) {
+  return parseInt(new Intl.DateTimeFormat('en-US', { timeZone: tz.value, hour: '2-digit', hourCycle: 'h23' }).format(new Date(iso)), 10) % 24
+}
+const PERIODS = [['Morning', 5, 12], ['Afternoon', 12, 17], ['Evening', 17, 24], ['Late night', 0, 5]]
+const dayGroups = computed(() => {
+  const d = days.value[activeDay.value]
+  if (!d) return []
+  const out = []
+  for (const s of d.slots) {
+    const h = localHour(s.iso)
+    const name = PERIODS.find(([, a, b]) => h >= a && h < b)[0]
+    let g = out[out.length - 1]
+    if (!g || g.name !== name) { g = { name, slots: [] }; out.push(g) }
+    g.slots.push(s)
+  }
+  return out.filter(g => g.slots.some(s => !s.past && !s.late))
+})
+// Selected times as ranges ("Mon Nov 16 · 8pm – 10pm"), each slot being 30 min.
+const ranges = computed(() => {
+  const out = []
+  days.value.forEach((d, di) => {
+    let run = null
+    for (const s of d.slots) {
+      if (selected.value.has(s.iso) && offerable(s.iso)) {
+        if (!run) { run = { di, day: d.label, isos: [] }; out.push(run) }
+        run.isos.push(s.iso)
+      } else run = null
+    }
+  })
+  const t = (ms) => new Date(ms).toLocaleTimeString('en-US', { timeZone: tz.value, hour: 'numeric', minute: '2-digit' }).replace(':00', '').replace(' ', '').toLowerCase()
+  return out.map(r => ({ ...r, text: `${t(new Date(r.isos[0]).getTime())} – ${t(new Date(r.isos[r.isos.length - 1]).getTime() + 1800e3)}` }))
+})
+function removeRange(r) { for (const iso of r.isos) selected.value.delete(iso); selected.value = new Set(selected.value) }
+function setDay(fn, on) {
+  const d = days.value[activeDay.value]
+  for (const s of d.slots) if (!s.past && !s.late && fn(s)) on ? selected.value.add(s.iso) : selected.value.delete(s.iso)
+  selected.value = new Set(selected.value)
+}
+// Prime time = 7pm–11pm ET (the first 8 slots after the 12 daytime hours).
+const primeTime = () => setDay(s => { const i = days.value[activeDay.value].slots.indexOf(s); return i >= 24 && i < 32 }, true)
+const clearDay = () => setDay(() => true, false)
+// Press-and-drag painting. The first slot decides the mode (add or remove).
+const paint = ref(null)
+function paintAt(iso) {
+  if (!iso || !offerable(iso)) return
+  paint.value === 'add' ? selected.value.add(iso) : selected.value.delete(iso)
+  selected.value = new Set(selected.value)
+}
+function onDown(e, s) {
+  if (s.past || s.late) return
+  e.preventDefault()
+  e.target.releasePointerCapture?.(e.pointerId)   // touch captures by default; release so the drag can cross slots
+  paint.value = selected.value.has(s.iso) ? 'remove' : 'add'
+  paintAt(s.iso)
+}
+function onMove(e) {
+  if (!paint.value) return
+  const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('[data-iso]')
+  if (el) paintAt(el.dataset.iso)
+}
+const endPaint = () => { paint.value = null }
+onMounted(() => window.addEventListener('pointerup', endPaint))
+onBeforeUnmount(() => window.removeEventListener('pointerup', endPaint))
 
 const saving = ref(false)
 const err = ref('')
@@ -149,7 +222,7 @@ const canAgree = computed(() => !createMode.value && (onEitherTeam.value || isAd
 const otherName = computed(() => props.userTeamId === c.challenger_id ? c.challenged
   : (props.userTeamId === c.challenged_id ? c.challenger : null))
 const agreedWho = computed(() => otherName.value ? `you and ${otherName.value}` : `both ${words.value.teams}`)
-// ET prime-time choices (7pm → 2am, half hours) plus a free-typed time
+// Every half hour (7am → 6:30am ET) plus a free-typed time
 const AGREED_TIMES = HOURS_ET.flatMap((h) => [h, h + 0.5]).map((hf) => {
   const h = Math.floor(hf), mi = (hf - h) * 60
   const label = `${((h + 11) % 12) + 1}${mi ? ':30' : ''}${h < 12 ? 'am' : 'pm'} ET`
@@ -468,23 +541,41 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
         </div>
         <template v-if="!(createMode && agreedMode)">
         <div class="tz-note">
-          🕒 Times shown in <strong>{{ tz }}</strong>. Prime time is 7pm–2am ET.
+          🕒 Times shown in <strong>{{ tz }}</strong>. Any time of day works.
           <a v-if="tzIsGuess" class="tz-link" @click="showSettings = true">Showing Eastern — set your time zone →</a>
         </div>
         <button v-if="countering" class="link-btn" @click="countering = false">← back to {{ proposerName }}'s times</button>
         <p v-if="hasOverlay" class="legend"><span class="fdot">2</span> = {{ isDuel ? 'players' : 'players (either team)' }} whose general availability covers that time — hover a slot to see who. Set yours from the ladder page.</p>
-        <div class="grid-scroll">
-          <div class="grid">
-            <div v-for="day in days" :key="day.label" class="day">
-              <div class="day-lbl">{{ day.label }}</div>
-              <div class="slots">
-                <button v-for="s in day.slots" :key="s.iso" class="slot"
-                        :class="{ on: selected.has(s.iso), past: s.past || s.late }" :disabled="s.past || s.late"
-                        :title="s.late ? 'After the play-by deadline' : freeTitle(s.iso)" @click="toggle(s.iso)">{{ s.label }}<span
-                        v-if="freeCount(s.iso)" class="fdot" :class="{ allfree: freeCount(s.iso) === overlayMeta.withAvail }">{{ freeCount(s.iso) }}</span></button>
-              </div>
+        <div class="daytabs">
+          <button v-for="(day, i) in days" :key="day.label" class="daytab" :class="{ on: i === activeDay }"
+                  :disabled="day.slots.every(s => s.past || s.late)" @click="activeDay = i">
+            {{ day.label }}<span v-if="dayCount(day)" class="dcount">{{ dayCount(day) / 2 }}h</span>
+          </button>
+        </div>
+        <div class="dayquick">
+          <span class="muted small">Tap times, or press and drag across a range.</span>
+          <span class="qbtns">
+            <button class="qbtn" @click="primeTime">+ Prime time (7–11pm ET)</button>
+            <button class="qbtn" @click="clearDay">Clear day</button>
+          </span>
+        </div>
+        <div class="periods" @pointermove="onMove">
+          <div v-for="g in dayGroups" :key="g.name" class="period">
+            <div class="per-lbl">{{ g.name }}</div>
+            <div class="slots">
+              <button v-for="s in g.slots" :key="s.iso" class="slot" :data-iso="s.iso"
+                      :class="{ on: selected.has(s.iso), past: s.past || s.late }" :disabled="s.past || s.late"
+                      :title="s.late ? 'After the play-by deadline' : freeTitle(s.iso)"
+                      @pointerdown="onDown($event, s)" @click="$event.detail === 0 && toggle(s.iso)">{{ s.label }}<span
+                      v-if="freeCount(s.iso)" class="fdot" :class="{ allfree: freeCount(s.iso) === overlayMeta.withAvail }">{{ freeCount(s.iso) }}</span></button>
             </div>
           </div>
+        </div>
+        <div v-if="ranges.length" class="chips">
+          <span v-for="r in ranges" :key="r.isos[0]" class="chip">
+            <a @click="activeDay = r.di">{{ r.day }} · {{ r.text }}</a>
+            <button class="chip-x" title="Remove" @click="removeRange(r)">✕</button>
+          </span>
         </div>
         <p v-if="err" class="err">{{ err }}</p>
         <p v-if="deadlineMs" class="muted small">Play by <strong>{{ fmtLocal(new Date(deadlineMs).toISOString()) }}</strong> — later times are greyed out. Need longer? Ask an admin for an extension.</p>
@@ -570,12 +661,24 @@ onMounted(() => { loadOverlay(); if (view.value === 'act') loadSuggestions() })
 .m-head h3 { margin: 0; font-size: 17px; font-weight: 800; }
 .x { background: none; border: 0; color: var(--fg-3); font-size: 18px; cursor: pointer; min-width: 36px; min-height: 36px; margin: -4px -8px -4px 0; }
 .lede { color: var(--fg-2); font-size: 13px; margin: 6px 0 16px; }
-.grid-scroll { overflow-x: auto; }
-.grid { display: flex; flex-direction: column; gap: 8px; min-width: 560px; }
-.day { display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center; }
-.day-lbl { font-size: 12px; color: var(--fg-2); font-weight: 700; white-space: nowrap; }
-/* 16 half-hour slots -> 2 rows of 8 (the grid-scroll wrapper handles tiny screens). */
-.slots { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+/* 24h picker: day tabs, then the day's half hours grouped by time of day. */
+.daytabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 8px; }
+.daytab { flex: 0 0 auto; background: var(--panel-2); border: 1px solid var(--border); color: var(--fg-2); border-radius: 8px; padding: 7px 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; }
+.daytab.on { border-color: var(--accent); color: var(--fg); background: rgba(255,122,26,0.08); }
+.daytab:disabled { opacity: 0.35; cursor: not-allowed; }
+.dcount { background: var(--accent); color: var(--bg); border-radius: 6px; padding: 0 5px; font-size: 10px; }
+.dayquick { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.qbtns { display: flex; gap: 6px; }
+.qbtn { background: none; border: 1px solid var(--border); color: var(--fg-2); border-radius: 6px; padding: 5px 9px; font-size: 11px; cursor: pointer; font-family: inherit; }
+.qbtn:hover { border-color: var(--accent); color: var(--fg); }
+.periods { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; user-select: none; }
+.per-lbl { font-size: 11px; color: var(--fg-3); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 4px; touch-action: none; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,122,26,0.1); border: 1px solid var(--accent); border-radius: 14px; padding: 3px 4px 3px 10px; font-size: 12px; }
+.chip a { cursor: pointer; color: var(--fg); }
+.chip-x { background: none; border: 0; color: var(--fg-3); cursor: pointer; font-size: 11px; padding: 2px 5px; }
+.chip-x:hover { color: var(--loss); }
 .slot { background: var(--panel-2); border: 1px solid var(--border); color: var(--fg-2); border-radius: 6px; padding: 5px 3px; font-size: 11px; cursor: pointer; font-family: 'JetBrains Mono', monospace; white-space: nowrap; text-align: center; position: relative; }
 .slot.on { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 700; }
 .slot.past { opacity: 0.3; cursor: not-allowed; }
