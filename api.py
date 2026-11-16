@@ -4351,7 +4351,7 @@ def ladder_detail(ladder_id: int, response: Response):
         # team's latest decisive result is a loss.
         cd_days = (lad.get("rules") or {}).get("loss_cooldown_days", 3)
         cur.execute("""SELECT t.id,
-                              max(m.played_at) FILTER (WHERE m.winner_id IS NOT NULL AND m.winner_id <> t.id) AS last_loss,
+                              max(m.played_at) FILTER (WHERE m.winner_id IS NOT NULL AND m.winner_id <> t.id AND NOT m.cooldown_waived) AS last_loss,
                               max(m.played_at) FILTER (WHERE m.winner_id = t.id) AS last_win
                        FROM ladder_teams t
                        LEFT JOIN ladder_matches m ON (m.team_a_id=t.id OR m.team_b_id=t.id) AND m.ladder_id=%s
@@ -7152,7 +7152,7 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
         # decisive match is a win → cooldown lifts immediately. So cooldown is
         # active only when the team's latest decisive result is a loss.
         cooldown_days = (lad.get("rules") or {}).get("loss_cooldown_days", 3)
-        cur.execute("""SELECT max(played_at) FILTER (WHERE winner_id <> %s) AS last_loss,
+        cur.execute("""SELECT max(played_at) FILTER (WHERE winner_id <> %s AND NOT cooldown_waived) AS last_loss,
                               max(played_at) FILTER (WHERE winner_id = %s)  AS last_win
                        FROM ladder_matches
                        WHERE ladder_id=%s AND winner_id IS NOT NULL
@@ -8819,11 +8819,18 @@ def admin_ladder_challenge_walkover(challenge_id: int, authorization: str | None
 @app.post("/api/admin/ladder/{ladder_id}/walkover")
 def admin_ladder_direct_walkover(ladder_id: int, authorization: str | None = Header(default=None),
                                  challenger_id: int = Body(..., embed=True),
-                                 challenged_id: int = Body(..., embed=True)):
-    """Walkover with no challenge on file: the defender conceded in chat (Peter,
-    2026-11-15: Bread waved blaze through). Writes the challenge as already agreed,
-    without the challenge announcement, then records the walkover for the challenger
-    through /result, which applies the climb and posts the result. Ladder-admin."""
+                                 challenged_id: int = Body(..., embed=True),
+                                 winner_id: int | None = Body(default=None, embed=True),
+                                 maps: list = Body(default=[], embed=True),
+                                 waive_cooldown: bool = Body(default=False, embed=True)):
+    """A result with no challenge on file. Without maps it is a walkover for the
+    challenger: the defender conceded in chat (Peter, 2026-11-15: Bread waved blaze
+    through). With maps ([{map, a_frags, b_frags, hub_game_id}], a = challenger) it is
+    a played match nobody could file (2026-11-16: blaze beat Awup while Awup was tied
+    up in another challenge). Writes the challenge as already agreed, without the
+    challenge announcement, then records it through /result, which applies the
+    movement and posts the result. waive_cooldown leaves the loser free to issue
+    challenges straight away. Ladder-admin."""
     import ladder as _ladder
     _check_ladder_admin(authorization)
     with pg() as conn:
@@ -8847,7 +8854,19 @@ def admin_ladder_direct_walkover(ladder_id: int, authorization: str | None = Hea
                     (ladder_id, challenger_id, challenged_id, gap, now, challenger_id, now))
         chid = cur.fetchone()["id"]
         conn.commit()
-    return admin_ladder_result(chid, authorization, winner_id=challenger_id, maps=[], score_a=None, score_b=None, walkover=True)
+    winner = winner_id or challenger_id
+    if maps:
+        aw = sum(1 for m in maps if (m.get("a_frags") or 0) > (m.get("b_frags") or 0))
+        res = admin_ladder_result(chid, authorization, winner_id=winner, maps=maps,
+                                  score_a=aw, score_b=len(maps) - aw, walkover=False)
+    else:
+        res = admin_ladder_result(chid, authorization, winner_id=winner, maps=[], score_a=None, score_b=None, walkover=True)
+    if waive_cooldown:
+        with pg() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE ladder_matches SET cooldown_waived=TRUE WHERE id=%s", (res["match_id"],))
+            conn.commit()
+    return {**res, "challenge_id": chid, "cooldown_waived": waive_cooldown}
 
 
 @app.post("/api/admin/ladder/challenge/{challenge_id}/unschedule")

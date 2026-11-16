@@ -129,6 +129,8 @@ CREATE TABLE IF NOT EXISTS ladder_matches (
 );
 -- 2026-10-09: a walkover is a result with no score or maps; records count it on its own, not as a win/loss
 ALTER TABLE ladder_matches ADD COLUMN IF NOT EXISTS walkover BOOLEAN NOT NULL DEFAULT FALSE;
+-- 2026-11-16: admin can waive the loser's cooldown for one match (an unfiled game recorded after the fact)
+ALTER TABLE ladder_matches ADD COLUMN IF NOT EXISTS cooldown_waived BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS ladder_movements (
   id          BIGSERIAL PRIMARY KEY,
