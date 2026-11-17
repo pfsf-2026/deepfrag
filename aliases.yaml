@@ -292,3 +292,13 @@ evalcat:
   login: ""
   variants:
     - evalcat
+
+awup:
+  # 2026-11-17 (Peter): "[USDQC]Awup" is Awup with his clan tag. The ladder knows him as awup,
+  # so his tagged games (vs blaze 11-15, vs aardappel 11-16) never matched his challenges.
+  display: Awup
+  login: ""
+  variants:
+    - awup
+    - usdqc]awup
+    - "[usdqc]awup"
