@@ -83,8 +83,8 @@ function fmt(iso) {
           won {{ outcome.score }}. Standings updated and the result was posted to Discord.
         </p>
         <p v-else-if="outcome.outcome === 'pending'" class="warn">
-          ⏳ Those games aren't in DeepFrag yet (matches sync from the hub every ~2 hours).
-          Your report is queued and will record automatically once they arrive — nothing else to do.
+          ⏳ The hub doesn't have stats for those games yet (the demo can take a few minutes to upload).
+          Your report is queued and will record automatically as soon as they show up — nothing else to do.
         </p>
         <p v-else-if="outcome.outcome === 'flagged'" class="warn">
           🚩 Series found, but not every rostered player matched in

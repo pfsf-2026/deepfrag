@@ -1385,6 +1385,7 @@ def _ladder_tick_inner(cur):
                         (rp["report_id"],))
             continue
         try:
+            _ingest_hub_games(game_ids=[int(g) for g in (rp["game_ids"] or [])])
             outcome, _payload = _try_report_games(cur, rp, [int(g) for g in (rp["game_ids"] or [])],
                                                   rp.get("reporter"))
         except HTTPException:
@@ -8018,6 +8019,62 @@ def _report_user_side(cur, user, ch):
     raise HTTPException(403, "only the two players in this match may report it" if _duel() else "only players on one of the two teams may report this match")
 
 
+def _ingest_hub_games(game_ids=None, lo=None, hi=None, mode=None, names=None):
+    """Pull hub games into DeepFrag right now instead of waiting for the 2-hourly sync
+    (Peter, 2026-11-18: a reported match must record straight away). Either exact
+    `game_ids`, or every `mode` game between `lo` and `hi` that has one of `names`
+    (raw in-game names, lowercased) or a name DeepFrag has never seen. Skips games
+    already ingested, then links canonical ids for any new names. Returns the ids pulled."""
+    import sync as sync_mod
+    params = {"select": "id,timestamp,mode,map,matchtag,server_hostname,demo_sha256,demo_source_url,players",
+              "order": "timestamp.asc", "limit": 500}
+    if game_ids:
+        params["id"] = "in.(" + ",".join(str(int(g)) for g in game_ids) + ")"
+    else:
+        params["and"] = f"(timestamp.gt.{lo.isoformat()},timestamp.lt.{hi.isoformat()})"
+        if mode:
+            params["mode"] = f"eq.{mode}"
+    try:
+        r = sync_mod.SESSION.get(sync_mod.HUB_URL, params=params, headers=sync_mod.HUB_HEADERS, timeout=20)
+        r.raise_for_status()
+        games = [g for g in r.json() if g.get("demo_sha256")]
+    except Exception:
+        return []
+    with pg() as conn:
+        cur = conn.cursor()
+        ids = [g["id"] for g in games]
+        cur.execute("SELECT match_id FROM matches WHERE ktx_fetched AND match_id = ANY(%s)", (ids,))
+        have = {r["match_id"] for r in cur.fetchall()}
+        games = [g for g in games if g["id"] not in have]
+        if not game_ids and names is not None:
+            import name_canon as NC
+            cur.execute("SELECT raw_name FROM player_name_map")
+            known = {NC.normalize(r["raw_name"]) for r in cur.fetchall()}
+            want = {NC.normalize(n) for n in names}
+            games = [g for g in games if any(NC.normalize(p.get("name") or "") in want
+                                             or NC.normalize(p.get("name") or "") not in known
+                                             for p in g.get("players") or [])]
+        pulled = []
+        for g in games[:40]:
+            try:
+                sync_mod.insert_match(conn, g, sync_mod.fetch_ktx(g["demo_sha256"]))
+                conn.commit()
+                pulled.append(g["id"])
+            except Exception:
+                conn.rollback()
+        if pulled:
+            try:
+                _canonicalize_incremental(conn)
+            except Exception:
+                conn.rollback()
+    return pulled
+
+
+def _roster_raw_names(cur, rosters):
+    cur.execute("SELECT raw_name FROM player_name_map WHERE canonical_id = ANY(%s)", (list(rosters),))
+    return [r["raw_name"] for r in cur.fetchall()]
+
+
 def _try_report_games(cur, ch, game_ids, reporter):
     """Validate reporter-submitted hub games through the SAME gates as
     auto-resolve and record the match if they pass. Never trusts the reporter:
@@ -8130,6 +8187,20 @@ def _try_report_games(cur, ch, game_ids, reporter):
     return "recorded", {"match_id": match_id, "winner_id": winner_id, "score": f"{aw}-{bw}", "moves": moves}
 
 
+@app.post("/api/admin/hub/ingest")
+def admin_hub_ingest(authorization: str | None = Header(default=None),
+                     game_ids: list = Body(..., embed=True)):
+    """Pull specific hub games into DeepFrag now (no waiting for the 2-hourly sync). Ladder-admin."""
+    _check_ladder_admin(authorization)
+    ids = [int(g) for g in game_ids][:40]
+    pulled = _ingest_hub_games(game_ids=ids)
+    with pg() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT match_id FROM matches WHERE match_id = ANY(%s)", (ids,))
+        have = {r["match_id"] for r in cur.fetchall()}
+    return {"pulled": pulled, "in_deepfrag": sorted(have), "not_on_hub_yet": [g for g in ids if g not in have]}
+
+
 @app.post("/api/ladder/challenge/{challenge_id}/report")
 def ladder_challenge_report(challenge_id: int, authorization: str | None = Header(default=None),
                             game_ids: list = Body(..., embed=True)):
@@ -8149,6 +8220,9 @@ def ladder_challenge_report(challenge_id: int, authorization: str | None = Heade
         raise HTTPException(400, "game_ids must be numbers (the gameId from the hub URL)")
     if not (2 <= len(ids) <= 3):
         raise HTTPException(400, "submit 2 game IDs (or 3 for a full series)")
+    # Pull any of these games DeepFrag doesn't have yet straight from the hub, so the
+    # report records now instead of waiting for the next sync.
+    _ingest_hub_games(game_ids=ids)
     with pg() as conn:
         cur = conn.cursor()
         _ladder.ensure_schema(cur)
@@ -8193,6 +8267,12 @@ def ladder_challenge_report_search(challenge_id: int, authorization: str | None 
         if ch["status"] not in ("open", "scheduled"):
             raise HTTPException(409, "challenge is already resolved")
         _report_user_side(cur, user, ch)
+        names = _roster_raw_names(cur, list(ch["a_members"] or []) + list(ch["b_members"] or []))
+        mode = _ladder.shape(cur, ch.get("ladder_id"))["mode"]
+    # Games from the last couple of hours may not be synced yet: pull the window from the hub first.
+    _ingest_hub_games(lo=anchor - timedelta(hours=2), hi=anchor + timedelta(hours=8), mode=mode, names=names)
+    with pg() as conn:
+        cur = conn.cursor()
         # Reuse the open-challenge window branch: created_at→deadline become our
         # explicit search bounds.
         det = _detect_bo3(cur, list(ch["a_members"] or []), list(ch["b_members"] or []),
