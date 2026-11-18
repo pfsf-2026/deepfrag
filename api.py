@@ -8043,7 +8043,7 @@ def _ingest_hub_games(game_ids=None, lo=None, hi=None, mode=None, names=None):
     with pg() as conn:
         cur = conn.cursor()
         ids = [g["id"] for g in games]
-        cur.execute("SELECT match_id FROM matches WHERE ktx_fetched AND match_id = ANY(%s)", (ids,))
+        cur.execute("SELECT match_id FROM matches WHERE COALESCE(ktx_fetched::int, 0) <> 0 AND match_id = ANY(%s)", (ids,))
         have = {r["match_id"] for r in cur.fetchall()}
         games = [g for g in games if g["id"] not in have]
         if not game_ids and names is not None:
