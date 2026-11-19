@@ -36,6 +36,24 @@ def fmt_et(iso: str | None) -> str:
     except Exception:
         return str(iso)
 
+def ts(iso, style: str = "F") -> str:
+    """Discord timestamp markup (what sesh.fyi/timestamp generates): Discord renders it in each
+    reader's OWN time zone (Peter, 2026-11-19). Styles: F 'Thursday, November 19, 2026 9:00 PM',
+    f without the weekday, D date, t time, R relative ('in 3 hours'). Falls back to ET text."""
+    try:
+        dt = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return f"<t:{int(dt.timestamp())}:{style}>"
+    except Exception:
+        return fmt_et(iso)
+
+
+def when(iso: str | None) -> str:
+    """A match time for Discord: local full date + relative ('… (in 2 hours)')."""
+    return f"{ts(iso)} ({ts(iso, 'R')})" if iso else "TBD"
+
+
 def _et(iso):
     """ISO instant → aware datetime in US Eastern (None if unparseable)."""
     try:
@@ -60,9 +78,10 @@ def _clock(et) -> str:
 
 
 def fmt_slots(slots_iso: list, max_days: int = 7) -> str:
-    """Offered times, one short line per EVENING in ET ('Thu Oct 1 · 9:30 PM, 10 PM').
-    12am–6am rides with the evening before, so a 12:30 AM slot isn't filed under the
-    next day. A run of 3+ half-hour slots collapses to a range ('8 PM – 10:30 PM')."""
+    """Offered times, one line per EVENING, as Discord timestamps so each reader sees their
+    own zone ('Thursday, November 19, 2026 9:30 PM, 10:00 PM'). Evenings are grouped in ET
+    with 12am–6am riding with the evening before. A run of 3+ half-hour slots collapses to
+    a range ('8:00 PM – 10:30 PM')."""
     from datetime import timedelta
     days: dict = {}
     for s in sorted(str(x) for x in slots_iso or []):
@@ -78,12 +97,18 @@ def fmt_slots(slots_iso: list, max_days: int = 7) -> str:
             j = i
             while j + 1 < len(ts) and (ts[j + 1] - ts[j]) == timedelta(minutes=30):
                 j += 1
-            parts.append(f"{_clock(ts[i])} – {_clock(ts[j])}" if j - i >= 2 else ", ".join(_clock(x) for x in ts[i:j + 1]))
+            parts.append(f"{_t(ts[i])} – {_t(ts[j])}" if j - i >= 2 else ", ".join(_t(x) for x in ts[i:j + 1]))
             i = j + 1
-        lines.append(f"{key.strftime('%a %b %-d')} · {', '.join(parts)}")
+        first = days[key][0]
+        parts[0] = f"<t:{int(first.timestamp())}:F>" + parts[0][len(_t(first)):]
+        lines.append(", ".join(parts))
     if len(days) > max_days:
         lines.append(f"…and {len(days) - max_days} more day(s)")
     return "\n".join(lines)
+
+
+def _t(dt) -> str:
+    return f"<t:{int(dt.timestamp())}:t>"
 
 
 def _name(label: str) -> str:
@@ -135,6 +160,16 @@ def _url() -> str | None:
 
 def ladder_url() -> str:
     return LADDER_URL + LADDER_QUERY.get(_ROUTE.get() or "", "")
+
+
+def challenge_link(challenge_id: int | None, text: str = "Schedule it") -> str:
+    """'\n🔗 [Schedule it](<…/ladder?l=1v1&c=158>)': opens that challenge's scheduler on
+    DeepFrag (players in it can pick or offer times; anyone else, unless an admin, only views).
+    The angle brackets stop Discord unfurling a preview card. Empty when no id."""
+    if not challenge_id:
+        return ""
+    u = ladder_url()
+    return f"\n🔗 [{text}](<{u}{'&' if '?' in u else '?'}c={int(challenge_id)}>)"
 
 
 def send(content: str | None = None, embed: dict | None = None) -> bool:
@@ -206,7 +241,7 @@ def challenge_issued(challenger: str, challenged: str, rungs_up: int, deadline_i
                      mention: str | None = None):
     """challenger/challenged are team LABELS ('**Name** (@p1 @p2)'), challenger
     first. Pings live in content."""
-    by = f" · play by {fmt_day_et(deadline_iso)}" if deadline_iso else ""
+    by = f" · play by {ts(deadline_iso, 'f')}" if deadline_iso else ""
     ups = f" ({rungs_up} rung{'s' if rungs_up != 1 else ''} up)"
     return send(content=f"⚔️ {challenger} challenged {challenged}{ups}{by}")
 
@@ -233,25 +268,28 @@ def team_signup(name: str, tag: str | None, players: list, pending: bool = True,
     return send(embed=_embed("🆕 New ladder signup" if solo else "🆕 New team signup", desc, COLOR))
 
 
-def challenge_prescheduled(challenger: str, challenged: str, rungs_up: int, when_iso: str, deadline_iso: str | None):
+def challenge_prescheduled(challenger: str, challenged: str, rungs_up: int, when_iso: str, deadline_iso: str | None,
+                           challenge_id: int | None = None):
     """Challenge issued WITH an already-agreed time (2026-09-29: players DM each other first).
     One post: the challenge and its scheduled time."""
     # challenger/challenged are LABELS (already bold, with pings). One time only in this
     # post — the play-by deadline next to an agreed time just reads as a second match time.
     rung = f"{rungs_up} rung{'s' if rungs_up != 1 else ''} up"
-    return send(content=f"⚔️ {challenger} challenged {challenged} ({rung}) — scheduled **{fmt_et(when_iso)}**")
+    return send(content=f"⚔️ {challenger} challenged {challenged} ({rung}) — scheduled **{when(when_iso)}**"
+                        + challenge_link(challenge_id, "Match details"))
 
 
 def match_proposal(proposer: str, other: str, slots_iso: list, *, initial: bool,
                    challenger: str, challenged: str, rungs_up: int | None = None,
-                   deadline_iso: str | None = None, mention: str | None = None):
+                   deadline_iso: str | None = None, mention: str | None = None,
+                   challenge_id: int | None = None):
     """One combined message when a team posts times.
 
     - initial (the challenger's opening proposal): announce the challenge AND list
       the proposed times in a single post — we hold the challenge ping until now.
     - otherwise (a counter-proposal): "new times suggested", nudge the other team.
 
-    All times shown in US Eastern (NA ladder).
+    Times are Discord timestamps (each reader's own zone), with a link to pick one.
     """
     # Terse on purpose (Peter, 2026-10-02): one header line, then one line per evening.
     # proposer/other/challenger/challenged are team LABELS (name + parens pings); the
@@ -259,22 +297,23 @@ def match_proposal(proposer: str, other: str, slots_iso: list, *, initial: bool,
     times = fmt_slots(slots_iso)
     if initial:
         ups = f" ({rungs_up} rung{'s' if rungs_up != 1 else ''} up)" if rungs_up else ""
-        by = f" · play by {fmt_day_et(deadline_iso)}" if deadline_iso else ""
+        by = f" · play by {ts(deadline_iso, 'f')}" if deadline_iso else ""
         content = (f"⚔️ {challenger} challenged {challenged}{ups}{by}\n"
-                   f"Times offered (ET) — pick one on the ladder:\n{times}")
+                   f"Times offered (your local time) — pick one:\n{times}")
     else:
-        content = f"🔄 {_name(proposer)} offered new times — {other}, pick one (ET):\n{times}"
-    return send(content=content)
+        content = f"🔄 {_name(proposer)} offered new times — {other}, pick one (your local time):\n{times}"
+    return send(content=content + challenge_link(challenge_id, "Pick a time"))
 
 
 def game_scheduled(a_name: str, a_ping: str, b_name: str, b_ping: str,
-                   when: str | None, server: str | None = None, mention: str | None = None):
+                   when_iso: str | None, server: str | None = None, mention: str | None = None,
+                   challenge_id: int | None = None):
     """Match scheduled (challenger first). Clean two-line: names+time, then pings."""
-    meta = fmt_et(when) + (f" · {server}" if server else "")
+    meta = when(when_iso) + (f" · {server}" if server else "")
     out = f"✅ Scheduled: **{a_name}** vs **{b_name}** — {meta}"
     if a_ping or b_ping:
         out += f"\n{a_ping or '—'}  vs  {b_ping or '—'}"
-    return send(content=out)
+    return send(content=out + challenge_link(challenge_id, "Match details / reschedule"))
 
 
 def result_posted(winner: str, loser: str, maps_line: str | None = None,
@@ -337,32 +376,36 @@ def challenge_cancelled(challenger: str, challenged: str):
 
 
 def match_reminder(a_name: str, a_ping: str, b_name: str, b_ping: str,
-                   when: str | None, server: str | None = None, kind: str = "1h",
-                   mention: str | None = None):
+                   when_iso: str | None, server: str | None = None, kind: str = "1h",
+                   mention: str | None = None, challenge_id: int | None = None):
     """Upcoming-match reminder (challenger first). Day-of @ping cadence."""
     head = "🔴 Starting in ~10 min" if kind == "10m" else "🔔 Match in ~1 hour"
-    meta = fmt_et(when) + (f" · {server}" if server else "")
+    meta = (ts(when_iso, "t") if when_iso else "TBD") + (f" · {server}" if server else "")
     out = f"{head} — **{a_name}** vs **{b_name}** · {meta}"
     if a_ping or b_ping:
         out += f"\n{a_ping or '—'}  vs  {b_ping or '—'}"
-    return send(content=out)
+    return send(content=out + challenge_link(challenge_id, "Match details"))
 
 
-def match_rescheduled(team_a: str, team_b: str, when: str | None, server: str | None,
-                      mention: str | None = None, note: str | None = None, was: str | None = None):
+def match_rescheduled(team_a: str, team_b: str, when_iso: str | None, server: str | None,
+                      mention: str | None = None, note: str | None = None, was: str | None = None,
+                      challenge_id: int | None = None):
     """A scheduled match moved (admin, or the two sides agreeing a new time — `note`
     says who). team_a/team_b are LABELS, challenger first. `was` = the old time, shown
     so nobody has to guess which of two times is the live one."""
     # One line (Peter, 2026-10-02). `note` is accepted for old callers but no longer printed.
-    was_et = _et(was)
-    extra = f" (was {was_et.strftime('%a %b %-d')}, {_clock(was_et)})" if was_et else ""
+    extra = f" (was {ts(was, 'f')})" if was else ""
     extra += f" · {server}" if server else ""
-    return send(content=f"🔁 {team_a} vs {team_b} moved to **{fmt_et(when)}**{extra}")
+    return send(content=f"🔁 {team_a} vs {team_b} moved to **{when(when_iso)}**{extra}"
+                        + challenge_link(challenge_id, "Match details / reschedule"))
 
 
-def challenge_overdue(team_a: str, team_b: str, deadline: str | None, mention: str | None = None):
+def challenge_overdue(team_a: str, team_b: str, deadline: str | None, mention: str | None = None,
+                      challenge_id: int | None = None):
     """A challenge blew past its play-by deadline. team_a/team_b are LABELS."""
-    return send(content=f"⏳ Overdue: {team_a} vs {team_b} (due {fmt_day_et(deadline)}). Admins: forfeit or extend.")
+    due = ts(deadline, "f") if deadline else "TBD"
+    return send(content=f"⏳ Overdue: {team_a} vs {team_b} (due {due}). Admins: forfeit or extend."
+                        + challenge_link(challenge_id, "Open the challenge"))
 
 
 def data_health_alert(problems: list, latest: str | None):

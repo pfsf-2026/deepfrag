@@ -236,7 +236,9 @@ def _token_handoff_html(token: str) -> HTMLResponse:
         "@keyframes spin{to{transform:rotate(360deg)}}</style></head>"
         "<body><div class='s'></div><span>Signing you in…</span>"
         "<script>try{localStorage.setItem('df_token'," + payload + ");}catch(e){}"
-        "location.replace('/ladder');</script></body></html>"
+        "var r='/ladder';try{var x=localStorage.getItem('df_return')||'';localStorage.removeItem('df_return');"
+        "if(x.charAt(0)==='/'&&x.charAt(1)!=='/')r=x;}catch(e){}"
+        "location.replace(r);</script></body></html>"
     )
     resp = HTMLResponse(content=html)
     resp.headers["Cache-Control"] = "no-store"
@@ -1187,7 +1189,7 @@ def _ladder_tick_inner(cur):
         if agreed:
             cn, cp = _team_np(cur, r["challenger_id"]); dn, dp = _team_np(cur, r["challenged_id"])
             try:
-                notify.game_scheduled(cn, cp, dn, dp, agreed, None)
+                notify.game_scheduled(cn, cp, dn, dp, agreed, None, challenge_id=r["id"])
             except Exception:
                 pass
             counts["auto_scheduled_avail"] += 1
@@ -1207,11 +1209,11 @@ def _ladder_tick_inner(cur):
         d = r["agreed_at"] - now
         cn, cp = _team_np(cur, r["challenger_id"]); dn, dp = _team_np(cur, r["challenged_id"])
         if not r["reminded_soon"] and timedelta(minutes=12) < d <= timedelta(minutes=70):
-            notify.match_reminder(cn, cp, dn, dp, r["agreed_at"].isoformat(), r["server"], kind="1h")
+            notify.match_reminder(cn, cp, dn, dp, r["agreed_at"].isoformat(), r["server"], kind="1h", challenge_id=r["id"])
             cur.execute("UPDATE ladder_challenges SET reminded_soon=TRUE WHERE id=%s", (r["id"],))
             counts["reminded_1h"] += 1
         if not r["reminded_10m"] and timedelta(0) < d <= timedelta(minutes=12):
-            notify.match_reminder(cn, cp, dn, dp, r["agreed_at"].isoformat(), r["server"], kind="10m")
+            notify.match_reminder(cn, cp, dn, dp, r["agreed_at"].isoformat(), r["server"], kind="10m", challenge_id=r["id"])
             cur.execute("UPDATE ladder_challenges SET reminded_10m=TRUE WHERE id=%s", (r["id"],))
             counts["reminded_10m"] += 1
 
@@ -1299,7 +1301,7 @@ def _ladder_tick_inner(cur):
         if not (r["rules"] or {}).get("auto_forfeit", False):
             if not r["overdue_flagged"]:
                 notify.challenge_overdue(_team_label(cur, r["challenger_id"]), _team_label(cur, r["challenged_id"]),
-                                         r["deadline"].isoformat() if r["deadline"] else None)
+                                         r["deadline"].isoformat() if r["deadline"] else None, challenge_id=r["id"])
                 cur.execute("UPDATE ladder_challenges SET overdue_flagged=TRUE WHERE id=%s", (r["id"],))
                 counts["overdue"] += 1
             continue
@@ -1503,7 +1505,8 @@ def admin_ladder_notify_scheduled(challenge_id: int, authorization: str | None =
             raise HTTPException(404, "challenge not found")
         cn, cp = _team_np(cur, ch["challenger_id"]); dn, dp = _team_np(cur, ch["challenged_id"])
         notify.game_scheduled(cn, cp, dn, dp,
-                              ch["agreed_at"].isoformat() if ch["agreed_at"] else None, ch["server"])
+                              ch["agreed_at"].isoformat() if ch["agreed_at"] else None, ch["server"],
+                              challenge_id=challenge_id)
     return {"notified": challenge_id}
 
 
@@ -7220,11 +7223,11 @@ def ladder_challenge(ladder_id: int, authorization: str | None = Header(default=
     try:
         import notify
         if agreed_dt is not None:
-            notify.challenge_prescheduled(cl_lbl, cd_lbl, gap, agreed_dt.isoformat(), deadline.isoformat())
+            notify.challenge_prescheduled(cl_lbl, cd_lbl, gap, agreed_dt.isoformat(), deadline.isoformat(), challenge_id=chid)
         else:
             notify.match_proposal(cl_lbl, cd_lbl, clean, initial=True,
                                   challenger=cl_lbl, challenged=cd_lbl,
-                                  rungs_up=gap, deadline_iso=deadline.isoformat())
+                                  rungs_up=gap, deadline_iso=deadline.isoformat(), challenge_id=chid)
     except Exception:
         pass
     return {"challenge_id": chid, "deadline": deadline.isoformat(), "rungs_up": gap,
@@ -7576,7 +7579,8 @@ def ladder_challenge_availability(challenge_id: int, authorization: str | None =
                 proposer, other, clean, initial=is_initial,
                 challenger=cl_lbl, challenged=cd_lbl,
                 rungs_up=ch.get("rungs_up"),
-                deadline_iso=(ch["deadline"].isoformat() if ch.get("deadline") else None))
+                deadline_iso=(ch["deadline"].isoformat() if ch.get("deadline") else None),
+                challenge_id=challenge_id)
     except Exception:
         pass
     return {"challenge_id": challenge_id, "slots": clean, "proposed_by": turn}
@@ -7632,7 +7636,7 @@ def ladder_challenge_schedule(challenge_id: int, authorization: str | None = Hea
         conn.commit()
     try:
         import notify
-        notify.game_scheduled(cn, cp, dn, dp, slot, (server or "").strip() or None)
+        notify.game_scheduled(cn, cp, dn, dp, slot, (server or "").strip() or None, challenge_id=challenge_id)
     except Exception:
         pass
     return {"challenge_id": challenge_id, "agreed_at": slot, "server": server, "status": "scheduled"}
@@ -7703,7 +7707,7 @@ def ladder_challenge_my_picks(challenge_id: int, authorization: str | None = Hea
     try:
         import notify
         if agreed:
-            notify.game_scheduled(cn, cp, dn, dp, agreed, None)
+            notify.game_scheduled(cn, cp, dn, dp, agreed, None, challenge_id=challenge_id)
         elif no_common:
             notify.send(content=f"⚠️ {b_lbl}'s two players have no overlapping time among the offered slots — coordinate, or have {a_lbl} suggest different times.")
     except Exception:
@@ -7834,8 +7838,9 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
                 ot_lbl = _team_label(cur, other_id)
                 conn.commit()
                 try:
-                    old = f" {notify.fmt_et(ch['agreed_at'].isoformat())} is off." if was_scheduled and ch.get("agreed_at") else ""
-                    notify.send(content=f"🔄 {mv_lbl} proposes **{notify.fmt_et(new_dt.isoformat())}** — {ot_lbl}, pick it on the ladder or offer another time.{old}")
+                    old = f" {notify.ts(ch['agreed_at'].isoformat())} is off." if was_scheduled and ch.get("agreed_at") else ""
+                    notify.send(content=f"🔄 {mv_lbl} proposes **{notify.when(new_dt.isoformat())}** — {ot_lbl}, accept it or offer another time.{old}"
+                                        + notify.challenge_link(challenge_id, "Accept or counter"))
                 except Exception:
                     pass
                 return {"challenge_id": challenge_id, "status": "open", "offered": new_dt.isoformat(), "server": new_server,
@@ -7857,9 +7862,10 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
             try:
                 if was_scheduled:
                     notify.match_rescheduled(cl_lbl, cd_lbl, new_dt.isoformat(), new_server,
-                                             was=(ch["agreed_at"].isoformat() if ch.get("agreed_at") else None))
+                                             was=(ch["agreed_at"].isoformat() if ch.get("agreed_at") else None),
+                                             challenge_id=challenge_id)
                 else:
-                    notify.game_scheduled(cn, cp, dn, dp, new_dt.isoformat(), new_server)
+                    notify.game_scheduled(cn, cp, dn, dp, new_dt.isoformat(), new_server, challenge_id=challenge_id)
             except Exception:
                 pass
             return {"challenge_id": challenge_id, "status": "scheduled",
@@ -7872,8 +7878,8 @@ def ladder_challenge_reschedule(challenge_id: int, authorization: str | None = H
         cd_lbl = _team_label(cur, ch["challenged_id"])
         conn.commit()
     try:
-        old = f"{notify.fmt_et(ch['agreed_at'].isoformat())} is off" if ch.get("agreed_at") else "time cleared"
-        notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} — {old}, new time coming.")
+        old = f"{notify.ts(ch['agreed_at'].isoformat())} is off" if ch.get("agreed_at") else "time cleared"
+        notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} — {old}, new time coming." + notify.challenge_link(challenge_id, "Offer times"))
     except Exception:
         pass
     return {"challenge_id": challenge_id, "status": "open"}
@@ -8513,7 +8519,7 @@ def admin_ladder_match_void(match_id: int, authorization: str | None = Header(de
         conn.commit()
     if notify_discord:
         try:
-            when = notify.fmt_et(m["played_at"].isoformat()) if m.get("played_at") else "recently"
+            when = notify.ts(m["played_at"].isoformat(), "f") if m.get("played_at") else "recently"
             notify.send(content=(f"↩️ **Result voided** — the games between {a_lbl} and {b_lbl} ({when}) were casual, not the ladder match"
                                  + (f": {reason}" if reason else ".") + " Standings restored"
                                  + ("; the challenge is back on the board." if status else ".")))
@@ -8723,7 +8729,8 @@ def admin_ladder_reschedule(challenge_id: int, authorization: str | None = Heade
     try:
         import notify
         notify.match_rescheduled(cl_lbl, cd_lbl, dt.isoformat(), new_server,
-                                 was=(ch["agreed_at"].isoformat() if ch.get("agreed_at") else None))
+                                 was=(ch["agreed_at"].isoformat() if ch.get("agreed_at") else None),
+                                 challenge_id=challenge_id)
     except Exception:
         pass
     return {"challenge_id": challenge_id, "agreed_at": dt.isoformat(), "server": new_server}
@@ -8756,7 +8763,8 @@ def admin_ladder_extend(challenge_id: int, authorization: str | None = Header(de
         conn.commit()
     try:
         notify.send(content=(f"⏳ **Extension approved** — {cl} vs {cd} now has until "
-                             f"**{notify.fmt_et(new_deadline.isoformat())}** to get it played (+{days}d)."))
+                             f"**{notify.ts(new_deadline.isoformat(), 'f')}** to get it played (+{days}d)."
+                             + notify.challenge_link(challenge_id, "Schedule it")))
     except Exception:
         pass
     return {"challenge_id": challenge_id, "deadline": new_deadline.isoformat(), "added_days": days}
@@ -8979,12 +8987,13 @@ def admin_ladder_challenge_unschedule(challenge_id: int, authorization: str | No
         pk_lbl = _team_label(cur, picker) if picker else None
         conn.commit()
     try:
-        was = notify.fmt_et(ch["agreed_at"].isoformat()) if ch.get("agreed_at") else "the agreed time"
+        was = notify.ts(ch["agreed_at"].isoformat()) if ch.get("agreed_at") else "the agreed time"
         why = f" ({reason})" if reason else ""
         if keep and pk_lbl:
-            notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} — {was} is off{why}. {len(keep)} offered time{'s' if len(keep) != 1 else ''} still stand — {pk_lbl}, pick one on the ladder.")
+            notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} — {was} is off{why}. {len(keep)} offered time{'s' if len(keep) != 1 else ''} still stand — {pk_lbl}, pick one." + notify.challenge_link(challenge_id, "Pick a time"))
         else:
-            notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} — {was} is off{why}. No offered times are left — new times needed.")
+            notify.send(content=f"🔄 {cl_lbl} vs {cd_lbl} — {was} is off{why}. No offered times are left — new times needed."
+                                + notify.challenge_link(challenge_id, "Offer times"))
     except Exception:
         pass
     return {"challenge_id": challenge_id, "status": "open", "offers_kept": keep, "picker": picker}

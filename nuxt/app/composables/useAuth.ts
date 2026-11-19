@@ -33,7 +33,12 @@ export function useAuth() {
     return user.value
   }
 
-  function login() { if (import.meta.client) window.location.href = '/api/auth/discord/login' }
+  // Remember the page so sign-in lands back on it (e.g. a Discord link to one challenge's scheduler).
+  function login() {
+    if (!import.meta.client) return
+    try { localStorage.setItem('df_return', location.pathname + location.search + location.hash) } catch {}
+    window.location.href = '/api/auth/discord/login'
+  }
   function logout() {
     if (import.meta.client) localStorage.removeItem(TOKEN_KEY)
     user.value = null

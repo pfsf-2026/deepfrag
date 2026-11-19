@@ -165,6 +165,27 @@ const challenges = ref([])
 const retired = ref([])
 const loading = ref(true)
 const err = ref(null)
+// Discord links (Peter, 2026-11-19): ?c=<challenge id> opens that challenge's scheduler straight away.
+// Anyone can open it; only the two players or an admin can act, everyone else gets the view-only scheduler.
+const linkId = isBrowser ? Number(new URLSearchParams(location.search).get('c')) || null : null
+const linked = ref(null)
+const linkMissing = ref(false)
+watch([challenges, loading], () => {
+  if (!linkId || linked.value || linkMissing.value || loading.value || !ladder.value) return
+  const c = challenges.value.find(x => x.id === linkId)
+  if (!c) { linkMissing.value = true; return }
+  linked.value = c
+  setTab('schedule')
+  schedulerChallenge.value = c
+})
+const linkNote = computed(() => {
+  if (linkMissing.value) return 'That challenge has already been played or closed. Here is the current board.'
+  const c = linked.value
+  if (!c || schedulerChallenge.value?.id !== c.id) return ''
+  if (!loggedIn.value) return 'Sign in with Discord to pick a time. Only the two players (or an admin) can schedule this match.'
+  if (!involvesMe(c) && !user.value?.is_admin) return "You're not in this match, so it's view-only. Only the two players (or an admin) can schedule it."
+  return ''
+})
 // home cards
 const recentMatches = ref([])
 const statLeaders = ref([])
@@ -652,6 +673,7 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
     <ClientOnly>
       <AddTeam v-if="showAddTeam && ladder" :ladder-id="ladder.id" :team-size="Number(ladder.team_size) || 2" @done="onTeamAdded" @close="showAddTeam = false" />
       <AddTeam v-if="editingTeam && ladder" :ladder-id="ladder.id" :team-size="Number(ladder.team_size) || 2" :edit-team="editingTeam" @done="onTeamAdded" @close="editingTeam = null" />
+      <div v-if="linkNote" class="link-note">{{ linkNote }} <button v-if="!loggedIn && !linkMissing" class="cta" @click="login">Sign in with Discord</button><button class="ln-x" @click="linkMissing = false; linked = null">✕</button></div>
       <Scheduler v-if="schedulerChallenge" :key="schedulerChallenge.id + ':' + rescheduleOpen" :challenge="schedulerChallenge" :user-team-id="myTeam?.id" :reschedule="rescheduleOpen" @done="onScheduled" @saved="load" @cleared="onCleared" @close="closeScheduler" />
       <Scheduler v-if="createTarget && !schedulerChallenge" :create-target="createTarget" :user-team-id="myTeam?.id" @done="onChallengeCreated" @close="createTarget = null" />
       <ReportMatch v-if="reportChallenge" :challenge="reportChallenge" :user-team-id="myTeam?.id" @done="onReported" @close="reportChallenge = null" />
@@ -895,4 +917,9 @@ useHead(() => ({ title: `${words.value.title} · DeepFrag` }))
 }
 .retired-team:hover { color: var(--fg); border-color: var(--border-2); }
 .retired-note { font-size: 11.5px; color: var(--fg-3); margin-left: auto; }
+.link-note { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 200; max-width: min(560px, calc(100vw - 32px));
+             background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; padding: 10px 14px; font-size: 13px;
+             display: flex; align-items: center; gap: 10px; flex-wrap: wrap; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+.link-note .cta { padding: 6px 12px; font-size: 12px; }
+.ln-x { background: none; border: 0; color: var(--fg-3); cursor: pointer; margin-left: auto; }
 </style>
