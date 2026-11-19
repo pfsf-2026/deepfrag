@@ -160,3 +160,158 @@ def player_kovaaks(canonical_id: str, response: Response, limit: int = 12):
         r["sens_match"] = None if sens is None or r["cm360"] is None else abs(r["cm360"] - sens) < 0.1
     response.headers["Cache-Control"] = "public, max-age=300"
     return body
+
+
+# ── Server wall: every live server on the hub, with our ratings on top ────────────────────────
+# GET /api/servers/wall is the hub's live list (hubapi.quakeworld.nu, the one hub.quakeworld.nu
+# draws) with each player matched to a DeepFrag profile: rating and tier in the server's mode, a
+# rating-only win chance for a duel, a badge when the players are the two sides of an open ladder
+# challenge. Our own empty ports are appended so they can still be joined from the wall.
+# (Peter, 2026-11-19: the full-width Xeneon Edge view.)
+HUB_SERVERS = "https://hubapi.quakeworld.nu/v2/servers/mvdsv"
+WALL_SECONDS = 5
+RATED_MODES = ("1on1", "2on2", "4on4")
+_wall = {"at": 0.0, "body": None}
+_wall_lock = threading.Lock()
+_cutoffs: dict = {}            # mode -> (fetched_at, cutoffs)
+
+
+def _hub_servers() -> list:
+    req = urllib.request.Request(HUB_SERVERS, headers={"User-Agent": "DeepFrag cockpit"})
+    with urllib.request.urlopen(req, timeout=6) as r:
+        return json.loads(r.read().decode())
+
+
+def _wall_lookups(cur, names: list) -> tuple:
+    """names -> canonical ids (raw-name map first, then the normalized name as an id), and
+    those ids' overall ratings per mode."""
+    import name_canon as NC
+    norm = {n: NC.normalize(n) for n in names}
+    keys = list({*names, *norm.values(), *(n.lower() for n in names)})
+    cur.execute("SELECT raw_name, canonical_id FROM player_name_map WHERE raw_name = ANY(%s)", (keys,))
+    by_raw = {r["raw_name"]: r["canonical_id"] for r in cur.fetchall()}
+    cur.execute("SELECT canonical_id, display_name FROM players_canonical WHERE canonical_id = ANY(%s)"
+                " AND NOT COALESCE(hidden, FALSE)", (list({*norm.values(), *by_raw.values()}),))
+    known = {r["canonical_id"]: r["display_name"] for r in cur.fetchall()}
+    cid = {}
+    for n in names:
+        c = by_raw.get(n) or by_raw.get(norm[n]) or by_raw.get(n.lower()) or norm[n]
+        if c in known:
+            cid[n] = c
+    cur.execute("SELECT canonical_id, mode, mu, sigma, matches_rated FROM ratings"
+                " WHERE canonical_id = ANY(%s) AND map = '' AND mode = ANY(%s)",
+                (list(set(cid.values())), list(RATED_MODES)))
+    ratings = {(r["canonical_id"], r["mode"]): r for r in cur.fetchall()}
+    return cid, ratings
+
+
+def _wall_cutoffs(cur, mode: str) -> dict:
+    from api import _get_tier_cutoffs
+    hit = _cutoffs.get(mode)
+    if not hit or time.time() - hit[0] > 600:
+        hit = _cutoffs[mode] = (time.time(), _get_tier_cutoffs(cur, mode))
+    return hit[1]
+
+
+def _wall_ladder(cur) -> list:
+    cur.execute("""SELECT c.id, c.status, l.name AS ladder, l.team_size, a.members AS a, b.members AS b
+                   FROM ladder_challenges c JOIN ladders l ON l.id = c.ladder_id
+                   JOIN ladder_teams a ON a.id = c.challenger_id JOIN ladder_teams b ON b.id = c.challenged_id
+                   WHERE c.status IN ('open', 'scheduled')""")
+    return [dict(r) for r in cur.fetchall()]
+
+
+def _wall_build() -> dict:
+    from api import pg
+    from tiers import tier_for
+    from openskill.models import PlackettLuce
+    model = PlackettLuce(mu=1500.0, sigma=500.0, beta=250.0)   # same model as /api/h2h
+
+    hub_error = None
+    try:
+        hub = _hub_servers()
+    except Exception as e:  # noqa: BLE001
+        hub, hub_error = [], f"hub unreachable: {type(e).__name__}"
+    our_hosts = {s["host"]: s["city"] for s in FLEET}
+    names = sorted({p["name"] for s in hub for p in s.get("players") or [] if not p.get("is_bot") and p.get("name")})
+
+    with pg() as conn:
+        cur = conn.cursor()
+        cid, ratings = _wall_lookups(cur, names) if names else ({}, {})
+        cutoffs = {m: _wall_cutoffs(cur, m) for m in RATED_MODES}
+        challenges = _wall_ladder(cur) if names else []
+
+    servers = []
+    for s in hub:
+        mode = s.get("mode") or ""
+        rmode = mode if mode in RATED_MODES else "1on1"
+        host = s["address"].rsplit(":", 1)[0]
+        players = []
+        for p in s.get("players") or []:
+            c = None if p.get("is_bot") else cid.get(p.get("name"))
+            r = ratings.get((c, rmode)) if c else None
+            players.append({"name": p.get("name"), "team": p.get("team") or "", "colors": p.get("colors"),
+                            "frags": p.get("frags"), "ping": p.get("ping"), "cc": p.get("cc") or "",
+                            "is_bot": bool(p.get("is_bot")), "id": c,
+                            "mu": round(r["mu"]) if r else None, "sigma": round(r["sigma"], 1) if r else None,
+                            "tier": tier_for(r["mu"], cutoffs[rmode]) if r else None})
+        humans = [p for p in players if not p["is_bot"]]
+        win_a = None
+        if mode == "1on1" and len(humans) == 2 and all(p["mu"] is not None for p in humans):
+            a, b = (model.rating(mu=p["mu"], sigma=p["sigma"]) for p in humans)
+            win_a = round(model.predict_win([[a], [b]])[0], 3)
+        here = {p["id"] for p in humans if p["id"]}
+        ladder = None
+        for c in challenges:
+            need = max(1, int(c["team_size"] or 1))
+            if all(len(here & set(side or [])) >= min(need, len(side or []) or need) for side in (c["a"], c["b"])):
+                ladder = {"challenge_id": c["id"], "ladder": c["ladder"]}
+                break
+        rated = sorted((p["mu"] for p in humans if p["mu"] is not None), reverse=True)
+        q = s.get("qtv_stream") or {}
+        geo = s.get("geo") or {}
+        st = s.get("status") or {}
+        servers.append({
+            "address": s["address"], "title": s.get("title"), "mode": mode, "submode": s.get("submode") or "",
+            "map": (s.get("settings") or {}).get("map"), "hostname": (s.get("settings") or {}).get("hostname"),
+            "status": st.get("name"), "status_text": st.get("description"), "time": s.get("time"),
+            "slots": s.get("player_slots"), "players": players,
+            "spectators": (s.get("spectator_slots") or {}).get("used", 0) + int(q.get("spectator_count") or 0),
+            "qtv": q.get("url") or None, "cc": geo.get("cc") or "", "region": geo.get("region") or "",
+            "city": our_hosts.get(host) or geo.get("city") or "", "ours": host in our_hosts,
+            "win_a": win_a, "ladder": ladder,
+            # the two best-rated players here, for the "big game" highlight
+            "top2": rated[1] if len(rated) > 1 else None,
+        })
+
+    # our own ports that the hub isn't listing (empty, or the hub hasn't seen them yet)
+    seen = {s["address"] for s in servers}
+    with _lock:
+        if _cache["body"] is None or time.time() - _cache["at"] > CACHE_SECONDS:
+            _cache["body"], _cache["at"] = _snapshot(), time.time()
+        fleet = _cache["body"]
+    for f in fleet["servers"]:
+        if not f.get("up") or f["address"] in seen:
+            continue
+        servers.append({"address": f["address"], "title": f"{f['city']} #{f['slot']}", "mode": f.get("mode") or "",
+                        "submode": "", "map": f.get("map"), "hostname": None,
+                        "status": "Standby" if f.get("players") else "Empty", "status_text": f.get("status"),
+                        "time": None, "slots": {"used": len(f.get("players") or []), "total": f.get("maxclients")},
+                        "players": [{"name": p["name"], "team": "", "colors": None, "frags": p["frags"], "ping": p["ping"],
+                                     "cc": "", "is_bot": False, "id": None, "mu": None, "sigma": None, "tier": None}
+                                    for p in f.get("players") or []],
+                        "spectators": len(f.get("spectators") or []), "qtv": None, "cc": "US",
+                        "region": "North America", "city": f["city"], "ours": True, "win_a": None, "ladder": None,
+                        "top2": None})
+    return {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "hub_error": hub_error,
+            "servers": servers}
+
+
+@router.get("/api/servers/wall")
+def servers_wall(response: Response):
+    """Every live server (hub list + our own ports) with DeepFrag ratings on the players."""
+    response.headers["Cache-Control"] = f"public, max-age={WALL_SECONDS}"
+    with _wall_lock:
+        if _wall["body"] is None or time.time() - _wall["at"] > WALL_SECONDS:
+            _wall["body"], _wall["at"] = _wall_build(), time.time()
+        return _wall["body"]
