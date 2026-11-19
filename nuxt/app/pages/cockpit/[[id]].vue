@@ -4,11 +4,16 @@
 // our servers (tap to connect), open ladder challenges and the KovaaK's prep block.
 // No live opponent info here: this page is meant to stay up while the owner plays.
 // /cockpit → the signed-in player; /cockpit/{id} → anyone.
+// ?panel=servers (or a list: ?panel=last,form) shows only those panels, filling the frame — one address
+// per panel, so each can be its own iFrame widget in Corsair's iCUE next to their widgets (Peter, 2026-11-19).
 useHead({ title: 'Cockpit · DeepFrag' })
 
 const route = useRoute()
 const { user, fetchMe } = useAuth()
 const id = computed(() => String(route.params.id || user.value?.canonical_id || '').toLowerCase())
+const PANELS = ['last', 'form', 'servers', 'ladder', 'prep']
+const picked = computed(() => String(route.query.panel || '').toLowerCase().split(',').map(x => x.trim()).filter(x => PANELS.includes(x)))
+const show = name => !picked.value.length || picked.value.includes(name)
 
 const full = ref(null)
 const fleet = ref(null)
@@ -83,11 +88,11 @@ const fmtWhen = iso => new Date(iso).toLocaleString(undefined, { weekday: 'short
 </script>
 
 <template>
-  <div class="cockpit">
+  <div class="cockpit" :class="{ picked: picked.length }" :style="picked.length ? { '--cols': picked.length } : null">
     <div v-if="!id" class="empty-all">Sign in, or open <code>/cockpit/your-id</code>.</div>
     <template v-else>
       <!-- LAST GAME -->
-      <section class="panel last">
+      <section v-if="show('last')" class="panel last">
         <h3>Last game <span v-if="last" class="sub">{{ ago(last.match_date) }}</span></h3>
         <template v-if="last">
           <div class="vs">
@@ -106,7 +111,7 @@ const fmtWhen = iso => new Date(iso).toLocaleString(undefined, { weekday: 'short
       </section>
 
       <!-- FORM -->
-      <section class="panel form">
+      <section v-if="show('form')" class="panel form">
         <h3>1on1 form <span class="sub" v-if="ratingNow != null">rating {{ Math.round(ratingNow) }} · 24h <b :class="ratingDay >= 0 ? 'up' : 'down'">{{ signed(ratingDay) }}</b></span></h3>
         <div class="strip">
           <div v-for="m in form" :key="m.match_id" class="g" :class="m.outcome">
@@ -119,7 +124,7 @@ const fmtWhen = iso => new Date(iso).toLocaleString(undefined, { weekday: 'short
       </section>
 
       <!-- SERVERS -->
-      <section class="panel servers">
+      <section v-if="show('servers')" class="panel servers">
         <h3>Our servers <span class="sub">{{ fleet ? 'live' : 'checking…' }}</span></h3>
         <div class="ports">
           <a v-for="s in ports" :key="s.address" class="port" :class="{ down: !s.up, busy: s.players?.length }"
@@ -135,7 +140,7 @@ const fmtWhen = iso => new Date(iso).toLocaleString(undefined, { weekday: 'short
       </section>
 
       <!-- LADDER -->
-      <section class="panel ladder">
+      <section v-if="show('ladder')" class="panel ladder">
         <h3>Ladder</h3>
         <div v-for="c in myChallenges" :key="c.id" class="ch" :class="{ turn: c.myTurn }">
           <div class="l1"><b>vs {{ c.opp }}</b> <span class="dim">{{ c.ladder }}</span></div>
@@ -149,7 +154,7 @@ const fmtWhen = iso => new Date(iso).toLocaleString(undefined, { weekday: 'short
       </section>
 
       <!-- PREP -->
-      <section class="panel prep">
+      <section v-if="show('prep')" class="panel prep">
         <h3>KovaaK's <span v-if="kv?.user" class="sub">{{ kv.user }} · target {{ kv.sens_cm360 ?? '?' }} cm</span></h3>
         <template v-if="kv?.scenarios?.length">
           <div v-for="r in kv.scenarios.slice(0, 7)" :key="r.scenario" class="kv">
@@ -176,6 +181,9 @@ const fmtWhen = iso => new Date(iso).toLocaleString(undefined, { weekday: 'short
 }
 @media (max-width: 1400px) { .cockpit { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .cockpit { grid-template-columns: 1fr; padding: 16px; } }
+/* picked panels share the frame equally at any width (a widget can be narrow) */
+.cockpit.picked { grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); padding: 0; --gap: 8px; }
+.cockpit.picked .panel { overflow: auto; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; overflow: hidden; }
 h3 { margin: 0 0 10px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .sub { text-transform: none; letter-spacing: 0; color: var(--fg-3); font-weight: 400; }
