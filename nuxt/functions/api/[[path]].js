@@ -34,6 +34,8 @@ function isCacheable(pathname, request) {
   // per player, rebuilt per report version and answered from Postgres already: a cached copy served a
   // report two versions old for hours after a deploy (2026-10-21).
   if (pathname.includes('/games/') || pathname.endsWith('/recent-games')) return false;
+  // The server wall is live data (5 s at the origin); the '/api/servers' prefix below would hold it for 2 h.
+  if (pathname === '/api/servers/wall') return false;
   return CACHEABLE_PREFIXES.some(p => pathname.startsWith(p));
 }
 
