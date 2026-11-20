@@ -1,8 +1,9 @@
 <script setup>
 // Server wall (Peter, 2026-11-19): every live QuakeWorld server on one strip, for the Corsair Xeneon
-// Edge (2560×720, touch) as an iCUE Web URL widget at 1/3, 2/3 or full width. Cards page sideways with
-// the arrows (or the wheel) — NOT by swipe: a sideways swipe belongs to iCUE, it changes Edge screens
-// (Peter, 2026-11-20; ?swipe=1 turns swipe-scrolling back on). Filter chips on top; Join / Watch / QTV open
+// Edge (2560×720, touch) as an iCUE Web URL widget at 1/3, 2/3 or full width. Cards scroll sideways by
+// swipe, wheel or the arrows. (2026-11-20: tried leaving sideways swipes to iCUE so they would change Edge
+// screens — iCUE does not take swipes that start on a web widget, so that only lost the scrolling.
+// ?swipe=0 still turns swipe-scrolling off.) Filter chips on top; Join / Watch / QTV open
 // the game client; a tap anywhere else on a card opens the drill-down (matchup, ratings, advanced stats).
 // Data: /api/servers/wall = the hub's live list with DeepFrag ratings, duel win chance and ladder badges.
 // /cockpit/wall?me=cronus adds the side strip (next ladder match, last result) at full width, and blanks
@@ -96,7 +97,7 @@ const shot = s => s.map ? { backgroundImage: `linear-gradient(rgba(10,8,6,.15), 
 const free = s => s.slots?.total != null ? Math.max(0, s.slots.total - (s.slots.used || 0)) : null
 const pct = v => `${Math.round(v * 100)}%`
 
-const swipe = computed(() => route.query.swipe === '1')
+const swipe = computed(() => route.query.swipe !== '0')
 const scroller = () => (openAddr.value ? drillEl.value : rail.value)
 function scroll(dir) { const el = scroller(); el?.scrollBy({ left: dir * Math.max(410, el.clientWidth * 0.8), behavior: 'smooth' }) }
 function wheel(e) { const el = scroller(); if (el && Math.abs(e.deltaY) > Math.abs(e.deltaX) && !e.target.closest('.board, .col')) { el.scrollLeft += e.deltaY; e.preventDefault() } }
