@@ -126,15 +126,22 @@ async function drill(s) {
     if (openAddr.value === s.address) h2h.value = d
   }
 }
-function closeDrill() { openAddr.value = ''; h2h.value = null }
+function closeDrill() { openAddr.value = ''; tvAddr.value = ''; h2h.value = null }
 
-// Watch here: the hub's web QTV player (its FTE engine build, with the hub's own minimap button) in a frame
-// filling the wall. Only for servers with a QTV stream, and never the owner's own game.
+// Watch here: the hub's web QTV player (its FTE engine build, with the hub's own minimap button) in a 16:9
+// frame on the left, the drill-down's stats columns on the right. Only for servers with a QTV stream, and
+// never the owner's own game. The hub page keeps its site header and footers when framed, so the frame is
+// made taller than its box and shifted up to show the player alone; ?crop=top,bottom (px) tunes the cut.
 const tvAddr = ref('')
 const tv = computed(() => (wall.value?.servers || []).find(s => s.address === tvAddr.value) || null)
 const tvUrl = computed(() => tvAddr.value ? `https://hub.quakeworld.nu/qtv/?address=${encodeURIComponent(tvAddr.value)}` : '')
-function watchHere(s) { if (s.qtv && !isMine(s)) tvAddr.value = s.address }
-watch(tv, s => { if (s && isMine(s)) tvAddr.value = '' })
+function watchHere(s) { if (s.qtv && !isMine(s)) { drill(s); tvAddr.value = s.address } }
+const tvCrop = computed(() => {
+  const [t, b] = String(route.query.crop || '').split(',').map(Number)
+  const top = Number.isFinite(t) && route.query.crop ? t : 122, bottom = Number.isFinite(b) ? b : 200
+  return { top: `-${top}px`, height: `calc(100% + ${top + bottom}px)` }
+})
+watch(tv, s => { if (s && isMine(s)) closeDrill() })
 watch(open, s => { if (openAddr.value && (!s || isMine(s))) closeDrill() })
 
 const rmode = s => ['1on1', '2on2', '4on4'].includes(s.mode) ? s.mode : '1on1'
@@ -215,11 +222,7 @@ const fmtWhen = at => new Date(at).toLocaleString(undefined, { weekday: 'short',
       <span class="clock">{{ clock }}</span>
     </header>
 
-    <div v-if="tvAddr" class="tv">
-      <iframe :src="tvUrl" allow="autoplay; fullscreen; gamepad" />
-      <button class="back tvback" @click="tvAddr = ''">‹ All servers</button>
-    </div>
-    <div v-show="!tvAddr" class="body">
+    <div class="body" :class="{ watching: tvAddr }">
       <div v-show="!open" ref="rail" class="rail" :class="{ swipe }" @wheel="wheel">
         <article v-for="s in servers" :key="s.address" class="card" :class="{ hot: isHot(s), ours: s.ours, idle: !humans(s).length }" @click="drill(s)">
           <div class="shot" :style="shot(s)">
@@ -273,7 +276,12 @@ const fmtWhen = at => new Date(at).toLocaleString(undefined, { weekday: 'short',
 
       <!-- DRILL-DOWN: one server — live scoreboard, the matchup (duels), a stats sheet per known player -->
       <div v-if="open" ref="drillEl" class="rail drill" :class="{ swipe }" @wheel="wheel">
-        <section class="col srv">
+        <!-- Watch here: the stream at 16:9 on the left, the stats columns beside it -->
+        <section v-if="tvAddr" class="tvbox">
+          <iframe :src="tvUrl" allow="autoplay; fullscreen; gamepad" :style="tvCrop" />
+          <button class="back tvback" @click="closeDrill">‹ All servers</button>
+        </section>
+        <section v-else class="col srv">
           <div class="shot" :style="shot(open)">
             <div class="tags">
               <button class="back" @click="closeDrill">‹ All servers</button>
@@ -347,7 +355,7 @@ const fmtWhen = at => new Date(at).toLocaleString(undefined, { weekday: 'short',
         <div v-if="!known(open).length" class="empty">No DeepFrag profiles match the players on this server.</div>
       </div>
 
-      <aside v-if="me" class="side">
+      <aside v-if="me && !tvAddr" class="side">
         <section>
           <h3>Next ladder match</h3>
           <template v-if="nextMatch">
@@ -441,9 +449,11 @@ const fmtWhen = at => new Date(at).toLocaleString(undefined, { weekday: 'short',
 .act.join { background: var(--accent); border-color: var(--accent); color: #111; }
 .act { padding: 0 12px; font-family: inherit; cursor: pointer; }
 .act.here { border-color: var(--accent); color: var(--accent); }
-.tv { flex: 1; min-height: 0; position: relative; background: #000; }
-.tv iframe { width: 100%; height: 100%; border: 0; display: block; }
-.tvback { position: absolute; left: 10px; bottom: 10px; opacity: .85; }
+.body.watching { padding: 0; }
+.tvbox { flex: 0 0 auto; align-self: center; height: min(100%, calc(100vw * 9 / 16)); aspect-ratio: 16 / 9; position: relative;
+         overflow: hidden; background: #000; }
+.tvbox iframe { position: absolute; left: 0; width: 100%; border: 0; }
+.tvback { position: absolute; left: 8px; top: 8px; height: 36px; opacity: .8; }
 .act small { font-weight: 600; font-size: 12px; }
 .empty { align-self: center; margin: 0 auto; color: var(--fg-3); font-size: 18px; }
 
