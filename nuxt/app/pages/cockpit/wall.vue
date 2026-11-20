@@ -4,7 +4,8 @@
 // swipe, wheel or the arrows. (2026-11-20: tried leaving sideways swipes to iCUE so they would change Edge
 // screens — iCUE does not take swipes that start on a web widget, so that only lost the scrolling.
 // ?swipe=0 still turns swipe-scrolling off.) Filter chips on top; Join / Watch / QTV open
-// the game client; a tap anywhere else on a card opens the drill-down (matchup, ratings, advanced stats).
+// the game client; "Watch here" plays the stream in the hub's web player inside this page; a tap anywhere
+// else on a card opens the drill-down (matchup, ratings, advanced stats).
 // Data: /api/servers/wall = the hub's live list with DeepFrag ratings, duel win chance and ladder badges.
 // /cockpit/wall?me=cronus adds the side strip (next ladder match, last result) at full width, and blanks
 // the card of a server the owner is playing on — nothing live about your own game goes on this screen.
@@ -126,6 +127,14 @@ async function drill(s) {
   }
 }
 function closeDrill() { openAddr.value = ''; h2h.value = null }
+
+// Watch here: the hub's web QTV player (its FTE engine build, with the hub's own minimap button) in a frame
+// filling the wall. Only for servers with a QTV stream, and never the owner's own game.
+const tvAddr = ref('')
+const tv = computed(() => (wall.value?.servers || []).find(s => s.address === tvAddr.value) || null)
+const tvUrl = computed(() => tvAddr.value ? `https://hub.quakeworld.nu/qtv/?address=${encodeURIComponent(tvAddr.value)}` : '')
+function watchHere(s) { if (s.qtv && !isMine(s)) tvAddr.value = s.address }
+watch(tv, s => { if (s && isMine(s)) tvAddr.value = '' })
 watch(open, s => { if (openAddr.value && (!s || isMine(s))) closeDrill() })
 
 const rmode = s => ['1on1', '2on2', '4on4'].includes(s.mode) ? s.mode : '1on1'
@@ -193,7 +202,7 @@ const fmtWhen = at => new Date(at).toLocaleString(undefined, { weekday: 'short',
 
 <template>
   <div class="wall">
-    <header class="bar">
+    <header v-show="!tvAddr" class="bar">
       <span class="title">Live servers</span>
       <span class="count"><b>{{ counts.players }}</b> players on <b>{{ counts.servers }}</b> servers</span>
       <div class="chips">
@@ -206,7 +215,11 @@ const fmtWhen = at => new Date(at).toLocaleString(undefined, { weekday: 'short',
       <span class="clock">{{ clock }}</span>
     </header>
 
-    <div class="body">
+    <div v-if="tvAddr" class="tv">
+      <iframe :src="tvUrl" allow="autoplay; fullscreen; gamepad" />
+      <button class="back tvback" @click="tvAddr = ''">‹ All servers</button>
+    </div>
+    <div v-show="!tvAddr" class="body">
       <div v-show="!open" ref="rail" class="rail" :class="{ swipe }" @wheel="wheel">
         <article v-for="s in servers" :key="s.address" class="card" :class="{ hot: isHot(s), ours: s.ours, idle: !humans(s).length }" @click="drill(s)">
           <div class="shot" :style="shot(s)">
@@ -248,8 +261,9 @@ const fmtWhen = at => new Date(at).toLocaleString(undefined, { weekday: 'short',
           <footer class="acts">
             <span class="specs">{{ s.spectators || 0 }} watching</span>
             <span class="grow" />
-            <a v-if="free(s) !== 0" class="act join" :href="`qw://${s.address}/`" @click.stop>Join<small v-if="free(s)"> · {{ free(s) }} free</small></a>
-            <a class="act" :href="`qw://${s.address}/observe`" @click.stop>Watch</a>
+            <button v-if="s.qtv && !isMine(s)" class="act here" @click.stop="watchHere(s)">Watch here</button>
+            <a v-if="free(s) !== 0" class="act join" :href="`qw://${s.address}/`" @click.stop>Join</a>
+            <a class="act" :href="`qw://${s.address}/observe`" @click.stop>Spec</a>
             <a v-if="s.qtv" class="act" :href="`qw://${s.qtv}/qtvplay`" @click.stop>QTV</a>
           </footer>
         </article>
@@ -283,8 +297,9 @@ const fmtWhen = at => new Date(at).toLocaleString(undefined, { weekday: 'short',
           </div>
           <footer class="acts">
             <span class="specs">{{ open.spectators || 0 }} watching</span><span class="grow" />
+            <button v-if="open.qtv" class="act here" @click="watchHere(open)">Watch here</button>
             <a v-if="free(open) !== 0" class="act join" :href="`qw://${open.address}/`">Join</a>
-            <a class="act" :href="`qw://${open.address}/observe`">Watch</a>
+            <a class="act" :href="`qw://${open.address}/observe`">Spec</a>
             <a v-if="open.qtv" class="act" :href="`qw://${open.qtv}/qtvplay`">QTV</a>
           </footer>
         </section>
@@ -424,6 +439,11 @@ const fmtWhen = at => new Date(at).toLocaleString(undefined, { weekday: 'short',
 .act { display: inline-flex; align-items: center; height: 44px; padding: 0 16px; border-radius: 10px; background: var(--panel-2);
        border: 1px solid var(--border); color: var(--fg); font-size: 16px; font-weight: 800; text-decoration: none; white-space: nowrap; }
 .act.join { background: var(--accent); border-color: var(--accent); color: #111; }
+.act { padding: 0 12px; font-family: inherit; cursor: pointer; }
+.act.here { border-color: var(--accent); color: var(--accent); }
+.tv { flex: 1; min-height: 0; position: relative; background: #000; }
+.tv iframe { width: 100%; height: 100%; border: 0; display: block; }
+.tvback { position: absolute; left: 10px; bottom: 10px; opacity: .85; }
 .act small { font-weight: 600; font-size: 12px; }
 .empty { align-self: center; margin: 0 auto; color: var(--fg-3); font-size: 18px; }
 
