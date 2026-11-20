@@ -37,10 +37,19 @@ async function loadMe() {
   ladders.value = out
 }
 
+// A widget is never reloaded by hand: when a new build of the site is out, reload ourselves.
+let build = null
+async function checkBuild() {
+  const d = await getJson(`/_nuxt/builds/latest.json?t=${Date.now()}`)
+  if (!d?.id) return
+  if (build && d.id !== build) location.reload()
+  build = d.id
+}
+
 const timers = []
 onMounted(() => {
-  loadWall(); loadMe()
-  timers.push(setInterval(loadWall, 5_000), setInterval(loadMe, 60_000),
+  loadWall(); loadMe(); checkBuild()
+  timers.push(setInterval(checkBuild, 60_000), setInterval(loadWall, 5_000), setInterval(loadMe, 60_000),
               setInterval(() => { now.value = Date.now() }, 1_000))
 })
 onBeforeUnmount(() => timers.forEach(clearInterval))
